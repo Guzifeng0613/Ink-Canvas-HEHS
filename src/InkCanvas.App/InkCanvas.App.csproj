@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>InkCanvas.App</RootNamespace>
+    <AssemblyName>InkCanvas</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <UseWinUI>true</UseWinUI>
+    <!--
+      Unpackaged deployment: no MSIX, no AppxPackage MSBuild targets, no VS UWP workload.
+      Self-contained Windows App SDK so the machine needs no separate runtime install.
+    -->
+    <EnableMsixTooling>false</EnableMsixTooling>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <SelfContained>false</SelfContained>
+    <ApplicationIcon>Assets\InkCanvas.ico</ApplicationIcon>
+    <Version>3.0.0</Version>
+    <Product>Ink Canvas (WinUI 3)</Product>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Graphics.Win2D" Version="$(Win2DVersion)" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="1.8.260803003" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="$(WindowsAppSdkVersion)" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Foundation" Version="1.8.260803002" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.InteractiveExperiences" Version="1.8.260708001" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.DWrite" Version="1.8.25122902" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\InkCanvas.Core\InkCanvas.Core.csproj" />
+    <ProjectReference Include="..\InkCanvas.Platform\InkCanvas.Platform.csproj" />
+    <ProjectReference Include="..\InkCanvas.Ink\InkCanvas.Ink.csproj" />
+    <ProjectReference Include="..\InkCanvas.Controls\InkCanvas.Controls.csproj" />
+    <ProjectReference Include="..\InkCanvas.Features\InkCanvas.Features.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Assets\**\*.*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

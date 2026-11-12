@@ -1,0 +1,25 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <!-- Keep the package cache off the system drive; it is tight on this machine. -->
+    <NuGetPackageRoot Condition="'$(NUGET_PACKAGES)' != ''">$(NUGET_PACKAGES)\</NuGetPackageRoot>
+  </PropertyGroup>
+
+  <!--
+    Reference the Windows App SDK sub-packages instead of the monolith: the monolith
+    also pulls AI / ML / Widgets / Search, which this app never uses (~200 MB extra).
+  -->
+  <PropertyGroup>
+    <WindowsAppSdkVersion>1.8.260921001</WindowsAppSdkVersion>
+    <Win2DVersion>1.4.0</Win2DVersion>
+  </PropertyGroup>
+</Project>

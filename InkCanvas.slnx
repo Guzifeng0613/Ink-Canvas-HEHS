@@ -1,0 +1,32 @@
+<Solution>
+  <Configurations>
+    <BuildType Name="Debug" />
+    <BuildType Name="Release" />
+    <Platform Name="x64" />
+  </Configurations>
+  <Folder Name="/src/">
+    <Project Path="src/InkCanvas.Core/InkCanvas.Core.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/InkCanvas.Platform/InkCanvas.Platform.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/InkCanvas.Ink/InkCanvas.Ink.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/InkCanvas.Controls/InkCanvas.Controls.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/InkCanvas.Features/InkCanvas.Features.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/InkCanvas.App/InkCanvas.App.csproj">
+      <Platform Project="x64" />
+    </Project>
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/InkCanvas.Core.Tests/InkCanvas.Core.Tests.csproj">
+      <Platform Project="x64" />
+    </Project>
+  </Folder>
+</Solution>

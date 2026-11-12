@@ -1,79 +1,39 @@
-name: .NET Build
+name: build
 
 on:
   push:
-    branches: [ master ]
+    branches: [master, feat/winui3-migration]
   pull_request:
-    branches: [ master ]
+    branches: [master]
+  workflow_dispatch:
 
 jobs:
-
   build:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v3.5.2
-      with:
-        fetch-depth: 0
+      - uses: actions/checkout@v4
 
-    # 安装 .NET Core
-    - name: Install .NET Core
-      uses: actions/setup-dotnet@v3.0.3
-      with:
-        dotnet-version: '6.0.x'
-        
-    # 安装 NuGet
-    - name: Setup NuGet
-      uses: NuGet/setup-nuget@v1.2.0
-      with:
-        nuget-version: '5.x'
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
 
-    # 还原 NuGet 包
-    - name: NuGet restore
-      run: nuget restore
-      
-    # 添加 MSBuild.exe 到环境变量: https://github.com/microsoft/setup-msbuild
-    - name: Add msbuild to PATH
-      uses: microsoft/setup-msbuild@v1.3.1
+      # The solution declares only x64; omitting the platform fails with MSB4126.
+      - name: Restore
+        run: dotnet restore InkCanvas.slnx -p:Platform=x64
 
-    # 编译整个项目
-    - name: Build the solution
-      run: |
-        msbuild -t:restore /p:GitFlow="Github Action"
-        msbuild -target:"Ink Canvas" /p:Configuration=Release /p:Platform="Any CPU" /p:GitFlow="Github Action"
-      env:
-        Configuration: ${{ matrix.configuration }}
+      - name: Build
+        run: dotnet build InkCanvas.slnx -c Release -p:Platform=x64 --no-restore
 
-    - name: Build the solution (x64)
-      run: |
-        msbuild -t:restore /p:GitFlow="Github Action"
-        msbuild -target:"Ink Canvas" /p:Configuration=Release /p:Platform="x64" /p:GitFlow="Github Action"
-      env:
-        Configuration: ${{ matrix.configuration }}
+      - name: Test
+        run: dotnet test tests/InkCanvas.Core.Tests/InkCanvas.Core.Tests.csproj -c Release -p:Platform=x64 --no-build
 
-    - name: Build the solution (ARM64)
-      run: |
-        msbuild -t:restore /p:GitFlow="Github Action"
-        msbuild -target:"Ink Canvas" /p:Configuration=Release /p:Platform="ARM64" /p:GitFlow="Github Action"
-      env:
-        Configuration: ${{ matrix.configuration }}
-        
-    # 上传编译成品
-    - name: Upload to artifact
-      uses: actions/upload-artifact@main
-      with:
-        name: Ink Canvas Artistry
-        path: Ink Canvas/bin/Release
-        
-    - name: Upload to artifact (x64)
-      uses: actions/upload-artifact@main
-      with:
-        name: Ink Canvas Artistry (x64)
-        path: Ink Canvas/bin/x64/Release
-        
-    - name: Upload to artifact (ARM64)
-      uses: actions/upload-artifact@main
-      with:
-        name: Ink Canvas Artistry (ARM64)
-        path: Ink Canvas/bin/ARM64/Release
+      - name: Publish
+        run: dotnet publish src/InkCanvas.App/InkCanvas.App.csproj -c Release -p:Platform=x64 -o artifacts/app
+
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: InkCanvas-winui3-x64
+          path: artifacts/app

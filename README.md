@@ -1,63 +1,88 @@
 <div align="center">
 
-<!--
-[![LOGO](Images/Ink%20Canvas%20Artistry.png?raw=true "LOGO")](# "LOGO")
--->
-
 <img src="./Images/Ink Canvas Artistry.png" style="width:96px;"/>
 
-# Ink Canvas Artistry
-[![UPSTREAM](https://img.shields.io/badge/UpStream-WXRIW%2FInk--Canvas-red.svg "LICENSE")](https://github.com/WXRIW/Ink-Canvas)
-[![LICENSE](https://img.shields.io/badge/License-GPL--3.0-red.svg "LICENSE")](./LICENSE)
-[![Latest release](https://img.shields.io/github/release/InkCanvas/Ink-Canvas-Artistry.svg?style=shield)](https://github.com/InkCanvas/Ink-Canvas-Artistry/releases/latest)
-[![GitHub issues](https://img.shields.io/github/issues/InkCanvas/Ink-Canvas-Artistry?logo=github)](https://github.com/InkCanvas/Ink-Canvas-Artistry/issues)
-[![交流群](https://img.shields.io/badge/-%E4%BA%A4%E6%B5%81%E7%BE%A4%20617707731-blue?style=flat&logo=TencentQQ)](https://qm.qq.com/q/AC777tzmEw)
+# Ink Canvas · WinUI 3
 
-![Screenshot-1](./Images/Screenshot1.png)
-![Screenshot-2](./Images/Screenshot2.png)
-![Screenshot-2](./Images/Screenshot3.png)
+[![LICENSE](https://img.shields.io/badge/License-GPL--3.0-red.svg)](./LICENSE)
+
+基于 [InkCanvas/Ink-Canvas-Artistry](https://github.com/InkCanvas/Ink-Canvas-Artistry)
+（其上游为 [WXRIW/Ink-Canvas](https://github.com/WXRIW/Ink-Canvas)）的 **WinUI 3 迁移版**。
 
 </div>
 
-## 👀 前言
-使用和分发本软件（原名 Ink-Canvas-For-Annotation）前，请您应当且务必知晓相关开源协议，本软件基于 https://github.com/WXRIW/Ink-Canvas 修改而成。对于墨迹功能的相关 issue 提出，可以优先查阅 https://github.com/WXRIW/Ink-Canvas/issues 。
+## 这个分支做了什么
 
-[直接下载](https://github.com/InkCanvas/Ink-Canvas-Artistry/releases/latest "Latest Releases")
-——该安装包使用 Inno Setup Compiler 打包，默认的推荐设置适配希沃六代机的使用。
+把原来的 WPF / .NET Framework 4.7.2 应用整体迁移到 **WinUI 3（Windows App SDK）**，
+界面按 Fluent 重做并完整适配触摸与动画，同时修掉了**笔锋闪烁**。
 
-## 🔧 特性
-Support Active Pen (支持压感)
+- **目标框架**：`net10.0-windows10.0.26100.0`，x64，**非打包**部署（无需 MSIX、无需 VS UWP 工作负载）。
+- **墨迹引擎重写**：WinUI 3 没有 `InkCanvas` / `System.Windows.Ink`，改用 Win2D 自绘可变宽度笔画。
+- **图形识别自研**：以托管几何拟合替换 Tablet PC `InkAnalyzer`，因此不再被锁在 x86。
+- **PPT / WPS**：COM `dynamic` 后期绑定，不再依赖 Office PIA。
+- 构建与最小环境说明见 **[BUILDING.md](./BUILDING.md)**；架构与取舍见
+  **[设计文档](./docs/superpowers/specs/2026-11-13-winui3-migration-design.md)**。
 
-## ⚠️ 提示
-- 对新功能的有效意见和合理建议，开发者会适时回复并进行开发。本软件并非商业性质软件，请勿催促开发者，耐心才能让功能更少 BUG、更加稳定。
+## 笔锋闪烁是怎么修的
 
-> 等待是人类的一种智慧
+原实现在 `StrokeCollected`（**抬笔之后**）才计算笔锋，并整体替换 `StylusPoints`：
+`InkStyle=0` 把末尾 10 点的压感从 0.5 斜坡降到 0.1，`InkStyle=1` 按速度重算**每一个点**。
+于是抬笔瞬间笔尾（或整笔）宽度突变。另外手掌误触判定会把整个墨迹层 `Opacity` 压到 0.1 再拉回 1，
+造成第二处明暗跳变。
 
-## 📗 FAQ
+本分支的做法：
 
-### 点击放映后一翻页就闪退？
-考虑是由于`Microsoft Office`未激活导致的，请自行激活
+1. **宽度逐点增量计算并落库**。`InkPoint.Width` 是存储值，渲染是存储数据的纯函数。
+2. **笔锋只跟移动的笔尖走**。末尾 N 点的滚动窗口内收窄，笔尖移过即冻结为全宽；
+   某点宽度随时间单调不减，所以视觉变化只发生在笔尖处，读起来是笔锋而不是跳变。
+3. **速度笔锋改为因果**：只用已到达的点做后向差分，绝不引用未来点。
+4. **抬笔不重算**，提交是「完成 + 入文档 + 记历史」的原子操作，只触发一次重绘。
+5. **手掌判定不再改墨迹层透明度**，只影响输入路由。
 
-### 放映后画板程序不会切换到PPT模式？
-如果你曾经安装过`WPS`且在卸载后发现此问题则是由于暂时未确定的问题所导致，可以尝试重新安装WPS
-> “您好，关于您反馈的情况我们已经反馈技术同学进一步分析哈，辛苦您可以留意后续WPS版本更新哈~” --回复自WPS客服
+判据被测试钉住：`TaperTests.LastLiveFrameEqualsCommittedGeometry`，
+以及运行时 `--selftest` 里的 `widthsIdentical` / `outlineIdentical`。
 
-另外，处在保护（只读）模式的PPT不会被识别
+## 模块划分
 
-若因安装了最新版本的 WPS 而导致无法在 WPS 软件内进入 PPT 模式，可以尝试卸载 WPS 后，并清除电脑垃圾、注册表垃圾、删除电脑上所有带 "kingsoft" 名称的文件夹，重新安装 WPS 2021 后，（以上步骤可能有多余步骤），经测试在 WPS 内可以正常进入 PPT 模式。
+```
+src/InkCanvas.Core        纯域模型（无 UI 依赖）：墨迹、笔锋曲线、几何、撤销、设置、图形生成与识别
+src/InkCanvas.Platform    Win32：分层透明覆盖层窗口、笔/触摸输入、手掌判定、热键、置顶、自启
+src/InkCanvas.Ink         Win2D 渲染 + InkController（对外唯一墨迹入口）+ 双指手势
+src/InkCanvas.Controls    WinUI 3 控件、主题 token、动画、触摸尺寸
+src/InkCanvas.Features    画板分页 / PPT / 倒计时 / 抽奖 / 截图 / 回放 / 持久化
+src/InkCanvas.App         应用头：窗口外壳、模式切换、依赖装配
+tests/InkCanvas.Core.Tests  单元测试（含笔锋回归）
+```
 
-### **安装后**程序无法正常启动？
-请检查你的电脑上是否安装了 `.Net Framework 4.7.2` 或更高版本。若没有，请前往官网下载 [.Net 4.7.2](https://dotnet.microsoft.com/en-us/download/dotnet-framework/thank-you/net472-offline-installer)
-。如果仍无法运行，请检查你的电脑上是否安装了 `Microsoft Office`。若没有，请安装后重试
+依赖单向：`App → Features → Controls → Ink → Platform → Core`。
 
-### 我该在何处提出功能需求和错误报告？
+## 为什么覆盖层不是 WinUI 3 窗口
 
-1. GitHub Issues
+**WinUI 3 的 XAML 窗口无法逐像素透明。** 实测五种手法（空 backdrop + 透明根、
+`WS_EX_NOREDIRECTIONBITMAP` 在 XAML 初始化前/后、DWM blur-behind、两种 accent 政策）
+输出与不透明对照组**逐像素一致**。
 
-    功能需求：https://github.com/InkCanvas/Ink-Canvas-Artistry/labels/enhancement/new 
+因此屏幕画笔的墨迹面用 **Win32 分层窗口 + Win2D 预乘 alpha**（实测背景保留率 97.65%、
+半透明笔画正常），而**其余所有界面（工具栏、画板、设置、对话框）都是 WinUI 3 窗口**。
 
-    错误报告：https://github.com/InkCanvas/Ink-Canvas-Artistry/labels/bug/new
+## 快速开始
 
-2. Tencent QQ
+```powershell
+.\build.ps1 build
+.\build.ps1 test
+.\build.ps1 run
+```
 
-    [![交流群](https://img.shields.io/badge/-%E4%BA%A4%E6%B5%81%E7%BE%A4%20617707731-blue?style=flat&logo=TencentQQ)](https://qm.qq.com/q/AC777tzmEw)
+## 已知兼容性中断
+
+- **旧 `.isf` 墨迹存档无法读取**。ISF 依赖 `System.Windows.Ink`，WinUI 3 无此栈。
+  新格式为 `.icink`（JSON，逐点存宽度）。
+- 设置文件 `Settings.json` **保持原 JSON 键名**，可直接沿用。
+- 图形识别为自研拟合，判定边界与 `InkAnalyzer` 不完全一致。
+- 上游 502 KB 单体设置 XAML 未逐像素复刻，改为按真实设置模型重建的分组设置页。
+
+## 许可与致谢
+
+GPL-3.0，见 [LICENSE](./LICENSE)。原项目作者与贡献者保留全部署名；
+`MW_SimulatePressure&InkToShape.cs` 中 WXRIW 的版权声明所述算法在本分支被重写，
+其笔锋意图（末尾收细、速度影响粗细）被保留并以因果方式重新实现。
