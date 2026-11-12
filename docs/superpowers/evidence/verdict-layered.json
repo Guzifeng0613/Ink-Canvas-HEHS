@@ -1,0 +1,11 @@
+{
+  "mode": "layered",
+  "screen": "1920x1080",
+  "sampled": 1701,
+  "matched": 1661,
+  "backgroundMatchRatio": 0.9765,
+  "whiteFloodRatio": 0,
+  "drewMagentaRect": true,
+  "transparent": true,
+  "pid": 11132
+}

@@ -13,10 +13,10 @@ fork：`QiXinia/Ink-Canvas-HEHS`，工作分支 `feat/winui3-migration`
 
 | 编号 | 结论 | 证据 |
 |---|---|---|
-| F1 | WinUI 3 **非打包**应用可在「.NET 10 SDK + VS BuildTools 17.14 + Windows SDK 26100」下构建运行，**无需 VS UWP 工作负载** | `D:\tmp\winui3-probe-20261113` 构建 exit 0 |
+| F1 | WinUI 3 **非打包**应用可在「.NET 10 SDK + VS BuildTools 17.14 + Windows SDK 26100」下构建运行，**无需 VS UWP 工作负载** | 最小探针构建 exit 0；本仓库 Release 全解决方案零错误 |
 | F2 | `net10.0-windows10.0.26100.0` + WindowsAppSDK 1.8.260921001 + Win2D 1.4.0 可用，**无需安装 .NET 8 运行时** | 同上 |
-| F3 | **WinUI 3 XAML 窗口无法逐像素透明**。`SystemBackdrop=null` + 透明根 + `WS_EX_NOREDIRECTIONBITMAP`（初始化前/后）+ DWM blur-behind + accent 政策，五种手法全部失败 | `results2/verdict-*.json`：t1/t4/t5 与 opaque 对照组数值完全一致（whiteFloodRatio 0.988） |
-| F4 | **原生分层窗口 + Win2D 预乘 alpha 可行**，含半透明 | `results3/verdict-layered.json`：backgroundMatchRatio 0.9765、whiteFloodRatio 0；截图可见半透明笔画下透出桌面 |
+| F3 | **WinUI 3 XAML 窗口无法逐像素透明**。`SystemBackdrop=null` + 透明根 + `WS_EX_NOREDIRECTIONBITMAP`（初始化前/后）+ DWM blur-behind + accent 政策，五种手法全部失败 | `evidence/verdict-t1.json`、`verdict-t4.json`、`verdict-t5.json` 与对照组 `verdict-opaque.json` 数值完全一致（whiteFloodRatio 0.9881）；截图 `evidence/winui3-xaml-opaque.png` |
+| F4 | **原生分层窗口 + Win2D 预乘 alpha 可行**，含半透明 | `evidence/verdict-layered.json`：backgroundMatchRatio 0.9765、whiteFloodRatio 0；截图 `evidence/layered-overlay-alpha.png` 可见半透明笔画下透出桌面 |
 | F5 | 本机全局 NuGet 配置**没有任何包源** | `%APPDATA%\NuGet\NuGet.Config` 的 `<packageSources>` 为空 |
 | F6 | 上游 `MainWindow.xaml` 单文件 502 KB；全仓 68 个 .cs/.xaml 共 1.34 MB | 文件统计 |
 

@@ -1,0 +1,24 @@
+{
+  "presentedFrames": 135,
+  "overlayTransparentCapable": true,
+  "strokeCount": 6,
+  "allCriticalChecksPassed": true,
+  "checks": [
+    {
+      "check": "committed geometry equals last live frame",
+      "widthsIdentical": true,
+      "outlineIdentical": true,
+      "taperPresentWhileDrawing": true,
+      "tipWidth": 2.8,
+      "settledWidth": 14
+    },
+    {
+      "check": "highlighter is uniform width",
+      "uniform": true
+    },
+    {
+      "check": "3D coordinate system committed as three axes",
+      "strokesAdded": 3
+    }
+  ]
+}

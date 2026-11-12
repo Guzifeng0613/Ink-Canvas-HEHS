@@ -1,0 +1,11 @@
+{
+  "mode": "t4",
+  "screen": "1920x1080",
+  "sampled": 1846,
+  "matched": 22,
+  "backgroundMatchRatio": 0.0119,
+  "whiteFloodRatio": 0.9881,
+  "drewMagentaRect": true,
+  "transparent": false,
+  "pid": 9840
+}
