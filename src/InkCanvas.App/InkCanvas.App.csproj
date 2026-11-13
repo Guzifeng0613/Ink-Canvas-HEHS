@@ -38,4 +38,19 @@
     <Content Include="Assets\**\*.*" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\CHANGELOG.md" Link="CHANGELOG.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <!--
+    dotnet publish does not copy the app's own generated resource index (<AssemblyName>.pri)
+    for an unpackaged WinUI 3 app. Without it, cross-assembly resource lookups such as
+    ms-appx:///InkCanvas.Controls/Themes/Tokens.xaml fail at runtime with
+    "Cannot find a resource with the given key", and the shell throws on first window.
+    Copy it explicitly so the published folder actually runs.
+  -->
+  <Target Name="CopyAppPriToPublish" AfterTargets="Publish">
+    <Copy SourceFiles="$(OutDir)$(TargetName).pri"
+          DestinationFolder="$(PublishDir)"
+          Condition="Exists('$(OutDir)$(TargetName).pri')" />
+    <Warning Text="App resource index $(TargetName).pri was not found; the published app may fail to resolve theme resources."
+             Condition="!Exists('$(OutDir)$(TargetName).pri')" />
+  </Target>
 </Project>

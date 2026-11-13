@@ -24,6 +24,11 @@ public partial class App : Application
         {
             if (string.Equals(a, "--board", StringComparison.OrdinalIgnoreCase))
                 _shell.ToggleBoard();
+
+            // Start with clicks falling through to the desktop, so launching the app does not
+            // trap the mouse on a machine that is in use. Toggle it off from the bar to draw.
+            if (string.Equals(a, "--passthrough", StringComparison.OrdinalIgnoreCase))
+                _shell.StartInClickThrough();
         }
 
         var selfTest = Environment.GetCommandLineArgs()

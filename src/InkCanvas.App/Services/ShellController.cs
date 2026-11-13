@@ -50,6 +50,19 @@ public sealed class ShellController : IShellActions, IDisposable
 
     public UpdateCoordinator Updater { get; }
 
+    /// <summary>Diagnostics for the floating bar's window-vs-content sizing.</summary>
+    public string BarDiagnostics
+    {
+        get
+        {
+            if (_bar is null) return "no bar";
+            var size = _bar.AppWindow.Size;
+            var desired = _bar.Bar.DesiredSize;
+            return $"window={size.Width}x{size.Height}; desired={desired.Width:0.#}x{desired.Height:0.#}; "
+                 + $"primaryChildren={_bar.Bar.PrimaryChildCount}; computedRow={_bar.Bar.ComputedPrimaryWidth:0.#}";
+        }
+    }
+
     public void Start()
     {
         _bar = new FloatingBarWindow();
@@ -65,12 +78,21 @@ public sealed class ShellController : IShellActions, IDisposable
             redo: () => Services.OverlayInk.Redo(),
             togglePen: () => { Services.OverlayInk.Tool = InkTool.Pen; _bar.Bar.RefreshSelection(); },
             toggleEraser: () => { Services.OverlayInk.Tool = InkTool.Eraser; _bar.Bar.RefreshSelection(); },
-            clear: () => Services.OverlayInk.Clear());
+            clear: () => Services.OverlayInk.Clear(),
+            togglePassThrough: ToggleClickThrough,
+            toggleBoard: ToggleBoard);
 
         _pollTimer.Start();
 
-        // The delete-selection button only exists while something is selected.
-        Services.OverlayInk.SelectionChanged += () => _bar?.Bar.RefreshSelection();
+        // The delete-selection button only exists while something is selected, which changes
+        // the bar's content width — re-fit the window or the right-hand buttons get clipped.
+        Services.OverlayInk.SelectionChanged += () =>
+        {
+            if (_bar is null) return;
+            _bar.Bar.RefreshSelection();
+            _bar.Reposition(Services.Settings.Appearance.FloatingBarBottomMargin,
+                            Services.Settings.Appearance.FloatingBarScale);
+        };
 
         // 1:1 手指翻页（原 GestureOnly 模式）。未验证。
         Services.OverlayInk.SlideFlipRequested += next => { if (next) PptNext(); else PptPrevious(); };
@@ -126,6 +148,9 @@ public sealed class ShellController : IShellActions, IDisposable
             if (Services.Ppt.IsAttached && Services.Ppt.PollSlideShowState(ref _lastSlideShowState))
             {
                 _bar?.Bar.SetPptModeVisible(_lastSlideShowState);
+                // The PPT button group also changes the bar's width.
+                _bar?.Reposition(Services.Settings.Appearance.FloatingBarBottomMargin,
+                                 Services.Settings.Appearance.FloatingBarScale);
                 if (_lastSlideShowState && Services.Settings.PowerPoint.IsShowCanvasAtNewSlideShow)
                     Overlay.Show();
             }
@@ -277,6 +302,13 @@ public sealed class ShellController : IShellActions, IDisposable
             _bar.Bar.ClickThroughActive = Overlay.ClickThrough;
             _bar.Bar.RefreshSelection();
         }
+    }
+
+    /// <summary>Launch in pass-through mode so the overlay does not capture the desktop's input.</summary>
+    public void StartInClickThrough()
+    {
+        if (Overlay.ClickThrough) return;
+        ToggleClickThrough();
     }
 
     public void PptNext() => Services.Ppt.Next();

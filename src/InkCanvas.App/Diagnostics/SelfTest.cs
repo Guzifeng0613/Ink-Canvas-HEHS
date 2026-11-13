@@ -210,6 +210,7 @@ public static class SelfTest
         var report = new
         {
             presentedFrames = shell.Overlay.Presenter.PresentedFrames,
+            barDiagnostics = shell.BarDiagnostics,
             overlayTransparentCapable = true,
             strokeCount = controller.Document.Count,
             allCriticalChecksPassed = allPassed,

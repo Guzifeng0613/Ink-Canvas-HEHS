@@ -47,8 +47,10 @@ public sealed class BoardWindow : Window
         Content = root;
 
         WindowChrome.MakeBorderless(this, topmost: false, resizable: true);
-        var screen = Platform.System.ScreenService.Primary;
-        WindowChrome.Place(this, screen.X, screen.Y, screen.Width, screen.Height);
+        // Work area, not the full screen: the board has its own bottom toolbar and it must not
+        // end up behind the taskbar.
+        var work = Platform.System.ScreenService.WorkArea;
+        WindowChrome.Place(this, work.X, work.Y, work.Width, work.Height);
 
         _board.PageChanged += OnPageChanged;
         _board.BackgroundChanged += RefreshBackground;

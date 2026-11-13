@@ -37,7 +37,21 @@ public sealed class FloatingBarWindow : Window
         _root.PointerReleased += OnDragEnd;
         _root.PointerCaptureLost += (_, _) => _dragging = false;
 
+        // Re-fit whenever the bar's button set changes (selection button, PPT group, fold).
+        _bar.LayoutUpdated += OnBarLayoutUpdated;
+
         Activated += (_, _) => Motion.PlayEntrance(_bar, 16f);
+    }
+
+    private double _bottomMargin = 100, _scalePercent = 100;
+
+    private void PlaceBottomCentre(int width, int height)
+    {
+        // Work area so a zero bottom margin still clears the taskbar.
+        var work = Platform.System.ScreenService.WorkArea;
+        int x = work.X + (work.Width - width) / 2;
+        int y = work.Y + work.Height - height - (int)Math.Max(0, _bottomMargin);
+        WindowChrome.Place(this, x, y, width, height);
     }
 
     public FloatingBar Bar => _bar;
@@ -55,19 +69,40 @@ public sealed class FloatingBarWindow : Window
     /// </summary>
     public void Reposition(double bottomMargin, double scalePercent)
     {
+        _bottomMargin = bottomMargin;
+        _scalePercent = scalePercent;
         double scale = Math.Clamp(scalePercent, 50, 200) / 100.0;
         _bar.RenderTransformOrigin = new Windows.Foundation.Point(0, 0);
         _bar.RenderTransform = new ScaleTransform { ScaleX = scale, ScaleY = scale };
 
-        _bar.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
-        var desired = _bar.DesiredSize;
-        int width = Math.Max(120, (int)Math.Ceiling(desired.Width * scale) + 16);
-        int height = Math.Max(56, (int)Math.Ceiling(desired.Height * scale) + 16);
+        var (naturalWidth, naturalHeight) = _bar.ComputeLayoutSize();
+        _ = naturalWidth; _ = naturalHeight;
 
-        var screen = Platform.System.ScreenService.Primary;
-        int x = screen.X + (screen.Width - width) / 2;
-        int y = screen.Y + screen.Height - height - (int)Math.Max(0, bottomMargin);
-        WindowChrome.Place(this, x, y, width, height);
+        // Deterministic sizing from the button count. 54px per button comfortably covers the
+        // actual laid-out pitch; the bar stretches to fill, so any slack is inside the visible
+        // rounded surface rather than an invisible click-swallowing strip.
+        var (buttons, separators) = _bar.CountVisibleItems();
+        const double chrome = 16 + 2 + 12;
+        double rowWidth = buttons * 54.0 + separators * 11.0 + chrome;
+        bool folded = _bar.IsFolded;
+
+        int width = (int)Math.Ceiling(rowWidth * scale);
+        int height = (int)Math.Ceiling((40 + chrome + (folded ? 44 : 0)) * scale);
+        PlaceBottomCentre(width, height);
+    }
+
+    private int _lastButtons = -1, _lastSeparators = -1;
+    private bool _lastFolded;
+
+    private void OnBarLayoutUpdated(object sender, object e)
+    {
+        var (buttons, separators) = _bar.CountVisibleItems();
+        bool folded = _bar.IsFolded;
+        if (buttons == _lastButtons && separators == _lastSeparators && folded == _lastFolded) return;
+        _lastButtons = buttons;
+        _lastSeparators = separators;
+        _lastFolded = folded;
+        Reposition(_bottomMargin, _scalePercent);
     }
 
     private void OnDragStart(object sender, PointerRoutedEventArgs e)

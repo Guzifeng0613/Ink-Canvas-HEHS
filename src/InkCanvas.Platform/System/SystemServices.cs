@@ -17,6 +17,21 @@ public static class ScreenService
         NativeMethods.GetSystemMetrics(NativeMethods.SM_YVIRTUALSCREEN),
         NativeMethods.GetSystemMetrics(NativeMethods.SM_CXVIRTUALSCREEN),
         NativeMethods.GetSystemMetrics(NativeMethods.SM_CYVIRTUALSCREEN));
+
+    /// <summary>
+    /// Primary screen minus the taskbar / docked bars. Windows that carry their own bottom
+    /// toolbar must use this, otherwise the toolbar ends up behind the taskbar.
+    /// </summary>
+    public static ScreenRect WorkArea
+    {
+        get
+        {
+            var rect = new NativeMethods.RECT();
+            if (NativeMethods.SystemParametersInfoW(NativeMethods.SPI_GETWORKAREA, 0, ref rect, 0))
+                return new ScreenRect(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
+            return Primary;
+        }
+    }
 }
 
 /// <summary>Identifies the foreground application, used by the auto-fold rules.</summary>

@@ -188,6 +188,11 @@ public static class NativeMethods
     public const int SM_CXVIRTUALSCREEN = 78;
     public const int SM_CYVIRTUALSCREEN = 79;
 
+    public const uint SPI_GETWORKAREA = 0x0030;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool SystemParametersInfoW(uint action, uint param, ref RECT pvParam, uint winIni);
+
     public static void AddExStyle(IntPtr hwnd, int style)
         => SetWindowLongW(hwnd, GWL_EXSTYLE, GetWindowLongW(hwnd, GWL_EXSTYLE) | style);
 

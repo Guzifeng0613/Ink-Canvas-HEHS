@@ -48,13 +48,18 @@ public sealed class OverlayHost : IDisposable
     public void Hide() => Window.Hide();
 
     /// <summary>Register the default hotkey set. Failures are non-fatal (key may be taken).</summary>
-    public void RegisterHotkeys(Action undo, Action redo, Action togglePen, Action toggleEraser, Action clear)
+    public void RegisterHotkeys(Action undo, Action redo, Action togglePen, Action toggleEraser, Action clear,
+        Action togglePassThrough = null, Action toggleBoard = null)
     {
         Hotkeys.Register(HotkeyModifiers.Control, 0x5A /* Z */, undo);
         Hotkeys.Register(HotkeyModifiers.Control, 0x59 /* Y */, redo);
         Hotkeys.Register(HotkeyModifiers.Alt, 0x31 /* 1 */, togglePen);
         Hotkeys.Register(HotkeyModifiers.Alt, 0x45 /* E */, toggleEraser);
         Hotkeys.Register(HotkeyModifiers.Control | HotkeyModifiers.Shift, 0x43 /* C */, clear);
+        // Escape hatches: the overlay captures the whole screen while writing, so these must
+        // work even if the bar is unreachable.
+        if (togglePassThrough is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x50 /* P */, togglePassThrough);
+        if (toggleBoard is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x42 /* B */, toggleBoard);
     }
 
     public void Dispose()

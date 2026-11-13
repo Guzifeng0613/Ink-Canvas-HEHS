@@ -44,16 +44,21 @@ public sealed class FloatingBar : UserControl
     {
         _secondaryHost = new Border { Child = _secondary, Visibility = Visibility.Collapsed };
 
-        var root = new StackPanel { Orientation = Orientation.Vertical, Spacing = 4 };
+        var root = new StackPanel
+        {
+            Orientation = Orientation.Vertical,
+            Spacing = 4,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
         root.Children.Add(_secondaryHost);
         root.Children.Add(_primary);
 
         Content = new Border
         {
-            // Hug the content: a stretched border would leave a transparent strip that still
-            // hit-tests, swallowing clicks meant for the application underneath.
-            HorizontalAlignment = HorizontalAlignment.Left,
-            VerticalAlignment = VerticalAlignment.Top,
+            // Fill the host window: the window is sized from the button count, so stretching
+            // avoids both clipping and an invisible hit-testable strip beside the bar.
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
             Background = (Brush)Application.Current.Resources["IcSurfaceAltBrush"],
             BorderBrush = (Brush)Application.Current.Resources["IcStrokeBrush"],
             BorderThickness = new Thickness(1),
@@ -70,6 +75,107 @@ public sealed class FloatingBar : UserControl
     public IShellActions Shell { get; set; }
 
     public bool IsFolded => _folded;
+
+    /// <summary>Diagnostics: how many buttons the primary row actually holds.</summary>
+    public int PrimaryChildCount => _primary.Children.Count;
+
+    /// <summary>
+    /// Natural size of the bar, measured child-by-child.
+    /// <para>
+    /// Measuring the whole control with an infinite constraint does not work reliably once it
+    /// is rooted in a window: the returned DesiredSize stays constrained by the current window
+    /// width, so a bar that grows (delete-selection button, PPT group, expanded row) would be
+    /// clipped. Measuring the leaf children directly avoids that feedback loop.
+    /// </para>
+    /// </summary>
+    public (double Width, double Height) ComputeLayoutSize()
+    {
+        double primary = MeasureRow(_primary);
+        double secondary = _secondaryHost.Visibility == Visibility.Visible ? MeasureRow(_secondary) : 0;
+
+        // Chrome: bar border padding 8+8, border 1+1, host padding 6+6.
+        const double chrome = 16 + 2 + 12;
+        double width = Math.Max(primary, secondary) + chrome + 8;   // +8 slack for rounding
+        double height = 40 + chrome + (secondary > 0 ? 40 + 4 : 0);
+        return (width, height);
+    }
+
+    private static double MeasureRow(StackPanel row)
+    {
+        double total = 0;
+        int visible = 0;
+        foreach (var child in row.Children)
+        {
+            if (child is not FrameworkElement fe || fe.Visibility != Visibility.Visible) continue;
+            if (fe is StackPanel nested)
+            {
+                double nestedWidth = MeasureRow(nested);
+                if (nestedWidth <= 0) continue;
+                total += nestedWidth;
+            }
+            else
+            {
+                // ActualWidth is post-layout truth. A horizontal StackPanel arranges children
+                // at their natural size even when the window clips them, so this stays correct
+                // while DesiredSize/Measure can come back constrained by the current window.
+                if (fe.ActualWidth > 0)
+                {
+                    total += fe.ActualWidth;
+                }
+                else
+                {
+                    fe.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+                    total += Math.Max(fe.DesiredSize.Width, fe.MinWidth);
+                }
+            }
+            visible++;
+        }
+        if (visible > 1) total += (visible - 1) * row.Spacing;
+        return total;
+    }
+
+    /// <summary>
+    /// Visible button and separator counts, including the nested PPT group.
+    /// The host window sizes itself from these rather than from a measure pass: a rooted
+    /// horizontal StackPanel keeps reporting a width constrained by the current window, so
+    /// measurement cannot discover the natural size.
+    /// </summary>
+    public (int Buttons, int Separators) CountVisibleItems()
+    {
+        int buttons = 0, separators = 0;
+        Count(_primary, ref buttons, ref separators);
+        if (_secondaryHost.Visibility == Visibility.Visible)
+        {
+            int b2 = 0, s2 = 0;
+            Count(_secondary, ref b2, ref s2);
+            buttons = Math.Max(buttons, b2);
+            separators = Math.Max(separators, s2);
+        }
+        return (buttons, separators);
+    }
+
+    private static void Count(StackPanel row, ref int buttons, ref int separators)
+    {
+        foreach (var child in row.Children)
+        {
+            if (child is not FrameworkElement fe || fe.Visibility != Visibility.Visible) continue;
+            if (fe is StackPanel nested) Count(nested, ref buttons, ref separators);
+            else if (fe is Border) separators++;
+            else buttons++;
+        }
+    }
+
+    /// <summary>Diagnostics: natural width computed for the primary row.</summary>
+    public double ComputedPrimaryWidth => MeasureRow(_primary);
+
+    /// <summary>
+    /// The rows' laid-out widths. These are only the true natural widths while the host window
+    /// is wide enough not to constrain them — see FloatingBarWindow's two-phase fit.
+    /// </summary>
+    public double PrimaryRowActualWidth => _primary.ActualWidth;
+
+    public double SecondaryRowActualWidth =>
+        _secondaryHost.Visibility == Visibility.Visible ? _secondary.ActualWidth : 0;
 
     public bool ClickThroughActive { get; set; }
 
