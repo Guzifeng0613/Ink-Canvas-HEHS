@@ -60,6 +60,22 @@ public sealed class OverlayInkPresenter : IDisposable
     /// <summary>Total bytes read back from the GPU; lets the self-test prove the optimisation.</summary>
     public long GpuReadbackBytes { get; private set; }
 
+    /// <summary>
+    /// Cursor/mouse mode keeps the overlay hit-test surface alive but suppresses its visible ink,
+    /// matching the WPF CursorIcon_Click path that hid the ink canvas for desktop interaction.
+    /// </summary>
+    public bool InkVisible
+    {
+        get => _inkVisible;
+        set
+        {
+            if (_inkVisible == value) return;
+            _inkVisible = value;
+            RequestRender();
+        }
+    }
+    private bool _inkVisible = true;
+
     private CanvasRenderTarget CreateTarget(int width, int height) => new(
         _device, width, height, 96,
         DirectXPixelFormat.B8G8R8A8UIntNormalized, CanvasAlphaMode.Premultiplied);
@@ -131,12 +147,24 @@ public sealed class OverlayInkPresenter : IDisposable
     {
         if (_committedTarget is null || _window.PixelBuffer == IntPtr.Zero) return;
 
-        EnsureCommittedCache();
-        Array.Copy(_committedPixels, _frame, _frame.Length);
+        if (!InkVisible)
+        {
+            // Keep alpha at one so the layered window remains hit-testable. The window's
+            // WS_EX_TRANSPARENT style then routes desktop pointer input through in cursor mode.
+            for (int i = 0; i < _frame.Length; i += 4)
+            {
+                _frame[i] = 1; _frame[i + 1] = 1; _frame[i + 2] = 1; _frame[i + 3] = 1;
+            }
+        }
+        else
+        {
+            EnsureCommittedCache();
+            Array.Copy(_committedPixels, _frame, _frame.Length);
 
-        var region = LiveRegion();
-        if (region.Width > 0 && region.Height > 0)
-            CompositeLiveRegion(region);
+            var region = LiveRegion();
+            if (region.Width > 0 && region.Height > 0)
+                CompositeLiveRegion(region);
+        }
 
         Marshal.Copy(_frame, 0, _window.PixelBuffer, _frame.Length);
         _window.Present();
@@ -154,12 +182,11 @@ public sealed class OverlayInkPresenter : IDisposable
 
         using (var session = _committedTarget.CreateDrawingSession())
         {
-            // Alpha 1, not 0: a per-pixel-alpha layered window is hit-tested by alpha, so a
-            // fully transparent surface lets every click fall through and the first stroke can
-            // never start. This mirrors the WPF original's Main_Grid Background="#01FFFFFF".
-            // Premultiplied, so the colour channels must not exceed the alpha.
+            // Alpha 1 (premultiplied RGB 1): keep the layered window hit-testable while
+            // remaining visually transparent. Stroke coordinates are DIPs; the target buffer
+            // is physical pixels, so scale the view transform by the monitor DPI.
             session.Clear(Windows.UI.Color.FromArgb(1, 1, 1, 1));
-            Scene.DrawCommitted(session, _controller);
+            Scene.DrawCommitted(session, _controller, OverlayTransform());
         }
         _committedPixels = _committedTarget.GetPixelBytes();
         GpuReadbackBytes += _committedPixels.Length;
@@ -178,7 +205,7 @@ public sealed class OverlayInkPresenter : IDisposable
         foreach (var s in _controller.ShapePreview) world = world.Union(s.Bounds);
         if (world.IsEmpty) return (0, 0, 0, 0);
 
-        var view = _controller.ViewTransform;
+        var view = OverlayTransform();
         float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
         foreach (var c in new[]
         {
@@ -208,9 +235,8 @@ public sealed class OverlayInkPresenter : IDisposable
             _liveHeight = region.Height;
         }
 
-        // Render as if on screen, then shift so the region's origin becomes (0,0).
-        var transform = _controller.ViewTransform
-                      * Matrix3x2.CreateTranslation(-region.X, -region.Y);
+        // Render world-DIP geometry into a physical-pixel subregion.
+        var transform = OverlayTransform() * Matrix3x2.CreateTranslation(-region.X, -region.Y);
 
         using (var session = _liveTarget.CreateDrawingSession())
         {
@@ -223,6 +249,9 @@ public sealed class OverlayInkPresenter : IDisposable
         PixelCompositing.BlendOver(_frame, _window.Width, _window.Height,
             region.X, region.Y, pixels, region.Width, region.Height);
     }
+
+    private Matrix3x2 OverlayTransform()
+        => _controller.ViewTransform * Matrix3x2.CreateScale(_window.DpiScale);
 
     public void Dispose()
     {

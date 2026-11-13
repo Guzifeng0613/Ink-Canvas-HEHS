@@ -1,22 +1,22 @@
-# 更新日志
+## 3.3.0 —— WPF 菜单、白板与 PPT 适配补齐（行为未验证）
 
-## 3.2.0 —— 1:1 移植补齐（**未验证**）
+### 新增与修正
+- 鼠标模式使用独立鼠标指针矢量图标，不再用锁图标；从颜色/形状菜单选笔、荧光笔或图形会回到标注模式。
+- 画笔、荧光笔、图形选择改为独立窗口，避免 WinUI Flyout 被短浮动工具栏裁切；调色盘恢复上游色序、主题色、笔宽和透明度范围。
+- 将上游 Segoe Fluent Icons 字体随应用打包，避免其他客户端缺少字体导致图标缺失。
+- 浮动工具栏拖动使用 Windows 原生 caption 拖动循环；尺寸、位置和菜单弹出位置按窗口 DPI 在 DIP/物理像素间换算。
+- DWM 统一设置窗口圆角与非客户区绘制策略，不再扩展玻璃帧覆盖 XAML 内容，避免白色圆角光晕。
+- 自交笔画轮廓用同向 capsule 段组成 Winding union；同一笔交叉处不再按 even-odd 规则挖空，半透明笔迹自身重叠只合成一次。
+- 白板重建 WPF 底部三栏工具、分页/删除确认、选择与变换、颜色/粗细/图形/橡皮、页级撤销、图像对象、`.icink` 页/整板保存加载；窗口化标题栏、全屏和 taskbar work area 适配。
+- PPT/WPS 接入 `PptInkSession`：COM 状态轮询、稳定 SlideID 分页墨迹缓存、前进/后退/退出/跳页、F5/Shift+F5、截图与墨迹存档、上次页/隐藏页/计时提示确认；恢复原设置控制的底部/侧边导航箭头与页码面板，页码按钮打开 PowerPoint 导航窗格并切到鼠标模式。
+- `Canvas.InkAlpha` 进入 `StrokeAttributes.HighlighterAlpha`，并被克隆、`.icink` 保存/加载和 `AppServices.ApplySettings` 应用。
 
-> 本版本按要求**跳过行为验证**：以下新增项没有单元测试，也没有实机验证，仅确认编译通过。
-> 对照与状态见 [docs/PORTING-NOTES.md](docs/PORTING-NOTES.md)。
-
-### 新增（1:1 移植）
-- 特殊屏触摸分档：四边红外（`IsQuadIR`，接触尺寸取宽高几何平均）、触摸倍数
-  （`TouchMultiplier`，特殊屏为 0 时禁用橡皮）、笔尖/手指分档的接触阈值、面积擦阈值倍数与橡皮尺寸系数。
-- 手势枢轴选项 `MatrixTransformCenterPoint`（画布中心 / 手势中心 / 选区中心）。
-- 文件日志 `LogHelper` 移植（`Log.txt`，同格式），受「启用日志」开关控制。
-- 主题判定 `GetMainWindowTheme` / `SetBoardTheme` 移植。
-- 放映中手指左右滑动翻页（原 `GestureOnly` 模式）。
-- 设置页新增「特殊屏 / 触摸标定」分组，暴露上述全部参数。
-
-### 刻意未移植
-- 原 `Main_Grid_TouchDown` 的 `inkCanvas.Opacity` 压暗/恢复未搬入 —— 那是笔锋闪烁的第二个来源，
-  照搬会把已修复的 bug 带回来。
+### 验证状态与差异
+- 按用户要求，**未运行单元测试、未启动应用、未在真实触摸屏/压感笔/PowerPoint/WPS 上做行为验证**；只做 Release solution 编译检查（0 warning / 0 error）。
+- 例外：自交笔画改动专门运行了 3 项纯几何回归测试（3/3 通过）；Win2D GPU 实际栅格化仍未验证。
+- 旧 WPF `.isf/.icstk/.icart` 不转换到 `.icink`；旧 PPT ISF 文件只检测，不导入、不删除。
+- 白板与 DWM 阴影/圆角为 WinUI 重建，不声称像素级一致；PPT/WPS COM 需在目标 Office/WPS 版本实机复核。
+- 对照清单：`docs/PORTING-NOTES.md`、`docs/menu-porting-notes.md`、`docs/board-porting-notes.md`、`docs/ppt-porting-notes.md`。
 
 ## 3.1.0
 

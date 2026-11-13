@@ -6,9 +6,9 @@ using System.Numerics;
 namespace InkCanvas.Ink.Rendering;
 
 /// <summary>
-/// Draws strokes with Win2D. Geometry comes from <see cref="StrokeGeometry"/>, i.e. purely
-/// from stored points and stored widths, so a committed stroke draws exactly as it did on
-/// the last live frame.
+/// Draws strokes with Win2D. Each stroke is a Winding-rule union of round-ended segment
+/// capsules. This prevents a single stroke that crosses itself from becoming an even/odd
+/// boolean hole, and ensures its translucent color is composited only once at overlaps.
 /// </summary>
 public sealed class StrokeRenderer : IDisposable
 {
@@ -39,20 +39,46 @@ public sealed class StrokeRenderer : IDisposable
         session.FillGeometry(geometry, winColor);
         session.Transform = previous;
 
-        // Dispose only geometries we own: neither already cached nor just stored.
         if (!fromCache && !storedInCache) geometry.Dispose();
     }
 
     private static CanvasGeometry BuildGeometry(CanvasDrawingSession session, InkStroke stroke)
     {
-        var outline = StrokeGeometry.BuildOutline(stroke);
-        if (outline.Length < 3) return null;
+        var contours = StrokeGeometry.BuildUnionContours(stroke);
+        if (contours.Length == 0) return null;
 
-        using var builder = new CanvasPathBuilder(session);
-        builder.BeginFigure(outline[0]);
-        for (int i = 1; i < outline.Length; i++) builder.AddLine(outline[i]);
-        builder.EndFigure(CanvasFigureLoop.Closed);
-        return CanvasGeometry.CreatePath(builder);
+        var regions = new List<CanvasGeometry>(contours.Length);
+        try
+        {
+            foreach (var outline in contours)
+            {
+                if (outline.Length < 3) continue;
+                using var builder = new CanvasPathBuilder(session);
+                builder.BeginFigure(outline[0]);
+                for (int i = 1; i < outline.Length; i++) builder.AddLine(outline[i]);
+                builder.EndFigure(CanvasFigureLoop.Closed);
+                regions.Add(CanvasGeometry.CreatePath(builder));
+            }
+
+            if (regions.Count == 0) return null;
+            if (regions.Count == 1)
+            {
+                var only = regions[0];
+                regions.Clear(); // transfer ownership to the caller
+                return only;
+            }
+
+            // All region contours are normalized to the same winding direction. Winding fill
+            // makes overlapping regions a union; Alternate/even-odd would punch holes where a
+            // centerline self-crosses. The group is filled once, so a highlighter does not gain
+            // opacity where one stroke overlaps itself.
+            return CanvasGeometry.CreateGroup(session, regions.ToArray(), CanvasFilledRegionDetermination.Winding);
+        }
+        finally
+        {
+            // CreateGroup owns a combined geometry, not the input geometries.
+            foreach (var region in regions) region.Dispose();
+        }
     }
 
     public void Invalidate(InkStroke stroke)

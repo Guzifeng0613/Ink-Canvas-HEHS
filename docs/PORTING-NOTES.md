@@ -1,13 +1,22 @@
 # 移植对照与验证状态
 
-> **验证状态声明**：本文件中标注「1:1 移植（未验证）」的部分，是按要求**跳过行为验证**完成的
-> —— 没有为它们编写单元测试，也没有在真实红外屏 / 压感笔 / 触摸屏上实机验证。
-> 仅确认**编译通过**。逻辑逐条对应原实现，但阈值手感与硬件相关行为仍需在实际希沃设备上复核。
->
-> 与之相对，标注「已验证」的部分有单元测试与运行时自检证据，见
-> [`superpowers/evidence/`](./superpowers/evidence/README.md)。
+## 3.3.0 新增移植（行为未验证）
 
-## 本轮 1:1 移植（未验证）
+按用户要求，本轮没有启动应用、没有接真实触摸屏/压感笔/PowerPoint/WPS；仅做 Release build compile-check。例外：为了修复同一笔自交镂空运行了 3 项纯几何回归测试（3/3 通过），但 Win2D 实际栅格化行为未测试。详细来源和差异见 `board-porting-notes.md`、`ppt-porting-notes.md`、`menu-porting-notes.md`。
+
+- 鼠标模式现在是独立鼠标指针矢量图标，不再用锁图标；选笔/荧光笔/图形会恢复标注模式。
+- 独立画笔/荧光笔/图形选择窗口，避免 WinUI Flyout 被浮动栏窗口边界裁切。
+- 恢复上游 Segoe Fluent Icons 字体文件，避免外部客户端字体缺失。
+- DPI：浮动栏按 `GetDpiForWindow` 换算 DIP/物理像素，窗口 DPI 变更后按当前位置重新布局；弹出菜单按锚点与监视器 DPI 夹取。
+- 拖动：浮动栏背景发 `WM_NCLBUTTONDOWN/HTCAPTION` 使用系统原生拖动循环，避免逐 pointer move 手动改 `AppWindow` 导致抖动。交互按钮通过 ancestor hit-test 排除，不应触发拖动。
+- 圆角/阴影：对窗口设置 `DWMWA_WINDOW_CORNER_PREFERENCE`，不再调用 `DwmExtendFrameIntoClientArea`，避免向不透明 XAML 内容扩展玻璃帧形成白圈。外观在目标 Windows 版本未验证。
+- 自交笔画：中心线每段转为同向 capsule contour，以 Win2D `Winding` geometry group 合并；同一笔自交不挖洞，半透明同一笔只做一次合成。新增 3 个 Core 几何单测，但按本轮指令未运行。
+- 白板重建底部三栏工具、页导航、元素图片、保存/加载与独立分页； `BoardWindow.CurrentPageChanged` 在 surface 重绑后发出。Shell 构造传 `new BoardWindow(Services, this)`，关闭回调恢复 overlay，并将浮动栏/色板重绑当前页 `InkController`。
+- PPT session 接入 `ShellController` UI dispatcher：按稳定 SlideID 缓存墨迹，切页时捕获/清空/恢复；显示开始/结束状态；底部/侧边面板与页码按钮依照设置独立显示；页码点击进鼠标模式并调用 COM SlideNavigation；隐藏页、计时与上次位置由确认对话框处理；截图回调同步采屏后异步写 PNG。
+- `InkAlpha` 保存于每条 `StrokeAttributes` 并随 `.icink` 往返；旧文件缺字段时使用 96 默认值。
+
+## 历史移植对照
+
 
 | 原实现 | 新位置 | 说明 |
 |---|---|---|

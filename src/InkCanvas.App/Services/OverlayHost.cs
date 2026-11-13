@@ -19,7 +19,8 @@ public sealed class OverlayHost : IDisposable
         Presenter = new OverlayInkPresenter(Window, controller);
         Hotkeys = new HotkeyService(Window.Handle);
         Controller = controller;
-        controller.ViewCenter = new System.Numerics.Vector2(screen.Width / 2f, screen.Height / 2f);
+        controller.ViewCenter = new System.Numerics.Vector2(
+            screen.Width / Window.DpiScale / 2f, screen.Height / Window.DpiScale / 2f);
 
         Window.HotkeyPressed += id => Hotkeys.Dispatch(id);
         Presenter.Attach();
@@ -36,7 +37,13 @@ public sealed class OverlayHost : IDisposable
     public bool ClickThrough
     {
         get => Window.ClickThrough;
-        set => Window.ClickThrough = value;
+        set => SetInteractionMode(value, inkVisible: !value);
+    }
+
+    public void SetInteractionMode(bool clickThrough, bool inkVisible)
+    {
+        Window.ClickThrough = clickThrough;
+        Presenter.InkVisible = inkVisible;
     }
 
     public void Show()
@@ -49,7 +56,8 @@ public sealed class OverlayHost : IDisposable
 
     /// <summary>Register the default hotkey set. Failures are non-fatal (key may be taken).</summary>
     public void RegisterHotkeys(Action undo, Action redo, Action togglePen, Action toggleEraser, Action clear,
-        Action togglePassThrough = null, Action toggleBoard = null)
+        Action togglePassThrough = null, Action toggleBoard = null,
+        Action pptNext = null, Action pptPrevious = null, Action pptExit = null)
     {
         Hotkeys.Register(HotkeyModifiers.Control, 0x5A /* Z */, undo);
         Hotkeys.Register(HotkeyModifiers.Control, 0x59 /* Y */, redo);
@@ -60,6 +68,9 @@ public sealed class OverlayHost : IDisposable
         // work even if the bar is unreachable.
         if (togglePassThrough is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x50 /* P */, togglePassThrough);
         if (toggleBoard is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x42 /* B */, toggleBoard);
+        if (pptNext is not null) Hotkeys.Register(HotkeyModifiers.None, 0x22 /* PageDown */, pptNext);
+        if (pptPrevious is not null) Hotkeys.Register(HotkeyModifiers.None, 0x21 /* PageUp */, pptPrevious);
+        if (pptExit is not null) Hotkeys.Register(HotkeyModifiers.None, 0x1B /* Escape */, pptExit);
     }
 
     public void Dispose()

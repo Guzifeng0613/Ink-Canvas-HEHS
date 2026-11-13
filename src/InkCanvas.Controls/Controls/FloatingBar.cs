@@ -1,4 +1,5 @@
 using InkCanvas.Controls.Animation;
+using InkCanvas.Core.Settings;
 using InkCanvas.Core.Shapes;
 using InkCanvas.Ink;
 using Microsoft.UI.Xaml;
@@ -17,12 +18,15 @@ public interface IShellActions
     void OpenLottery();
     void OpenReplay();
     void OpenGuide();
+    void OpenPenPalette(bool highlighter);
+    void OpenShapePicker();
     Task ScreenshotAsync();
     void ToggleFold();
     void ToggleClickThrough();
     void PptNext();
     void PptPrevious();
     void PptExit();
+    void PptOpenNavigation();
     void Exit();
 }
 
@@ -38,6 +42,9 @@ public sealed class FloatingBar : UserControl
     private readonly StackPanel _pptGroup = new() { Orientation = Orientation.Horizontal, Spacing = 2 };
     private TouchIconButton _penButton, _highlighterButton, _eraserButton, _selectButton, _shapeButton;
     private TouchIconButton _foldButton, _passThroughButton, _deleteSelectionButton;
+    private TouchIconButton _pptExitButton;
+    private bool _pptMode;
+    private InkController _controller;
     private bool _folded;
 
     public FloatingBar()
@@ -61,8 +68,10 @@ public sealed class FloatingBar : UserControl
             VerticalAlignment = VerticalAlignment.Stretch,
             Background = (Brush)Application.Current.Resources["IcSurfaceAltBrush"],
             BorderBrush = (Brush)Application.Current.Resources["IcStrokeBrush"],
-            BorderThickness = new Thickness(1),
-            CornerRadius = (CornerRadius)Application.Current.Resources["IcBarCorner"],
+            BorderThickness = new Thickness(0),
+            // Square: the host window's corners are rounded by DWM. A rounded content border
+            // inside an opaque rectangular window would leave white corner slivers.
+            CornerRadius = new CornerRadius(0),
             Padding = (Thickness)Application.Current.Resources["IcBarPadding"],
             Child = root,
         };
@@ -70,7 +79,27 @@ public sealed class FloatingBar : UserControl
         Loaded += (_, _) => Motion.PlayEntrance(this);
     }
 
-    public InkController Controller { get; set; }
+    public InkController Controller
+    {
+        get => _controller;
+        set
+        {
+            if (ReferenceEquals(_controller, value)) return;
+            if (_controller is not null) _controller.SelectionChanged -= OnControllerSelectionChanged;
+            _controller = value;
+            if (_controller is not null) _controller.SelectionChanged += OnControllerSelectionChanged;
+            RefreshSelection();
+            LayoutChanged?.Invoke();
+        }
+    }
+
+    public event Action LayoutChanged;
+
+    private void OnControllerSelectionChanged()
+    {
+        RefreshSelection();
+        LayoutChanged?.Invoke();
+    }
 
     public IShellActions Shell { get; set; }
 
@@ -186,17 +215,22 @@ public sealed class FloatingBar : UserControl
         _secondary.Children.Clear();
         _pptGroup.Children.Clear();
 
-        _penButton = Add(_primary, Glyphs.Pen, "画笔", () => SetTool(InkTool.Pen));
-        _highlighterButton = Add(_primary, Glyphs.Highlight, "荧光笔", () => SetTool(InkTool.Highlighter));
+        _penButton = Add(_primary, Glyphs.Pen, "画笔（点击打开颜色与粗细）", () =>
+        {
+            SetTool(InkTool.Pen);
+            Shell?.OpenPenPalette(false);
+        });
+        _highlighterButton = Add(_primary, Glyphs.Highlight, "荧光笔（点击打开颜色与粗细）", () =>
+        {
+            SetTool(InkTool.Highlighter);
+            Shell?.OpenPenPalette(true);
+        });
         _eraserButton = Add(_primary, Glyphs.Eraser, "橡皮擦", () => SetTool(InkTool.Eraser));
         _selectButton = Add(_primary, Glyphs.Select, "选择", () => SetTool(InkTool.Select));
         _deleteSelectionButton = Add(_primary, Glyphs.Delete, "删除选中墨迹", () => Controller?.DeleteSelection());
         _deleteSelectionButton.Visibility = Visibility.Collapsed;
-        _shapeButton = Add(_primary, Glyphs.Shapes, "图形", ShowShapeMenu);
+        _shapeButton = Add(_primary, Glyphs.Shapes, "图形", () => Shell?.OpenShapePicker());
         _shapeButton.IconFont = Glyphs.ShapesFont;
-
-        AttachPenPalette(_penButton);
-        AttachPenPalette(_highlighterButton);
 
         _primary.Children.Add(Separator());
         Add(_primary, Glyphs.Undo, "撤销", () => Controller?.Undo());
@@ -204,18 +238,17 @@ public sealed class FloatingBar : UserControl
         Add(_primary, Glyphs.Delete, "清空", () => Controller?.Clear());
 
         _primary.Children.Add(Separator());
-        Add(_pptGroup, Glyphs.ChevronLeft, "上一页", () => Shell?.PptPrevious());
-        Add(_pptGroup, Glyphs.ChevronRight, "下一页", () => Shell?.PptNext());
-        Add(_pptGroup, Glyphs.Close, "退出放映", () => Shell?.PptExit());
+        _pptExitButton = Add(_pptGroup, Glyphs.Close, "退出放映", () => Shell?.PptExit());
         _pptGroup.Visibility = Visibility.Collapsed;
         _primary.Children.Add(_pptGroup);
 
         Add(_primary, Glyphs.Board, "画板", () => Shell?.ToggleBoard());
-        _passThroughButton = Add(_primary, Glyphs.Unlock, "穿透模式（可点击下方窗口）", () =>
+        _passThroughButton = Add(_primary, Glyphs.Unlock, "当前：标注模式（可书写）— 点击进入鼠标模式，快捷键 Alt+P", () =>
         {
             Shell?.ToggleClickThrough();
             RefreshSelection();
         });
+        _passThroughButton.UseMousePointerIcon();
         _foldButton = Add(_primary, Glyphs.ChevronUp, "展开更多", ToggleFold);
 
         Add(_secondary, Glyphs.Stopwatch, "倒计时", () => Shell?.OpenTimer());
@@ -230,7 +263,11 @@ public sealed class FloatingBar : UserControl
     }
 
     public void SetPptModeVisible(bool visible)
-        => _pptGroup.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+    {
+        _pptMode = visible;
+        _pptGroup.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        LayoutChanged?.Invoke();
+    }
 
     private TouchIconButton Add(StackPanel host, string glyph, string tooltip, Action onClick)
     {
@@ -270,7 +307,9 @@ public sealed class FloatingBar : UserControl
         if (_passThroughButton is not null)
         {
             _passThroughButton.IsSelected = ClickThroughActive;
-            _passThroughButton.Glyph = ClickThroughActive ? Glyphs.Lock : Glyphs.Unlock;
+            ToolTipService.SetToolTip(_passThroughButton, ClickThroughActive
+                ? "当前：鼠标模式（点击穿透到下方程序）— 点击回到标注模式，快捷键 Alt+P"
+                : "当前：标注模式（可书写）— 点击进入鼠标模式，快捷键 Alt+P");
         }
     }
 
@@ -286,38 +325,14 @@ public sealed class FloatingBar : UserControl
 
     private void AttachPenPalette(TouchIconButton button)
     {
-        var palette = new PenPalette { Controller = Controller };
-        var flyout = new Flyout { Placement = FlyoutPlacementMode.Top };
-        palette.RequestClose = () => flyout.Hide();
-        flyout.Content = palette;
-        button.Flyout = flyout;
-        flyout.Opening += (_, _) =>
-        {
-            palette.Controller = Controller;
-            palette.RefreshFromController();
-        };
+        // Intentionally unused: WinUI 3 flyouts render inside the host window, and the bar
+        // window is only ~70px tall, so a palette flyout gets clipped. The shell opens the
+        // palette in its own window instead (IShellActions.OpenPenPalette).
+        _ = button;
     }
 
-    private void ShowShapeMenu()
-    {
-        if (Controller is null) return;
-        var menu = new MenuFlyout();
-        foreach (var (kind, label) in ShapeCatalog)
-        {
-            var item = new MenuFlyoutItem { Text = label };
-            var captured = kind;
-            item.Click += (_, _) =>
-            {
-                Controller.ShapeKind = captured;
-                Controller.Tool = InkTool.Shape;
-                RefreshSelection();
-            };
-            menu.Items.Add(item);
-        }
-        menu.ShowAt(_shapeButton);
-    }
-
-    private static readonly (ShapeKind, string)[] ShapeCatalog =
+    /// <summary>Shape catalogue shared with the shape picker window.</summary>
+    public static readonly (ShapeKind, string)[] ShapeCatalog =
     {
         (ShapeKind.Line, "直线"),
         (ShapeKind.DashedLine, "虚线"),

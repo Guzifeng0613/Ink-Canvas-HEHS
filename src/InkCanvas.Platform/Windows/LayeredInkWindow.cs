@@ -89,6 +89,9 @@ public sealed class LayeredInkWindow : IDisposable
         if (_hwnd == IntPtr.Zero)
             throw new InvalidOperationException($"CreateWindowEx failed: {Marshal.GetLastWin32Error()}");
 
+        uint dpi = NativeMethods.GetDpiForWindow(_hwnd);
+        DpiScale = dpi == 0 ? 1.0f : dpi / 96.0f;
+
         IntPtr screen = NativeMethods.GetDC(IntPtr.Zero);
         _memDc = NativeMethods.CreateCompatibleDC(screen);
         var bi = new NativeMethods.BITMAPINFO
@@ -112,6 +115,9 @@ public sealed class LayeredInkWindow : IDisposable
     public int Y { get; private set; }
     public int Width { get; private set; }
     public int Height { get; private set; }
+
+    /// <summary>Logical DIPs per physical screen pixel on the monitor this overlay covers.</summary>
+    public float DpiScale { get; } = 1f;
 
     /// <summary>Writable premultiplied-BGRA surface, <c>Width*Height*4</c> bytes, top-down.</summary>
     public IntPtr PixelBuffer => _bits;
@@ -241,7 +247,7 @@ public sealed class LayeredInkWindow : IDisposable
         int raw = lParam.ToInt32();
         short x = (short)(raw & 0xFFFF);
         short y = (short)((raw >> 16) & 0xFFFF);
-        handler(new OverlayPointer(1, x, y, 0.5f, 0, 0, OverlayPointerKind.Mouse, (uint)Environment.TickCount));
+        handler(new OverlayPointer(1, x / DpiScale, y / DpiScale, 0.5f, 0, 0, OverlayPointerKind.Mouse, (uint)Environment.TickCount));
     }
 
     private void Raise(Action<OverlayPointer> handler, IntPtr wParam)
@@ -267,14 +273,15 @@ public sealed class LayeredInkWindow : IDisposable
             kind = OverlayPointerKind.Touch;
             if (NativeMethods.GetPointerTouchInfo(id, out var touch))
             {
-                cw = touch.rcContact.Right - touch.rcContact.Left;
-                ch = touch.rcContact.Bottom - touch.rcContact.Top;
+                cw = (touch.rcContact.Right - touch.rcContact.Left) / DpiScale;
+                ch = (touch.rcContact.Bottom - touch.rcContact.Top) / DpiScale;
                 pressure = touch.pressure == 0 ? 0.5f : Math.Clamp(touch.pressure / 1024f, 0f, 1f);
             }
         }
 
         var pt = info.ptPixelLocation;
-        handler(new OverlayPointer(id, pt.X - X, pt.Y - Y, pressure, cw, ch, kind, info.dwTime));
+        handler(new OverlayPointer(id, (pt.X - X) / DpiScale, (pt.Y - Y) / DpiScale,
+            pressure, cw, ch, kind, info.dwTime));
     }
 
     public void Dispose()

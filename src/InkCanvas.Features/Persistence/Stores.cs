@@ -79,6 +79,7 @@ public static class InkFileStore
         public uint Color { get; set; }
         public float Width { get; set; }
         public bool Highlighter { get; set; }
+        public byte HighlighterAlpha { get; set; } = 96;
         public int Taper { get; set; }
         public bool Shape { get; set; }
         /// <summary>Rows of [x, y, pressure, width, timeMs].</summary>
@@ -95,6 +96,7 @@ public static class InkFileStore
                 Color = s.Attributes.Color.PackedArgb,
                 Width = s.Attributes.BaseWidth,
                 Highlighter = s.Attributes.IsHighlighter,
+                HighlighterAlpha = s.Attributes.HighlighterAlpha,
                 Taper = (int)s.TaperKind,
                 Shape = s.IsRecognizedShape,
             };
@@ -122,6 +124,7 @@ public static class InkFileStore
                 Color = InkColor.FromPackedArgb(sm.Color),
                 BaseWidth = sm.Width,
                 IsHighlighter = sm.Highlighter,
+                HighlighterAlpha = sm.HighlighterAlpha,
                 TaperKind = (TaperKind)sm.Taper,
             };
             var stroke = new InkStroke(attrs) { IsRecognizedShape = sm.Shape };

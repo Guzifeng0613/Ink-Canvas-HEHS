@@ -2,6 +2,7 @@ using InkCanvas.Controls.Animation;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Shapes;
 
 namespace InkCanvas.Controls.Controls;
 
@@ -20,6 +21,8 @@ public sealed class TouchIconButton : Button
         new PropertyMetadata("", OnGlyphChanged));
 
     private readonly FontIcon _icon;
+    private Grid _customIcon;
+    private Microsoft.UI.Xaml.Shapes.Path _customIconOutline;
 
     public TouchIconButton()
     {
@@ -34,7 +37,7 @@ public sealed class TouchIconButton : Button
 
         _icon = new FontIcon
         {
-            FontFamily = new FontFamily("Segoe Fluent Icons"),
+            FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
             FontSize = 20,
             // Apply the current value explicitly: assigning a value equal to the DP default
             // does not raise the change callback, which would leave the icon blank.
@@ -75,6 +78,46 @@ public sealed class TouchIconButton : Button
         set => _icon.FontFamily = new FontFamily(value);
     }
 
+    /// <summary>Use a native vector mouse-pointer pictogram instead of a font glyph.</summary>
+    public void UseMousePointerIcon()
+    {
+        var figure = new PathFigure
+        {
+            StartPoint = new Windows.Foundation.Point(3, 2),
+            IsClosed = true,
+            IsFilled = true,
+        };
+        figure.Segments.Add(new PolyLineSegment
+        {
+            Points = new PointCollection
+            {
+                new Windows.Foundation.Point(3, 22),
+                new Windows.Foundation.Point(8, 17),
+                new Windows.Foundation.Point(12, 23),
+                new Windows.Foundation.Point(15, 21),
+                new Windows.Foundation.Point(11, 15),
+                new Windows.Foundation.Point(19, 15),
+                new Windows.Foundation.Point(3, 2),
+            },
+        });
+        var geometry = new PathGeometry { Figures = new PathFigureCollection { figure } };
+        _customIconOutline = new Microsoft.UI.Xaml.Shapes.Path
+        {
+            Data = geometry,
+            Fill = new SolidColorBrush(Microsoft.UI.Colors.White),
+            StrokeThickness = 1.6,
+            StrokeLineJoin = PenLineJoin.Round,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Width = 24,
+            Height = 24,
+        };
+        _customIcon = new Grid { Width = 24, Height = 24 };
+        _customIcon.Children.Add(_customIconOutline);
+        Content = _customIcon;
+        ApplyVisualState();
+    }
+
     private static void OnIsSelectedChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         => ((TouchIconButton)d).ApplyVisualState();
 
@@ -93,5 +136,9 @@ public sealed class TouchIconButton : Button
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             _icon.Foreground = (Brush)Microsoft.UI.Xaml.Application.Current.Resources["IcTextPrimaryBrush"];
         }
+        if (_customIconOutline is not null)
+            _customIconOutline.Stroke = IsSelected
+                ? (Brush)Microsoft.UI.Xaml.Application.Current.Resources["IcAccentBrush"]
+                : (Brush)Microsoft.UI.Xaml.Application.Current.Resources["IcTextPrimaryBrush"];
     }
 }

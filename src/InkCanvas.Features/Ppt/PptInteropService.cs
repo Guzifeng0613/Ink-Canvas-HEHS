@@ -2,137 +2,487 @@ using System.Runtime.InteropServices;
 
 namespace InkCanvas.Features.Ppt;
 
-/// <summary>
-/// PowerPoint / WPS Presentation control through COM.
-/// <para>
-/// Uses <c>dynamic</c> late binding instead of the Office PIAs the WPF build referenced, so
-/// there is no interop assembly to ship and no Office version lock. <c>Marshal.GetActiveObject</c>
-/// does not exist on modern .NET, so the running-object-table lookup is done via P/Invoke.
-/// </para>
-/// </summary>
-public sealed class PptInteropService
+/// <summary>Late-bound PowerPoint/WPS COM adapter. Construct and use on one WinUI STA thread.</summary>
+/// <remarks>No timers, worker threads, UI objects or event sinks are owned here. The UI host
+/// calls <see cref="Poll"/> periodically from its dispatcher; returned snapshots contain only managed data.</remarks>
+public sealed class PptInteropService : IDisposable
 {
-    [DllImport("ole32.dll")] private static extern int CLSIDFromProgID([MarshalAs(UnmanagedType.LPWStr)] string progId, out Guid clsid);
-    [DllImport("oleaut32.dll")] private static extern int GetActiveObject(ref Guid clsid, IntPtr reserved, out IntPtr punk);
+    [DllImport("ole32.dll", CharSet = CharSet.Unicode, PreserveSig = true)]
+    private static extern int CLSIDFromProgID(string progId, out Guid clsid);
+    [DllImport("oleaut32.dll", PreserveSig = true)]
+    private static extern int GetActiveObject(ref Guid clsid, IntPtr reserved, out IntPtr punk);
 
+    private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
+    private readonly Guid _attachmentId = Guid.NewGuid();
     private object _app;
     private string _progId;
+    private PptSnapshot _snapshot = PptSnapshot.Detached;
+    private bool _disposed;
 
-    /// <summary>ProgIDs tried in order; WPS Presentation registers KWPP.Application.</summary>
     public string[] ProgIds { get; set; } = { "PowerPoint.Application", "KWPP.Application" };
-
-    public bool IsAttached => _app is not null;
-
-    public string AttachedProgId => _progId;
-
     public bool AllowWps { get; set; } = true;
+    public bool IsAttached => _app is not null;
+    public string AttachedProgId => _progId;
+    public PptSnapshot Snapshot { get { VerifyThread(); return _snapshot; } }
+    public PptFailure LastFailure { get; private set; }
+    public event Action<PptSnapshot> SnapshotChanged;
+    public event Action<PptFailure> Failed;
 
-    /// <summary>Try to bind to a running presentation app. Never throws.</summary>
+    /// <summary>Compatibility surface for the existing shell polling loop.</summary>
+    public bool PollSlideShowState(ref bool lastKnown)
+    {
+        PptSnapshot snapshot = Poll();
+        bool current = snapshot.IsSlideShowRunning;
+        if (current == lastKnown) return false;
+        lastKnown = current;
+        return true;
+    }
+
+    public bool IsSlideShowRunning() => Poll().IsSlideShowRunning;
+    public int CurrentSlideIndex()
+    {
+        PptSnapshot snapshot = Poll();
+        return snapshot.IsSlideShowRunning ? snapshot.ShowPosition : 0;
+    }
+    public int SlideCount()
+    {
+        PptSnapshot snapshot = Poll();
+        return snapshot.IsSlideShowRunning ? snapshot.Presentation?.SlideCount ?? 0 : 0;
+    }
+
     public bool TryAttach()
     {
-        foreach (var progId in ProgIds)
+        VerifyThread();
+        if (_app is not null) { Poll(); return true; }
+        if (Thread.CurrentThread.GetApartmentState() != ApartmentState.STA)
         {
-            if (!AllowWps && progId.StartsWith("KWPP", StringComparison.OrdinalIgnoreCase)) continue;
+            Fail("Attach", "COM attachment must run on the owning STA/UI thread.", unchecked((int)0x8001010E));
+            return false;
+        }
+        foreach (string progId in ProgIds ?? Array.Empty<string>())
+        {
+            if (string.IsNullOrWhiteSpace(progId) || (!AllowWps && progId.StartsWith("KWPP", StringComparison.OrdinalIgnoreCase))) continue;
+            IntPtr punk = IntPtr.Zero;
             try
             {
-                if (CLSIDFromProgID(progId, out var clsid) != 0) continue;
-                if (GetActiveObject(ref clsid, IntPtr.Zero, out IntPtr punk) != 0 || punk == IntPtr.Zero) continue;
-                var obj = Marshal.GetObjectForIUnknown(punk);
-                Marshal.Release(punk);
-                _app = obj;
+                if (CLSIDFromProgID(progId, out Guid clsid) != 0) continue;
+                if (GetActiveObject(ref clsid, IntPtr.Zero, out punk) != 0 || punk == IntPtr.Zero) continue;
+                object app = Marshal.GetObjectForIUnknown(punk);
+                ReleasePointer(punk);
+                punk = IntPtr.Zero;
+                _app = app;
                 _progId = progId;
-                return true;
+                LastFailure = null;
+                Poll();
+                if (_app is not null) return true;
             }
-            catch
+            catch (Exception ex)
             {
-                // Not running, or not registered — try the next candidate.
+                ReleasePointer(punk);
+                Fail("Attach", ex.Message, Marshal.GetHRForException(ex));
             }
         }
-        _app = null;
-        _progId = null;
+        Publish(PptSnapshot.Detached);
         return false;
+    }
+
+    /// <summary>Refreshes presentation, show and active-slide state; call on the owning UI STA.</summary>
+    public PptSnapshot Poll()
+    {
+        VerifyThread();
+        if (_app is null) return Publish(PptSnapshot.Detached);
+        try
+        {
+            var result = CaptureSnapshot();
+            LastFailure = null;
+            return Publish(result);
+        }
+        catch (Exception ex)
+        {
+            int hr = Marshal.GetHRForException(ex);
+            Fail("Poll", ex.Message, hr);
+            if (IsDisconnectedError(hr))
+            {
+                ReleaseComObject(_app);
+                _app = null;
+                _progId = null;
+                return Publish(PptSnapshot.Detached);
+            }
+            return _snapshot;
+        }
+    }
+
+    public PptPresentationDetails GetPresentationDetails()
+    {
+        VerifyThread();
+        if (_app is null || !_snapshot.IsAttached) return null;
+        using var scope = new ComScope();
+        try
+        {
+            dynamic app = _app;
+            object p = _snapshot.IsSlideShowRunning ? GetShowPresentation(scope, app) : GetActivePresentation(scope, app);
+            if (p is null) return null;
+            dynamic presentation = p;
+            dynamic slides = scope.Own((object)presentation.Slides);
+            var list = new List<PptSlideInfo>();
+            for (int index = 1; index <= (int)slides.Count; index++)
+            {
+                dynamic slide = scope.Own((object)slides[index]);
+                int id = (int)slide.SlideID;
+                dynamic transition = SafeCom(scope, () => (object)slide.SlideShowTransition);
+                list.Add(new PptSlideInfo(id, index, SafeString(() => (string)slide.Name),
+                    transition is null ? null : SafeTriState(() => (int)transition.Hidden),
+                    transition is null ? null : SafeTriState(() => (int)transition.AdvanceOnTime),
+                    transition is null ? null : SafeDouble(() => (double)transition.AdvanceTime)));
+            }
+            dynamic settings = scope.Own((object)presentation.SlideShowSettings);
+            return new PptPresentationDetails(_snapshot.Presentation, list,
+                SafeInt(() => (int)settings.AdvanceMode));
+        }
+        catch (Exception ex) { Fail("Read presentation details", ex.Message, Marshal.GetHRForException(ex)); return null; }
+    }
+
+    public bool Next() => InvokeShow("Next", view => view.Next(), activateWindow: true);
+    public bool Previous() => InvokeShow("Previous", view => view.Previous(), activateWindow: true);
+    public bool ExitSlideShow() => InvokeShow("Exit slideshow", view => view.Exit());
+
+    /// <summary>Show PowerPoint's built-in slide navigation pane, as the original page-number control did.</summary>
+    public bool ShowSlideNavigationPane()
+        => InvokeShow("Show slide navigation pane", view => view.SlideNavigation.Visible = true, activateWindow: true);
+
+    /// <summary>Navigate by one-based presentation slide index, not SlideID/show position.</summary>
+    public bool GoToSlide(int slideIndex)
+    {
+        VerifyThread();
+        if (slideIndex < 1 || _app is null) return false;
+        using var scope = new ComScope();
+        try
+        {
+            dynamic app = _app;
+            if (_snapshot.IsSlideShowRunning)
+            {
+                dynamic window = GetShowWindow(scope, app);
+                if (window is null) return false;
+                dynamic view = scope.Own((object)window.View);
+                view.GotoSlide(slideIndex);
+            }
+            else
+            {
+                dynamic window = scope.Own((object)app.ActiveWindow);
+                dynamic view = scope.Own((object)window.View);
+                view.GotoSlide(slideIndex);
+            }
+            LastFailure = null;
+            return true;
+        }
+        catch (Exception ex) { Fail("Go to slide", ex.Message, Marshal.GetHRForException(ex)); return false; }
+    }
+
+    /// <summary>F5/settings, beginning, or Shift+F5/current; restores temporary show-range mutations.</summary>
+    public bool RunSlideShow(PptSlideShowStart start = PptSlideShowStart.PresentationSettings)
+    {
+        VerifyThread();
+        if (_app is null) return false;
+        using var scope = new ComScope();
+        try
+        {
+            dynamic app = _app;
+            object p = GetActivePresentation(scope, app);
+            if (p is null) return false;
+            dynamic presentation = p;
+            dynamic settings = scope.Own((object)presentation.SlideShowSettings);
+            if (start == PptSlideShowStart.FromCurrentSlide && TryRunCurrentSlideCommand(scope, app))
+            {
+                LastFailure = null;
+                return true;
+            }
+            if (start == PptSlideShowStart.PresentationSettings)
+            {
+                settings.Run();
+            }
+            else
+            {
+                int oldRange = (int)settings.RangeType;
+                int oldStart = (int)settings.StartingSlide;
+                int oldEnd = (int)settings.EndingSlide;
+                try
+                {
+                    if (start == PptSlideShowStart.FromBeginning)
+                    {
+                        settings.RangeType = 1; // ppShowAll (F5)
+                    }
+                    else
+                    {
+                        int current = GetEditingSlideIndex(scope, app);
+                        if (current < 1) return false;
+                        dynamic slides = scope.Own((object)presentation.Slides);
+                        settings.RangeType = 2; // ppShowSlideRange (WPS fallback for Shift+F5)
+                        settings.StartingSlide = current;
+                        settings.EndingSlide = (int)slides.Count;
+                    }
+                    settings.Run();
+                }
+                finally
+                {
+                    settings.RangeType = oldRange;
+                    settings.StartingSlide = oldStart;
+                    settings.EndingSlide = oldEnd;
+                }
+            }
+            LastFailure = null;
+            return true;
+        }
+        catch (Exception ex) { Fail("Run slideshow", ex.Message, Marshal.GetHRForException(ex)); return false; }
+    }
+
+    /// <summary>Reveal hidden slides, matching the positive action of the legacy prompt.</summary>
+    public bool RestoreHiddenSlides()
+    {
+        VerifyThread();
+        using var scope = new ComScope();
+        try
+        {
+            if (_app is null) return false;
+            dynamic app = _app;
+            object p = _snapshot.IsSlideShowRunning ? GetShowPresentation(scope, app) : GetActivePresentation(scope, app);
+            if (p is null) return false;
+            dynamic slides = scope.Own((object)((dynamic)p).Slides);
+            for (int i = 1; i <= (int)slides.Count; i++)
+            {
+                dynamic slide = scope.Own((object)slides[i]);
+                dynamic transition = scope.Own((object)slide.SlideShowTransition);
+                if ((int)transition.Hidden == -1) transition.Hidden = 0;
+            }
+            LastFailure = null;
+            return true;
+        }
+        catch (Exception ex) { Fail("Restore hidden slides", ex.Message, Marshal.GetHRForException(ex)); return false; }
+    }
+
+    /// <summary>Set manual advance, matching the positive action of the legacy timing prompt.</summary>
+    public bool DisableSlideTimings()
+    {
+        VerifyThread();
+        using var scope = new ComScope();
+        try
+        {
+            if (_app is null) return false;
+            dynamic app = _app;
+            object p = _snapshot.IsSlideShowRunning ? GetShowPresentation(scope, app) : GetActivePresentation(scope, app);
+            if (p is null) return false;
+            dynamic settings = scope.Own((object)((dynamic)p).SlideShowSettings);
+            settings.AdvanceMode = 1; // ppSlideShowManualAdvance
+            LastFailure = null;
+            return true;
+        }
+        catch (Exception ex) { Fail("Disable slide timings", ex.Message, Marshal.GetHRForException(ex)); return false; }
     }
 
     public void Detach()
     {
+        VerifyThread();
+        ReleaseComObject(_app);
         _app = null;
         _progId = null;
+        LastFailure = null;
+        Publish(PptSnapshot.Detached);
     }
 
-    private dynamic App => _app;
-
-    /// <summary>True when a slideshow is currently running.</summary>
-    public bool IsSlideShowRunning()
+    public void Dispose()
     {
-        if (!IsAttached) return false;
-        try
+        if (_disposed) return;
+        VerifyThread();
+        Detach();
+        _disposed = true;
+    }
+
+    private PptSnapshot CaptureSnapshot()
+    {
+        using var scope = new ComScope();
+        dynamic app = _app;
+        object showWindow = GetShowWindow(scope, app);
+        bool inShow = showWindow is not null;
+        object p = inShow ? GetPresentation(scope, (dynamic)showWindow) : GetActivePresentation(scope, app);
+        if (p is null) return PptSnapshot.Detached;
+        dynamic presentation = p;
+        dynamic slides = scope.Own((object)presentation.Slides);
+        int count = (int)slides.Count;
+        string name = SafeString(() => (string)presentation.Name) ?? string.Empty;
+        string fullName = SafeString(() => (string)presentation.FullName) ?? string.Empty;
+        bool hasPath = !string.IsNullOrWhiteSpace(SafeString(() => (string)presentation.Path));
+        dynamic pageSetup = scope.Own((object)presentation.PageSetup);
+        double width = SafeDouble(() => (double)pageSetup.SlideWidth) ?? 0;
+        double height = SafeDouble(() => (double)pageSetup.SlideHeight) ?? 0;
+        IntPtr punk = Marshal.GetIUnknownForObject(p);
+        string identity;
+        try { identity = $"{_attachmentId:N}:{_progId}:{punk.ToInt64():X}"; }
+        finally { Marshal.Release(punk); }
+        var info = new PptPresentationInfo(identity, name, fullName, hasPath, count, width, height, _progId);
+        PptSlideInfo current = null;
+        nint hwnd = 0;
+        int showPosition = 0;
+        int? showState = null;
+        if (inShow)
         {
-            var windows = App.SlideShowWindows;
-            return windows is not null && (int)windows.Count > 0;
+            dynamic window = showWindow;
+            hwnd = SafeNint(() => (nint)(long)window.HWND) ?? 0;
+            dynamic view = scope.Own((object)window.View);
+            showPosition = SafeInt(() => (int)view.CurrentShowPosition) ?? 0;
+            showState = SafeInt(() => (int)view.State);
+            dynamic slide = SafeCom(scope, () => (object)view.Slide);
+            if (slide is not null) current = BuildSlideInfo(scope, slides, slide, (int)slide.SlideID, 0);
         }
-        catch { return false; }
-    }
-
-    public bool Next()
-    {
-        try
+        else
         {
-            if (!IsSlideShowRunning()) return false;
-            App.SlideShowWindows[1].View.Next();
-            return true;
+            dynamic window = SafeCom(scope, () => (object)app.ActiveWindow);
+            if (window is not null)
+            {
+                dynamic view = SafeCom(scope, () => (object)window.View);
+                dynamic slide = view is null ? null : GetEditingSlide(scope, window, view);
+                if (slide is not null)
+                    current = BuildSlideInfo(scope, slides, slide, SafeInt(() => (int)slide.SlideID) ?? 0,
+                        SafeInt(() => (int)slide.SlideIndex) ?? 0);
+                hwnd = SafeNint(() => (nint)(long)window.HWND) ?? 0;
+            }
         }
-        catch { return false; }
+        return new PptSnapshot
+        {
+            State = inShow ? PptConnectionState.SlideShow : PptConnectionState.Editing,
+            Presentation = info, Slide = current, WindowHandle = hwnd, ShowPosition = showPosition, ShowState = showState,
+        };
     }
 
-    public bool Previous()
+    private static PptSlideInfo BuildSlideInfo(ComScope scope, dynamic slides, dynamic slide, int slideId, int indexHint)
     {
-        try
+        int index = indexHint;
+        if (index < 1)
         {
-            if (!IsSlideShowRunning()) return false;
-            App.SlideShowWindows[1].View.Previous();
-            return true;
+            for (int i = 1; i <= (int)slides.Count; i++)
+            {
+                dynamic candidate = scope.Own((object)slides[i]);
+                if ((int)candidate.SlideID == slideId) { index = i; break; }
+            }
         }
-        catch { return false; }
+        dynamic transition = SafeCom(scope, () => (object)slide.SlideShowTransition);
+        return new PptSlideInfo(slideId, index, SafeString(() => (string)slide.Name),
+            transition is null ? null : SafeTriState(() => (int)transition.Hidden),
+            transition is null ? null : SafeTriState(() => (int)transition.AdvanceOnTime),
+            transition is null ? null : SafeDouble(() => (double)transition.AdvanceTime));
     }
 
-    public bool ExitSlideShow()
+    private static object GetShowWindow(ComScope scope, dynamic app)
     {
         try
         {
-            if (!IsSlideShowRunning()) return false;
-            App.SlideShowWindows[1].Exit();
-            return true;
+            dynamic windows = scope.Own((object)app.SlideShowWindows);
+            return (int)windows.Count > 0 ? scope.Own((object)windows[1]) : null;
         }
-        catch { return false; }
+        catch { return null; }
     }
-
-    /// <summary>Current slide number within the running slideshow, or 0 when unavailable.</summary>
-    public int CurrentSlideIndex()
+    private static object GetShowPresentation(ComScope scope, dynamic app)
+    {
+        object window = GetShowWindow(scope, app);
+        return window is null ? null : GetPresentation(scope, (dynamic)window);
+    }
+    private static object GetPresentation(ComScope scope, dynamic window)
+    {
+        try { return scope.Own((object)window.Presentation); } catch { return null; }
+    }
+    private static object GetActivePresentation(ComScope scope, dynamic app)
+    {
+        try { return scope.Own((object)app.ActivePresentation); } catch { return null; }
+    }
+    private static int GetEditingSlideIndex(ComScope scope, dynamic app)
     {
         try
         {
-            if (!IsSlideShowRunning()) return 0;
-            return (int)App.SlideShowWindows[1].View.CurrentShowPosition;
+            dynamic window = scope.Own((object)app.ActiveWindow);
+            dynamic view = scope.Own((object)window.View);
+            dynamic slide = GetEditingSlide(scope, window, view);
+            return slide is null ? 0 : (int)slide.SlideIndex;
         }
         catch { return 0; }
     }
-
-    public int SlideCount()
+    private static object GetEditingSlide(ComScope scope, dynamic window, dynamic view)
     {
+        object slide = SafeCom(scope, () => (object)view.Slide);
+        if (slide is not null) return slide;
         try
         {
-            if (!IsSlideShowRunning()) return 0;
-            return (int)App.SlideShowWindows[1].Presentation.Slides.Count;
+            dynamic selection = scope.Own((object)window.Selection);
+            dynamic range = scope.Own((object)selection.SlideRange);
+            if ((int)range.Count < 1) return null;
+            return scope.Own((object)range[1]);
         }
-        catch { return 0; }
+        catch { return null; }
+    }
+    private static bool TryRunCurrentSlideCommand(ComScope scope, dynamic app)
+    {
+        try { dynamic bars = scope.Own((object)app.CommandBars); bars.ExecuteMso("SlideShowFromCurrent"); return true; }
+        catch { return false; }
     }
 
-    /// <summary>Polls for slideshow start/stop so the shell can switch modes.</summary>
-    public bool PollSlideShowState(ref bool lastKnown)
+    private bool InvokeShow(string operation, Action<dynamic> action, bool activateWindow = false)
     {
-        bool now = IsSlideShowRunning();
-        if (now == lastKnown) return false;
-        lastKnown = now;
-        return true;
+        VerifyThread();
+        using var scope = new ComScope();
+        try
+        {
+            if (_app is null) return false;
+            dynamic app = _app;
+            dynamic window = GetShowWindow(scope, app);
+            if (window is null) return false;
+            if (activateWindow) { try { window.Activate(); } catch { } }
+            dynamic view = scope.Own((object)window.View);
+            action(view);
+            LastFailure = null;
+            return true;
+        }
+        catch (Exception ex) { Fail(operation, ex.Message, Marshal.GetHRForException(ex)); return false; }
+    }
+
+    private PptSnapshot Publish(PptSnapshot snapshot)
+    {
+        if (snapshot != _snapshot)
+        {
+            _snapshot = snapshot;
+            SnapshotChanged?.Invoke(snapshot);
+        }
+        else _snapshot = snapshot;
+        return snapshot;
+    }
+    private void Fail(string operation, string message, int hr)
+    {
+        var failure = new PptFailure(operation, message, hr);
+        LastFailure = failure;
+        Failed?.Invoke(failure);
+    }
+    private void VerifyThread()
+    {
+        if (Environment.CurrentManagedThreadId != _ownerThreadId)
+            throw new InvalidOperationException("PptInteropService must only be used on the thread that created it.");
+        if (_disposed) throw new ObjectDisposedException(nameof(PptInteropService));
+    }
+    private static object SafeCom(ComScope scope, Func<object> get) { try { return scope.Own(get()); } catch { return null; } }
+    private static string SafeString(Func<string> get) { try { return get(); } catch { return null; } }
+    private static int? SafeInt(Func<int> get) { try { return get(); } catch { return null; } }
+    private static double? SafeDouble(Func<double> get) { try { return get(); } catch { return null; } }
+    private static nint? SafeNint(Func<nint> get) { try { return get(); } catch { return null; } }
+    private static bool? SafeTriState(Func<int> get) { try { return get() == -1; } catch { return null; } }
+    private static bool IsDisconnectedError(int hr) =>
+        hr == unchecked((int)0x80010108) || hr == unchecked((int)0x800401FD) ||
+        hr == unchecked((int)0x800706BA) || hr == unchecked((int)0x80010007) ||
+        hr == unchecked((int)0x80010012);
+
+    private static void ReleasePointer(IntPtr pointer) { if (pointer != IntPtr.Zero) Marshal.Release(pointer); }
+    private static void ReleaseComObject(object value)
+    {
+        if (value is not null && Marshal.IsComObject(value)) { try { Marshal.ReleaseComObject(value); } catch { } }
+    }
+    private sealed class ComScope : IDisposable
+    {
+        private readonly List<object> _objects = new();
+        public object Own(object value) { if (value is not null && Marshal.IsComObject(value)) _objects.Add(value); return value; }
+        public void Dispose() { for (int i = _objects.Count - 1; i >= 0; i--) ReleaseComObject(_objects[i]); _objects.Clear(); }
     }
 }

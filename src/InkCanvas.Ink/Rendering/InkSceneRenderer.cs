@@ -21,15 +21,15 @@ public sealed class InkSceneRenderer : IDisposable
     public bool ShowSelectionOutline { get; set; } = true;
 
     /// <summary>Everything that only changes when the document, selection or view changes.</summary>
-    public void DrawCommitted(CanvasDrawingSession session, InkController controller)
+    public void DrawCommitted(CanvasDrawingSession session, InkController controller, Matrix3x2? transformOverride = null)
     {
         if (controller is null) return;
-        var view = controller.ViewTransform;
+        var view = transformOverride ?? controller.ViewTransform;
         foreach (var stroke in controller.Document.Strokes)
             Strokes.Draw(session, stroke, view);
 
         if (ShowSelectionOutline && controller.Selection.Count > 0)
-            DrawSelection(session, controller);
+            DrawSelection(session, controller, view);
     }
 
     /// <summary>The in-progress stroke and shape preview: the only part that moves every frame.</summary>
@@ -53,12 +53,11 @@ public sealed class InkSceneRenderer : IDisposable
         DrawLive(session, controller);
     }
 
-    private static void DrawSelection(CanvasDrawingSession session, InkController controller)
+    private static void DrawSelection(CanvasDrawingSession session, InkController controller, Matrix3x2 view)
     {
         var bounds = controller.SelectionBounds;
         if (bounds.IsEmpty) return;
 
-        var view = controller.ViewTransform;
         var corners = new[]
         {
             Vector2.Transform(new Vector2(bounds.Left, bounds.Top), view),
@@ -82,7 +81,8 @@ public sealed class InkSceneRenderer : IDisposable
 
         // Rotate handle, joined to the top edge so its purpose is obvious.
         var topMid = (corners[0] + corners[1]) * 0.5f;
-        var rotate = Vector2.Transform(SelectionGeometry.RotateHandlePosition(bounds), view);
+        var worldRotate = SelectionGeometry.RotateHandlePosition(bounds);
+        var rotate = Vector2.Transform(worldRotate, view);
         session.DrawLine(topMid, rotate, accent, 1.5f);
         session.FillCircle(rotate, 7f, fill);
         session.DrawCircle(rotate, 7f, accent, 1.5f);

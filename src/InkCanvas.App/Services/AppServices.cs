@@ -57,6 +57,7 @@ public sealed class AppServices : IDisposable
         {
             controller.CurrentAttributes.BaseWidth = (float)Math.Clamp(Settings.Canvas.InkWidth, 0.5, 60);
             controller.CurrentAttributes.TaperKind = taper;
+            controller.CurrentAttributes.HighlighterAlpha = (byte)Math.Clamp(Settings.Canvas.InkAlpha, 20, 240);
             controller.EraserRadius = 8f + Math.Clamp(Settings.Canvas.EraserSize, 0, 8) * 8f;
             controller.RecognizeShapes = Settings.InkToShape.IsInkToShapeEnabled;
             controller.MultiTouchEnabled = Settings.Gesture.IsEnableMultiTouchMode;

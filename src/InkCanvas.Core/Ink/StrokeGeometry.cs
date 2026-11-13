@@ -3,74 +3,89 @@ using System.Numerics;
 namespace InkCanvas.Core.Ink;
 
 /// <summary>
-/// Turns a variable-width centreline into a fillable outline.
-/// <para>
-/// Pure function of the stored points and their stored widths — no hidden state, no
-/// dependence on whether the stroke is still being drawn. Rendering the same stroke
-/// twice therefore produces identical geometry, which the flicker regression test relies on.
-/// </para>
+/// Builds filled regions for variable-width ink. Each centerline segment becomes its own
+/// consistently-wound capsule. The renderer groups those regions with the non-zero winding
+/// rule, making self-crossings a union rather than an even/odd boolean hole.
 /// </summary>
 public static class StrokeGeometry
 {
     /// <summary>
-    /// Builds a closed outline: forward along the left offset, back along the right offset,
-    /// with round caps. Returns an empty array for an empty stroke.
+    /// Segment capsules whose Winding-rule union is the complete stroke.
+    /// Adjacent capsules overlap at their round caps; they are grouped once, so translucent ink
+    /// is composited once per stroke even when the centerline crosses itself.
     /// </summary>
-    public static Vector2[] BuildOutline(InkStroke stroke)
+    public static Vector2[][] BuildUnionContours(InkStroke stroke)
     {
         if (stroke is null) throw new ArgumentNullException(nameof(stroke));
-        int n = stroke.Count;
-        if (n == 0) return Array.Empty<Vector2>();
+        var points = stroke.Points;
+        if (points.Count == 0) return Array.Empty<Vector2[]>();
+        if (points.Count == 1)
+            return new[] { NormalizeWinding(Circle(points[0].Position, MathF.Max(points[0].Width, 0.5f) * 0.5f, 24)) };
 
-        var pts = stroke.Points;
-        if (n == 1) return Circle(pts[0].Position, MathF.Max(pts[0].Width, 0.5f) * 0.5f, 12);
-
-        var left = new Vector2[n];
-        var right = new Vector2[n];
-        for (int i = 0; i < n; i++)
+        var result = new Vector2[points.Count - 1][];
+        for (int i = 1; i < points.Count; i++)
         {
-            Vector2 tangent;
-            if (i == 0) tangent = pts[1].Position - pts[0].Position;
-            else if (i == n - 1) tangent = pts[n - 1].Position - pts[n - 2].Position;
-            else
-            {
-                var a = Vector2.Normalize(pts[i].Position - pts[i - 1].Position);
-                var b = Vector2.Normalize(pts[i + 1].Position - pts[i].Position);
-                tangent = a + b;
-                if (tangent.LengthSquared() < 1e-8f) tangent = pts[i + 1].Position - pts[i - 1].Position;
-            }
-
-            if (tangent.LengthSquared() < 1e-8f) tangent = new Vector2(1, 0);
-            tangent = Vector2.Normalize(tangent);
-            var normal = new Vector2(-tangent.Y, tangent.X);
-            float half = MathF.Max(pts[i].Width, 0.35f) * 0.5f;
-            left[i] = pts[i].Position + normal * half;
-            right[i] = pts[i].Position - normal * half;
+            result[i - 1] = BuildSegmentOutline(
+                points[i - 1].Position, MathF.Max(points[i - 1].Width, 0.5f) * 0.5f,
+                points[i].Position, MathF.Max(points[i].Width, 0.5f) * 0.5f);
         }
-
-        var outline = new List<Vector2>(2 * n + 24);
-        outline.AddRange(left);
-        AppendCap(outline, pts[n - 1].Position, left[n - 1], right[n - 1]);
-        for (int i = n - 1; i >= 0; i--) outline.Add(right[i]);
-        AppendCap(outline, pts[0].Position, right[0], left[0]);
-        return outline.ToArray();
+        return result;
     }
 
-    /// <summary>Semicircular cap from one offset side to the other, around the endpoint.</summary>
-    private static void AppendCap(List<Vector2> outline, Vector2 center, Vector2 from, Vector2 to)
+    /// <summary>
+    /// A round-ended, optionally variable-width segment. Its contour is always positive-winding,
+    /// regardless of the direction the pointer travelled.
+    /// </summary>
+    public static Vector2[] BuildSegmentOutline(Vector2 start, float startRadius, Vector2 end, float endRadius)
     {
-        float r = (from - center).Length();
-        if (r < 0.2f) return;
-        float a0 = MathF.Atan2(from.Y - center.Y, from.X - center.X);
-        float a1 = MathF.Atan2(to.Y - center.Y, to.X - center.X);
-        float delta = a1 - a0;
-        while (delta <= -MathF.PI) delta += 2 * MathF.PI;
-        while (delta > MathF.PI) delta -= 2 * MathF.PI;
-        const int steps = 6;
-        for (int s = 1; s < steps; s++)
+        var delta = end - start;
+        float length = delta.Length();
+        if (length < 1e-4f)
+            return NormalizeWinding(Circle(start, MathF.Max(startRadius, endRadius), 24));
+
+        var tangent = delta / length;
+        var normal = new Vector2(-tangent.Y, tangent.X);
+        float a0 = MathF.Atan2(normal.Y, normal.X);
+        var outline = new List<Vector2>(28);
+
+        outline.Add(start + normal * startRadius);
+        outline.Add(end + normal * endRadius);
+        AppendArc(outline, end, endRadius, a0, -MathF.PI, 12);
+        outline.Add(end - normal * endRadius);
+        outline.Add(start - normal * startRadius);
+        AppendArc(outline, start, startRadius, a0 + MathF.PI, -MathF.PI, 12);
+
+        return NormalizeWinding(outline.ToArray());
+    }
+
+    public static float SignedArea(IReadOnlyList<Vector2> points)
+    {
+        if (points is null || points.Count < 3) return 0;
+        double area = 0;
+        for (int i = 0; i < points.Count; i++)
         {
-            float a = a0 + delta * s / steps;
-            outline.Add(center + new Vector2(MathF.Cos(a), MathF.Sin(a)) * r);
+            var a = points[i];
+            var b = points[(i + 1) % points.Count];
+            area += (double)a.X * b.Y - (double)b.X * a.Y;
+        }
+        return (float)(area * 0.5);
+    }
+
+    private static Vector2[] NormalizeWinding(Vector2[] points)
+    {
+        if (SignedArea(points) >= 0) return points;
+        Array.Reverse(points);
+        return points;
+    }
+
+    private static void AppendArc(List<Vector2> points, Vector2 center, float radius,
+        float startAngle, float delta, int steps)
+    {
+        if (radius <= 0) return;
+        for (int i = 1; i < steps; i++)
+        {
+            float angle = startAngle + delta * i / steps;
+            points.Add(center + new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * radius);
         }
     }
 
@@ -83,5 +98,17 @@ public static class StrokeGeometry
             result[i] = center + new Vector2(MathF.Cos(a), MathF.Sin(a)) * radius;
         }
         return result;
+    }
+
+    /// <summary>Legacy single-outline helper used by replay comparisons and compatibility tests.</summary>
+    public static Vector2[] BuildOutline(InkStroke stroke)
+    {
+        if (stroke is null) throw new ArgumentNullException(nameof(stroke));
+        var contours = BuildUnionContours(stroke);
+        if (contours.Length == 0) return Array.Empty<Vector2>();
+        if (contours.Length == 1) return contours[0];
+        // Flattening is for diagnostics/equality only. Production rendering uses the separate
+        // contours grouped with Winding; connecting this list would reintroduce self-intersections.
+        return contours.SelectMany(c => c).ToArray();
     }
 }
