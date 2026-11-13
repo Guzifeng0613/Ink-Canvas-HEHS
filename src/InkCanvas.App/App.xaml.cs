@@ -31,6 +31,32 @@ public partial class App : Application
                 _shell.StartInClickThrough();
         }
 
+        var diag = Environment.GetCommandLineArgs()
+            .FirstOrDefault(a => a.StartsWith("--diag=", StringComparison.OrdinalIgnoreCase));
+        if (diag is not null)
+        {
+            string path = diag.Substring("--diag=".Length);
+            var t = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread().CreateTimer();
+            t.Interval = TimeSpan.FromMilliseconds(700);
+            t.Tick += (_, _) =>
+            {
+                try
+                {
+                    var w = _shell.Overlay.Window;
+                    File.WriteAllText(path,
+                        $"pointerMessages={w.PointerMessageCount} (down={w.PointerDownCount} move={w.PointerMoveCount} up={w.PointerUpCount}); "
+                      + $"mouseMessages={w.MouseMessageCount}; "
+                      + $"mouseAsPointer={Platform.Windows.LayeredInkWindow.MouseAsPointer}; "
+                      + $"clickThrough={w.ClickThrough}; visible={w.IsVisible}; "
+                      + $"strokes={_shell.Services.OverlayInk.Document.Count}; "
+                      + $"live={_shell.Services.OverlayInk.LiveStrokes.Count}; "
+                      + $"tool={_shell.Services.OverlayInk.Tool}\n");
+                }
+                catch { }
+            };
+            t.Start();
+        }
+
         var selfTest = Environment.GetCommandLineArgs()
             .FirstOrDefault(a => a.StartsWith("--selftest=", StringComparison.OrdinalIgnoreCase));
         if (selfTest is not null)

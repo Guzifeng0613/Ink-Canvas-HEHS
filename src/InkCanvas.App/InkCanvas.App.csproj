@@ -53,4 +53,39 @@
     <Warning Text="App resource index $(TargetName).pri was not found; the published app may fail to resolve theme resources."
              Condition="!Exists('$(OutDir)$(TargetName).pri')" />
   </Target>
+  <!--
+    The self-contained Windows App SDK runtime payload ships components this app never uses:
+    Windows AI / ML (onnxruntime + DirectML alone are ~38 MB), Widgets and Semantic Search.
+    Strip them, keep only the languages we ship, and drop symbols. Verified by launching the
+    published app after cleanup.
+  -->
+  <PropertyGroup>
+    <InkCanvasKeepLanguages>en-US;zh-CN;zh-Hans;zh-TW</InkCanvasKeepLanguages>
+  </PropertyGroup>
+
+  <Target Name="TrimPublishedPayload" AfterTargets="CopyAppPriToPublish">
+    <ItemGroup>
+      <_UnusedPayload Include="$(PublishDir)onnxruntime*.dll" />
+      <_UnusedPayload Include="$(PublishDir)DirectML.dll" />
+      <_UnusedPayload Include="$(PublishDir)Microsoft.Windows.AI.*" />
+      <_UnusedPayload Include="$(PublishDir)Microsoft.WindowsAppSDK.ML.*" />
+      <_UnusedPayload Include="$(PublishDir)Microsoft.WindowsAppSDK.AI.*" />
+      <_UnusedPayload Include="$(PublishDir)Microsoft.Windows.Widgets.*" />
+      <_UnusedPayload Include="$(PublishDir)Microsoft.WindowsAppSDK.Widgets.*" />
+      <_UnusedPayload Include="$(PublishDir)Microsoft.Windows.SemanticSearch.*" />
+      <_UnusedPayload Include="$(PublishDir)**\*.pdb" />
+      <_UnusedPayload Include="$(PublishDir)**\*.xml" />
+    </ItemGroup>
+    <Delete Files="@(_UnusedPayload)" ContinueOnError="true" />
+
+    <!-- Language satellites: .mui files live in per-language subfolders. -->
+    <ItemGroup>
+      <_LangDirs Include="$([System.IO.Directory]::GetDirectories('$(PublishDir)'))" />
+      <_StaleLangFiles Include="%(_LangDirs.Identity)\**\*.mui"
+                       Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('%(_LangDirs.Filename)', '^(en-US|zh-CN|zh-Hans|zh-TW)$'))" />
+    </ItemGroup>
+    <Delete Files="@(_StaleLangFiles)" ContinueOnError="true" />
+
+    <Message Importance="high" Text="Trimmed unused Windows App SDK payload (AI/ML/Widgets) and extra languages from $(PublishDir)" />
+  </Target>
 </Project>

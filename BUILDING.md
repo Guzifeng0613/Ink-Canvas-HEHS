@@ -31,6 +31,28 @@ NuGet 缓存约 **1.28 GB**（含 monolith 试装阶段的残留；仅子包时�
 缓存位置由 `build.ps1` 的 `-PackageCache` 指定，默认 `D:\dev-cache\nuget`，
 **刻意避开系统盘**。
 
+## 发布体积
+
+| 方式 | 体积 | 前提 |
+|---|---|---|
+| 默认：自包含 + 裁剪 | **约 94 MB** | 无，拷过去就能跑 |
+| `-FrameworkDependent` | **约 40.6 MB** | 目标机需先装 Windows App SDK 运行时 |
+| 未裁剪的自包含（对照） | 约 140 MB | — |
+
+```powershell
+.\build.ps1 publish                      # 94 MB，自包含
+.\build.ps1 publish -FrameworkDependent   # 40.6 MB，需运行时
+```
+
+裁剪掉的是**本应用用不到的** Windows App SDK 自带载荷：Windows AI / ML
+（`onnxruntime.dll` 20.7 MB + `DirectML.dll` 17.8 MB）、Widgets、Semantic Search，
+以及多余语言资源与符号文件。裁剪后已实机启动验证。
+
+剩下的体积主要是 WinUI 3 本身的固定成本，无法再显著压缩：
+`Microsoft.Windows.SDK.NET.dll` 25 MB（WinRT 投影）、`Microsoft.ui.xaml.dll` 14 MB、
+`Microsoft.WinUI.dll` 7 MB、`Microsoft.UI.Xaml.Controls.dll` 6 MB。
+这是 WinUI 3 自包含部署与 WPF（依赖系统内置 .NET Framework）的结构性差异。
+
 ## 两个容易踩的坑
 
 1. **机器级 NuGet 配置可能没有任何包源**，此时还原会直接 `NU1100` 失败。

@@ -22,7 +22,11 @@ param(
     [string]$Configuration = 'Debug',
 
     # Keep the NuGet cache off C: — it is the tightest drive on the dev machine.
-    [string]$PackageCache = 'D:\dev-cache\nuget'
+    [string]$PackageCache = 'D:\dev-cache\nuget',
+
+    # Framework-dependent: ~40 MB instead of ~94 MB, but the target machine must have the
+    # Windows App SDK runtime installed. Default is self-contained so the folder just runs.
+    [switch]$FrameworkDependent
 )
 
 $ErrorActionPreference = 'Stop'
@@ -47,8 +51,12 @@ switch ($Task) {
         Invoke-Dotnet @('test', $testProject, '-c', $Configuration, '-p:Platform=x64', '--nologo')
     }
     'publish' {
-        Invoke-Dotnet @('publish', $appProject, '-c', $Configuration, '-p:Platform=x64',
-            '-o', (Join-Path $repo 'artifacts\app'), '--nologo')
+        $extra = @()
+        if ($FrameworkDependent) { $extra += '-p:WindowsAppSDKSelfContained=false' }
+        Invoke-Dotnet (@('publish', $appProject, '-c', $Configuration, '-p:Platform=x64',
+            '-o', (Join-Path $repo 'artifacts\app'), '--nologo') + $extra)
+        $size = (Get-ChildItem (Join-Path $repo 'artifacts\app') -Recurse -File | Measure-Object Length -Sum).Sum
+        Write-Host ("Published: {0:N1} MB" -f ($size / 1MB))
     }
     'run' {
         Invoke-Dotnet @('build', $appProject, '-c', $Configuration, '-p:Platform=x64', '--nologo')

@@ -33,6 +33,8 @@ public sealed class LayeredInkWindow : IDisposable
 {
     private const string ClassName = "InkCanvasOverlayWindow";
     private static bool _classRegistered;
+    private static bool _mouseInPointerEnabled;
+    private static bool _mouseAsPointer;
     private static readonly object _classLock = new();
 
     // Keep the delegate alive for the lifetime of the window; the native side holds a raw pointer.
@@ -53,6 +55,16 @@ public sealed class LayeredInkWindow : IDisposable
 
         lock (_classLock)
         {
+            if (!_mouseInPointerEnabled)
+            {
+                // Without this the mouse only produces WM_MOUSE* messages, never WM_POINTER*,
+                // so a WndProc that handles pointer input alone cannot draw with a mouse.
+                // Pen and touch already arrive as pointer messages; this brings the mouse in line.
+                NativeMethods.EnableMouseInPointer(true);
+                _mouseInPointerEnabled = true;
+                _mouseAsPointer = NativeMethods.IsMouseInPointerEnabled();
+            }
+
             if (!_classRegistered)
             {
                 var wc = new NativeMethods.WNDCLASS
@@ -105,6 +117,20 @@ public sealed class LayeredInkWindow : IDisposable
     public IntPtr PixelBuffer => _bits;
 
     public bool IsVisible { get; private set; }
+
+    /// <summary>Diagnostics: how many input messages actually reached this window.</summary>
+    public long PointerMessageCount { get; private set; }
+
+    public long PointerDownCount { get; private set; }
+
+    public long PointerMoveCount { get; private set; }
+
+    public long PointerUpCount { get; private set; }
+
+    public long MouseMessageCount { get; private set; }
+
+    /// <summary>Whether the mouse is being delivered as WM_POINTER (vs WM_MOUSE fallback).</summary>
+    public static bool MouseAsPointer => _mouseAsPointer;
 
     /// <summary>When true, clicks fall through to whatever is underneath (screen-pen idle mode).</summary>
     public bool ClickThrough
@@ -173,22 +199,49 @@ public sealed class LayeredInkWindow : IDisposable
         switch (msg)
         {
             case NativeMethods.WM_POINTERDOWN:
+                PointerMessageCount++; PointerDownCount++;
                 Raise(PointerDown, w);
                 return IntPtr.Zero;
             case NativeMethods.WM_POINTERUPDATE:
+                PointerMessageCount++; PointerMoveCount++;
                 Raise(PointerMove, w);
                 return IntPtr.Zero;
             case NativeMethods.WM_POINTERUP:
             case NativeMethods.WM_POINTERCAPTURECHANGED:
+                PointerMessageCount++; PointerUpCount++;
                 Raise(PointerUp, w);
                 return IntPtr.Zero;
             case NativeMethods.WM_HOTKEY:
                 HotkeyPressed?.Invoke(w.ToInt32());
                 return IntPtr.Zero;
+
+            // Fallback for the case where mouse-in-pointer could not be enabled: without it the
+            // mouse never produces pointer messages and drawing would silently do nothing.
+            case NativeMethods.WM_LBUTTONDOWN when !_mouseAsPointer:
+                RaiseMouse(PointerDown, l, mouseDown: true);
+                return IntPtr.Zero;
+            case NativeMethods.WM_MOUSEMOVE when !_mouseAsPointer:
+                if ((w.ToInt64() & 0x0001) != 0) RaiseMouse(PointerMove, l, mouseDown: false);
+                return IntPtr.Zero;
+            case NativeMethods.WM_LBUTTONUP when !_mouseAsPointer:
+                RaiseMouse(PointerUp, l, mouseDown: false);
+                return IntPtr.Zero;
             case NativeMethods.WM_DESTROY:
                 return IntPtr.Zero;
         }
         return NativeMethods.DefWindowProcW(h, msg, w, l);
+    }
+
+    private void RaiseMouse(Action<OverlayPointer> handler, IntPtr lParam, bool mouseDown)
+    {
+        MouseMessageCount++;
+        if (handler is null) return;
+        if (mouseDown) NativeMethods.SetCapture(Handle);
+        else NativeMethods.ReleaseCapture();
+        int raw = lParam.ToInt32();
+        short x = (short)(raw & 0xFFFF);
+        short y = (short)((raw >> 16) & 0xFFFF);
+        handler(new OverlayPointer(1, x, y, 0.5f, 0, 0, OverlayPointerKind.Mouse, (uint)Environment.TickCount));
     }
 
     private void Raise(Action<OverlayPointer> handler, IntPtr wParam)

@@ -23,6 +23,13 @@
 `layered-overlay-alpha.png` 是分层窗口的截图：品红矩形与**半透明青色笔画**叠在桌面之上，
 笔画下方文字透出，其余区域完全透明 —— 逐像素 alpha 与部分 alpha 均成立。
 
+> **后续修正（重要）**：上面这组探针用的是 alpha=0 清屏。实际产品里**不能**这么做 ——
+> 逐像素 alpha 的分层窗口是**按 alpha 做命中测试**的，alpha=0 的区域点击会直接穿透，
+> 于是第一笔永远落不到覆盖层上，表现为「鼠标画不出来」。
+> 产品改为以 **alpha=1**（预乘，故 RGB 也为 1）清屏：视觉上不可见（0.4% 白），
+> 但整窗可命中。这与 WPF 原版 `Main_Grid Background="#01FFFFFF"` 的用意一致。
+> 穿透模式仍由 `WS_EX_TRANSPARENT` 承担，不依赖 alpha。
+
 > 注：另有 t2（DWM blur-behind）与 t3（transparent-gradient accent）在第一轮探针中同样失败；
 > 该轮判据较弱（未排除白底桌面），故此处只保留判据收紧后重跑的 t1/t4/t5 与对照组。
 

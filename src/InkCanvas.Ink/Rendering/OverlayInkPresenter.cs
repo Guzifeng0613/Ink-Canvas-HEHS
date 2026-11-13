@@ -154,7 +154,11 @@ public sealed class OverlayInkPresenter : IDisposable
 
         using (var session = _committedTarget.CreateDrawingSession())
         {
-            session.Clear(Windows.UI.Color.FromArgb(0, 0, 0, 0));
+            // Alpha 1, not 0: a per-pixel-alpha layered window is hit-tested by alpha, so a
+            // fully transparent surface lets every click fall through and the first stroke can
+            // never start. This mirrors the WPF original's Main_Grid Background="#01FFFFFF".
+            // Premultiplied, so the colour channels must not exceed the alpha.
+            session.Clear(Windows.UI.Color.FromArgb(1, 1, 1, 1));
             Scene.DrawCommitted(session, _controller);
         }
         _committedPixels = _committedTarget.GetPixelBytes();
