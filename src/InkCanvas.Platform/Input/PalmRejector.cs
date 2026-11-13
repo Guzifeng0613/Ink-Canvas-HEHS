@@ -1,3 +1,5 @@
+using InkCanvas.Core.Input;
+using InkCanvas.Core.Settings;
 using InkCanvas.Platform.Windows;
 
 namespace InkCanvas.Platform.Input;
@@ -41,6 +43,35 @@ public sealed class PalmRejector
 
     public bool IsPalmContact(in OverlayPointer p)
         => MathF.Max(p.ContactWidth, p.ContactHeight) >= PalmContactThreshold;
+
+    /// <summary>
+    /// Advanced settings driving the 1:1 special-screen classification. When null, the simple
+    /// <see cref="PalmContactThreshold"/> behaviour above is used instead.
+    /// </summary>
+    public AdvancedSettings Advanced { get; set; }
+
+    /// <summary>Original <c>Settings.Startup.IsEnableNibMode</c>.</summary>
+    public bool NibMode { get; set; }
+
+    public bool ForceEraser { get; set; }
+
+    public bool ForcePointEraser { get; set; } = true;
+
+    /// <summary>Slideshow running, no ink yet, and finger slide control enabled.</summary>
+    public bool PptGestureEligible { get; set; }
+
+    /// <summary>
+    /// 1:1 touch classification including QuadIR contact measurement and the special-screen
+    /// multiplier. <b>未验证</b>：按要求跳过行为验证，需在真实红外屏上复核。
+    /// </summary>
+    public TouchDecision ClassifyContact(in OverlayPointer p)
+    {
+        var advanced = Advanced ?? new AdvancedSettings();
+        double width = TouchContactClassifier.MeasureContactWidth(
+            p.ContactWidth, p.ContactHeight, advanced.IsQuadIR);
+        return TouchContactClassifier.Classify(width, advanced, NibMode,
+            ForceEraser, isDrawingShape: false, ForcePointEraser, PptGestureEligible);
+    }
 
     /// <summary>True when this contact should be allowed to draw.</summary>
     public bool ShouldDraw(in OverlayPointer p)

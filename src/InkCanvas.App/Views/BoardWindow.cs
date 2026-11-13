@@ -132,6 +132,9 @@ public sealed class BoardWindow : Window
             ? (Windows.UI.Color)Application.Current.Resources["IcBoardBlackColor"]
             : (Windows.UI.Color)Application.Current.Resources["IcBoardWhiteColor"];
         _background.Background = new SolidColorBrush(color);
+        // 1:1 GetMainWindowTheme：非屏幕画笔模式下画板明暗跟随黑板/白板选择。未验证。
+        var boardTheme = Core.Theming.ThemeResolver.GetBoardTheme(!dark);
+        WindowChrome.ApplyTheme(this, boardTheme == Core.Theming.AppTheme.Light ? 1 : 2);
         // On a dark board the default ink must be light to stay visible.
         _board.Current.CurrentAttributes.Color = dark
             ? Core.Ink.InkColor.Opaque(245, 245, 245)

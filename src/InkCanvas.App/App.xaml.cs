@@ -47,6 +47,7 @@ public partial class App : Application
     private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
     {
         // A classroom tool must not vanish mid-lesson. Log and keep running where possible.
+        Core.Diagnostics.FileLog.WriteLogToFile(e.Exception.ToString(), Core.Diagnostics.LogType.Error);
         try
         {
             string dir = Path.Combine(

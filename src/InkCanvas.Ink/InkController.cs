@@ -1,5 +1,6 @@
 using InkCanvas.Core.History;
 using InkCanvas.Core.Ink;
+using InkCanvas.Core.Input;
 using InkCanvas.Core.Recognition;
 using InkCanvas.Core.Selection;
 using InkCanvas.Core.Shapes;
@@ -61,6 +62,13 @@ public sealed class InkController : IDisposable
     public Matrix3x2 ViewTransform { get; set; } = Matrix3x2.Identity;
 
     public Vector2 ViewCenter { get; set; } = new(960, 540);
+
+    /// <summary>1:1 port of the original gesture pivot option. 未验证。</summary>
+    public Core.Settings.MatrixTransformCenterPointOptions TransformCenterOption { get; set; }
+
+    private Vector2 ResolvePivot(Vector2 gestureCenter)
+        => MatrixTransformCenter.Resolve(TransformCenterOption, ViewCenter, gestureCenter,
+            SelectionBounds.Center, isLoaded: true);
 
     public IReadOnlyCollection<InkStroke> LiveStrokes => _live.Values;
 
@@ -128,6 +136,31 @@ public sealed class InkController : IDisposable
                 BeginErase(world);
                 return;
             }
+
+            // 1:1 special-screen classification (QuadIR / TouchMultiplier / nib-vs-finger bounds).
+            // 未验证：按要求跳过行为验证。
+            if (_palm.Advanced is not null)
+            {
+                var decision = _palm.ClassifyContact(p);
+                switch (decision.Intent)
+                {
+                    case TouchIntent.Ignore:
+                        return;
+                    case TouchIntent.GestureOnly:
+                        _slideGestureStartX = p.X;
+                        _slideGestureActive = true;
+                        return;
+                    case TouchIntent.EraseByPoint when PalmErases:
+                        _gestureEraserRadius = (float)(decision.EraserDiameter / 2.0);
+                        BeginErase(world);
+                        return;
+                    case TouchIntent.EraseByStroke when PalmErases:
+                        _gestureEraserRadius = 2.5f;
+                        BeginErase(world);
+                        return;
+                }
+            }
+
             if (!_palm.ShouldDraw(p) && Tool is InkTool.Pen or InkTool.Highlighter) return;
         }
 
@@ -174,7 +207,9 @@ public sealed class InkController : IDisposable
                 }
 
                 var t = ViewTransform;
-                if (_manipulator.Update(ToWorld(pair[0]), ToWorld(pair[1]), ref t, ViewCenter))
+                var a = ToWorld(pair[0]);
+                var b = ToWorld(pair[1]);
+                if (_manipulator.Update(a, b, ref t, ResolvePivot((a + b) * 0.5f)))
                 {
                     ViewTransform = t;
                     Invalidated?.Invoke();
@@ -218,6 +253,15 @@ public sealed class InkController : IDisposable
         if (_touches.Count < 2) _manipulator.Reset();
 
         var world = ToWorld(p);
+
+        // Finger slide control in a slideshow (original GestureOnly mode). 未验证。
+        if (_slideGestureActive)
+        {
+            _slideGestureActive = false;
+            float dx = p.X - _slideGestureStartX;
+            if (MathF.Abs(dx) > 60f) SlideFlipRequested?.Invoke(dx < 0);
+            return;
+        }
 
         if (_activeHandle != SelectionHandle.None)
         {
@@ -319,6 +363,15 @@ public sealed class InkController : IDisposable
 
     private readonly List<InkStroke> _erasedThisGesture = new();
 
+    /// <summary>Per-contact eraser size from the classifier; falls back to the configured size.</summary>
+    private float? _gestureEraserRadius;
+
+    private bool _slideGestureActive;
+    private float _slideGestureStartX;
+
+    /// <summary>Raised when a finger swipe should flip slides: true = next, false = previous.</summary>
+    public event Action<bool> SlideFlipRequested;
+
     private void BeginErase(Vector2 world)
     {
         _erasing = true;
@@ -329,14 +382,15 @@ public sealed class InkController : IDisposable
 
     private void EraseAlong(Vector2 from, Vector2 to)
     {
+        float radius = _gestureEraserRadius ?? EraserRadius;
         // Sample along the sweep so a fast wipe cannot skip strokes.
         float dist = Vector2.Distance(from, to);
-        int steps = Math.Max(1, (int)(dist / MathF.Max(4f, EraserRadius * 0.5f)));
+        int steps = Math.Max(1, (int)(dist / MathF.Max(4f, radius * 0.5f)));
         bool any = false;
         for (int i = 0; i <= steps; i++)
         {
             var p = Vector2.Lerp(from, to, steps == 0 ? 0 : (float)i / steps);
-            var hits = Document.EraseAt(p, EraserRadius);
+            var hits = Document.EraseAt(p, radius);
             if (hits.Count > 0)
             {
                 _erasedThisGesture.AddRange(hits);
@@ -349,6 +403,7 @@ public sealed class InkController : IDisposable
     private void EndErase()
     {
         _erasing = false;
+        _gestureEraserRadius = null;
         if (_erasedThisGesture.Count > 0)
         {
             var removed = _erasedThisGesture.ToList();

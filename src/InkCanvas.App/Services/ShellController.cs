@@ -72,6 +72,11 @@ public sealed class ShellController : IShellActions, IDisposable
         // The delete-selection button only exists while something is selected.
         Services.OverlayInk.SelectionChanged += () => _bar?.Bar.RefreshSelection();
 
+        // 1:1 手指翻页（原 GestureOnly 模式）。未验证。
+        Services.OverlayInk.SlideFlipRequested += next => { if (next) PptNext(); else PptPrevious(); };
+
+        Core.Diagnostics.FileLog.NewLog($"Ink Canvas 启动，版本 {Updater.CurrentVersion}");
+
         ApplyEdgeGestureSetting();
 
         if (Services.Settings.Startup.IsAutoUpdate)
@@ -127,6 +132,12 @@ public sealed class ShellController : IShellActions, IDisposable
         }
 
         if (Services.Settings.Automation.IsEnableAutoFold) ApplyAutoFold();
+
+        // 原条件：放映中 + 尚无墨迹 + 允许手指手势控制放映。未验证。
+        Services.OverlayInk.Palm.PptGestureEligible =
+            _lastSlideShowState
+            && Services.OverlayInk.Document.Count == 0
+            && Services.Settings.PowerPoint.IsEnableFingerGestureSlideShowControl;
 
         // Keep chrome above the ink overlay without stealing focus from a slideshow.
         if (_bar is not null) WindowChrome.EnsureAbove(_bar);

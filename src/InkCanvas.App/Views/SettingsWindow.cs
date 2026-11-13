@@ -165,6 +165,29 @@ public sealed class SettingsWindow : Window
         _content.Children.Add(ToggleRow("不重复抽取", S.Rand.IsNotRepeatName,
             v => S.Rand.IsNotRepeatName = v));
 
+        _content.Children.Add(Section("特殊屏 / 触摸标定"));
+        _content.Children.Add(InfoRow("以下为上游特殊屏逻辑的 1:1 移植（四边红外、触摸倍数、笔尖/手指分档）。按要求已跳过行为验证，需在真实红外屏与压感笔上复核手感。"));
+        _content.Children.Add(ToggleRow("启用特殊屏幕", S.Advanced.IsSpecialScreen,
+            v => S.Advanced.IsSpecialScreen = v));
+        _content.Children.Add(ToggleRow("四边红外屏（接触尺寸取宽高几何平均）", S.Advanced.IsQuadIR,
+            v => S.Advanced.IsQuadIR = v));
+        _content.Children.Add(SliderRow("触摸倍数（特殊屏为 0 时禁用橡皮）", S.Advanced.TouchMultiplier, 0, 3,
+            v => S.Advanced.TouchMultiplier = v));
+        _content.Children.Add(ToggleRow("笔尖模式", S.Startup.IsEnableNibMode,
+            v => S.Startup.IsEnableNibMode = v));
+        _content.Children.Add(SliderRow("笔尖模式接触宽度阈值", S.Advanced.NibModeBoundsWidth, 1, 100,
+            v => S.Advanced.NibModeBoundsWidth = (int)v));
+        _content.Children.Add(SliderRow("手指模式接触宽度阈值", S.Advanced.FingerModeBoundsWidth, 1, 100,
+            v => S.Advanced.FingerModeBoundsWidth = (int)v));
+        _content.Children.Add(SliderRow("笔尖模式面积擦阈值倍数", S.Advanced.NibModeBoundsWidthThresholdValue, 1, 10,
+            v => S.Advanced.NibModeBoundsWidthThresholdValue = v));
+        _content.Children.Add(SliderRow("手指模式面积擦阈值倍数", S.Advanced.FingerModeBoundsWidthThresholdValue, 1, 10,
+            v => S.Advanced.FingerModeBoundsWidthThresholdValue = v));
+        _content.Children.Add(SliderRow("笔尖模式橡皮尺寸系数", S.Advanced.NibModeBoundsWidthEraserSize, 0.1, 3,
+            v => S.Advanced.NibModeBoundsWidthEraserSize = v));
+        _content.Children.Add(SliderRow("手指模式橡皮尺寸系数", S.Advanced.FingerModeBoundsWidthEraserSize, 0.1, 3,
+            v => S.Advanced.FingerModeBoundsWidthEraserSize = v));
+
         _content.Children.Add(Section("高级"));
         _content.Children.Add(ToggleRow("退出前二次确认", S.Advanced.IsSecondConfimeWhenShutdownApp,
             v => S.Advanced.IsSecondConfimeWhenShutdownApp = v));

@@ -1,5 +1,23 @@
 # 更新日志
 
+## 3.2.0 —— 1:1 移植补齐（**未验证**）
+
+> 本版本按要求**跳过行为验证**：以下新增项没有单元测试，也没有实机验证，仅确认编译通过。
+> 对照与状态见 [docs/PORTING-NOTES.md](docs/PORTING-NOTES.md)。
+
+### 新增（1:1 移植）
+- 特殊屏触摸分档：四边红外（`IsQuadIR`，接触尺寸取宽高几何平均）、触摸倍数
+  （`TouchMultiplier`，特殊屏为 0 时禁用橡皮）、笔尖/手指分档的接触阈值、面积擦阈值倍数与橡皮尺寸系数。
+- 手势枢轴选项 `MatrixTransformCenterPoint`（画布中心 / 手势中心 / 选区中心）。
+- 文件日志 `LogHelper` 移植（`Log.txt`，同格式），受「启用日志」开关控制。
+- 主题判定 `GetMainWindowTheme` / `SetBoardTheme` 移植。
+- 放映中手指左右滑动翻页（原 `GestureOnly` 模式）。
+- 设置页新增「特殊屏 / 触摸标定」分组，暴露上述全部参数。
+
+### 刻意未移植
+- 原 `Main_Grid_TouchDown` 的 `inkCanvas.Opacity` 压暗/恢复未搬入 —— 那是笔锋闪烁的第二个来源，
+  照搬会把已修复的 bug 带回来。
+
 ## 3.1.0
 
 ### 新增

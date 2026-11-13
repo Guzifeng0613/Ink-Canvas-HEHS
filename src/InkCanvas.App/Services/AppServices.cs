@@ -19,6 +19,9 @@ public sealed class AppServices : IDisposable
         Store = new SettingsStore();
         Settings = Store.Load();
         Board = new BoardService();
+        // 1:1 SetBoardTheme：白板模式决定画板明暗。未验证。
+        Board.Background = Core.Theming.ThemeResolver.GetBoardTheme(Settings.Canvas.UsingWhiteboard)
+            == Core.Theming.AppTheme.Light ? BoardBackground.White : BoardBackground.Black;
         Ppt = new PptInteropService();
         AutoSave = new AutoSaveService(Settings.Automation);
         Lottery = new LotteryService();
@@ -63,11 +66,17 @@ public sealed class AppServices : IDisposable
                 Settings.Gesture.IsEnableTwoFingerRotation);
             controller.Palm.PalmContactThreshold = Math.Max(8, Settings.Advanced.FingerModeBoundsWidth);
             controller.GesturesTargetSelection = Settings.Gesture.IsEnableTwoFingerRotationOnSelection;
+
+            // 1:1 特殊屏移植接线（QuadIR / TouchMultiplier / 笔尖-手指分档）。未验证。
+            controller.Palm.Advanced = Settings.Advanced;
+            controller.Palm.NibMode = Settings.Startup.IsEnableNibMode;
+            controller.TransformCenterOption = Settings.Gesture.MatrixTransformCenterPoint;
         }
 
         Ppt.AllowWps = Settings.PowerPoint.IsSupportWPS;
         Lottery.PeopleCount = Settings.Rand.PeopleCount;
         Lottery.NoRepeat = Settings.Rand.IsNotRepeatName;
+        Core.Diagnostics.FileLog.Enabled = Settings.Advanced.IsLogEnabled;
     }
 
     public IEnumerable<InkController> AllControllers()
