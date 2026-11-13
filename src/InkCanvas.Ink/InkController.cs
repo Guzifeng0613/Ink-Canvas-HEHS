@@ -1,6 +1,7 @@
 using InkCanvas.Core.History;
 using InkCanvas.Core.Ink;
 using InkCanvas.Core.Recognition;
+using InkCanvas.Core.Selection;
 using InkCanvas.Core.Shapes;
 using InkCanvas.Ink.Manipulation;
 using InkCanvas.Platform.Input;
@@ -67,6 +68,28 @@ public sealed class InkController : IDisposable
 
     public List<InkStroke> Selection { get; } = new();
 
+    /// <summary>When true, two-finger gestures transform the selection instead of the view.</summary>
+    public bool GesturesTargetSelection { get; set; }
+
+    /// <summary>World-space bounds of the current selection, empty when nothing is selected.</summary>
+    public Rect SelectionBounds
+    {
+        get
+        {
+            var r = Rect.Empty;
+            foreach (var s in Selection) r = r.Union(s.Bounds);
+            return r;
+        }
+    }
+
+    // Selection drag state. Transforms are computed absolutely from a snapshot taken at
+    // drag start, so a long drag never accumulates rounding error.
+    private SelectionHandle _activeHandle = SelectionHandle.None;
+    private Vector2 _dragFromView;
+    private Rect _dragStartViewBounds;
+    private Matrix3x2 _viewAtDragStart;
+    private List<InkStroke> _dragSnapshot;
+
     public PalmRejector Palm => _palm;
 
     /// <summary>Raised once per logical change; the presenter redraws on this.</summary>
@@ -115,7 +138,7 @@ public sealed class InkController : IDisposable
                 break;
 
             case InkTool.Select:
-                SelectAt(world);
+                BeginSelectionInteraction(p, world);
                 break;
 
             case InkTool.Shape:
@@ -138,6 +161,18 @@ public sealed class InkController : IDisposable
             if (_touches.Count >= 2 && MultiTouchEnabled)
             {
                 var pair = _touches.Values.Take(2).ToArray();
+                if (GesturesTargetSelection && Selection.Count > 0)
+                {
+                    // Manipulate the selection rather than the whole view.
+                    var identity = Matrix3x2.Identity;
+                    if (_manipulator.Update(ToWorld(pair[0]), ToWorld(pair[1]), ref identity, SelectionBounds.Center))
+                    {
+                        TransformSelectionByGesture(identity);
+                        Invalidated?.Invoke();
+                    }
+                    return;
+                }
+
                 var t = ViewTransform;
                 if (_manipulator.Update(ToWorld(pair[0]), ToWorld(pair[1]), ref t, ViewCenter))
                 {
@@ -146,6 +181,12 @@ public sealed class InkController : IDisposable
                 }
                 return;
             }
+        }
+
+        if (_activeHandle != SelectionHandle.None)
+        {
+            UpdateSelectionDrag(new Vector2(p.X, p.Y));
+            return;
         }
 
         if (_erasing)
@@ -177,6 +218,12 @@ public sealed class InkController : IDisposable
         if (_touches.Count < 2) _manipulator.Reset();
 
         var world = ToWorld(p);
+
+        if (_activeHandle != SelectionHandle.None)
+        {
+            EndSelectionDrag();
+            return;
+        }
 
         if (_erasing)
         {
@@ -315,13 +362,112 @@ public sealed class InkController : IDisposable
 
     // ---- selection --------------------------------------------------------
 
-    private void SelectAt(Vector2 world)
+    /// <summary>Axis-aligned selection box in view coordinates, where the handles are drawn.</summary>
+    private Rect ViewBoundsOf(Rect worldBounds)
     {
-        var hits = Document.HitTest(world, 8f);
-        Selection.Clear();
-        Selection.AddRange(hits);
-        SelectionChanged?.Invoke();
+        if (worldBounds.IsEmpty) return Rect.Empty;
+        var corners = new[]
+        {
+            new Vector2(worldBounds.Left, worldBounds.Top),
+            new Vector2(worldBounds.Right, worldBounds.Top),
+            new Vector2(worldBounds.Right, worldBounds.Bottom),
+            new Vector2(worldBounds.Left, worldBounds.Bottom),
+        };
+        float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+        foreach (var c in corners)
+        {
+            var v = Vector2.Transform(c, ViewTransform);
+            minX = MathF.Min(minX, v.X); minY = MathF.Min(minY, v.Y);
+            maxX = MathF.Max(maxX, v.X); maxY = MathF.Max(maxY, v.Y);
+        }
+        return Rect.FromLTRB(minX, minY, maxX, maxY);
+    }
+
+    private void BeginSelectionInteraction(in OverlayPointer p, Vector2 world)
+    {
+        var viewPoint = new Vector2(p.X, p.Y);
+        var handle = Selection.Count > 0
+            ? SelectionGeometry.HitTest(ViewBoundsOf(SelectionBounds), viewPoint)
+            : SelectionHandle.None;
+
+        if (handle == SelectionHandle.None)
+        {
+            var hits = Document.HitTest(world, 8f);
+            Selection.Clear();
+            Selection.AddRange(hits);
+            SelectionChanged?.Invoke();
+            if (Selection.Count == 0)
+            {
+                Invalidated?.Invoke();
+                return;
+            }
+            // Tapping a stroke selects it and immediately allows dragging it.
+            handle = SelectionHandle.Move;
+        }
+
+        _activeHandle = handle;
+        _dragFromView = viewPoint;
+        _viewAtDragStart = ViewTransform;
+        _dragStartViewBounds = ViewBoundsOf(SelectionBounds);
+        _dragSnapshot = Selection.Select(s => s.Clone()).ToList();
         Invalidated?.Invoke();
+    }
+
+    private void UpdateSelectionDrag(Vector2 viewPoint)
+    {
+        if (_dragSnapshot is null || Selection.Count != _dragSnapshot.Count) return;
+
+        var viewDelta = SelectionGeometry.DragMatrix(_activeHandle, _dragStartViewBounds,
+            _dragFromView, viewPoint, keepAspect: false);
+
+        // Conjugate the view-space drag into world space: w' = w * V * D * V^-1.
+        Matrix3x2.Invert(_viewAtDragStart, out var inverse);
+        var worldDelta = _viewAtDragStart * viewDelta * inverse;
+
+        ApplySnapshot(Selection, _dragSnapshot);
+        foreach (var s in Selection) s.Transform(worldDelta);
+        Document.Touch();
+        Invalidated?.Invoke();
+    }
+
+    private void EndSelectionDrag()
+    {
+        var targets = Selection.ToList();
+        var before = _dragSnapshot;
+        var after = Selection.Select(s => s.Clone()).ToList();
+        _activeHandle = SelectionHandle.None;
+        _dragSnapshot = null;
+
+        if (before is not null && before.Count == after.Count)
+        {
+            History.Push(new DelegateAction("transform selection",
+                () => { ApplySnapshot(targets, after); Document.Touch(); Invalidated?.Invoke(); },
+                () => { ApplySnapshot(targets, before); Document.Touch(); Invalidated?.Invoke(); }));
+        }
+        Document.Touch();
+        Invalidated?.Invoke();
+    }
+
+    private static void ApplySnapshot(List<InkStroke> targets, List<InkStroke> snapshot)
+    {
+        for (int i = 0; i < targets.Count && i < snapshot.Count; i++)
+        {
+            targets[i].RestorePoints(snapshot[i].Points);
+            targets[i].Attributes.BaseWidth = snapshot[i].Attributes.BaseWidth;
+        }
+    }
+
+    /// <summary>Apply a gesture matrix to the selection, recording one undoable step.</summary>
+    private void TransformSelectionByGesture(Matrix3x2 worldDelta)
+    {
+        var targets = Selection.ToList();
+        var before = targets.Select(s => s.Clone()).ToList();
+        foreach (var s in targets) s.Transform(worldDelta);
+        var after = targets.Select(s => s.Clone()).ToList();
+        History.Push(new DelegateAction("gesture selection",
+            () => { ApplySnapshot(targets, after); Document.Touch(); Invalidated?.Invoke(); },
+            () => { ApplySnapshot(targets, before); Document.Touch(); Invalidated?.Invoke(); }));
+        Document.Touch();
     }
 
     public void DeleteSelection()

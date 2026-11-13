@@ -35,4 +35,12 @@ public static class Glyphs
     public const string Unlock = "";
     public const string Close = "";
     public const string Exit = "";
+
+    public const string Play = "";
+    public const string Pause = "";
+    public const string Restart = "";
+    public const string Replay = "";
+    public const string Help = "";
+    public const string Info = "";
+    public const string Download = "";
 }

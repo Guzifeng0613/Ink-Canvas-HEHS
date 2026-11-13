@@ -62,6 +62,7 @@ public sealed class AppServices : IDisposable
                 Settings.Gesture.IsEnableTwoFingerTranslate,
                 Settings.Gesture.IsEnableTwoFingerRotation);
             controller.Palm.PalmContactThreshold = Math.Max(8, Settings.Advanced.FingerModeBoundsWidth);
+            controller.GesturesTargetSelection = Settings.Gesture.IsEnableTwoFingerRotationOnSelection;
         }
 
         Ppt.AllowWps = Settings.PowerPoint.IsSupportWPS;

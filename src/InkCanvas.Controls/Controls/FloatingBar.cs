@@ -15,6 +15,8 @@ public interface IShellActions
     void OpenSettings();
     void OpenTimer();
     void OpenLottery();
+    void OpenReplay();
+    void OpenGuide();
     Task ScreenshotAsync();
     void ToggleFold();
     void ToggleClickThrough();
@@ -35,7 +37,7 @@ public sealed class FloatingBar : UserControl
     private readonly Border _secondaryHost;
     private readonly StackPanel _pptGroup = new() { Orientation = Orientation.Horizontal, Spacing = 2 };
     private TouchIconButton _penButton, _highlighterButton, _eraserButton, _selectButton, _shapeButton;
-    private TouchIconButton _foldButton, _passThroughButton;
+    private TouchIconButton _foldButton, _passThroughButton, _deleteSelectionButton;
     private bool _folded;
 
     public FloatingBar()
@@ -82,6 +84,8 @@ public sealed class FloatingBar : UserControl
         _highlighterButton = Add(_primary, Glyphs.Highlight, "荧光笔", () => SetTool(InkTool.Highlighter));
         _eraserButton = Add(_primary, Glyphs.Eraser, "橡皮擦", () => SetTool(InkTool.Eraser));
         _selectButton = Add(_primary, Glyphs.Select, "选择", () => SetTool(InkTool.Select));
+        _deleteSelectionButton = Add(_primary, Glyphs.Delete, "删除选中墨迹", () => Controller?.DeleteSelection());
+        _deleteSelectionButton.Visibility = Visibility.Collapsed;
         _shapeButton = Add(_primary, Glyphs.Shapes, "图形", ShowShapeMenu);
         _shapeButton.IconFont = Glyphs.ShapesFont;
 
@@ -110,7 +114,9 @@ public sealed class FloatingBar : UserControl
 
         Add(_secondary, Glyphs.Stopwatch, "倒计时", () => Shell?.OpenTimer());
         Add(_secondary, Glyphs.People, "抽奖", () => Shell?.OpenLottery());
+        Add(_secondary, Glyphs.Replay, "墨迹回放", () => Shell?.OpenReplay());
         Add(_secondary, Glyphs.Camera, "截图", async () => { if (Shell is not null) await Shell.ScreenshotAsync(); });
+        Add(_secondary, Glyphs.Help, "操作指南", () => Shell?.OpenGuide());
         Add(_secondary, Glyphs.Settings, "设置", () => Shell?.OpenSettings());
         Add(_secondary, Glyphs.Exit, "退出", () => Shell?.Exit());
 
@@ -151,6 +157,10 @@ public sealed class FloatingBar : UserControl
         if (_eraserButton is not null) _eraserButton.IsSelected = tool == InkTool.Eraser;
         if (_selectButton is not null) _selectButton.IsSelected = tool == InkTool.Select;
         if (_shapeButton is not null) _shapeButton.IsSelected = tool == InkTool.Shape;
+        if (_deleteSelectionButton is not null)
+            _deleteSelectionButton.Visibility = (Controller?.Selection.Count ?? 0) > 0
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         if (_passThroughButton is not null)
         {
             _passThroughButton.IsSelected = ClickThroughActive;

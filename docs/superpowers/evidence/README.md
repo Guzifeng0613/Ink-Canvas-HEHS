@@ -36,6 +36,27 @@
   笔锋在**书写过程中**就已存在，不是抬笔后才补上。
 - `highlighter.uniform` = true —— 荧光笔不收细。
 - `3D coordinate system` 提交为 3 条轴。
+- `selection corner drag scales and undo restores` —— 选中后拖右下角把宽度从 635 放大到 757.57，
+  撤销后精确回到 635。
+- `delete selection removes and undo restores` —— 删除 1 笔，撤销后数量还原。
+- `replay reveals strokes monotonically and completes` —— 回放可见点数单调不减且能播完。
+- `edge gesture property applied` = true —— 边缘手势抑制属性成功写入覆盖层窗口。
+- `gpu readback stays well below full-screen-per-frame` —— 见下。
+
+### 覆盖层回读量
+
+整屏一帧为 8,294,400 字节（1920×1080×4）。
+
+| 指标 | 数值 |
+|---|---|
+| 连续书写帧数 | 69 |
+| 连续书写每帧回读 | **205,778 字节** |
+| 占整屏比例 | **2.48%**（约 40× 降低） |
+| 整轮自检平均占整屏逐帧方案比例 | 10.42% |
+
+整轮比例高于书写态，是因为自检包含多次提交，而**每次提交都必须重建已提交层缓存**（整屏回读一次）。
+真实使用中提交是离散的，连续书写才是热点路径。
 
 `app-running.png` 是该次运行的整屏截图：透明覆盖层上有红色收锋笔画、
 半透明黄色荧光笔、蓝色空间坐标系与圆，底部为 WinUI 3 浮动工具栏。
+`selection-handles.png` 是选区特写：蓝色选框、四角白色缩放手柄、上方带连线的旋转手柄。

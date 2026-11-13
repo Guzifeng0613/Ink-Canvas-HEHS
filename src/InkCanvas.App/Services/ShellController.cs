@@ -5,6 +5,7 @@ using InkCanvas.Ink;
 using InkCanvas.Platform.System;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 
 namespace InkCanvas.App.Services;
 
@@ -21,6 +22,8 @@ public sealed class ShellController : IShellActions, IDisposable
     private SettingsWindow _settings;
     private CountdownWindow _countdown;
     private LotteryWindow _lottery;
+    private ReplayWindow _replay;
+    private InfoWindow _guide;
     private bool _lastSlideShowState;
     private bool _exiting;
 
@@ -29,6 +32,12 @@ public sealed class ShellController : IShellActions, IDisposable
         Services = services;
         _dispatcher = DispatcherQueue.GetForCurrentThread();
         Overlay = new OverlayHost(services.OverlayInk);
+        Updater = new UpdateCoordinator(services)
+        {
+            Confirm = ConfirmAsync,
+            Notify = NotifyAsync,
+            ExitForInstall = Exit,
+        };
 
         _pollTimer = _dispatcher.CreateTimer();
         _pollTimer.Interval = TimeSpan.FromMilliseconds(900);
@@ -38,6 +47,8 @@ public sealed class ShellController : IShellActions, IDisposable
     public AppServices Services { get; }
 
     public OverlayHost Overlay { get; }
+
+    public UpdateCoordinator Updater { get; }
 
     public void Start()
     {
@@ -57,6 +68,46 @@ public sealed class ShellController : IShellActions, IDisposable
             clear: () => Services.OverlayInk.Clear());
 
         _pollTimer.Start();
+
+        // The delete-selection button only exists while something is selected.
+        Services.OverlayInk.SelectionChanged += () => _bar?.Bar.RefreshSelection();
+
+        ApplyEdgeGestureSetting();
+
+        if (Services.Settings.Startup.IsAutoUpdate)
+            _ = Updater.CheckAsync(interactive: false);
+    }
+
+    private void ApplyEdgeGestureSetting()
+        => Platform.System.EdgeGestureService.SetEdgeGesturesDisabled(
+            Overlay.Window.Handle, Services.Settings.Advanced.IsEnableEdgeGestureUtil);
+
+    private async Task<bool> ConfirmAsync(string title, string message)
+    {
+        if (_bar?.Content is not FrameworkElement root || root.XamlRoot is null) return false;
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
+            PrimaryButtonText = "下载并安装",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = root.XamlRoot,
+        };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
+    private async Task NotifyAsync(string title, string message)
+    {
+        if (_bar?.Content is not FrameworkElement root || root.XamlRoot is null) return;
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
+            CloseButtonText = "知道了",
+            XamlRoot = root.XamlRoot,
+        };
+        await dialog.ShowAsync();
     }
 
     /// <summary>Periodic mode maintenance: slideshow detection, auto-fold, layering.</summary>
@@ -127,7 +178,7 @@ public sealed class ShellController : IShellActions, IDisposable
     public void OpenSettings()
     {
         if (_settings is not null) { _settings.Activate(); return; }
-        _settings = new SettingsWindow(Services);
+        _settings = new SettingsWindow(Services, Updater);
         _settings.SettingsChanged += OnSettingsChanged;
         _settings.Closed += (_, _) =>
         {
@@ -143,6 +194,7 @@ public sealed class ShellController : IShellActions, IDisposable
                          Services.Settings.Appearance.FloatingBarScale);
         if (_bar is not null) WindowChrome.ApplyTheme(_bar, Services.Settings.Appearance.Theme);
         if (_board is not null) WindowChrome.ApplyTheme(_board, Services.Settings.Appearance.Theme);
+        ApplyEdgeGestureSetting();
     }
 
     public void OpenTimer()
@@ -161,6 +213,26 @@ public sealed class ShellController : IShellActions, IDisposable
         WindowChrome.ApplyTheme(_lottery, Services.Settings.Appearance.Theme);
         _lottery.Closed += (_, _) => _lottery = null;
         _lottery.Activate();
+    }
+
+    public void OpenReplay()
+    {
+        if (_replay is not null) { _replay.Activate(); return; }
+        // Replay whichever surface the user is looking at: the board page when open, else the overlay.
+        var source = _board is not null
+            ? Services.Board.Current.Document.Strokes
+            : Services.OverlayInk.Document.Strokes;
+        _replay = new ReplayWindow(source, Services.Settings.Appearance.Theme);
+        _replay.Closed += (_, _) => _replay = null;
+        _replay.Activate();
+    }
+
+    public void OpenGuide()
+    {
+        if (_guide is not null) { _guide.Activate(); return; }
+        _guide = InfoWindow.OpenGuide(Services.Settings.Appearance.Theme);
+        _guide.Closed += (_, _) => _guide = null;
+        _guide.Activate();
     }
 
     public async Task ScreenshotAsync()
@@ -221,6 +293,7 @@ public sealed class ShellController : IShellActions, IDisposable
     {
         _pollTimer.Stop();
         _countdown?.Dispose();
+        Updater.Dispose();
         Overlay.Dispose();
         Services.Dispose();
     }

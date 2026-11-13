@@ -1,5 +1,5 @@
 {
-  "presentedFrames": 135,
+  "presentedFrames": 159,
   "overlayTransparentCapable": true,
   "strokeCount": 6,
   "allCriticalChecksPassed": true,
@@ -19,6 +19,41 @@
     {
       "check": "3D coordinate system committed as three axes",
       "strokesAdded": 3
+    },
+    {
+      "check": "selection corner drag scales and undo restores",
+      "selected": true,
+      "scaledUp": true,
+      "undoRestored": true,
+      "widthBefore": 635,
+      "widthAfter": 757.57153,
+      "widthUndone": 635
+    },
+    {
+      "check": "delete selection removes and undo restores",
+      "removed": 1,
+      "restoredAfterUndo": true
+    },
+    {
+      "check": "replay reveals strokes monotonically and completes",
+      "monotonic": true,
+      "completed": true,
+      "strokes": 6
+    },
+    {
+      "check": "edge gesture property applied",
+      "applied": true
+    },
+    {
+      "check": "gpu readback stays well below full-screen-per-frame",
+      "fullFrameBytes": 8294400,
+      "frames": 155,
+      "readbackBytes": 133983588,
+      "naiveBytes": 1285632000,
+      "ratioWholeRun": 0.1042,
+      "drawingFrames": 69,
+      "drawingReadbackBytesPerFrame": 205778,
+      "drawingRatioVsFullScreen": 0.02481
     }
   ]
 }

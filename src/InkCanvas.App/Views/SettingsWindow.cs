@@ -14,11 +14,13 @@ namespace InkCanvas.App.Views;
 public sealed class SettingsWindow : Window
 {
     private readonly AppServices _services;
+    private readonly UpdateCoordinator _updater;
     private readonly StackPanel _content = new() { Spacing = 10, Padding = new Thickness(20) };
 
-    public SettingsWindow(AppServices services)
+    public SettingsWindow(AppServices services, UpdateCoordinator updater = null)
     {
         _services = services;
+        _updater = updater;
         Title = "Ink Canvas 设置";
 
         BuildSections();
@@ -94,6 +96,8 @@ public sealed class SettingsWindow : Window
             v => S.Gesture.IsEnableTwoFingerTranslate = v));
         _content.Children.Add(ToggleRow("双指旋转", S.Gesture.IsEnableTwoFingerRotation,
             v => S.Gesture.IsEnableTwoFingerRotation = v));
+        _content.Children.Add(ToggleRow("双指手势作用于选区（有选区时）", S.Gesture.IsEnableTwoFingerRotationOnSelection,
+            v => S.Gesture.IsEnableTwoFingerRotationOnSelection = v));
         _content.Children.Add(SliderRow("手掌判定接触宽度（px）", S.Advanced.FingerModeBoundsWidth, 8, 80,
             v => S.Advanced.FingerModeBoundsWidth = (int)v));
 
@@ -166,7 +170,28 @@ public sealed class SettingsWindow : Window
             v => S.Advanced.IsSecondConfimeWhenShutdownApp = v));
         _content.Children.Add(ToggleRow("启用日志", S.Advanced.IsLogEnabled,
             v => S.Advanced.IsLogEnabled = v));
+        _content.Children.Add(ToggleRow("全屏时抑制 Windows 边缘手势", S.Advanced.IsEnableEdgeGestureUtil,
+            v => S.Advanced.IsEnableEdgeGestureUtil = v));
         _content.Children.Add(InfoRow("墨迹存档格式为 .icink（JSON）。旧版 WPF 的 .isf 存档无法读取——这是迁移到 WinUI 3 的已知兼容性中断。"));
+
+        _content.Children.Add(Section("关于"));
+        _content.Children.Add(InfoRow(_updater is null
+            ? "Ink Canvas · WinUI 3"
+            : $"Ink Canvas · WinUI 3　当前版本 {_updater.CurrentVersion}"));
+        _content.Children.Add(ButtonRow("检查更新", "从 GitHub 发行版检查新版本", async () =>
+        {
+            if (_updater is not null) await _updater.CheckAsync(interactive: true);
+        }));
+        _content.Children.Add(ButtonRow("操作指南", "模式、工具、手势与快捷键", () =>
+        {
+            var w = InfoWindow.OpenGuide(S.Appearance.Theme);
+            w.Activate();
+        }));
+        _content.Children.Add(ButtonRow("更新日志", "查看版本变更记录", () =>
+        {
+            var w = InfoWindow.OpenChangeLog(S.Appearance.Theme);
+            w.Activate();
+        }));
 
         var close = new Button
         {
@@ -235,6 +260,28 @@ public sealed class SettingsWindow : Window
         var box = new TextBox { Text = value, Width = 300 };
         box.LostFocus += (_, _) => { set(box.Text); Commit(); };
         return Card(Row(header, box));
+    }
+
+    private UIElement ButtonRow(string header, string description, Action onClick)
+    {
+        var button = new Button { Content = header, MinHeight = 40, MinWidth = 120 };
+        button.Click += (_, _) => onClick();
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        text.Children.Add(new TextBlock { Text = header, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        text.Children.Add(new TextBlock
+        {
+            Text = description,
+            FontSize = 12,
+            Foreground = (Brush)Application.Current.Resources["IcTextSecondaryBrush"],
+        });
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(text, 0);
+        Grid.SetColumn(button, 1);
+        grid.Children.Add(text);
+        grid.Children.Add(button);
+        return Card(grid);
     }
 
     private UIElement InfoRow(string text) => Card(new TextBlock
