@@ -27,3 +27,6 @@ Desktop.ini
 $RECYCLE.BIN/
 # HarmonyOS toolchain local record
 tools/toolchain.local.json
+
+# superpowers execution workspace
+.superpowers/

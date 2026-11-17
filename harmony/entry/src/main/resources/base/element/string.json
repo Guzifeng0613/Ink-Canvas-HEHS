@@ -1,0 +1,7 @@
+{
+  "string": [
+    { "name": "module_desc", "value": "Ink Canvas HarmonyOS entry module" },
+    { "name": "EntryAbility_desc", "value": "Ink Canvas HarmonyOS" },
+    { "name": "EntryAbility_label", "value": "Ink Canvas" }
+  ]
+}

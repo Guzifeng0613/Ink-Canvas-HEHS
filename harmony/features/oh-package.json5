@@ -1,0 +1,9 @@
+{
+  "name": "@inkcanvas/features",
+  "version": "3.4.0",
+  "description": "Ink Canvas HarmonyOS features module",
+  "main": "Index.ets",
+  "author": "",
+  "license": "GPL-3.0",
+  "dependencies": {}
+}

@@ -1,0 +1,9 @@
+# HarmonyOS build artifacts
+/oh_modules/
+**/oh_modules/
+**/build/
+**/.hvigor/
+**/.cxx/
+**/BuildProfile.ets
+local.properties
+.hvigor/

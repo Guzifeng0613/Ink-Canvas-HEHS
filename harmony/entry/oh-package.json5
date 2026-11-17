@@ -1,0 +1,15 @@
+{
+  "name": "entry",
+  "version": "3.4.0",
+  "description": "Ink Canvas HarmonyOS application entry",
+  "main": "",
+  "author": "",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "@inkcanvas/core": "file:../core",
+    "@inkcanvas/platform": "file:../platform",
+    "@inkcanvas/ink": "file:../ink",
+    "@inkcanvas/controls": "file:../controls",
+    "@inkcanvas/features": "file:../features"
+  }
+}
