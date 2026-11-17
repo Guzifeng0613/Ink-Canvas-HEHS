@@ -13,5 +13,6 @@ Directory.CreateDirectory(outDir);
 InkColorVectors.Write(outDir);
 StrokeAttributesVectors.Write(outDir);
 TaperVectors.Write(outDir);
+GeometryVectors.Write(outDir);
 SettingsVectors.Write(outDir);
 Console.WriteLine($"vectors written to {outDir}");

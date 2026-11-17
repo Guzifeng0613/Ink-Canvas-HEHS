@@ -1,0 +1,102 @@
+{
+  "id": "undo",
+  "entry": "harmony/core/src/main/ets/history/UndoStack.ts",
+  "cases": [
+    {
+      "id": "undo-basic",
+      "fn": "simulateUndo",
+      "input": [
+        [
+          "push:a",
+          "push:b",
+          "undo",
+          "redo"
+        ],
+        100
+      ],
+      "expected": {
+        "canUndo": true,
+        "canRedo": false,
+        "undoCount": 2,
+        "redoCount": 0,
+        "log": [
+          "revert:b",
+          "apply:b"
+        ]
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "undo-capacity",
+      "fn": "simulateUndo",
+      "input": [
+        [
+          "push:a",
+          "push:b",
+          "push:c",
+          "undo",
+          "undo",
+          "undo"
+        ],
+        2
+      ],
+      "expected": {
+        "canUndo": false,
+        "canRedo": true,
+        "undoCount": 0,
+        "redoCount": 2,
+        "log": [
+          "revert:c",
+          "revert:b"
+        ]
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "undo-clear",
+      "fn": "simulateUndo",
+      "input": [
+        [
+          "push:a",
+          "undo",
+          "clear",
+          "redo"
+        ],
+        100
+      ],
+      "expected": {
+        "canUndo": false,
+        "canRedo": false,
+        "undoCount": 0,
+        "redoCount": 0,
+        "log": [
+          "revert:a"
+        ]
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "undo-redo-cleared-on-push",
+      "fn": "simulateUndo",
+      "input": [
+        [
+          "push:a",
+          "undo",
+          "push:b",
+          "redo"
+        ],
+        100
+      ],
+      "expected": {
+        "canUndo": true,
+        "canRedo": false,
+        "undoCount": 1,
+        "redoCount": 0,
+        "log": [
+          "revert:a"
+        ]
+      },
+      "tolerance": 0
+    }
+  ]
+}

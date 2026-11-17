@@ -1,0 +1,546 @@
+{
+  "id": "stroke-eraser",
+  "entry": "harmony/core/src/main/ets/ink/StrokeEraser.ts",
+  "cases": [
+    {
+      "id": "erase-single-inside",
+      "fn": "eraseDiscSummary",
+      "input": [
+        {
+          "ColorPacked": 4278190080,
+          "BaseWidth": 3,
+          "IsHighlighter": false,
+          "HighlighterAlpha": 96,
+          "TaperKind": 1,
+          "IsRecognizedShape": false,
+          "Points": [
+            {
+              "X": 10,
+              "Y": 10,
+              "Pressure": 0.5,
+              "Width": 6,
+              "TimeMs": 0
+            }
+          ]
+        },
+        10,
+        10,
+        5
+      ],
+      "expected": {
+        "touched": true,
+        "fragments": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "erase-single-outside",
+      "fn": "eraseDiscSummary",
+      "input": [
+        {
+          "ColorPacked": 4278190080,
+          "BaseWidth": 3,
+          "IsHighlighter": false,
+          "HighlighterAlpha": 96,
+          "TaperKind": 1,
+          "IsRecognizedShape": false,
+          "Points": [
+            {
+              "X": 10,
+              "Y": 10,
+              "Pressure": 0.5,
+              "Width": 6,
+              "TimeMs": 0
+            }
+          ]
+        },
+        100,
+        100,
+        5
+      ],
+      "expected": {
+        "touched": false,
+        "fragments": [
+          {
+            "ColorPacked": 4278190080,
+            "BaseWidth": 3,
+            "IsHighlighter": false,
+            "HighlighterAlpha": 96,
+            "TaperKind": 1,
+            "IsRecognizedShape": false,
+            "Points": [
+              {
+                "X": 10,
+                "Y": 10,
+                "Pressure": 0.5,
+                "Width": 6,
+                "TimeMs": 0
+              }
+            ]
+          }
+        ]
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "erase-line-center",
+      "fn": "eraseDiscSummary",
+      "input": [
+        {
+          "ColorPacked": 4278190080,
+          "BaseWidth": 3,
+          "IsHighlighter": false,
+          "HighlighterAlpha": 96,
+          "TaperKind": 1,
+          "IsRecognizedShape": false,
+          "Points": [
+            {
+              "X": 0,
+              "Y": 0,
+              "Pressure": 0.5,
+              "Width": 4,
+              "TimeMs": 0
+            },
+            {
+              "X": 20,
+              "Y": 0,
+              "Pressure": 0.5,
+              "Width": 4,
+              "TimeMs": 0
+            }
+          ]
+        },
+        10,
+        0,
+        3
+      ],
+      "expected": {
+        "touched": true,
+        "fragments": [
+          {
+            "ColorPacked": 4278190080,
+            "BaseWidth": 3,
+            "IsHighlighter": false,
+            "HighlighterAlpha": 96,
+            "TaperKind": 1,
+            "IsRecognizedShape": false,
+            "Points": [
+              {
+                "X": 0,
+                "Y": 0,
+                "Pressure": 0.5,
+                "Width": 4,
+                "TimeMs": 0
+              },
+              {
+                "X": 5,
+                "Y": 0,
+                "Pressure": 0.5,
+                "Width": 4,
+                "TimeMs": 0
+              }
+            ]
+          },
+          {
+            "ColorPacked": 4278190080,
+            "BaseWidth": 3,
+            "IsHighlighter": false,
+            "HighlighterAlpha": 96,
+            "TaperKind": 1,
+            "IsRecognizedShape": false,
+            "Points": [
+              {
+                "X": 15,
+                "Y": 0,
+                "Pressure": 0.5,
+                "Width": 4,
+                "TimeMs": 0
+              },
+              {
+                "X": 20,
+                "Y": 0,
+                "Pressure": 0.5,
+                "Width": 4,
+                "TimeMs": 0
+              }
+            ]
+          }
+        ]
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "erase-line-edge",
+      "fn": "eraseDiscSummary",
+      "input": [
+        {
+          "ColorPacked": 4278190080,
+          "BaseWidth": 3,
+          "IsHighlighter": false,
+          "HighlighterAlpha": 96,
+          "TaperKind": 1,
+          "IsRecognizedShape": false,
+          "Points": [
+            {
+              "X": 0,
+              "Y": 0,
+              "Pressure": 0.5,
+              "Width": 4,
+              "TimeMs": 0
+            },
+            {
+              "X": 20,
+              "Y": 0,
+              "Pressure": 0.5,
+              "Width": 4,
+              "TimeMs": 0
+            }
+          ]
+        },
+        0,
+        2,
+        3
+      ],
+      "expected": {
+        "touched": true,
+        "fragments": [
+          {
+            "ColorPacked": 4278190080,
+            "BaseWidth": 3,
+            "IsHighlighter": false,
+            "HighlighterAlpha": 96,
+            "TaperKind": 1,
+            "IsRecognizedShape": false,
+            "Points": [
+              {
+                "X": 4.582575798034668,
+                "Y": 0,
+                "Pressure": 0.5,
+                "Width": 4,
+                "TimeMs": 0
+              },
+              {
+                "X": 20,
+                "Y": 0,
+                "Pressure": 0.5,
+                "Width": 4,
+                "TimeMs": 0
+              }
+            ]
+          }
+        ]
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "erase-line-miss",
+      "fn": "eraseDiscSummary",
+      "input": [
+        {
+          "ColorPacked": 4278190080,
+          "BaseWidth": 3,
+          "IsHighlighter": false,
+          "HighlighterAlpha": 96,
+          "TaperKind": 1,
+          "IsRecognizedShape": false,
+          "Points": [
+            {
+              "X": 0,
+              "Y": 0,
+              "Pressure": 0.5,
+              "Width": 4,
+              "TimeMs": 0
+            },
+            {
+              "X": 20,
+              "Y": 0,
+              "Pressure": 0.5,
+              "Width": 4,
+              "TimeMs": 0
+            }
+          ]
+        },
+        10,
+        30,
+        3
+      ],
+      "expected": {
+        "touched": false,
+        "fragments": [
+          {
+            "ColorPacked": 4278190080,
+            "BaseWidth": 3,
+            "IsHighlighter": false,
+            "HighlighterAlpha": 96,
+            "TaperKind": 1,
+            "IsRecognizedShape": false,
+            "Points": [
+              {
+                "X": 0,
+                "Y": 0,
+                "Pressure": 0.5,
+                "Width": 4,
+                "TimeMs": 0
+              },
+              {
+                "X": 20,
+                "Y": 0,
+                "Pressure": 0.5,
+                "Width": 4,
+                "TimeMs": 0
+              }
+            ]
+          }
+        ]
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "erase-two-cuts",
+      "fn": "eraseDiscSummary",
+      "input": [
+        {
+          "ColorPacked": 4278190080,
+          "BaseWidth": 3,
+          "IsHighlighter": false,
+          "HighlighterAlpha": 96,
+          "TaperKind": 1,
+          "IsRecognizedShape": false,
+          "Points": [
+            {
+              "X": 0,
+              "Y": 0,
+              "Pressure": 0.5,
+              "Width": 4,
+              "TimeMs": 0
+            },
+            {
+              "X": 10,
+              "Y": 0,
+              "Pressure": 0.5,
+              "Width": 4,
+              "TimeMs": 0
+            },
+            {
+              "X": 20,
+              "Y": 0,
+              "Pressure": 0.5,
+              "Width": 4,
+              "TimeMs": 0
+            }
+          ]
+        },
+        10,
+        0,
+        2
+      ],
+      "expected": {
+        "touched": true,
+        "fragments": [
+          {
+            "ColorPacked": 4278190080,
+            "BaseWidth": 3,
+            "IsHighlighter": false,
+            "HighlighterAlpha": 96,
+            "TaperKind": 1,
+            "IsRecognizedShape": false,
+            "Points": [
+              {
+                "X": 0,
+                "Y": 0,
+                "Pressure": 0.5,
+                "Width": 4,
+                "TimeMs": 0
+              },
+              {
+                "X": 6,
+                "Y": 0,
+                "Pressure": 0.5,
+                "Width": 4,
+                "TimeMs": 0
+              }
+            ]
+          },
+          {
+            "ColorPacked": 4278190080,
+            "BaseWidth": 3,
+            "IsHighlighter": false,
+            "HighlighterAlpha": 96,
+            "TaperKind": 1,
+            "IsRecognizedShape": false,
+            "Points": [
+              {
+                "X": 14,
+                "Y": 0,
+                "Pressure": 0.5,
+                "Width": 4,
+                "TimeMs": 0
+              },
+              {
+                "X": 20,
+                "Y": 0,
+                "Pressure": 0.5,
+                "Width": 4,
+                "TimeMs": 0
+              }
+            ]
+          }
+        ]
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "erase-variable-width",
+      "fn": "eraseDiscSummary",
+      "input": [
+        {
+          "ColorPacked": 4278190080,
+          "BaseWidth": 3,
+          "IsHighlighter": false,
+          "HighlighterAlpha": 96,
+          "TaperKind": 1,
+          "IsRecognizedShape": false,
+          "Points": [
+            {
+              "X": 0,
+              "Y": 0,
+              "Pressure": 0.5,
+              "Width": 2,
+              "TimeMs": 0
+            },
+            {
+              "X": 10,
+              "Y": 0,
+              "Pressure": 0.5,
+              "Width": 12,
+              "TimeMs": 0
+            },
+            {
+              "X": 20,
+              "Y": 0,
+              "Pressure": 0.5,
+              "Width": 2,
+              "TimeMs": 0
+            }
+          ]
+        },
+        10,
+        0,
+        4
+      ],
+      "expected": {
+        "touched": true,
+        "fragments": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "erase-zero-radius",
+      "fn": "eraseDiscSummary",
+      "input": [
+        {
+          "ColorPacked": 4278190080,
+          "BaseWidth": 3,
+          "IsHighlighter": false,
+          "HighlighterAlpha": 96,
+          "TaperKind": 1,
+          "IsRecognizedShape": false,
+          "Points": [
+            {
+              "X": 0,
+              "Y": 0,
+              "Pressure": 0.5,
+              "Width": 4,
+              "TimeMs": 0
+            },
+            {
+              "X": 20,
+              "Y": 0,
+              "Pressure": 0.5,
+              "Width": 4,
+              "TimeMs": 0
+            }
+          ]
+        },
+        10,
+        0,
+        0
+      ],
+      "expected": {
+        "touched": false,
+        "fragments": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "erase-duplicate-points",
+      "fn": "eraseDiscSummary",
+      "input": [
+        {
+          "ColorPacked": 4278190080,
+          "BaseWidth": 3,
+          "IsHighlighter": false,
+          "HighlighterAlpha": 96,
+          "TaperKind": 1,
+          "IsRecognizedShape": false,
+          "Points": [
+            {
+              "X": 5,
+              "Y": 5,
+              "Pressure": 0.5,
+              "Width": 4,
+              "TimeMs": 0
+            },
+            {
+              "X": 5,
+              "Y": 5,
+              "Pressure": 0.5,
+              "Width": 4,
+              "TimeMs": 0
+            },
+            {
+              "X": 15,
+              "Y": 5,
+              "Pressure": 0.5,
+              "Width": 4,
+              "TimeMs": 0
+            }
+          ]
+        },
+        5,
+        5,
+        3
+      ],
+      "expected": {
+        "touched": true,
+        "fragments": [
+          {
+            "ColorPacked": 4278190080,
+            "BaseWidth": 3,
+            "IsHighlighter": false,
+            "HighlighterAlpha": 96,
+            "TaperKind": 1,
+            "IsRecognizedShape": false,
+            "Points": [
+              {
+                "X": 10,
+                "Y": 5,
+                "Pressure": 0.5,
+                "Width": 4,
+                "TimeMs": 0
+              },
+              {
+                "X": 15,
+                "Y": 5,
+                "Pressure": 0.5,
+                "Width": 4,
+                "TimeMs": 0
+              }
+            ]
+          }
+        ]
+      },
+      "tolerance": 0.0001
+    }
+  ]
+}
