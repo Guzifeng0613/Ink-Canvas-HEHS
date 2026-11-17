@@ -1,0 +1,178 @@
+{
+  "id": "ink-color",
+  "entry": "harmony/core/src/main/ets/ink/InkColor.ts",
+  "cases": [
+    {
+      "id": "pack-0-0-0-0",
+      "fn": "packArgb",
+      "input": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "expected": 0,
+      "tolerance": 0
+    },
+    {
+      "id": "pack-255-0-0-0",
+      "fn": "packArgb",
+      "input": [
+        255,
+        0,
+        0,
+        0
+      ],
+      "expected": 4278190080,
+      "tolerance": 0
+    },
+    {
+      "id": "pack-255-255-255-255",
+      "fn": "packArgb",
+      "input": [
+        255,
+        255,
+        255,
+        255
+      ],
+      "expected": 4294967295,
+      "tolerance": 0
+    },
+    {
+      "id": "pack-255-220-38-38",
+      "fn": "packArgb",
+      "input": [
+        255,
+        220,
+        38,
+        38
+      ],
+      "expected": 4292617766,
+      "tolerance": 0
+    },
+    {
+      "id": "pack-128-12-34-56",
+      "fn": "packArgb",
+      "input": [
+        128,
+        12,
+        34,
+        56
+      ],
+      "expected": 2148278840,
+      "tolerance": 0
+    },
+    {
+      "id": "pack-1-2-3-4",
+      "fn": "packArgb",
+      "input": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "expected": 16909060,
+      "tolerance": 0
+    },
+    {
+      "id": "unpack-00000000",
+      "fn": "unpackArgb",
+      "input": [
+        0
+      ],
+      "expected": {
+        "A": 0,
+        "R": 0,
+        "G": 0,
+        "B": 0
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "unpack-FF000000",
+      "fn": "unpackArgb",
+      "input": [
+        4278190080
+      ],
+      "expected": {
+        "A": 255,
+        "R": 0,
+        "G": 0,
+        "B": 0
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "unpack-FFFFFFFF",
+      "fn": "unpackArgb",
+      "input": [
+        4294967295
+      ],
+      "expected": {
+        "A": 255,
+        "R": 255,
+        "G": 255,
+        "B": 255
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "unpack-FFDC2626",
+      "fn": "unpackArgb",
+      "input": [
+        4292617766
+      ],
+      "expected": {
+        "A": 255,
+        "R": 220,
+        "G": 38,
+        "B": 38
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "unpack-80122338",
+      "fn": "unpackArgb",
+      "input": [
+        2148672312
+      ],
+      "expected": {
+        "A": 128,
+        "R": 18,
+        "G": 35,
+        "B": 56
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "alpha-FF000000-128",
+      "fn": "withAlphaArgb",
+      "input": [
+        4278190080,
+        128
+      ],
+      "expected": 2147483648,
+      "tolerance": 0
+    },
+    {
+      "id": "alpha-80122338-20",
+      "fn": "withAlphaArgb",
+      "input": [
+        2148672312,
+        20
+      ],
+      "expected": 336732984,
+      "tolerance": 0
+    },
+    {
+      "id": "alpha-FFFFFFFF-240",
+      "fn": "withAlphaArgb",
+      "input": [
+        4294967295,
+        240
+      ],
+      "expected": 4043309055,
+      "tolerance": 0
+    }
+  ]
+}

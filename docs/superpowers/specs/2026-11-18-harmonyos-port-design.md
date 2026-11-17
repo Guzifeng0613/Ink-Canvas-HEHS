@@ -92,7 +92,7 @@ harmony/                          DevEco 26 工程
 2. **权威功能清单** `parity/manifest.json`（schema 见 §5.1）：
    每项 `status ∈ {ported, adapted, not-ported}`（开发期允许 `planned`，`--final` 校验拒绝）+ `notes` 必填；覆盖率 = (ported+adapted)/分母，见 §9。
 3. **共享黄金向量**：`parity/vectors/*.json` 由 C# 生成器（`tools/InkCanvas.VectorGen`，新增独立项目）产出，
-   两侧测试共同消费；`node --experimental-transform-types parity/run-vectors.mjs` 零依赖执行。
+   两侧测试共同消费；`node --experimental-transform-types --experimental-loader ./parity/ts-resolve-loader.mjs parity/run-vectors.mjs` 零依赖执行（loader 解析 ArkTS 无扩展名导入）。
    向量集（首版）：`taper-tail`、`taper-velocity`、`stroke-geometry`、`stroke-eraser`、`undo`、
    `shapes`、`recognizer`、`selection`、`two-finger`、`touch-classifier`、`palm`、`pixel-compositing`、
    `settings-roundtrip`、`icink-roundtrip`、`replay-clock`、`board-format`、`update-policy`、`app-version`。
@@ -199,7 +199,7 @@ harmony/                          DevEco 26 工程
 
 | 层 | 手段 | 本机可执行性 |
 |---|---|---|
-| L1 逻辑互认 | 黄金向量双向跑（C# xunit + `node --experimental-transform-types`） | **可执行**（已实证） |
+| L1 逻辑互认 | 黄金向量双向跑（C# xunit + `node --experimental-transform-types --experimental-loader ./parity/ts-resolve-loader.mjs`） | **可执行**（已实证） |
 | L2 编译与静态检查 | `hvigorw assembleHap`（debug，未签名）+ `codelinter` | **可执行**（已实证：探针 41 tasks / 28s） |
 | L3 运行与 UI | 真机/模拟器（模拟器不可靠） | **本机不可用** → 记录「未实机验证」，给出核对清单 |
 | L4 基线回归 | `.\build.ps1 test`（WinUI3 124 用例） | 可执行 |

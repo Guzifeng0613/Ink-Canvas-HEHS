@@ -1,0 +1,101 @@
+{
+  "id": "stroke-attributes",
+  "entry": "harmony/core/src/main/ets/ink/StrokeAttributes.ts",
+  "cases": [
+    {
+      "id": "normal-tail",
+      "fn": "strokeAttributesEffective",
+      "input": [
+        {
+          "ColorPacked": 4278190080,
+          "BaseWidth": 2.5,
+          "IsHighlighter": false,
+          "HighlighterAlpha": 96,
+          "TaperKind": 1
+        }
+      ],
+      "expected": {
+        "effectiveTaper": 1,
+        "effectiveArgb": 4278190080,
+        "baseWidth": 2.5
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "normal-velocity",
+      "fn": "strokeAttributesEffective",
+      "input": [
+        {
+          "ColorPacked": 4292617766,
+          "BaseWidth": 7.5,
+          "IsHighlighter": false,
+          "HighlighterAlpha": 96,
+          "TaperKind": 2
+        }
+      ],
+      "expected": {
+        "effectiveTaper": 2,
+        "effectiveArgb": 4292617766,
+        "baseWidth": 7.5
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "normal-none",
+      "fn": "strokeAttributesEffective",
+      "input": [
+        {
+          "ColorPacked": 2148672312,
+          "BaseWidth": 15,
+          "IsHighlighter": false,
+          "HighlighterAlpha": 96,
+          "TaperKind": 0
+        }
+      ],
+      "expected": {
+        "effectiveTaper": 0,
+        "effectiveArgb": 2148672312,
+        "baseWidth": 15
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "highlighter-tail",
+      "fn": "strokeAttributesEffective",
+      "input": [
+        {
+          "ColorPacked": 4294950912,
+          "BaseWidth": 10,
+          "IsHighlighter": true,
+          "HighlighterAlpha": 140,
+          "TaperKind": 1
+        }
+      ],
+      "expected": {
+        "effectiveTaper": 0,
+        "effectiveArgb": 2365571072,
+        "baseWidth": 10
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "highlighter-alpha20",
+      "fn": "strokeAttributesEffective",
+      "input": [
+        {
+          "ColorPacked": 4278255360,
+          "BaseWidth": 3,
+          "IsHighlighter": true,
+          "HighlighterAlpha": 20,
+          "TaperKind": 2
+        }
+      ],
+      "expected": {
+        "effectiveTaper": 0,
+        "effectiveArgb": 335609600,
+        "baseWidth": 3
+      },
+      "tolerance": 0
+    }
+  ]
+}
