@@ -1,0 +1,427 @@
+---
+name: harmonyos-development
+description: |
+  HarmonyOS 26.0.0 应用开发规范与指南，基于 API 26（Release，底座 OpenHarmony 7.0）。用于鸿蒙应用/元服务开发时参考华为官方规范。
+  触发场景：开发HarmonyOS应用/元服务时，需要了解ArkTS、Stage模型、ArkUI、权限配置、打包上架等。
+  包含：开发准备、应用框架(Stage模型)、UI开发(ArkUI/ArkTS)、一次开发多端部署、权限与安全、打包签名上架等。
+---
+
+# HarmonyOS 应用开发规范（26.0.0 / API 26）
+
+> **版本说明**：本文档基于 **HarmonyOS 26.0.0**（API 26 Release，2026-08-29；底座 OpenHarmony 7.0；商用版 HarmonyOS 7.0.0.105）编写，官方推荐新应用使用、存量应用升级。
+> 兼容基线：HarmonyOS 6.1.1（API 24 Release，2026-05-26）为存量设备主力（占比 84.93%），官方标注「按需使用/按需升级」。
+> HarmonyOS 6 于 2025年9月25日发布（API 20）；2026年4月20日 HarmonyOS 6.1 正式发布（API 23 稳定）。
+> 2026年5月26日 HarmonyOS 6.1.1 Release 发布（API 24 正式版）。
+> 2026年8月29日 HarmonyOS 开发套件 26.0.0 正式 Release（API 26，配套 DevEco Studio 26.0.0.821 / SDK 26.0.0.105 / OpenHarmony 7.0），详见「API 26 变更追踪」。
+> 2026年9月23日 DevEco Studio 发布 26.0.0.851 Patch 版本（无新增特性，仅修复工具链），API / SDK 版本无变化。
+> 2026年10月8日 DevEco Studio（鸿蒙电脑版）26.0.0 Beta1（26.0.0.201）首次发布公测版，集成 DevEco Code 工具，配套 Hvigor 7.26.8 / ohpm 6.0.1，获取方式为鸿蒙电脑应用市场 > 我的 > 应用尝鲜。
+> 2026年10月31日 DevEco Studio 发布 26.0.0.865 Patch 版本（无新增特性，仅修复工具链，Hvigor 6.26.8→6.26.9），API / SDK 版本无变化。
+> 2026年11月6日 DevEco Studio（鸿蒙电脑版）发布 26.0.0 Beta2（26.0.0.220）：工程模板新增 Car / Wearable / TV 设备类型，本地真机运行支持无线连接调试；配套 Hvigor 7.26.11、Command Line 26.0.0.220，API / SDK 版本无变化。
+> 2026年11月10日 HarmonyOS 26.0.1 Beta1 发布（API 26.0.1，DevEco Studio 26.0.1 Beta1 / 26.0.1.290，HarmonyOS SDK 26.0.1 Beta1 基于 OpenHarmony SDK 26.0.1.120）：26.0.0 的增量版本，仅供尝鲜；Beta 版 DevEco Studio 开发的应用不能上架应用市场。
+> 历史版本：HarmonyOS 5.x = API 12/13/14/16。
+
+## 扩展技能（独立 Skill）
+
+以下专题已拆分为独立 skill，如需深入开发请查阅：
+
+| 扩展专题 | 路径 | 说明 |
+|---------|------|------|
+| 系统能力 | `../system/SKILL.md` | 蓝牙/Wi-Fi/NFC/定位/传感器/电源/安全 |
+| 媒体服务 | `../media/SKILL.md` | 相机/音视频/AVSession/相册访问 |
+| AI与元服务 | `../ai-meta/SKILL.md` | 意图框架/语音/MLKit/元服务/服务流转 |
+| 设计规范 | `../design/SKILL.md` | 色彩/字体/图标/布局/动效设计 |
+
+---
+
+## 快速导航
+
+- [开发准备](references/dev-preparation.md) — 环境搭建、工程创建、签名配置
+- [应用框架](references/app-framework.md) — Stage模型、UIAbility、module.json5
+- [UI开发](references/ui-development.md) — ArkUI声明式开发、ArkTS语法、组件、布局
+- [一次开发多端部署](references/multi-device.md) — 响应式布局、断点、栅格、工程组织
+- [权限与安全](references/permissions.md) — 权限声明、user_grant、system_grant、APL等级
+- [打包上架](references/publish.md) — 签名配置、App Pack打包、AGC上架流程
+- [数据持久化](references/arkdata.md) — ArkData：RDB/Preferences/分布式数据/UDMF
+- [通知服务](references/notification.md) — Notification Kit：本地通知/通知渠道/WantAgent
+- [应用测试](references/testing.md) — Hypium框架：单元测试/UI测试/专项测试/DevEco Testing测试服务(API 26)
+- [Web开发](references/arkweb.md) — ArkWeb：WebView/JSBridge/安全控制
+- [应用架构与质量](references/architecture.md) — 分层架构/模块化/性能优化/安全编码
+- [其他参考](references/other.md) — 网络请求、数据存储、生命周期、常见问题
+- [PDF阅读](references/pdf-kit.md) — PDF Kit：PDF页面视图/文本获取/缩放
+- [实况窗](references/live-view-kit.md) — Live View Kit：地理围栏触发实况窗/API 23新增
+- [UI组件库](references/ui-design-kit.md) — UI Design Kit：官方UI组件库/底部页签/导航/材质效果/颜色选择器(API 26)
+- [卡片开发](references/form-kit.md) — Form Kit：ArkTS卡片/V2装饰器/待机屏保卡片/透明卡片
+- [手写笔](references/pen-kit.md) — Pen Kit：画布绘制/长画布滚动/API 23新增
+- [无障碍](references/accessibility-kit.md) — Accessibility Kit：屏幕朗读/无障碍扩展/分组聚合播报
+- [性能分析](references/performance-analysis-kit.md) — Performance Analysis Kit：HiAppEvent/HiDebug/AppFreeze
+- [数据增强](references/data-augmentation-kit.md) — Data Augmentation Kit：知识库/知识检索/端侧问答/RAG
+- [输入法](references/ime-kit.md) — IME Kit：输入法框架/编辑框通信/输入法应用
+- [进程间通信](references/ipc-kit.md) — IPC Kit：跨进程通信/Binder/RPC
+- [国际化本地化](references/localization-kit.md) — Localization Kit：I18n/L10n/多语言
+- [NDK开发](references/ndk-development.md) — NDK：C/C++原生开发/交叉编译
+- [应用质量](references/app-quality.md) — 质量体验建议：稳定性/性能/功耗/安全隐私/兼容性
+- [应用服务Kit](references/app-service-kits.md) — Calendar+Contacts+Preview+Reader+ScenarioFusion+CallService
+- [行业实践](references/industry-practices.md) — 16个行业实践分类索引/公共关键技术方案
+- [ArkTS语言](references/arkts.md) — ArkTS：TypeScript超集/声明式UI/状态管理/并发
+- [文件基础服务](references/core-file-kit.md) — Core File Kit：应用文件/用户文件/文件沙箱/分享/压缩解压(API 26)
+- [华为账号](references/account-kit.md) — Account Kit：一键登录/静默登录/头像昵称/手机号
+- [文件管理服务](references/file-manager-service-kit.md) — File Manager Service Kit：回收站/文件图标/快捷方式
+- [最佳实践](references/best-practices.md) — 官方最佳实践专题：架构/UI/功能/多设备/AI/安全/质量
+- [应用FAQ](references/app-faq.md) — 应用开发常见问题：框架/ArkTS/NDK/UI/数据/无障碍/Web
+- [DevEco Service](references/deveco-service.md) — ohpm-repo私仓搭建/缓存/部署
+- [桌面拓展](references/desktop-extension-kit.md) — Desktop Extension Kit：状态栏/快捷栏接入/PC桌面拓展
+
+---
+
+## 版本与API对照
+
+| HarmonyOS版本 | API Level | DevEco Studio | 状态 | 发布时间 |
+|-------------|-----------|-------------|------|---------|
+| 5.0.0 | 12 | — | 稳定 | 2024 |
+| 5.0.1 | 13 | — | 稳定 | 2024 |
+| 5.0.2 | 14 | — | 稳定 | 2025.01 |
+| 5.0.4 | 16 | 5.0.4 Release | 稳定 | 2025.03.27 |
+| **6.0.2** | **22** | **6.0.2 Release** | **稳定** | **2026.01.21** |
+| **6.1.0** | **23** | **6.1.0 Release（6.1.0.830）** | **稳定** | **2026.04.20** |
+| **6.1.1** | **24** | **6.1.1 Release（6.1.1.280）** | **Release（存量主力）** | **2026.05.26** |
+| **26.0.0** | **26** | **26.0.0 Release（26.0.0.821；Patch 26.0.0.851，2026.09.23；Patch 26.0.0.865，2026.10.31）** | **Release（最新，官方推荐）** | **2026.08.29** |
+| 26.0.1 | 26.0.1 | 26.0.1 Beta1（26.0.1.290） | Beta（增量尝鲜） | 2026.11.10 |
+
+> ⚠️ **官方版本使用建议（2026-10-08）**：**API 26.0.0 为推荐版本**（新开发应用推荐使用、已开发应用推荐升级，底座 OpenHarmony 7.0）。API 24（HarmonyOS 6.1.1 Release）为存量主力（占比 84.93%），官方标注「按需使用/按需升级」；API 23 仍可用于存量维护。26.0.1 Beta1 为增量尝鲜版本，官方标注「按需使用/按需升级」，Beta 版 DevEco Studio 开发的应用不能上架应用市场。
+
+---
+
+## 核心概念速查
+
+### Stage模型 vs FA模型
+
+| 对比项 | Stage模型 | FA模型 |
+|--------|-----------|--------|
+| 主推版本 | API 9+（当前） | API 8及更早（已废弃） |
+| 配置文件 | app.json5 + module.json5 | config.json |
+| 语言 | ArkTS | JS/Java |
+| 模块化 | 支持HAP/HAR/HSP分包 | 不支持 |
+
+**结论：新项目一律使用Stage模型。**
+
+### 应用包结构
+
+```
+Bundle（应用包）
+├── Entry HAP（主模块，type=entry）
+│   └── 一个应用只能有一个Entry
+├── Feature HAP（功能模块，type=feature）
+│   └── 可按需下载
+└── HSP（动态共享包，API 14+支持声明多UIAbility）
+```
+
+### 线程模型
+
+- **主线程**：UI绘制、生命周期管理、ArkTS引擎实例管理
+- **TaskPool**：执行耗时操作，系统自动管理线程数，推荐使用
+- **Worker**：执行耗时操作，开发者自行管理生命周期
+
+---
+
+## HarmonyOS 6 新增特性（API 22+）
+
+### ArkUI 引擎升级
+- **NODE级函数式更新**：Diff算法从COMPONENT/ELEMENT树形对比升级为单节点NODE函数式更新，UI渲染性能大幅提升
+- **逻辑与UI分离优化**：流转开发代码量降低40%以上
+
+### HarmonyOS 6.1.0 Release 新增（API 23，2026-04-20）
+
+#### ArkUI 增强
+- List 与 Grid 组件支持**长按聚拢动效**，交互操作更直观
+- 自定义组件新增 **Attach 与 Detach** 生命周期阶段，完善多语言环境排版与阅读
+- Navigation **分栏样式可定制**，满足多栏布局个性化设计需求
+
+#### ArkTS 增强
+- **模块持久化**：支持模块持久化功能，优化冷启动性能
+- **模块懒加载**：扫描工具识别未使用模块，通过懒加载优化冷启动
+- **Local Handle / Global Handle**：跨语言内存泄漏检测定位工具，打通 ArkTS ↔ C++ 边界
+- ArkTS 快照增强：新增对象属性名和 boolean 变量显式打印，提高 OOM 定位效率
+
+#### Ability Kit 新增
+- **启动时间戳能力**：开发者可根据不同启动时间更精准地进行性能调优
+
+#### Form Kit 新增
+- **待机屏保卡片**：满足更丰富的 UI 设计及美观诉求
+- **透明卡片**：提供更沉浸式的体验
+
+#### ArkWeb 新增
+- 画中画、字体预下载
+- 同层渲染图层对齐方式自定义
+- 默认右键菜单
+- 首屏渲染时间统计
+
+#### UI Design Kit 新增
+- 底部页签悬浮样式及迷你栏，支持动态折叠展开
+- 导航组件支持双栏分割线、右侧默认占位页、标题字号设置
+- 底部页签和导航组件新增沉浸式材质效果
+- 列表卡片新增无障碍能力
+- 新增材质模块，支持设置材质类型和等级
+
+#### ArkUI 增强（Beta2 补充）
+- 自定义键盘切换接续（不收回）
+- 跑马灯间距配置和滚动时间间隔
+- 滚动组件模拟拖拽功能
+- RichEditor 单行模式
+- PersistenceV2 globalConnect 支持集合类型持久化
+
+#### ArkWeb 增强（Beta1 补充）
+- 模拟点击检测
+- Cookies 全量获取和属性访问
+- 白屏插帧接口
+- 禁用 AI 识图能力
+- ConsoleMessage 日志来源获取
+
+#### Media Kit 全面升级
+- 新增支持 **20 余种媒体格式**
+- **系统级边播边缓存**：帮助开发者便捷实现流媒体缓存与起播控制
+- **窗口级录屏**：安全隐私自主可控
+- **多屏自适应与双屏录制**：大幅降低多屏设备适配成本
+
+#### AR Engine 扩展
+- 3D 空间重建会话管理
+- 营销组件能力
+- 扩展多 Kit 对 PC/2in1、TV 设备支持
+
+### Ability Kit 新增（API 14+）
+- HSP 支持在配置文件中声明除入口Ability以外的UIAbility组件
+- 新增 UIAbility 备份恢复能力
+- 新增获取应用多实例唯一实例标识
+- 通过Want传递时可携带应用分身索引（`ohos.param.callerAppCloneIndex`）
+- 新增应用级上下文获取能力
+
+### ArkData 新增（API 14+）
+- `Preferences.flushSync()` 同步持久化接口
+- RDB 新增 `cryptoParam` 参数支持自定义加密
+- RDB 新增支持创建可并发事务对象
+- UDMF 新增 ContentForm 数据结构
+
+### ArkGraphics2D（API 14+）
+- 新增模糊效果处理能力
+- 支持动态帧率
+
+---
+
+## 开发环境
+
+### 工具链
+
+- **IDE**：DevEco Studio **6.1.0 Release（6.1.0.830）**（推荐最新版）
+- **语言**：ArkTS（主推）
+- **构建工具**：hvigor（基于TypeScript）
+- **SDK**：Public SDK（**API 23** 稳定版；可通过DevEco Studio切换其他版本）
+
+### 工程目录结构（Stage模型）
+
+```
+entry/  # 模块目录
+├── src/main/ets/
+│   ├── entryability/     # 程序入口类
+│   │   └── EntryAbility.ets
+│   ├── pages/            # 页面目录
+│   │   ├── index.ets     # 首页
+│   │   └── xxx.ets
+│   └── app.ets           # 应用级别生命周期
+├── src/main/module.json5  # 模块配置
+├── src/main/resources/   # 资源文件
+│   ├── base/             # 默认资源
+│   └── rawfile/          # 原始文件
+AppScope/
+├── app.json5             # 应用全局配置
+└── resources/
+hvigor/                   # 构建配置
+build-profile.json5
+```
+
+---
+
+## ArkTS装饰器速查
+
+| 装饰器 | 作用 |
+|--------|------|
+| `@Entry` | 页面入口 |
+| `@Component` | 自定义组件 |
+| `@State` | 组件内私有状态 |
+| `@Prop` | 父→子单向传递 |
+| `@Link` | 父↔子双向同步 |
+| `@Provide` | 祖→孙单向传递 |
+| `@Consume` | 响应@Provide |
+| `@StorageProp` | AppStorage→组件单向 |
+| `@StorageLink` | AppStorage↔组件双向 |
+| `@ObjectLink` | 嵌套对象双向绑定 |
+| `@Preview` | 预览器预览组件 |
+| `@Builder` | 自定义构建函数 |
+| `@Styles` | 组件复用样式 |
+| `@Extend` | 多态样式扩展 |
+
+---
+
+## 页面路由
+
+```typescript
+import { router } from '@kit.ArkUI'
+
+// 跳转
+router.pushUrl({ url: 'pages/Detail', params: { id: 1 } })
+
+// 返回
+router.pop()
+
+// 获取参数
+let params = router.getParams() as Record<string, number>
+```
+
+---
+
+## 权限声明规范
+
+在 `module.json5` 的 `requestPermissions` 中声明：
+
+```json
+{
+  "requestPermissions": [
+    {
+      "name": "ohos.permission.INTERNET",
+      "usedScene": {
+        "abilities": ["EntryAbility"],
+        "when": "always"
+      }
+    }
+  ]
+}
+```
+
+**user_grant 权限**必须同时：
+1. 在配置文件中声明
+2. 在代码中调用 `abilityAccessCtrl.requestPermissions()` 动态申请
+3. 提供 `reason` 字段用于上架审核（多语种适配）
+
+---
+
+## 签名与上架流程
+
+1. **AGC创建应用**：bundleName 必须与 module.json5 中一致
+2. **生成密钥**：DevEco Studio → Build → Generate Key and CSR
+3. **申请证书**：AGC → 证书管理 → 调试/发布证书
+4. **签名配置**：Project Structure → Signing Configs
+5. **打包**：Build → Build App Pack(s)
+6. **上架**：AGC → 我的应用 → 上架审核
+
+---
+
+## 关键规则（必读）
+
+1. **bundleName 全局唯一**，一旦确定不可修改
+2. **module.json5 中 `mainElement`** 必须对应一个实际存在的 UIAbility
+3. **UIAbility 划分原则**：每个 UIAbility 在最近任务列表显示一个任务
+4. **API 14+**：`AbilityInfo` 构造时**必须**包含 `orientationId` 属性
+5. **API 14+**：`Preferences.flushSync()` 可同步持久化（之前只能异步）
+6. **API 14+**：RDB blob类型列插入空数组时返回空数组而非 null
+7. **@State 变量改变**会触发所在组件的 `build()` 重新执行
+8. **避免在 build() 中直接修改 @State**，会导致循环渲染
+9. **网络请求必须声明** `ohos.permission.INTERNET` 权限
+10. **user_grant 权限**上架时 reason 字段必填，需多语种适配
+
+---
+
+## API 24 Release 变更追踪（2026-05-26）
+
+### Release 新增（Beta1 后新增）
+
+| Kit | 变更 |
+|-----|------|
+| Ability Kit | AbilityStage 新增 `onAboutToCreateAbility` 和 `onLaunchFromHypersnap` 回调 |
+| ArkTS | `enableLocalHandleDetection` 接口、XmlSAXHandler |
+| ArkWeb | 下载任务 `getOriginalUrl` 和 `getReferrerUrl` |
+| Call Service Kit | 企业服务信息查询（快递类型） |
+| Camera Kit | 闪光灯状态订阅、OIS 光学防抖、手动曝光/对焦/ISO/光圈、逻辑摄像头管理 |
+| CANN Kit | PC 设备大语言模型推理 API |
+| MDM Kit | 隐藏设置项管理 |
+
+### Beta1 变更（已包含在 Release 中）
+
+| Kit | 变更 |
+|-----|------|
+| Ability Kit | AbilityStage 上下文能力增强，支持动态加载资源 |
+| ArkUI | 平行视界状态获取、自定义组件跨 Ability 迁移、动态布局容器 |
+| ArkTS | 虚拟机维测能力增强、taskpool 任务超时设置 |
+| ArkWeb | 下载任务回调增强、URL 白名单和安全控制接口 |
+| DevEco Studio | Hot Reload 增强（支持 C++ 和资源文件）、AppFreeze 日志解析、ComMemory 模板 |
+
+---
+
+## API 26.0.1 Beta1 变更追踪（2026-11-10）
+
+26.0.1 为 26.0.0 的增量版本，仅供尝鲜使用；Beta 版 DevEco Studio 开发的应用不能上架应用市场。开发规范（dev/）领域变更：
+
+| Kit / 工具 | 变更 |
+|-----------|------|
+| Ability Kit | 新增应用自身子进程信息查询（`childProcessManager.getChildProcessInfos`、`ApplicationContext.getUIAbilityChildProcessInfos` 及 C API，返回子进程 PID、父进程 PID、进程名）；新增子进程信息读取与释放 C API；应用快启管理新增 `hyperSnapManager.getLastError` |
+| ArkTS | 新增 `JSON.parseSendable`（解析 JSON 生成可跨线程共享的 Sendable 对象）；容器集 Map 新增 `containsValue`、`put`、`putAll`、`remove` |
+| ArkUI | LazyForEach 新增 onDataReloaded 同名接口（配置是否复用旧子组件）；窗口管理新增 `WindowFocusState`、`WindowPositionParams`；Navigation 新增 `preloadPath` 预加载 NavDestination、NavigationConfiguration 新增 `clearContentStackOnPrimaryNavigation`（左起右清栈）；SubHeader/SubHeaderV2 支持尾部图标；动画 C API 新增属性/关键帧/路径动画与动画组句柄；TabContent 新增 `tabBarVisibility`；Text C API 新增 LineSpacingOptions（`onlyBetweenLines`） |
+| ArkGraphics 2D | 文字绘制 C API 新增多个支持字体回退的文本对象创建接口 |
+| Core File Kit | 新增卷（Volume）管理模块（外置存储磁盘设备与卷设备信息查询）；云盘管理新增带占位符同步根的注册与查询 C API |
+| File Manager Service Kit | 新增自定义文件角标与右键菜单项；新增 C 接口将云盘同步根文件夹添加到文件管理应用侧边栏、设置同步文件夹图标 |
+| Localization Kit | 新增字体管理模块（第三方字体安装、卸载、查询与服务状态监听） |
+| PDF Kit | 新增自由绘制曲线与橡皮擦擦除；新增同时添加多个不同颜色的临时高亮矩形 |
+| Performance Analysis Kit | hidebug C API 增强（hiprofiler 混合类型采集、2D 采集异步嵌套与栈深配置、DMABUF 资源类型、栈消减去重）；新增 external_log 日志管理者注册接口 |
+| UI Design Kit | HdsColorPicker 新增显示状态控制及状态变化回调 |
+| Call Service Kit | 新增外设 VoIP 通话控制（远端设备控制本机 VoIP 接听/挂断）；支持隐私查询企业服务信息，新增外卖服务类型数据 |
+| 工具链（DevEco Studio 26.0.1 Beta1） | 支持开发 API 26.0.1 工程；批量导入/移除 CMake 工程生成的 so 库；签名信息默认存放 `.sign/sign-config.json5`（与 build-profile.json5 同名方案时优先）；三折叠新增 Mate XT2 模拟器；Phone 模拟器支持 HiCar 投屏；模拟器支持共享内存输出画面帧；支持关闭 ArkTS 反向调试；命令行仪器测试支持指定设备；Command Line 集成 codescanner / api-compat / appanalyzer；ohpm publish 支持 `--readme` |
+
+配套工具链：HarmonyOS Emulator 26.0.1.100、Hvigor 6.26.20、ohpm 26.0.1.220、codelinter 6.0.240、hstack 6.1.0、Node.js 24.14.1、modelVersion 26.0.1；compatibleSdkVersion 最低 4.0.0(10)，compileSdkVersion 26.0.1，targetSdkVersion 4.0.0(10)~26.0.1。
+
+---
+
+## API 26 Release 变更追踪（2026-08-29）
+
+HarmonyOS 开发套件 26.0.0 于 2026-08-29 正式 Release（配套 DevEco Studio 26.0.0.821、HarmonyOS SDK 26.0.0.105、OpenHarmony 7.0；2026-09-23 发布 DevEco Studio 26.0.0.851 Patch，2026-10-31 发布 26.0.0.865 Patch，均无新增特性仅修复工具链，API / SDK 版本无变化；2026-10-08 DevEco Studio 鸿蒙电脑版 26.0.0 Beta1（26.0.0.201）公测首发，2026-11-06 发布 Beta2（26.0.0.220，工程模板新增 Car/Wearable/TV 设备类型、本地真机支持无线连接调试，Hvigor 7.26.11）；均配套 HarmonyOS 26.0.0 Release SDK、ohpm 6.0.1，与 Windows/macOS 版部分能力存在差异）。本节仅列出与开发规范（dev/）领域相关的变更，完整清单参见根 SKILL.md。
+
+### 针对所有应用的变更
+
+- **默认浏览器权限管控**：应用需申请 `ohos.permission.DEFAULT_WEB_BROWSER` 权限方可展示在默认浏览器备选列表（面向浏览器类应用，需通过安全/隐私/用户体验三项审核；下一正式版本生效）
+- **ArkTS/JSVM**：chromium/v8 内核 132→144；JSVM 支持 WASM 解释器，jitless 默认行为变更；async 函数类型判定修复
+- **Ability Kit**：部分公共事件行为变更，增加管控
+
+### Release 阶段新增（Beta2 后，2026-08-29）
+
+| Kit | 变更 |
+|-----|------|
+| Ability Kit | `appMemoryOptimizer` 应用内存优化模块（释放指定文件/模块的文件页缓存） |
+| ArkUI | 动画 C API 支持创建无转场效果动效；系统材质等级枚举与查询接口；窗口管理 C API（多模事件过滤函数获取、画中画自动启动设置）；窗口姿态模式查询与监听（支持识别桌面模式） |
+| ArkTS | 容器类对象跨线程时通过拷贝（序列化）形式传递 |
+| ArkWeb | subframe 错误页启用与状态查询；fetchCookieSync/fetchCookie 同名接口支持隐私模式及第一方 partitioned cookies；C API 同步/异步获取指定 URL cookies |
+| Performance Analysis Kit | JS Crash 检测新增 NativeModuleErrorInfo，可记录最早的 20 条 so 加载失败信息 |
+| ArkGraphics 2D | C API 支持为 OHNativeWindow 设置/获取 3D 元数据属性值 |
+| 工具链（打包工具） | 打包工具新增支持扫描重复 so 文件，帮助开发者识别包内重复 so 文件、根据实际需求减小包大小（官方 OS 特性页 2026-09-09 更新，详见 `references/publish.md`） |
+
+### dev 领域 Kit 变更
+
+| Kit | 变更 |
+|-----|------|
+| Ability Kit | ModularObjectExtensionAbility 模块化对象（C API）、pluginBundleManager 插件管理、自动填充请求信息定义 |
+| ArkUI | V2 状态管理组件（ChipV2/ChipGroupV2/CounterV2/PopupV2/SwipeRefresherV2/TreeViewV2）、智慧手势、懒加载布局组件、WithEnv/@CustomEnv、DatePickerComponent、SelectionContainer、@ComponentActive/@ComponentInactive |
+| ArkTS | setMultithreadingDetectionEnabled 多线程检测可配置参数 |
+| ArkData | 数据共享多值类型配置发布 |
+| ArkGraphics 2D | 字体绘制获取文字轮廓路径、字体回退 |
+| Core File Kit | **压缩解压缩模块**（数据压缩/解压缩，适用于文件打包分发、减少存储占用、加速网络传输） |
+| UI Design Kit | **颜色选择与收藏管理**（网格/光谱/滑块三种模式）、HdsSnackBar/HdsListItem/HdsListItemCard 组件样式增强 |
+| Desktop Extension Kit | 快捷栏能力（查询接入、设置图标和进度条）、状态栏图标悬浮回调 |
+| Account Kit | 华为账号亲密圈服务 |
+| PDF Kit | 自定义渲染风格、二进制数据读取、视图坐标与 PDF 页面坐标双向转换 |
+| Pen Kit | 手写笔跟手性加速接口 |
+| Performance Analysis Kit | HiDebug 内存导出监听器 |
+| Form Kit / Accessibility Kit / IME Kit / IPC Kit / Localization Kit / Data Augmentation Kit | Beta1 特性（AgentCard、关怀模式、输入事件注入、DID、邮件智能分析等）已包含在 Release 中 |
+
+---
+
+## 参考链接
+
+- 华为开发者文档中心：https://developer.huawei.com/consumer/cn/doc/
+- DevEco Studio下载：https://developer.huawei.com/consumer/cn/develop/deveco/studio
+- 版本说明：https://developer.huawei.com/consumer/cn/doc/harmonyos-releases
+- ArkUI框架：https://developer.huawei.com/consumer/cn/arkui/

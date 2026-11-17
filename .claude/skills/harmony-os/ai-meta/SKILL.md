@@ -1,0 +1,154 @@
+---
+name: harmonyos-ai-meta
+description: |
+  HarmonyOS AI 能力与元服务开发规范。
+  触发场景：开发意图智能分发、语音合成/识别、图像识别、元服务（服务卡片）、服务流转时。
+  包含：IntentsKit（意图框架/智慧分发）、SpeechKit（语音）、VisionKit（视觉）、CoreSpeechKit/CoreVisionKit（基础AI）、元服务（Service Widget/卡片）、服务流转。
+---
+
+# HarmonyOS AI 与元服务
+
+> **适用版本**：HarmonyOS 26.0.0 / API 26（Release，2026-08-29，底座 OpenHarmony 7.0）；HarmonyOS 6.1.1 / API 24（Release，存量主力）。兼容 API 14+。
+
+## 快速导航
+
+| 能力 | 说明 |
+|------|------|
+| [意图框架](references/intent-speech.md) | IntentsKit：智慧分发到小艺/搜索/建议 |
+| [语音合成/识别](references/intent-speech.md) | SpeechKit：TTS / ASR |
+| [元服务/卡片](references/meta-service.md) | Service Widget：免安装服务卡片 |
+| [服务流转](references/meta-service.md) | 设备间服务无缝迁移 |
+| [异构计算](references/cann-kit.md) | CANN Kit：NPU 推理加速/模型部署 |
+| [智能体框架](references/agent-framework.md) | Agent Framework Kit：Agent 创建/Tool/多 Agent 协作 |
+| [基础AI能力](references/core-ai-kits.md) | CoreSpeech+CoreVision+NaturalLanguage：基础语音/视觉/NLP |
+| [推理运行时](references/mindspore-nnrt-kit.md) | MindSporeLite+NeuralNetworkRuntime：端侧推理/NPU加速 |
+
+---
+
+## AI Kit 总览
+
+| Kit | npm 包 | 说明 |
+|-----|-------|------|
+| IntentsKit | `@kit.IntentsKit` | 意图框架，智慧分发 |
+| SpeechKit | `@kit.SpeechKit` | 语音合成（TTS）、语音识别（ASR） |
+| VisionKit | `@kit.VisionKit` | 文字识别、物体识别、人脸检测 |
+| CANNKit | @kit.CANNKit | NPU 异构计算，推理加速 |
+| AgentFrameworkKit | @kit.AgentFrameworkKit | 智能体框架，多 Agent 协作 |
+| CoreSpeechKit | `@kit.CoreSpeechKit` | 基础语音：TTS/ASR |
+| CoreVisionKit | `@kit.CoreVisionKit` | 基础视觉：OCR/人脸检测/主体分割 |
+| NaturalLanguageKit | `@kit.NaturalLanguageKit` | 自然语言理解：分词/实体抽取 |
+| MindSporeLiteKit | `@kit.MindSporeLiteKit` | 昇思推理框架，轻量化AI引擎 |
+| NeuralNetworkRuntimeKit | `@kit.NeuralNetworkRuntimeKit` | 神经网络运行时，跨芯片推理 |
+| ContentEmbedKit | `@kit.ContentEmbedKit` | 内容嵌入服务（API 24 新增） |
+| FASTKit | `@kit.FASTKit` | 算法加速：哈希表/向量运算/滤波器（属系统类别，API 24 增强 AI 相关能力） |
+
+---
+
+## 意图框架（IntentsKit）
+
+### 智慧分发价值
+
+- **新流量入口**：出现在小艺对话、小艺搜索、小艺建议
+- **主动服务**：无需用户主动搜索，服务主动触达用户
+- **意图匹配**：基于 AI 大模型理解用户当前需求，精准匹配应用能力
+
+### 接入流程
+
+1. 在 AppGallery Connect 开通 IntentsKit 能力
+2. 在应用中定义应用的技能（Skill）
+3. 配置意图描述文件（intent.json）
+4. 提交审核，审核通过后自动出现在系统入口
+
+### 场景示例
+
+| 场景 | 用户意图 | 应用响应 |
+|------|---------|---------|
+| 订餐 | "帮我订个外卖" | 打开订餐应用，搜索附近餐厅 |
+| 出行 | "打车去机场" | 拉起打车应用，预填目的地 |
+| 音乐 | "播放点轻松的音乐" | 打开音乐应用，推荐歌单 |
+
+---
+
+## 端侧 AI（MLKit）
+
+> ⚠️ **MLKit 已不再单独提供**：根据官方文档首页最新 Kit 列表，MLKit 已不在 AI 类别中单独列出。端侧 AI 推理能力已由 CANNKit、MindSporeLiteKit、NeuralNetworkRuntimeKit 承担。以下代码仅作历史参考。
+
+```typescript
+import { mlAiSession } from '@kit.MLKit';
+
+// 创建本地 AI 会话（无需联网）
+let session = await mlAiSession.createSession({
+  modelPath: 'model/mlmodel'
+});
+
+// 执行推理
+let result = await session.run({ input: imageData });
+```
+
+---
+
+## AR Engine 扩展（API 23）
+
+| 新增能力 | 说明 |
+|---------|------|
+| 人脸识别与跟踪 | FaceAR：支持人脸识别与跟踪能力（ArkTS + C/C++） |
+| 人体骨骼关键点识别 | BodyAR：支持人体骨骼关键点识别与跟踪能力（ArkTS + C/C++） |
+| 3D 空间重建会话管理 | 支持实时 3D 环境重建、3DGS 场景建模、任务控制、进度查询、模型导出 |
+| 营销组件 | AR 营销互动能力 |
+| 多设备扩展 | 多 Kit 扩展对 PC/2in1、TV 设备支持 |
+
+FaceAR 和 BodyAR 此前已支持，详见 media/references/ar-engine.md。
+
+---
+
+## Vision Kit（视觉识别）
+
+| 能力 | 说明 |
+|------|------|
+| 文字识别（OCR） | 图片中识别文字内容 |
+| 物体识别 | 识别图片中的物体类别 |
+| 人脸检测 | 检测人脸位置和关键点 |
+| 条码识别 | 识别二维码/条形码 |
+
+> Vision Kit 能力通过 `@kit.VisionKit` 导入，与 Scan Kit 的扫码能力互补。
+
+---
+
+## API 26.0.1 Beta1 变更追踪（2026-11-10）
+
+26.0.1 为 26.0.0 的增量版本，仅供尝鲜使用；Beta 版 DevEco Studio 开发的应用不能上架应用市场。AI 与元服务领域变更：
+
+| Kit | 变更 |
+|-----|------|
+| Intents Kit | 新增应用注册热词并处理执行回调，智慧语音助手可响应用户更多操控应用界面可见 UI 元素的语音指令，拓展「可视可说」能力范围 |
+| Core Speech Kit | 新增文本转语音暂停/继续播报接口，支持控制文本播报的暂停和恢复 |
+| CANN Kit | 新增支持 Car 设备 |
+
+---
+
+## API 24 Release 变更追踪（2026-05-26）
+
+### Release 新增（Beta1 后新增）
+
+| Kit | 变更 |
+|-----|------|
+| Camera Kit | 闪光灯状态订阅、OIS 光学防抖、手动曝光/对焦/ISO/光圈、逻辑摄像头管理 |
+| CANN Kit | PC 设备大语言模型推理 API |
+
+### Beta1 变更（已包含在 Release 中）
+
+| Kit | 变更 |
+|-----|------|
+| FAST Kit | 并发哈希表、向量运算和滤波器 |
+| Performance Analysis Kit | 资源采集和崩溃日志分析增强 |
+| Content Embed Kit | **全新 Kit** — 内容嵌入服务 |
+| Camera Kit | 延迟预览输出、影随人动能力 |
+| Audio Kit | MIDI C API 支持外接设备 |
+
+---
+
+## 官方参考
+
+- IntentsKit 概述：https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/intents-introduction-V5
+- IntentsKit SDK：https://developer.huawei.com/consumer/cn/sdk/intents-kit
+- 元服务概述：https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/service-widget-overview-V5

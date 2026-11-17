@@ -1,0 +1,234 @@
+---
+name: harmonyos-system
+description: |
+  HarmonyOS 系统能力开发规范。涉及设备硬件和基础系统服务的开发指南。
+  触发场景：开发涉及蓝牙、Wi-Fi、NFC、定位、传感器、电源管理、网络、后台任务、文件管理等系统能力时。
+  包含：蓝牙(BLE/BR-EDR)、Wi-Fi、位置服务(LocationKit)、传感器(SensorServiceKit)、NFC、设备标识、电源管理、网络开发(NetworkKit)、后台任务(BackgroundTasksKit)、文件管理(CoreFileKit)等系统能力。
+---
+
+# HarmonyOS 系统能力
+
+> **适用版本**：HarmonyOS 26.0.0 / API 26（Release，2026-08-29，底座 OpenHarmony 7.0）；HarmonyOS 6.1.1 / API 24（Release，存量主力）。兼容 API 14+。
+
+## 快速导航
+
+| 分栏 | 文档 | 说明 |
+|------|------|------|
+| 短距通信 | [蓝牙BLE](references/ble.md) | 低功耗蓝牙扫描/广播/连接 |
+| 短距通信 | [蓝牙设置](references/bluetooth-bredr.md) | 传统蓝牙BR/EDR开关/配对/状态 |
+| 网络 | [Wi-Fi](references/wifi.md) | Wi-Fi扫描/连接/事件订阅 |
+| 网络 | [NFC](references/nfc.md) | NFC读卡/写卡/NDEF |
+| 位置 | [位置服务](references/location.md) | GNSS/Wi-Fi/蓝牙定位、地理围栏 |
+| 传感器 | [传感器](references/sensor.md) | 加速度/陀螺仪/计步/环境光等 |
+| 电源 | [电源管理](references/power.md) | 休眠/亮灭屏/充电状态 |
+| 安全 | [设备安全](references/device-security.md) | 安全区域/生物识别/安全检测 |
+| 设备 | [设备标识](references/device-info.md) | 设备标识/网络信息 |
+| 网络 | [网络开发](references/network.md) | HTTP/RCP/WebSocket/网络状态 |
+| 后台 | [后台任务](references/background-task.md) | 短时/长时/延迟任务/代理提醒 |
+| 文件 | [文件管理](references/file-management.md) | 应用沙箱/文件读写/FilePicker |
+| 基础服务 | [基础服务](references/basic-services.md) | 窗口管理/剪贴板/屏幕亮度 |
+| 安全 | [密钥管理](references/keystore.md) | HUKS密钥/证书/加解密 |
+| 分布式 | [分布式能力](references/distributed.md) | 设备迁移/跨设备剪贴板/数据同步 |
+| 安全 | [关键资产存储](references/asset-store-kit.md) | 关键资产安全存储/加密管理 |
+| 车载 | [车服务](references/car-kit.md) | 车机出行/HiCar互联/导航流转 |
+| 安全 | [安全类Kit](references/security-kits.md) | DLP/设备证书/在线认证/用户认证 |
+| 并发 | [并发调度](references/ffrt-kit.md) | FFRT数据依赖异步并发任务 |
+| 输入 | [多模输入](references/input-kit.md) | 触控板/触摸屏/鼠标/键盘等输入设备 |
+| 输入 | [多模态融合感知](references/multimodal-awareness-kit.md) | 传感器融合/设备状态/姿态识别 |
+| 企业 | [MDM企业设备管理](references/mdm-kit.md) | 企业设备管理/远程配置/策略管控 |
+| 企业 | [企业数据保护](references/enterprise-data-guard-kit.md) | 文件分级/外发管控/水印保护 |
+| 企业 | [企业数字空间](references/enterprise-space-kit.md) | 空间互传/策略管控/灵活配置 |
+| 企业 | [企业办公服务](references/enterprise-foundation-kit.md) | 应用沙箱/用户数据备份还原、批量部署（26.0.1 新增） |
+| 安全 | [数据防泄漏](references/data-loss-prevention-kit.md) | 文件权限/加密存储/授权访问 |
+| 安全 | [设备证书](references/device-certificate-kit.md) | 证书解析/验证/管理 |
+| 安全 | [在线认证](references/online-authentication-kit.md) | FIDO/通行密钥/免密认证 |
+| 通信 | [星闪](references/nearlink-kit.md) | NearLink低功耗高速短距通信 |
+| 网络 | [网络加速+远场通信](references/network-boost-remote-kit.md) | 网络加速/感知/HTTP/RPC |
+| 企业 | [企业管理Kit](references/enterprise-kits.md) | MDM/数据保护/状态栏/空间管控/屏幕时间 |
+| 驱动 | [驱动开发](references/driver-kit.md) | 外设驱动/DriverExtension/USB/HID |
+| 穿戴 | [穿戴服务](references/wear-engine-kit.md) | 华为穿戴设备开放能力 |
+| 地图 | [地图服务](references/map-kit.md) | MapKit：地图/标记/导航 |
+| 扫码 | [扫码服务](references/scan-kit.md) | ScanKit：扫码/码识别/直达服务 |
+| 分享 | [分享服务](references/share-kit.md) | ShareKit：系统分享面板 |
+| 通信 | [电话蜂窝](references/telephony-kit.md) | TelephonyKit：电话/蜂窝通信 |
+| 安全 | [加密框架](references/crypto-architecture.md) | CryptoArchitectureKit：加解密/签名 |
+| 协同 | [协同服务](references/service-collaboration-kit.md) | ServiceCollaborationKit：跨设备协同/跨端拍照/文档扫描 |
+| 测试 | [应用测试](references/test-kit.md) | TestKit：单元测试/UITest/白盒性能 |
+| 安全 | [企业威胁防护](references/enterprise-threat-protection-kit.md) | EnterpriseThreatProtectionKit：文件扫描/隔离/恢复/删除 |
+| 算法 | [算法加速](references/fast-kit.md) | FASTKit：高阶数据结构/规划求解/数字信号处理 |
+| 健康 | [运动健康](references/health-service-kit.md) | HealthServiceKit：步数/心率/运动联动/训练负荷 |
+| 天气 | [天气服务](references/weather-service-kit.md) | WeatherServiceKit：天气预报/降水/预警/指数 |
+| 配件 | [配件接入](references/accessory-kit.md) | AccessoryKit：配件发现/配对/消息通信/安全认证 |
+| 导航 | [熄屏导航](references/aod-navigation-kit.md) | AODNavigationKit：熄屏导航/低功耗代理/轨迹显示 |
+| 安全 | [机密空间](references/confidential-space-kit.md) | ConfidentialSpaceKit：机密空间/隐私计算/数据隔离 |
+| 性能 | [灵犀加速](references/linx-kit.md) | LinxKit：热点加速/CPU软硬协同/游戏优化 |
+| 服务 | [服务与支持](references/service-support-kit.md) | ServiceSupportKit：硬件检测/屏幕电池主板/回收评估 |
+| 硬件 | [机械设备管理](references/mechanic-kit.md) | MechanicKit：云台控制/目标跟踪/设备连接/状态监控 |
+
+---
+
+## 核心 API Kit
+
+| Kit 名称 | npm 包 | 说明 |
+|---------|-------|------|
+| ConnectivityKit | `@kit.ConnectivityKit` | 蓝牙、Wi-Fi、NFC、网络连接 |
+| LocationKit | `@kit.LocationKit` | 定位服务 |
+| SensorServiceKit | `@kit.SensorServiceKit` | 传感器 |
+| AccountKit | `@kit.AccountKit` | 华为账号 |
+| NetworkKit | `@kit.NetworkKit` | HTTP、WebSocket、网络状态 |
+| BackgroundTasksKit | `@kit.BackgroundTasksKit` | 后台任务管理 |
+| CoreFileKit | `@kit.CoreFileKit` | 文件管理、应用沙箱 |
+| BasicServicesKit | `@kit.BasicServicesKit` | 窗口、剪贴板、系统属性 |
+| UniversalKeystoreKit | `@kit.UniversalKeystoreKit` | 密钥管理、加解密 |
+| DistributedKit | `@kit.DistributedKit` | 设备发现、迁移、数据同步 |
+| MapKit | `@kit.MapKit` | 地图、标记、导航 |
+| ScanKit | `@kit.ScanKit` | 扫码、码识别 |
+| ShareKit | `@kit.ShareKit` | 系统分享面板 |
+| TelephonyKit | `@kit.TelephonyKit` | 电话、蜂窝 |
+| CryptoArchitectureKit | `@kit.CryptoArchitectureKit` | 加密框架 |
+| AssetStoreKit | `@kit.AssetStoreKit` | 关键资产安全存储 |
+| CarKit | `@kit.CarKit` | 车服务 |
+| FfrtKit | `@kit.FfrtKit` | 并发调度 |
+| NearLinkKit | `@kit.NearLinkKit` | 星闪通信 |
+| DriverDevelopmentKit | `@kit.DriverDevelopmentKit` | 驱动开发 |
+| WearEngineKit | `@kit.WearEngineKit` | 穿戴设备 |
+| ServiceCollaborationKit | `@kit.ServiceCollaborationKit` | 跨设备协同 |
+| TestKit | `@kit.TestKit` | 应用测试框架 |
+| EnterpriseThreatProtectionKit | `@kit.EnterpriseThreatProtectionKit` | 企业威胁防护 |
+| FASTKit | `@kit.FASTKit` | 算法加速 |
+| HealthServiceKit | `@kit.HealthServiceKit` | 运动健康数据 |
+| WeatherServiceKit | `@kit.WeatherServiceKit` | 天气数据服务 |
+| InputKit | `@kit.InputKit` | 多模输入 |
+| MultimodalAwarenessKit | `@kit.MultimodalAwarenessKit` | 多模态融合感知 |
+| MDMKit | `@kit.MDMKit` | 企业设备管理 |
+| DataLossPreventionKit | `@kit.DataLossPreventionKit` | 数据防泄漏 |
+| DeviceCertificateKit | `@kit.DeviceCertificateKit` | 设备证书 |
+| OnlineAuthenticationKit | `@kit.OnlineAuthenticationKit` | 在线认证 |
+| RemoteCommunicationKit | `@kit.RemoteCommunicationKit` | 远场通信 |
+| EnterpriseDataGuardKit | `@kit.EnterpriseDataGuardKit` | 企业数据保护 |
+| EnterpriseSpaceKit | `@kit.EnterpriseSpaceKit` | 企业数字空间 |
+| AccessoryKit | `@kit.AccessoryKit` | 配件接入服务（API 26 新增） |
+| UserAuthenticationKit | `@kit.UserAuthenticationKit` | 用户身份认证（锁屏口令/人脸/指纹） |
+| AODNavigationKit | `@kit.AODNavigationKit` | 熄屏导航服务（低功耗导航代理） |
+| ConfidentialSpaceKit | `@kit.ConfidentialSpaceKit` | 机密空间服务（隐私数据处理） |
+| LinxKit | `@kit.LinxKit` | 灵犀加速库（CPU 热点加速） |
+| ServiceSupportKit | `@kit.ServiceSupportKit` | 服务与支持（设备硬件检测） |
+| MechanicKit | `@kit.MechanicKit` | 机械设备管理服务（云台等机械体设备控制，API 20 起） |
+
+---
+
+## 权限总览
+
+| 能力 | 权限名 |
+|------|--------|
+| 蓝牙 | `ohos.permission.ACCESS_BLUETOOTH` |
+| 定位 | `ohos.permission.LOCATION` |
+| 传感器 | `ohos.permission.ACCELEROMETER` 等 |
+| Wi-Fi | `ohos.permission.GET_WIFI_INFO` |
+| NFC | `ohos.permission.NFC_TAG` |
+| 网络 | `ohos.permission.INTERNET` |
+| 后台任务 | `ohos.permission.KEEP_BACKGROUND_RUNNING` |
+
+> 注意：从 HarmonyOS NEXT 起，部分权限从 user-grant 改为 system-grant，具体以官方文档为准。
+
+---
+
+## API 26.0.1 Beta1 变更追踪（2026-11-10）
+
+26.0.1 为 26.0.0 的增量版本，仅供尝鲜使用；Beta 版 DevEco Studio 开发的应用不能上架应用市场。系统领域变更：
+
+| Kit | 变更 |
+|-----|------|
+| Basic Services Kit | 设备管理 C API 新增 USB 管理（管理 USB 设备驱动）；新增板级硬件信息查询（CPU/主板/BIOS）；账号管理新增系统账号授权管理 |
+| Background Tasks Kit | 支持更新包含数据传输类型的长时任务通知（`updateDataTransferProgress`） |
+| Device Security Kit | 新增自定义 DLP 文件访问、光盘刻录拦截通知类审计事件；新增侧载安全管控（查询是否允许加载外部二进制文件、拉起外部二进制源开关设置弹窗） |
+| Device Certificate Kit | 新增 UkeyAuthExtensionAbility 及 UkeyAuthExtensionContext，用于自定义 UKey 认证 UI |
+| Enterprise Data Guard Kit | 新增删除策略、进程 UID 可信任列表管理、加密 U 盘管理、数据盘企业恢复密钥、企业账号验证用户身份 |
+| **Enterprise Foundation Kit** | **全新 Kit**：企业办公服务，开放企业场景下的应用沙箱数据与用户数据备份/还原（2in1，需 `ohos.permission.ENTERPRISE_MANAGE_BACKUP`） |
+| FAST Kit | 新增支持 Car 设备 |
+| Health Service Kit | Lite Wearable 新增笼式网球/滑雪/户外跑步/户外骑行/自由训练/普拉提运动类型；新增运动数据交互 C API；Wearable 新增运动类型与训练负荷数据 |
+| Input Kit | 新增鼠标光标与光标类型外设管理；KeyCode 新增云台设备按键定义 |
+| MDM Kit | 新增打印机 IP 白名单、精确定时器、锁屏弱密码库、待机资源豁免、卡片发布到桌面 |
+| User Authentication Kit | 新增用户识别能力（判断当前使用者是否与已登录系统用户匹配） |
+| Wear Engine Kit | 新增穿戴表盘能力（表盘配置下发与预览） |
+| Weather Service Kit | 新增朝霞晚霞天气数据 |
+
+---
+
+## API 26 Release 变更追踪（2026-08-29）
+
+HarmonyOS 开发套件 26.0.0 于 2026-08-29 正式 Release。Beta2 阶段系统领域变更（AOD Navigation/Confidential Space/Linx/Service Support 全新 Kit、Device Security 审计事件、FAST Kit 算法能力等）参见根 SKILL.md。Release 阶段（Beta2 后）系统领域新增：
+
+| Kit | 变更 |
+|-----|------|
+| DeviceSecurityKit | 新增图片内容证真能力：签名检测 API（检测图片中是否存在内容证真签名）、验证 API（验证图片中内容证真签名）、签名信息提取 API（从验签数据中提取签名信息） |
+| PerformanceAnalysisKit | JS Crash 检测新增 NativeModuleErrorInfo，可记录最早的 20 条 so 加载失败信息 |
+
+---
+
+## API 26 Beta1 变更追踪（2026-06-12）
+
+| Kit | 变更 |
+|-----|------|
+| AccessoryKit | **全新 Kit** — 配件接入服务，提供关联唤醒、系统服务联动、按需调度与安全授信管理 |
+| DeviceSecurityKit | 星盾机密风控引擎、统一风控凭证、超级隐私策略化管控 |
+| GraphicsAccelerateKit | 游戏预启动特性 |
+| NearLinkKit | 新增 startScan 接口扫描周边星闪设备 |
+
+---
+
+## API 24 Release 变更追踪（2026-05-26）
+
+### Release 新增（Beta1 后新增）
+
+| Kit | 变更 |
+|-----|------|
+| Camera Kit | 闪光灯状态订阅、OIS 光学防抖、手动曝光/对焦/ISO/光圈、逻辑摄像头管理 |
+| CANN Kit | PC 设备大语言模型推理 API |
+| MDM Kit | 隐藏设置项管理 |
+
+### Beta1 变更（已包含在 Release 中）
+
+| Kit | 变更 |
+|-----|------|
+| Performance Analysis Kit | 资源采集和崩溃日志分析增强 |
+| Enterprise Threat Protection Kit | **全新 Kit** — 企业威胁防护服务 |
+| Camera Kit | 延迟预览输出、影随人动能力 |
+| Audio Kit | MIDI C API 支持外接设备 |
+| FAST Kit | 并发哈希表、向量运算和滤波器 |
+
+---
+
+## 更新补充（2026-08-03）
+
+以下 4 个 Kit 在官方文档首页列出但此前未收录，官方文档更新时间为 2026-07-28：
+
+| Kit | 说明 | 支持设备 | 文档 |
+|-----|------|---------|------|
+| AODNavigationKit | 熄屏导航服务，低功耗代理导航业务，支持轨迹/里程等关键信息熄屏显示 | Phone | [aod-navigation-kit.md](references/aod-navigation-kit.md) |
+| ConfidentialSpaceKit | 机密空间服务，在隔离环境中运行数据应用处理隐私数据，防止信息外泄 | Phone/Tablet/PC/2in1 | [confidential-space-kit.md](references/confidential-space-kit.md) |
+| LinxKit | 灵犀加速库，基于灵犀 CPU 核软硬协同优化，提升游戏/视频流畅度 | Phone/Tablet/PC/2in1/TV/Car | [linx-kit.md](references/linx-kit.md) |
+| ServiceSupportKit | 服务与支持，设备硬件检测（屏幕/电池/主板），用于门店二手回收场景 | Phone/Tablet | [service-support-kit.md](references/service-support-kit.md) |
+
+---
+
+## 更新补充（2026-08-17）
+
+Mechanic Kit（机械设备管理服务）已在官方 SDK 页面公开指南（此前仅出现在 API 26 Beta1 变更清单中，官方指南页更新时间 2026-04-20）：
+
+| Kit | 说明 | 起始版本 | 文档 |
+|-----|------|---------|------|
+| MechanicKit | 机械设备管理服务，通过 mechanicManager 模块控制云台等机械体设备：设备连接管理、目标跟踪控制（人脸/物体跟踪）、设备状态监控（角度/旋转限制/运动参数） | API 20 | [mechanic-kit.md](references/mechanic-kit.md) |
+
+---
+
+## 官方参考
+
+- ConnectivityKit（短距通信）：https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/bluetooth-overview
+- LocationKit（位置服务）：https://developer.huawei.com/consumer/cn/doc/atomic-ascf/develop-location-retrieval
+- SensorServiceKit（传感器）：https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/sensor-V5
+- Wi-Fi：https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/wifi-overview-V5
+- 设备标识：https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/device-identifier-V14
+- NetworkKit（网络服务）：https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/http-request-overview-V5
+- BackgroundTasksKit（后台任务）：https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/background-task-overview-V5
+- CoreFileKit（文件管理）：https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/core-file-kit-intro

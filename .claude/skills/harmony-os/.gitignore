@@ -1,0 +1,25 @@
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+build/
+.hvigor/
+oh_modules/
+
+*.keystore
+*.p12
+*.cer
+*.csr
+
+模板.md
+
+.trae/
+
+desktop.ini
+.Spotlight-V100
+.Trashes
+
+# 交接文档仅本地保留，不纳入版本控制
+MIGRATION.md
