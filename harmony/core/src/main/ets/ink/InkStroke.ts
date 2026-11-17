@@ -1,6 +1,7 @@
 // @parity src/InkCanvas.Core/Ink/InkStroke.cs
 import { InkPoint } from './InkPoint';
 import { StrokeAttributes, TaperKind } from './StrokeAttributes';
+import { applyTaperAt } from './TaperProfile';
 
 // Rect：LTRB，与 C# 语义一致（IsEmpty 包含退化矩形）。
 export class Rect {
@@ -102,6 +103,12 @@ export class InkStroke {
 
   addPoint(x: number, y: number, pressure: number = 0.5, timeMs: number = 0): void {
     this.points.push(new InkPoint(x, y, pressure, 0, timeMs));
+    applyTaperAt(
+      this.points,
+      this.points.length - 1,
+      this.Attributes.BaseWidth,
+      this.Attributes.effectiveTaper()
+    );
     this.cachedBounds = null;
   }
 

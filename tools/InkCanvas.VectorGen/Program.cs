@@ -12,5 +12,6 @@ for (var i = 0; i < args.Length - 1; i++)
 Directory.CreateDirectory(outDir);
 InkColorVectors.Write(outDir);
 StrokeAttributesVectors.Write(outDir);
+TaperVectors.Write(outDir);
 SettingsVectors.Write(outDir);
 Console.WriteLine($"vectors written to {outDir}");

@@ -28,6 +28,59 @@ public sealed class VectorParityTests
     private static JsonDocument Load(string file) =>
         JsonDocument.Parse(File.ReadAllText(Path.Combine(Root, "parity", "vectors", file)));
 
+    [Theory]
+    [InlineData("taper-tail.json")]
+    [InlineData("taper-velocity.json")]
+    public void TaperVectorsMatch(string file)
+    {
+        using var doc = Load(file);
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var id = c.GetProperty("id").GetString();
+            var input = c.GetProperty("input");
+            var baseWidth = (float)input[0].GetDouble();
+            var pointsJson = input[1];
+            var kind = (TaperKind)input[2].GetInt32();
+            TaperProfile profile;
+            if (input.GetArrayLength() > 3)
+            {
+                var options = input[3];
+                profile = new TailTaper
+                {
+                    TailPoints = options.GetProperty("TailPoints").GetInt32(),
+                    HeadPoints = options.GetProperty("HeadPoints").GetInt32(),
+                    TipRatio = options.GetProperty("TipRatio").GetSingle()
+                };
+            }
+            else
+            {
+                profile = TaperProfile.Create(kind);
+            }
+
+            var points = pointsJson.EnumerateArray()
+                .Select(p => new InkPoint(
+                    p.GetProperty("X").GetSingle(),
+                    p.GetProperty("Y").GetSingle(),
+                    p.GetProperty("Pressure").GetSingle(),
+                    0f,
+                    p.GetProperty("TimeMs").GetSingle()))
+                .ToArray();
+            var span = points.AsSpan();
+            for (var tip = 0; tip < points.Length; tip++)
+            {
+                profile.Apply(span, tip, baseWidth);
+            }
+
+            var expected = c.GetProperty("expected").EnumerateArray().Select(e => e.GetDouble()).ToArray();
+            Assert.Equal(expected.Length, points.Length);
+            for (var i = 0; i < expected.Length; i++)
+            {
+                Assert.Equal(expected[i], points[i].Width, 4);
+            }
+            Assert.NotNull(id);
+        }
+    }
+
     [Fact]
     public void SettingsRoundtripVectorsMatch()
     {
