@@ -1,0 +1,139 @@
+{
+  "id": "pivot",
+  "entry": "harmony/core/src/main/ets/ink/MatrixTransformCenter.ts",
+  "cases": [
+    {
+      "id": "pivot-0-True",
+      "fn": "resolvePivot",
+      "input": [
+        0,
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+        true
+      ],
+      "expected": {
+        "X": 10,
+        "Y": 20
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "pivot-0-False",
+      "fn": "resolvePivot",
+      "input": [
+        0,
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+        false
+      ],
+      "expected": {
+        "X": 10,
+        "Y": 20
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "pivot-1-True",
+      "fn": "resolvePivot",
+      "input": [
+        1,
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+        true
+      ],
+      "expected": {
+        "X": 50,
+        "Y": 60
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "pivot-1-False",
+      "fn": "resolvePivot",
+      "input": [
+        1,
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+        false
+      ],
+      "expected": {
+        "X": 10,
+        "Y": 20
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "pivot-2-True",
+      "fn": "resolvePivot",
+      "input": [
+        2,
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+        true
+      ],
+      "expected": {
+        "X": 30,
+        "Y": 40
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "pivot-2-False",
+      "fn": "resolvePivot",
+      "input": [
+        2,
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+        false
+      ],
+      "expected": {
+        "X": 10,
+        "Y": 20
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "pivot-unknown",
+      "fn": "resolvePivot",
+      "input": [
+        9,
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+        true
+      ],
+      "expected": {
+        "X": 10,
+        "Y": 20
+      },
+      "tolerance": 0
+    }
+  ]
+}

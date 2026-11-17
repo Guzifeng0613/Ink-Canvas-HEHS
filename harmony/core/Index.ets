@@ -16,6 +16,41 @@ export { eraseDisc, eraseDiscSummary, EraseOutcome } from './src/main/ets/ink/St
 export type { EraserStrokeInput, EraserSummary, EraserPointInput, EraserFragmentSummary } from './src/main/ets/ink/StrokeEraser';
 export { UndoStack, simulateUndo } from './src/main/ets/history/UndoStack';
 export type { UndoAction, UndoSimResult } from './src/main/ets/history/UndoStack';
+export {
+  Point2,
+  Matrix3x2,
+  identityMatrix,
+  matrixFromArray,
+  matrixToArray,
+  multiplyMatrix,
+  transformPointByMatrix,
+  createTranslationMatrix,
+  createScaleMatrix,
+  createRotationMatrix,
+  invertMatrix,
+  matrixEquals,
+  matrixMultiply,
+  transformPoint,
+  createRotation,
+  createScale,
+  createTranslation,
+  invertMatrixValues
+} from './src/main/ets/math/Matrix3x2';
+export {
+  SelectionHandle,
+  HANDLE_RADIUS,
+  ROTATE_OFFSET,
+  rotateHandlePositionRect,
+  hitTestRect,
+  dragMatrixRect,
+  selectionHitTest,
+  selectionDragMatrix,
+  rotateHandlePosition
+} from './src/main/ets/selection/SelectionGeometry';
+export type { BoundsInput } from './src/main/ets/selection/SelectionGeometry';
+export { TwoFingerManipulator, simulateTwoFinger } from './src/main/ets/ink/TwoFingerManipulator';
+export type { TwoFingerOptionsInput, TwoFingerSample, TwoFingerUpdate, TwoFingerSimResult } from './src/main/ets/ink/TwoFingerManipulator';
+export { MatrixTransformCenterPointOptions, resolvePivot } from './src/main/ets/ink/MatrixTransformCenter';
 export { createDefaultSettings } from './src/main/ets/settings/AppSettings';
 export type {
   AppSettings,

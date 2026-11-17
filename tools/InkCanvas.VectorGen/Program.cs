@@ -14,5 +14,6 @@ InkColorVectors.Write(outDir);
 StrokeAttributesVectors.Write(outDir);
 TaperVectors.Write(outDir);
 GeometryVectors.Write(outDir);
+TransformVectors.Write(outDir);
 SettingsVectors.Write(outDir);
 Console.WriteLine($"vectors written to {outDir}");

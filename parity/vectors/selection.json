@@ -1,0 +1,453 @@
+{
+  "id": "selection",
+  "entry": "harmony/core/src/main/ets/selection/SelectionGeometry.ts",
+  "cases": [
+    {
+      "id": "hit-50--28",
+      "fn": "selectionHitTest",
+      "input": [
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        },
+        50,
+        -28
+      ],
+      "expected": 6,
+      "tolerance": 0
+    },
+    {
+      "id": "hit-0-0",
+      "fn": "selectionHitTest",
+      "input": [
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        },
+        0,
+        0
+      ],
+      "expected": 2,
+      "tolerance": 0
+    },
+    {
+      "id": "hit-100-0",
+      "fn": "selectionHitTest",
+      "input": [
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        },
+        100,
+        0
+      ],
+      "expected": 3,
+      "tolerance": 0
+    },
+    {
+      "id": "hit-100-50",
+      "fn": "selectionHitTest",
+      "input": [
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        },
+        100,
+        50
+      ],
+      "expected": 4,
+      "tolerance": 0
+    },
+    {
+      "id": "hit-0-50",
+      "fn": "selectionHitTest",
+      "input": [
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        },
+        0,
+        50
+      ],
+      "expected": 5,
+      "tolerance": 0
+    },
+    {
+      "id": "hit-50-25",
+      "fn": "selectionHitTest",
+      "input": [
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        },
+        50,
+        25
+      ],
+      "expected": 1,
+      "tolerance": 0
+    },
+    {
+      "id": "hit-200-200",
+      "fn": "selectionHitTest",
+      "input": [
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        },
+        200,
+        200
+      ],
+      "expected": 0,
+      "tolerance": 0
+    },
+    {
+      "id": "hit-50-0",
+      "fn": "selectionHitTest",
+      "input": [
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        },
+        50,
+        0
+      ],
+      "expected": 1,
+      "tolerance": 0
+    },
+    {
+      "id": "hit-12-0",
+      "fn": "selectionHitTest",
+      "input": [
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        },
+        12,
+        0
+      ],
+      "expected": 2,
+      "tolerance": 0
+    },
+    {
+      "id": "hit-empty-bounds",
+      "fn": "selectionHitTest",
+      "input": [
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 0,
+          "Bottom": 0
+        },
+        0,
+        0
+      ],
+      "expected": 0,
+      "tolerance": 0
+    },
+    {
+      "id": "drag-move",
+      "fn": "selectionDragMatrix",
+      "input": [
+        1,
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        },
+        50,
+        25,
+        60,
+        30,
+        false
+      ],
+      "expected": [
+        1,
+        0,
+        0,
+        1,
+        10,
+        5
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "drag-rotate",
+      "fn": "selectionDragMatrix",
+      "input": [
+        6,
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        },
+        50,
+        0,
+        100,
+        25,
+        false
+      ],
+      "expected": [
+        0,
+        1,
+        -1,
+        0,
+        75,
+        -25
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "drag-rotate-degenerate",
+      "fn": "selectionDragMatrix",
+      "input": [
+        6,
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        },
+        50,
+        25,
+        60,
+        30,
+        false
+      ],
+      "expected": [
+        1,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "drag-tl",
+      "fn": "selectionDragMatrix",
+      "input": [
+        2,
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        },
+        0,
+        0,
+        -10,
+        -8,
+        false
+      ],
+      "expected": [
+        1.100000023841858,
+        0,
+        0,
+        1.159999966621399,
+        -10,
+        -8
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "drag-br",
+      "fn": "selectionDragMatrix",
+      "input": [
+        4,
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        },
+        100,
+        50,
+        140,
+        80,
+        false
+      ],
+      "expected": [
+        1.399999976158142,
+        0,
+        0,
+        1.600000023841858,
+        0,
+        0
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "drag-top",
+      "fn": "selectionDragMatrix",
+      "input": [
+        7,
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        },
+        50,
+        0,
+        50,
+        -20,
+        false
+      ],
+      "expected": [
+        1,
+        0,
+        0,
+        1.399999976158142,
+        0,
+        -20
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "drag-right",
+      "fn": "selectionDragMatrix",
+      "input": [
+        8,
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        },
+        100,
+        25,
+        140,
+        25,
+        false
+      ],
+      "expected": [
+        1.399999976158142,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "drag-tl-aspect",
+      "fn": "selectionDragMatrix",
+      "input": [
+        2,
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        },
+        0,
+        0,
+        -10,
+        -4,
+        true
+      ],
+      "expected": [
+        1.100000023841858,
+        0,
+        0,
+        1.100000023841858,
+        -10,
+        -5
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "drag-anchor",
+      "fn": "selectionDragMatrix",
+      "input": [
+        2,
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        },
+        100,
+        50,
+        80,
+        40,
+        false
+      ],
+      "expected": [
+        1,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "drag-none",
+      "fn": "selectionDragMatrix",
+      "input": [
+        0,
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        },
+        10,
+        10,
+        20,
+        20,
+        false
+      ],
+      "expected": [
+        1,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "rotate-handle-position",
+      "fn": "rotateHandlePosition",
+      "input": [
+        {
+          "Left": 0,
+          "Top": 0,
+          "Right": 100,
+          "Bottom": 50
+        }
+      ],
+      "expected": {
+        "X": 50,
+        "Y": -28
+      },
+      "tolerance": 0
+    }
+  ]
+}

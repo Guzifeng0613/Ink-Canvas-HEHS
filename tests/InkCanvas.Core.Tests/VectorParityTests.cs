@@ -1,7 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using InkCanvas.Core.Ink;
+using InkCanvas.Core.Selection;
 using InkCanvas.Core.Settings;
+using InkCanvas.Ink.Manipulation;
 using Xunit;
 
 namespace InkCanvas.Core.Tests;
@@ -189,6 +191,191 @@ public sealed class VectorParityTests
             Assert.Equal(expected.GetProperty("redoCount").GetInt32(), stack.RedoCount);
             var expectedLog = expected.GetProperty("log").EnumerateArray().Select(e => e.GetString()).ToArray();
             Assert.Equal(expectedLog, log);
+        }
+    }
+
+    [Fact]
+    public void MatrixVectorsMatch()
+    {
+        using var doc = Load("matrix.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var input = c.GetProperty("input");
+            object actual;
+            switch (c.GetProperty("fn").GetString())
+            {
+                case "matrixMultiply":
+                    actual = Arr(Mat(input[0]) * Mat(input[1]));
+                    break;
+                case "transformPoint":
+                {
+                    var p = System.Numerics.Vector2.Transform(
+                        new System.Numerics.Vector2(input[1].GetSingle(), input[2].GetSingle()),
+                        Mat(input[0]));
+                    actual = new { X = p.X, Y = p.Y };
+                    break;
+                }
+                case "createRotation":
+                    actual = Arr(System.Numerics.Matrix3x2.CreateRotation(input[0].GetSingle()));
+                    break;
+                case "invertMatrixValues":
+                    System.Numerics.Matrix3x2.Invert(Mat(input[0]), out var inverted);
+                    actual = Arr(inverted);
+                    break;
+                default:
+                    throw new InvalidOperationException("unknown matrix fn");
+            }
+            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
+        }
+    }
+
+    [Fact]
+    public void SelectionVectorsMatch()
+    {
+        using var doc = Load("selection.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var input = c.GetProperty("input");
+            object actual;
+            switch (c.GetProperty("fn").GetString())
+            {
+                case "selectionHitTest":
+                    actual = (int)SelectionGeometry.HitTest(
+                        Bounds(input[0]),
+                        new System.Numerics.Vector2(input[1].GetSingle(), input[2].GetSingle()));
+                    break;
+                case "selectionDragMatrix":
+                {
+                    var handle = (SelectionHandle)input[0].GetInt32();
+                    var from = new System.Numerics.Vector2(input[2].GetSingle(), input[3].GetSingle());
+                    var to = new System.Numerics.Vector2(input[4].GetSingle(), input[5].GetSingle());
+                    actual = Arr(SelectionGeometry.DragMatrix(handle, Bounds(input[1]), from, to, input[6].GetBoolean()));
+                    break;
+                }
+                case "rotateHandlePosition":
+                {
+                    var p = SelectionGeometry.RotateHandlePosition(Bounds(input[0]));
+                    actual = new { X = p.X, Y = p.Y };
+                    break;
+                }
+                default:
+                    throw new InvalidOperationException("unknown selection fn");
+            }
+            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
+        }
+    }
+
+    [Fact]
+    public void TwoFingerVectorsMatch()
+    {
+        using var doc = Load("two-finger.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var input = c.GetProperty("input");
+            var options = input[0];
+            var manipulator = new TwoFingerManipulator
+            {
+                AllowZoom = options.GetProperty("allowZoom").GetBoolean(),
+                AllowTranslate = options.GetProperty("allowTranslate").GetBoolean(),
+                AllowRotation = options.GetProperty("allowRotation").GetBoolean(),
+                MinScale = options.GetProperty("minScale").GetSingle(),
+                MaxScale = options.GetProperty("maxScale").GetSingle()
+            };
+            var transform = Mat(input[1]);
+            var center = new System.Numerics.Vector2(input[2].GetSingle(), input[3].GetSingle());
+            var changed = new List<bool>();
+            foreach (var s in input[4].EnumerateArray())
+            {
+                changed.Add(manipulator.Update(
+                    new System.Numerics.Vector2(s.GetProperty("AX").GetSingle(), s.GetProperty("AY").GetSingle()),
+                    new System.Numerics.Vector2(s.GetProperty("BX").GetSingle(), s.GetProperty("BY").GetSingle()),
+                    ref transform,
+                    center));
+            }
+            AssertNear(c.GetProperty("expected"), Node(new { changed, final = Arr(transform) }),
+                c.GetProperty("tolerance").GetDouble());
+        }
+    }
+
+    [Fact]
+    public void PivotVectorsMatch()
+    {
+        using var doc = Load("pivot.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var input = c.GetProperty("input");
+            var resolved = MatrixTransformCenter.Resolve(
+                (MatrixTransformCenterPointOptions)input[0].GetInt32(),
+                new System.Numerics.Vector2(input[1].GetSingle(), input[2].GetSingle()),
+                new System.Numerics.Vector2(input[3].GetSingle(), input[4].GetSingle()),
+                new System.Numerics.Vector2(input[5].GetSingle(), input[6].GetSingle()),
+                input[7].GetBoolean());
+            AssertNear(c.GetProperty("expected"), Node(new { X = resolved.X, Y = resolved.Y }), 0);
+        }
+    }
+
+    private static System.Numerics.Matrix3x2 Mat(JsonElement e) => new(
+        e[0].GetSingle(), e[1].GetSingle(), e[2].GetSingle(),
+        e[3].GetSingle(), e[4].GetSingle(), e[5].GetSingle());
+
+    private static double[] Arr(System.Numerics.Matrix3x2 m) =>
+        new double[] { m.M11, m.M12, m.M21, m.M22, m.M31, m.M32 };
+
+    private static Rect Bounds(JsonElement e) => new(
+        e.GetProperty("Left").GetSingle(),
+        e.GetProperty("Top").GetSingle(),
+        e.GetProperty("Right").GetSingle(),
+        e.GetProperty("Bottom").GetSingle());
+
+    private static JsonNode Node(object value) => JsonNode.Parse(JsonSerializer.Serialize(value))!;
+
+    private static void AssertNear(JsonElement expected, JsonNode? actual, double tolerance)
+    {
+        var precision = tolerance <= 0 ? -1 : (int)Math.Max(0, Math.Round(-Math.Log10(tolerance)));
+        switch (expected.ValueKind)
+        {
+            case JsonValueKind.Number:
+                Assert.NotNull(actual);
+                if (precision >= 0)
+                {
+                    Assert.Equal(expected.GetDouble(), actual!.GetValue<double>(), precision);
+                }
+                else
+                {
+                    Assert.Equal(expected.GetDouble(), actual!.GetValue<double>());
+                }
+                break;
+            case JsonValueKind.True:
+            case JsonValueKind.False:
+                Assert.Equal(expected.GetBoolean(), actual!.GetValue<bool>());
+                break;
+            case JsonValueKind.String:
+                Assert.Equal(expected.GetString(), actual!.GetValue<string>());
+                break;
+            case JsonValueKind.Array:
+            {
+                var array = actual!.AsArray();
+                Assert.Equal(expected.GetArrayLength(), array.Count);
+                for (var i = 0; i < expected.GetArrayLength(); i++)
+                {
+                    AssertNear(expected[i], array[i], tolerance);
+                }
+                break;
+            }
+            case JsonValueKind.Object:
+            {
+                var obj = actual!.AsObject();
+                var props = expected.EnumerateObject().ToArray();
+                Assert.Equal(props.Length, obj.Count);
+                foreach (var p in props)
+                {
+                    Assert.True(obj.ContainsKey(p.Name), "missing property " + p.Name);
+                    AssertNear(p.Value, obj[p.Name], tolerance);
+                }
+                break;
+            }
+            default:
+                throw new InvalidOperationException("unsupported json kind " + expected.ValueKind);
         }
     }
 

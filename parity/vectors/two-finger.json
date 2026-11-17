@@ -1,0 +1,422 @@
+{
+  "id": "two-finger",
+  "entry": "harmony/core/src/main/ets/ink/TwoFingerManipulator.ts",
+  "cases": [
+    {
+      "id": "twofinger-translate",
+      "fn": "simulateTwoFinger",
+      "input": [
+        {
+          "allowZoom": true,
+          "allowTranslate": true,
+          "allowRotation": false,
+          "minScale": 0.2,
+          "maxScale": 8
+        },
+        [
+          1,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        0,
+        0,
+        [
+          {
+            "AX": 100,
+            "AY": 100,
+            "BX": 200,
+            "BY": 100
+          },
+          {
+            "AX": 110,
+            "AY": 105,
+            "BX": 210,
+            "BY": 105
+          }
+        ]
+      ],
+      "expected": {
+        "changed": [
+          false,
+          true
+        ],
+        "final": [
+          1,
+          0,
+          0,
+          1,
+          10,
+          5
+        ]
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "twofinger-zoom",
+      "fn": "simulateTwoFinger",
+      "input": [
+        {
+          "allowZoom": true,
+          "allowTranslate": false,
+          "allowRotation": false,
+          "minScale": 0.2,
+          "maxScale": 8
+        },
+        [
+          1,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        100,
+        100,
+        [
+          {
+            "AX": 100,
+            "AY": 100,
+            "BX": 110,
+            "BY": 100
+          },
+          {
+            "AX": 94,
+            "AY": 100,
+            "BX": 116,
+            "BY": 100
+          }
+        ]
+      ],
+      "expected": {
+        "changed": [
+          false,
+          true
+        ],
+        "final": [
+          2.200000047683716,
+          0,
+          0,
+          2.200000047683716,
+          -120,
+          -120
+        ]
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "twofinger-rotate",
+      "fn": "simulateTwoFinger",
+      "input": [
+        {
+          "allowZoom": false,
+          "allowTranslate": false,
+          "allowRotation": true,
+          "minScale": 0.2,
+          "maxScale": 8
+        },
+        [
+          1,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        150,
+        100,
+        [
+          {
+            "AX": 100,
+            "AY": 100,
+            "BX": 200,
+            "BY": 100
+          },
+          {
+            "AX": 150,
+            "AY": 50,
+            "BX": 150,
+            "BY": 150
+          }
+        ]
+      ],
+      "expected": {
+        "changed": [
+          false,
+          true
+        ],
+        "final": [
+          0,
+          1,
+          -1,
+          0,
+          250,
+          -50
+        ]
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "twofinger-all",
+      "fn": "simulateTwoFinger",
+      "input": [
+        {
+          "allowZoom": true,
+          "allowTranslate": true,
+          "allowRotation": true,
+          "minScale": 0.2,
+          "maxScale": 8
+        },
+        [
+          1,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        150,
+        100,
+        [
+          {
+            "AX": 100,
+            "AY": 100,
+            "BX": 200,
+            "BY": 100
+          },
+          {
+            "AX": 105,
+            "AY": 108,
+            "BX": 215,
+            "BY": 120
+          },
+          {
+            "AX": 110,
+            "AY": 115,
+            "BX": 230,
+            "BY": 140
+          }
+        ]
+      ],
+      "expected": {
+        "changed": [
+          false,
+          true,
+          true
+        ],
+        "final": [
+          1.1999999284744263,
+          0.25,
+          -0.25,
+          1.1999999284744263,
+          12.945000648498535,
+          -22.19999885559082
+        ]
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "twofinger-zoom-clamp-min",
+      "fn": "simulateTwoFinger",
+      "input": [
+        {
+          "allowZoom": true,
+          "allowTranslate": false,
+          "allowRotation": false,
+          "minScale": 0.2,
+          "maxScale": 8
+        },
+        [
+          0.20999999344348907,
+          0,
+          0,
+          0.20999999344348907,
+          0,
+          0
+        ],
+        150,
+        100,
+        [
+          {
+            "AX": 100,
+            "AY": 100,
+            "BX": 200,
+            "BY": 100
+          },
+          {
+            "AX": 149,
+            "AY": 100,
+            "BX": 151,
+            "BY": 100
+          }
+        ]
+      ],
+      "expected": {
+        "changed": [
+          false,
+          true
+        ],
+        "final": [
+          0.20000000298023224,
+          0,
+          0,
+          0.20000000298023224,
+          1.4999990463256836,
+          0.9999993443489075
+        ]
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "twofinger-zoom-clamp-max",
+      "fn": "simulateTwoFinger",
+      "input": [
+        {
+          "allowZoom": true,
+          "allowTranslate": false,
+          "allowRotation": false,
+          "minScale": 0.2,
+          "maxScale": 8
+        },
+        [
+          7.900000095367432,
+          0,
+          0,
+          7.900000095367432,
+          0,
+          0
+        ],
+        150,
+        100,
+        [
+          {
+            "AX": 149,
+            "AY": 100,
+            "BX": 151,
+            "BY": 100
+          },
+          {
+            "AX": 100,
+            "AY": 100,
+            "BX": 200,
+            "BY": 100
+          }
+        ]
+      ],
+      "expected": {
+        "changed": [
+          false,
+          true
+        ],
+        "final": [
+          8,
+          0,
+          0,
+          8,
+          -15.000067710876465,
+          -10.000004768371582
+        ]
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "twofinger-degenerate",
+      "fn": "simulateTwoFinger",
+      "input": [
+        {
+          "allowZoom": true,
+          "allowTranslate": true,
+          "allowRotation": true,
+          "minScale": 0.2,
+          "maxScale": 8
+        },
+        [
+          1,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        100,
+        100,
+        [
+          {
+            "AX": 100,
+            "AY": 100,
+            "BX": 100.5,
+            "BY": 100
+          },
+          {
+            "AX": 100,
+            "AY": 100,
+            "BX": 100.5,
+            "BY": 100
+          }
+        ]
+      ],
+      "expected": {
+        "changed": [
+          false,
+          false
+        ],
+        "final": [
+          1,
+          0,
+          0,
+          1,
+          0,
+          0
+        ]
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "twofinger-identity",
+      "fn": "simulateTwoFinger",
+      "input": [
+        {
+          "allowZoom": true,
+          "allowTranslate": true,
+          "allowRotation": false,
+          "minScale": 0.2,
+          "maxScale": 8
+        },
+        [
+          1,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        150,
+        100,
+        [
+          {
+            "AX": 100,
+            "AY": 100,
+            "BX": 200,
+            "BY": 100
+          }
+        ]
+      ],
+      "expected": {
+        "changed": [
+          false
+        ],
+        "final": [
+          1,
+          0,
+          0,
+          1,
+          0,
+          0
+        ]
+      },
+      "tolerance": 0.0001
+    }
+  ]
+}
