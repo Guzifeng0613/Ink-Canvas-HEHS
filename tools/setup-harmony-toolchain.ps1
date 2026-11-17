@@ -1,86 +1,72 @@
-# setup-harmony-toolchain.ps1 — 安装/验证 HarmonyOS 命令行工具（含内嵌 SDK）
-# 用法：
-#   pwsh -File tools/setup-harmony-toolchain.ps1                 # 自动在常见目录找 zip
-#   pwsh -File tools/setup-harmony-toolchain.ps1 -ZipPath <zip>  # 指定 zip
-#   pwsh -File tools/setup-harmony-toolchain.ps1 -SkipExtract    # 已解压，仅验证
-# 约定安装位置：D:\dev-cache\harmony\command-line-tools（保护 C 盘，沿用 D12 缓存约定）
-# 不修改系统 PATH；构建脚本一律用绝对路径调用工具。
+# setup-harmony-toolchain.ps1 — 验证 HarmonyOS 命令行工具（内嵌 SDK）并配置 E 盘缓存
+# 实际安装位置：E:\EcoStudioCLI\command-line-tools（用户解压）
+# 构建缓存统一放 E 盘：E:\harmony-cache\{hvigor,ohpm,npm}
+# 不修改系统 PATH / 不写用户级环境变量；构建脚本用绝对路径 + 会话级 env 调用。
 param(
-    [string]$ZipPath,
-    [string]$InstallRoot = 'D:\dev-cache\harmony',
-    [switch]$SkipExtract
+    [string]$CliRoot = 'E:\EcoStudioCLI',
+    [string]$CacheRoot = 'E:\harmony-cache',
+    [switch]$Quiet
 )
 $ErrorActionPreference = 'Stop'
 
-function Find-Zip {
-    $candidates = @(
-        'D:\dev-cache\harmony', 'D:\dev-cache', 'D:\', 'D:\tmp',
-        "$env:USERPROFILE\Downloads", 'C:\Users\Administrator\Downloads', 'D:\InkCanvas'
-    )
-    foreach ($d in $candidates) {
-        if (-not (Test-Path $d)) { continue }
-        $z = Get-ChildItem -Path $d -Filter '*.zip' -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match 'command.?line.?tools' } |
-            Sort-Object LastWriteTime -Descending | Select-Object -First 1
-        if ($z) { return $z.FullName }
-    }
-    return $null
+function Resolve-ToolsRoot([string]$root) {
+    if (Test-Path (Join-Path $root 'command-line-tools\bin')) { return (Join-Path $root 'command-line-tools') }
+    if (Test-Path (Join-Path $root 'bin')) { return $root }
+    throw "在 $root 下找不到 command-line-tools\bin 或 bin"
 }
 
-$clt = Join-Path $InstallRoot 'command-line-tools'
-
-if (-not $SkipExtract) {
-    if (-not $ZipPath) { $ZipPath = Find-Zip }
-    if ($ZipPath) {
-        Write-Host "解压 $ZipPath -> $InstallRoot"
-        if (-not (Test-Path $InstallRoot)) { New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null }
-        Expand-Archive -LiteralPath $ZipPath -DestinationPath $InstallRoot -Force
-    } elseif (-not (Test-Path (Join-Path $clt 'bin'))) {
-        throw "未找到 command-line-tools zip，也未找到已解压的 $clt\bin。请把 zip 放到 D:\dev-cache\harmony\ 或用 -ZipPath 指定。"
-    }
-}
-
-if (-not (Test-Path $clt)) {
-    # 有的包解压后直接是 bin/sdk/...（没有 command-line-tools 外层）
-    if (Test-Path (Join-Path $InstallRoot 'bin')) { $clt = $InstallRoot }
-    else { throw "安装目录布局异常：$InstallRoot 下没有 command-line-tools 或 bin" }
-}
-
-Write-Host "`n=== 目录布局（深度 2） ==="
-Get-ChildItem $clt | ForEach-Object {
-    Write-Host ("  " + $_.Name + $(if ($_.PSIsContainer) { '/' }))
-    if ($_.PSIsContainer) {
-        Get-ChildItem $_.FullName -ErrorAction SilentlyContinue | Select-Object -First 12 | ForEach-Object {
-            Write-Host ("    " + $_.Name + $(if ($_.PSIsContainer) { '/' }))
-        }
-    }
-}
-
-Write-Host "`n=== 工具版本验证 ==="
+$clt = Resolve-ToolsRoot $CliRoot
 $bin = Join-Path $clt 'bin'
-foreach ($tool in @('codelinter', 'ohpm', 'hvigorw')) {
-    $exe = Get-ChildItem $bin -Filter "$tool*" -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $exe) { Write-Host "  [缺失] $tool"; continue }
-    try {
-        $out = & $exe.FullName -v 2>&1 | Select-Object -First 3
-        Write-Host ("  [{0}] {1}" -f $tool, ($out -join ' | '))
-    } catch {
-        Write-Host ("  [{0}] 调用失败：{1}" -f $tool, $_.Exception.Message)
+$required = @('bin', 'sdk', 'hvigor', 'ohpm', 'codelinter')
+$missing = @($required | Where-Object { -not (Test-Path (Join-Path $clt $_)) })
+
+if ($missing.Count -gt 0) {
+    Write-Host ("[未就绪] 缺少目录：{0}（可能解压未完成）" -f ($missing -join ', '))
+    Get-ChildItem $clt | Select-Object Name, LastWriteTime | Format-Table | Out-String | Write-Host
+    exit 2
+}
+
+if (-not $Quiet) {
+    Write-Output '=== 目录布局 ==='
+    Get-ChildItem $clt | Select-Object Name | Format-Table | Out-String | Write-Host
+    Get-ChildItem (Join-Path $clt 'sdk\default') -ErrorAction SilentlyContinue | Select-Object Name | Format-Table | Out-String | Write-Host
+    Write-Output '=== 工具版本 ==='
+    foreach ($tool in @('ohpm', 'codelinter', 'hvigorw')) {
+        $bat = Join-Path $bin "$tool.bat"
+        if (-not (Test-Path $bat)) { Write-Host "  [缺失] $tool"; continue }
+        try { $out = & $bat -v 2>&1 | Select-Object -First 2; Write-Host ("  {0}: {1}" -f $tool, ($out -join ' ')) }
+        catch { Write-Host ("  {0}: 调用失败 {1}" -f $tool, $_.Exception.Message) }
     }
 }
 
-# 记录工具链位置，供仓库构建脚本读取（此文件 gitignore）
+# --- E 盘缓存目录 ---
+foreach ($sub in @('hvigor', 'ohpm', 'npm')) {
+    $p = Join-Path $CacheRoot $sub
+    if (-not (Test-Path $p)) { New-Item -ItemType Directory -Force -Path $p | Out-Null }
+}
+
+# 生成会话环境脚本（构建前 dot-source）
+$envScript = Join-Path $PSScriptRoot 'harmony-env.ps1'
+@"
+# 由 setup-harmony-toolchain.ps1 生成 — 会话级 HarmonyOS 构建环境
+`$env:PATH = "$bin;" + `$env:PATH
+`$env:HVIGOR_USER_HOME = "$CacheRoot\hvigor"
+`$env:OHPM_HOME = "$CacheRoot\ohpm"
+`$env:NPM_CONFIG_CACHE = "$CacheRoot\npm"
+`$env:OHOS_BASE_SDK_HOME = "$clt\sdk"
+"@ | Set-Content -LiteralPath $envScript -Encoding UTF8
+
 $record = [ordered]@{
     commandLineTools = $clt
     bin              = $bin
+    sdk              = Join-Path $clt 'sdk'
+    sdkDefault       = Join-Path $clt 'sdk\default'
+    cacheRoot        = $CacheRoot
+    envScript        = $envScript
     recordedAt       = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
 }
-$sdkDir = Join-Path $clt 'sdk'
-if (Test-Path $sdkDir) {
-    $record.sdk = $sdkDir
-    $record.sdkLayout = @(Get-ChildItem $sdkDir -Recurse -Depth 2 -Directory | ForEach-Object { $_.FullName.Substring($clt.Length + 1) })
-}
-$recordPath = Join-Path $PSScriptRoot 'toolchain.local.json'
-$record | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $recordPath -Encoding UTF8
-Write-Host "`n工具链记录已写入 $recordPath"
-Write-Host "如需交互式使用，可手动把 $bin 加入 PATH（本脚本不改系统 PATH）。"
+$record | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'toolchain.local.json') -Encoding UTF8
+
+Write-Host "[就绪] 工具链 $clt"
+Write-Host "[缓存] $CacheRoot\{hvigor,ohpm,npm}"
+Write-Host "[环境] 构建前执行：. `"$envScript`""

@@ -29,6 +29,8 @@
 | F4 | Node 24 默认类型剥离不支持 enum；`--experimental-transform-types` 可执行 interface/enum/class/泛型 | `docs/superpowers/research/harmony/00-harness-notes.md` |
 | F5 | 本机暂无 HarmonyOS SDK；商业版 Command Line Tools（内嵌 SDK）由用户下载，约定置于 `D:\dev-cache\harmony\` | 用户消息 + 目录检查 |
 | F6 | 兜底可用 OpenHarmony 7.0 公共 SDK（API 26 底座）做编译验证 | 华为云镜像探查 |
+| F7 | 实际工具链：`E:\EcoStudioCLI\command-line-tools` 26.0.1.290（beta），SDK 26.0.1 Beta1（apiVersion 26）；探针工程 `hvigorw assembleHap` 构建成功（34 tasks / 26s，未签名） | `D:\tmp\harmony-probe` 构建日志 |
+| F8 | `compileSdkVersion` 须省略（自动取内置 SDK；写死 26.0.0 被 00303313 拒绝）；`compatibleSdkVersion "6.1.1(24)"`、`targetSdkVersion "26.0.0"` 可用 | 探针实测 |
 
 ## 3. 平台能力边界与移植策略
 
@@ -84,7 +86,7 @@ harmony/                          DevEco 工程（API 26 工具链）
 
 ## 6. API 版本策略（G6）
 
-- 单代码库、单 HAP：`compileSdkVersion 26.0.0`、`compatibleSdkVersion 6.1.1(24)`、`targetSdkVersion 26.0.0`（SemVer 格式自 API 26 起）。
+- 单代码库、单 HAP：**省略 `compileSdkVersion`**（自动使用工具链内置 SDK；Release 工具链→26.0.0，Beta 工具链→26.0.1，均为 API 26）、`compatibleSdkVersion 6.1.1(24)`、`targetSdkVersion 26.0.0`（SemVer 格式自 API 26 起）。
 - `platform/compat/` 能力层：`Capabilities` 接口 + `useApi26(): boolean`（基于 `deviceInfo.sdkApiVersion` / `canIUse('SystemCapability...')`）；
   API 26 专属（沉浸光感 systemMaterial、Pen Kit 跟手性加速、ContainerReader、OverlayManager 层级、闪控窗等）全部包在接口后，API 24 回退实现。
 - 业务层（core/ink/controls/features/entry）**禁止**直接判断版本号或直接 `import` 26 专属 Kit；由 `platform` 暴露统一能力。
@@ -133,3 +135,4 @@ harmony/                          DevEco 工程（API 26 工具链）
 - 2026-11-18：向量运行器零依赖（Node transform-types），不引入 npm 依赖。
 - 2026-11-18：单代码库 + 能力层，不做 API 24/26 双分支代码库；差异集中在 `platform/compat` 与 `api-matrix.md`。
 - 2026-11-18：当前分支继续（不新建分支），提交仅包含移植新增文件，不触碰用户未提交的 3.4.0 改动。
+- 2026-11-18：工具链实际位于 `E:\EcoStudioCLI\command-line-tools`（商业版，内嵌 SDK，`sdk/default` 含 hms+openharmony 双栈）；构建缓存统一 `E:\harmony-cache\{hvigor,ohpm,npm}`，会话环境由 `tools/harmony-env.ps1` 提供。
