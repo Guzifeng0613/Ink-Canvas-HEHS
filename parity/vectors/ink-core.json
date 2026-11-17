@@ -1,0 +1,151 @@
+{
+  "id": "ink-core",
+  "entry": "harmony/core/src/main/ets/ink/InkStroke.ts",
+  "cases": [
+    {
+      "id": "bounds-single-wide",
+      "fn": "strokeBounds",
+      "input": [
+        [
+          {
+            "X": 10,
+            "Y": 10,
+            "Width": 30
+          }
+        ],
+        3
+      ],
+      "expected": [
+        -5,
+        -5,
+        25,
+        25
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "bounds-two-widths",
+      "fn": "strokeBounds",
+      "input": [
+        [
+          {
+            "X": 0,
+            "Y": 0,
+            "Width": 4
+          },
+          {
+            "X": 20,
+            "Y": 10,
+            "Width": 10
+          }
+        ],
+        3
+      ],
+      "expected": [
+        -5,
+        -5,
+        25,
+        15
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "bounds-empty",
+      "fn": "strokeBounds",
+      "input": [
+        [],
+        3
+      ],
+      "expected": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "bounds-zero-width",
+      "fn": "strokeBounds",
+      "input": [
+        [
+          {
+            "X": 5,
+            "Y": 5,
+            "Width": 0
+          }
+        ],
+        3
+      ],
+      "expected": [
+        5,
+        5,
+        5,
+        5
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "setter-velocity-rebuild",
+      "fn": "setTaperAndWidths",
+      "input": [
+        [
+          {
+            "X": 0,
+            "Y": 0,
+            "Width": 1
+          },
+          {
+            "X": 5,
+            "Y": 0,
+            "Width": 1
+          },
+          {
+            "X": 10,
+            "Y": 0,
+            "Width": 1
+          },
+          {
+            "X": 15,
+            "Y": 0,
+            "Width": 1
+          }
+        ],
+        10,
+        2
+      ],
+      "expected": [
+        10,
+        10,
+        9,
+        9
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "setter-none-rebuild",
+      "fn": "setTaperAndWidths",
+      "input": [
+        [
+          {
+            "X": 0,
+            "Y": 0,
+            "Width": 1
+          },
+          {
+            "X": 5,
+            "Y": 0,
+            "Width": 1
+          }
+        ],
+        10,
+        0
+      ],
+      "expected": [
+        10,
+        10
+      ],
+      "tolerance": 0.0001
+    }
+  ]
+}

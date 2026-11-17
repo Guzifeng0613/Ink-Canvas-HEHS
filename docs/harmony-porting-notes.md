@@ -8,21 +8,23 @@
 
 | 层 | 手段 | 当前结果 |
 |---|---|---|
-| L1 逻辑互认 | C# 生成黄金向量 + Node 运行 ArkTS | **Phase A：327 用例 / 26 个向量文件全部通过** |
+| L1 逻辑互认 | C# 生成黄金向量 + Node 运行 ArkTS | **Phase A：339 用例 / 28 个向量文件全部通过** |
 | L2 编译 | `hvigorw assembleHap`（26.0.1 Beta1 SDK） | 通过（未签名 debug HAP，73 tasks） |
 | L3 运行/UI | 真机 | **未实机验证**（本机无设备；模拟器不可靠） |
-| L4 基线回归 | `dotnet test`（向量子集） | 26/26 通过；完整 WinUI3 套件未在本轮重跑 |
+| L4 基线回归 | `dotnet test`（向量子集） | 28/28 通过；完整 WinUI3 套件未在本轮重跑 |
 
 ### Phase A 已交付（纯逻辑核心）
 
 `harmony/core`：墨迹模型/颜色/属性、因果笔锋（Tail/Velocity）、胶囊并集轮廓、线条擦、
 撤销栈、矩阵（行向量）、选区几何、双指手势、枢轴、25 种图形、形状识别、触摸分档、手掌判定、
-回放时钟/会话、预乘 BGRA 合成、主题判定、触摸设置模型与 Settings 编解码、.icink/画板包/PPT manifest 编解码、
+回放时钟/会话、预乘 BGRA 合成、主题判定、触摸设置模型与 Settings 编解码、.icink/画板包/PPT manifest 编解码
+（含 ObjectFrame 与画板 HighlighterAlpha 保留、99 页上限）、InkDocument 命中/面积擦/边界、InkStroke bounds 膨胀与 setter 重算、
 版本/Release 解析/更新静默窗口策略。
 
 - 功能单元：manifest 中 14 个 Phase A 单元状态 `ported`；`system-autostart` 唯一 `not-ported`。
 - 锚点：29 个 ArkTS→C# 锚点（C# 侧反向锚点待用户工作树清理后补齐）。
 - 覆盖率（Phase A 范围）：14/14。
+- 独立评审修复轮：1 Critical（ObjectFrame/画板 HighlighterAlpha）+ 7 Important（bounds/setter、面积擦与文档命中、99 页上限、manifest/schema 收口、checker 假绿）已修复并回归。
 
 ### 仍需后续阶段（B–G）
 

@@ -1,8 +1,47 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "parity/schemas/ppt-manifest.schema.json",
-  "title": "PPT 墨迹存档 manifest（WinUI3 兼容）",
-  "description": "字段以 PptInkFileStore.cs 实际输出为准；Task 9 补全。HarmonyOS 侧课件模式沿用同一 manifest 结构。",
+  "title": "ppt-manifest",
   "type": "object",
-  "additionalProperties": true
+  "properties": {
+    "Version": {
+      "type": "number"
+    },
+    "LastSlideIndex": {
+      "type": "number"
+    },
+    "LastShowPosition": {
+      "type": "number"
+    },
+    "Slides": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "SlideId": {
+            "type": "number"
+          },
+          "SlideIndex": {
+            "type": "number"
+          },
+          "File": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "SlideId",
+          "SlideIndex",
+          "File"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "Version",
+    "LastSlideIndex",
+    "LastShowPosition",
+    "Slides"
+  ],
+  "additionalProperties": false
 }

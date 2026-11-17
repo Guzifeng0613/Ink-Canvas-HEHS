@@ -1,5 +1,5 @@
 {
-  "note": "C# 侧 @parity 锚点因用户工作树未清理延后；ArkTS→C# 方向已全部登记，由 parity-check 校验目标存在。",
+  "note": "ArkTS→C# 锚点登记；C# 反向锚点延后（见 notes）。",
   "pairs": [
     {
       "arkts": "harmony/core/src/main/ets/history/UndoStack.ts",
@@ -59,7 +59,7 @@
     },
     {
       "arkts": "harmony/core/src/main/ets/math/Matrix3x2.ts",
-      "csharp": "src/InkCanvas.Ink/Manipulation/TwoFingerManipulator.cs"
+      "csharp": "src/InkCanvas.Core/Selection/SelectionGeometry.cs"
     },
     {
       "arkts": "harmony/core/src/main/ets/persistence/BoardPackCodec.ts",

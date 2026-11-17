@@ -1,0 +1,233 @@
+{
+  "id": "document",
+  "entry": "harmony/core/src/main/ets/ink/InkDocument.ts",
+  "cases": [
+    {
+      "id": "document-hit-point",
+      "fn": "documentHitTestPoint",
+      "input": [
+        [
+          {
+            "BaseWidth": 3,
+            "Points": [
+              {
+                "X": 0,
+                "Y": 0,
+                "Width": 3
+              },
+              {
+                "X": 20,
+                "Y": 0,
+                "Width": 3
+              }
+            ]
+          },
+          {
+            "BaseWidth": 5,
+            "Points": [
+              {
+                "X": 0,
+                "Y": 40,
+                "Width": 5
+              },
+              {
+                "X": 20,
+                "Y": 40,
+                "Width": 5
+              }
+            ]
+          }
+        ],
+        5,
+        1,
+        4
+      ],
+      "expected": [
+        0
+      ],
+      "tolerance": 0
+    },
+    {
+      "id": "document-hit-miss",
+      "fn": "documentHitTestPoint",
+      "input": [
+        [
+          {
+            "BaseWidth": 3,
+            "Points": [
+              {
+                "X": 0,
+                "Y": 0,
+                "Width": 3
+              },
+              {
+                "X": 20,
+                "Y": 0,
+                "Width": 3
+              }
+            ]
+          },
+          {
+            "BaseWidth": 5,
+            "Points": [
+              {
+                "X": 0,
+                "Y": 40,
+                "Width": 5
+              },
+              {
+                "X": 20,
+                "Y": 40,
+                "Width": 5
+              }
+            ]
+          }
+        ],
+        5,
+        20,
+        2
+      ],
+      "expected": [],
+      "tolerance": 0
+    },
+    {
+      "id": "document-hit-rect",
+      "fn": "documentHitTestRect",
+      "input": [
+        [
+          {
+            "BaseWidth": 3,
+            "Points": [
+              {
+                "X": 0,
+                "Y": 0,
+                "Width": 3
+              },
+              {
+                "X": 20,
+                "Y": 0,
+                "Width": 3
+              }
+            ]
+          },
+          {
+            "BaseWidth": 5,
+            "Points": [
+              {
+                "X": 0,
+                "Y": 40,
+                "Width": 5
+              },
+              {
+                "X": 20,
+                "Y": 40,
+                "Width": 5
+              }
+            ]
+          }
+        ],
+        -5,
+        -5,
+        25,
+        5
+      ],
+      "expected": [
+        0
+      ],
+      "tolerance": 0
+    },
+    {
+      "id": "document-erase",
+      "fn": "documentEraseAt",
+      "input": [
+        [
+          {
+            "BaseWidth": 3,
+            "Points": [
+              {
+                "X": 0,
+                "Y": 0,
+                "Width": 3
+              },
+              {
+                "X": 20,
+                "Y": 0,
+                "Width": 3
+              }
+            ]
+          },
+          {
+            "BaseWidth": 5,
+            "Points": [
+              {
+                "X": 0,
+                "Y": 40,
+                "Width": 5
+              },
+              {
+                "X": 20,
+                "Y": 40,
+                "Width": 5
+              }
+            ]
+          }
+        ],
+        5,
+        0,
+        2
+      ],
+      "expected": {
+        "hits": [
+          0
+        ],
+        "remaining": 1
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "document-bounds",
+      "fn": "documentBounds",
+      "input": [
+        [
+          {
+            "BaseWidth": 3,
+            "Points": [
+              {
+                "X": 0,
+                "Y": 0,
+                "Width": 3
+              },
+              {
+                "X": 20,
+                "Y": 0,
+                "Width": 3
+              }
+            ]
+          },
+          {
+            "BaseWidth": 5,
+            "Points": [
+              {
+                "X": 0,
+                "Y": 40,
+                "Width": 5
+              },
+              {
+                "X": 20,
+                "Y": 40,
+                "Width": 5
+              }
+            ]
+          }
+        ]
+      ],
+      "expected": [
+        -2.5,
+        -1.5,
+        22.5,
+        42.5
+      ],
+      "tolerance": 0.0001
+    }
+  ]
+}

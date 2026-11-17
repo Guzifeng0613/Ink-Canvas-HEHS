@@ -13,7 +13,7 @@ Ink Canvas Artistry 的 WinUI 3 迁移版（GPL-3.0），并进行 HarmonyOS（A
 **跨架构维护契约（改任一侧都要遵守）**：
 - `parity/manifest.json`：功能 ↔ 两侧文件的双向映射权威清单；增删功能文件时同步更新，`node tools/parity-check.mjs` 校验锚点与映射完整性。
 - 成对源码用 `@parity` 锚点互指：C# 写 `// @parity harmony/core/src/main/ets/...`；ArkTS 写 `// @parity src/InkCanvas.Core/...`。
-- 纯逻辑用 `parity/vectors/*.json` 黄金向量钉住：C# 测试生成/消费，ArkTS 逻辑测试消费同一文件（`node parity/run-vectors.mjs`）。算法改动必须两侧同步并双向跑向量。
+- 纯逻辑用 `parity/vectors/*.json` 黄金向量钉住：C# 测试生成/消费，ArkTS 逻辑测试消费同一文件（`node --experimental-transform-types --experimental-loader ./parity/ts-resolve-loader.mjs parity/run-vectors.mjs`）。算法改动必须两侧同步并双向跑向量。
 - 共享数据格式：`.icink`（JSON 墨迹存档）与 `Settings.json` 键名两侧完全一致；schema 在 `parity/schemas/`。
 - HarmonyOS API 差异一律走 `harmony/platform` 的 compat 能力层 + `parity/api-matrix.md`（API 24 vs 26 行为表）；业务代码禁止散落版本判断。
 - UI 一致性：设计 token 由 `parity/tokens.json` 单一来源驱动两侧主题；布局度量（触摸目标 ≥40、浮条 55、设置面板 440 等）两侧同值（DIP↔vp）。

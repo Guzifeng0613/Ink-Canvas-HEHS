@@ -773,6 +773,7 @@ public sealed class VectorParityTests
                 HighlighterAlpha = (int)s.Attributes.HighlighterAlpha,
                 Taper = (int)s.Attributes.TaperKind,
                 Shape = s.IsRecognizedShape,
+                ObjectFrame = s.ExportObjectFrame(),
                 Points = s.Points.Select(p => new double[]
                 {
                     (double)p.X, (double)p.Y, (double)p.Pressure, (double)p.Width, (double)p.TimeMs
@@ -791,6 +792,11 @@ public sealed class VectorParityTests
             using var fixture = JsonDocument.Parse(c.GetProperty("input")[0].GetString()!);
             Assert.Equal("inkcanvas-board", fixture.RootElement.GetProperty("Format").GetString());
             Assert.Equal(1, fixture.RootElement.GetProperty("Version").GetInt32());
+            if (c.TryGetProperty("expectError", out var expectError) && expectError.GetBoolean())
+            {
+                Assert.Equal(100, fixture.RootElement.GetProperty("Pages").GetArrayLength());
+                continue;
+            }
             var expected = c.GetProperty("expected");
             Assert.Equal(JsonValueKind.Object, expected.ValueKind);
             Assert.Equal("inkcanvas-board", expected.GetProperty("Format").GetString());
@@ -812,6 +818,103 @@ public sealed class VectorParityTests
             Assert.True(expected.TryGetProperty("Slides", out var expectedSlides));
             Assert.Equal(JsonValueKind.Array, expectedSlides.ValueKind);
         }
+    }
+
+    [Fact]
+    public void InkCoreVectorsMatch()
+    {
+        using var doc = Load("ink-core.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var input = c.GetProperty("input");
+            var points = input[0];
+            if (c.GetProperty("fn").GetString() == "strokeBounds")
+            {
+                var stroke = BuildStrokeFromPoints(points, input[1].GetSingle());
+                var b = stroke.Bounds;
+                var expected = new double[] { b.Left, b.Top, b.Right, b.Bottom };
+                AssertNear(c.GetProperty("expected"), Node(expected), c.GetProperty("tolerance").GetDouble());
+            }
+            else
+            {
+                var stroke = BuildStrokeFromPoints(points, input[1].GetSingle());
+                stroke.Complete();
+                stroke.TaperKind = (TaperKind)input[2].GetInt32();
+                var widths = stroke.Points.Select(p => (double)p.Width).ToArray();
+                AssertNear(c.GetProperty("expected"), Node(widths), c.GetProperty("tolerance").GetDouble());
+            }
+        }
+    }
+
+    [Fact]
+    public void DocumentVectorsMatch()
+    {
+        using var doc = Load("document.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var input = c.GetProperty("input");
+            var strokes = BuildDocument(input[0]);
+            object actual;
+            switch (c.GetProperty("fn").GetString())
+            {
+                case "documentHitTestPoint":
+                    actual = IndexOf(strokes, strokes.HitTest(
+                        new System.Numerics.Vector2(input[1].GetSingle(), input[2].GetSingle()),
+                        input[3].GetSingle()));
+                    break;
+                case "documentHitTestRect":
+                    actual = IndexOf(strokes, strokes.HitTest(new Rect(
+                        input[1].GetSingle(), input[2].GetSingle(),
+                        input[3].GetSingle(), input[4].GetSingle())));
+                    break;
+                case "documentEraseAt":
+                {
+                    var all = strokes.Strokes.ToList();
+                    var hits = strokes.EraseAt(
+                        new System.Numerics.Vector2(input[1].GetSingle(), input[2].GetSingle()),
+                        input[3].GetSingle());
+                    actual = new { hits = hits.Select(h => all.IndexOf(h)).ToArray(), remaining = strokes.Count };
+                    break;
+                }
+                case "documentBounds":
+                {
+                    var b = strokes.Bounds;
+                    actual = new double[] { b.Left, b.Top, b.Right, b.Bottom };
+                    break;
+                }
+                default:
+                    throw new InvalidOperationException("unknown document fn");
+            }
+            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
+        }
+    }
+
+    private static InkStroke BuildStrokeFromPoints(JsonElement points, float baseWidth)
+    {
+        var attributes = new StrokeAttributes { BaseWidth = baseWidth };
+        var stroke = new InkStroke(attributes);
+        stroke.RestorePoints(points.EnumerateArray()
+            .Select(p => new InkPoint(p.GetProperty("X").GetSingle(), p.GetProperty("Y").GetSingle(),
+                0.5f, p.GetProperty("Width").GetSingle(), 0f))
+            .ToArray());
+        return stroke;
+    }
+
+    private static InkDocument BuildDocument(JsonElement strokesJson)
+    {
+        var document = new InkDocument();
+        foreach (var spec in strokesJson.EnumerateArray())
+        {
+            var stroke = BuildStrokeFromPoints(spec.GetProperty("Points"), spec.GetProperty("BaseWidth").GetSingle());
+            document.Add(stroke);
+        }
+        return document;
+    }
+
+    private static int[] IndexOf(InkDocument document, List<InkStroke> hits)
+    {
+        var all = document.Strokes.ToList();
+        return hits.Select(h => all.IndexOf(h)).ToArray();
     }
 
     private static AdvancedSettings? ParseAdvanced(JsonElement element)

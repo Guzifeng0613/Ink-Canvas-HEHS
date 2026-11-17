@@ -1,8 +1,444 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "parity/schemas/settings.schema.json",
-  "title": "Settings.json（WinUI3 兼容）",
-  "description": "字段的权威清单在 Task 3 由 docs/superpowers/research/harmony/06-features.md 抽取，并由 SettingsCodec 的往返黄金向量钉住；本文件在 Task 3 随编解码器补全。",
+  "title": "settings",
   "type": "object",
-  "additionalProperties": true
+  "properties": {
+    "advanced": {
+      "type": "object",
+      "properties": {
+        "isSpecialScreen": {
+          "type": "boolean"
+        },
+        "isQuadIR": {
+          "type": "boolean"
+        },
+        "touchMultiplier": {
+          "type": "number"
+        },
+        "nibModeBoundsWidth": {
+          "type": "number"
+        },
+        "fingerModeBoundsWidth": {
+          "type": "number"
+        },
+        "nibModeBoundsWidthThresholdValue": {
+          "type": "number"
+        },
+        "fingerModeBoundsWidthThresholdValue": {
+          "type": "number"
+        },
+        "nibModeBoundsWidthEraserSize": {
+          "type": "number"
+        },
+        "fingerModeBoundsWidthEraserSize": {
+          "type": "number"
+        },
+        "isEnableEdgeGestureUtil": {
+          "type": "boolean"
+        },
+        "isLogEnabled": {
+          "type": "boolean"
+        },
+        "isSecondConfimeWhenShutdownApp": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "isSpecialScreen",
+        "isQuadIR",
+        "touchMultiplier",
+        "nibModeBoundsWidth",
+        "fingerModeBoundsWidth",
+        "nibModeBoundsWidthThresholdValue",
+        "fingerModeBoundsWidthThresholdValue",
+        "nibModeBoundsWidthEraserSize",
+        "fingerModeBoundsWidthEraserSize",
+        "isEnableEdgeGestureUtil",
+        "isLogEnabled",
+        "isSecondConfimeWhenShutdownApp"
+      ],
+      "additionalProperties": false
+    },
+    "appearance": {
+      "type": "object",
+      "properties": {
+        "isEnableDisPlayFloatBarText": {
+          "type": "boolean"
+        },
+        "isEnableDisPlayNibModeToggler": {
+          "type": "boolean"
+        },
+        "isColorfulViewboxFloatingBar": {
+          "type": "boolean"
+        },
+        "enableViewboxFloatingBarScaleTransform": {
+          "type": "number"
+        },
+        "enableViewboxBlackBoardScaleTransform": {
+          "type": "number"
+        },
+        "floatingBarBottomMargin": {
+          "type": "number"
+        },
+        "isTransparentButtonBackground": {
+          "type": "boolean"
+        },
+        "isShowExitButton": {
+          "type": "boolean"
+        },
+        "isShowEraserButton": {
+          "type": "boolean"
+        },
+        "isShowHideControlButton": {
+          "type": "boolean"
+        },
+        "isShowLRSwitchButton": {
+          "type": "boolean"
+        },
+        "isShowModeFingerToggleSwitch": {
+          "type": "boolean"
+        },
+        "theme": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "isEnableDisPlayFloatBarText",
+        "isEnableDisPlayNibModeToggler",
+        "isColorfulViewboxFloatingBar",
+        "enableViewboxFloatingBarScaleTransform",
+        "enableViewboxBlackBoardScaleTransform",
+        "floatingBarBottomMargin",
+        "isTransparentButtonBackground",
+        "isShowExitButton",
+        "isShowEraserButton",
+        "isShowHideControlButton",
+        "isShowLRSwitchButton",
+        "isShowModeFingerToggleSwitch",
+        "theme"
+      ],
+      "additionalProperties": false
+    },
+    "automation": {
+      "type": "object",
+      "properties": {
+        "isAutoFoldInEasiNote": {
+          "type": "boolean"
+        },
+        "isAutoFoldInEasiNoteIgnoreDesktopAnno": {
+          "type": "boolean"
+        },
+        "isAutoFoldInEasiCamera": {
+          "type": "boolean"
+        },
+        "isAutoFoldInEasiNote3C": {
+          "type": "boolean"
+        },
+        "isAutoFoldInSeewoPincoTeacher": {
+          "type": "boolean"
+        },
+        "isAutoFoldInHiteTouchPro": {
+          "type": "boolean"
+        },
+        "isAutoFoldInHiteCamera": {
+          "type": "boolean"
+        },
+        "isAutoFoldInWxBoardMain": {
+          "type": "boolean"
+        },
+        "isAutoFoldInOldZyBoard": {
+          "type": "boolean"
+        },
+        "isAutoFoldInMSWhiteboard": {
+          "type": "boolean"
+        },
+        "isAutoFoldInPPTSlideShow": {
+          "type": "boolean"
+        },
+        "isAutoKillPptService": {
+          "type": "boolean"
+        },
+        "isAutoKillEasiNote": {
+          "type": "boolean"
+        },
+        "isSaveScreenshotsInDateFolders": {
+          "type": "boolean"
+        },
+        "isAutoSaveStrokesAtScreenshot": {
+          "type": "boolean"
+        },
+        "isAutoSaveStrokesAtClear": {
+          "type": "boolean"
+        },
+        "isAutoClearWhenExitingWritingMode": {
+          "type": "boolean"
+        },
+        "minimumAutomationStrokeNumber": {
+          "type": "number"
+        },
+        "autoSavedStrokesLocation": {
+          "type": "string"
+        },
+        "autoDelSavedFiles": {
+          "type": "boolean"
+        },
+        "autoDelSavedFilesDaysThreshold": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "isAutoFoldInEasiNote",
+        "isAutoFoldInEasiNoteIgnoreDesktopAnno",
+        "isAutoFoldInEasiCamera",
+        "isAutoFoldInEasiNote3C",
+        "isAutoFoldInSeewoPincoTeacher",
+        "isAutoFoldInHiteTouchPro",
+        "isAutoFoldInHiteCamera",
+        "isAutoFoldInWxBoardMain",
+        "isAutoFoldInOldZyBoard",
+        "isAutoFoldInMSWhiteboard",
+        "isAutoFoldInPPTSlideShow",
+        "isAutoKillPptService",
+        "isAutoKillEasiNote",
+        "isSaveScreenshotsInDateFolders",
+        "isAutoSaveStrokesAtScreenshot",
+        "isAutoSaveStrokesAtClear",
+        "isAutoClearWhenExitingWritingMode",
+        "minimumAutomationStrokeNumber",
+        "autoSavedStrokesLocation",
+        "autoDelSavedFiles",
+        "autoDelSavedFilesDaysThreshold"
+      ],
+      "additionalProperties": false
+    },
+    "behavior": {
+      "type": "object",
+      "properties": {
+        "isShowPPTNavigationBottom": {
+          "type": "boolean"
+        },
+        "isShowPPTNavigationSides": {
+          "type": "boolean"
+        },
+        "isShowBottomPPTNavigationPanel": {
+          "type": "boolean"
+        },
+        "isShowSidePPTNavigationPanel": {
+          "type": "boolean"
+        },
+        "powerPointSupport": {
+          "type": "boolean"
+        },
+        "isShowCanvasAtNewSlideShow": {
+          "type": "boolean"
+        },
+        "isNoClearStrokeOnSelectWhenInPowerPoint": {
+          "type": "boolean"
+        },
+        "isShowStrokeOnSelectInPowerPoint": {
+          "type": "boolean"
+        },
+        "isAutoSaveStrokesInPowerPoint": {
+          "type": "boolean"
+        },
+        "isAutoSaveScreenShotInPowerPoint": {
+          "type": "boolean"
+        },
+        "isNotifyPreviousPage": {
+          "type": "boolean"
+        },
+        "isNotifyHiddenPage": {
+          "type": "boolean"
+        },
+        "isNotifyAutoPlayPresentation": {
+          "type": "boolean"
+        },
+        "isEnableTwoFingerGestureInPresentationMode": {
+          "type": "boolean"
+        },
+        "isEnableFingerGestureSlideShowControl": {
+          "type": "boolean"
+        },
+        "isSupportWPS": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "isShowPPTNavigationBottom",
+        "isShowPPTNavigationSides",
+        "isShowBottomPPTNavigationPanel",
+        "isShowSidePPTNavigationPanel",
+        "powerPointSupport",
+        "isShowCanvasAtNewSlideShow",
+        "isNoClearStrokeOnSelectWhenInPowerPoint",
+        "isShowStrokeOnSelectInPowerPoint",
+        "isAutoSaveStrokesInPowerPoint",
+        "isAutoSaveScreenShotInPowerPoint",
+        "isNotifyPreviousPage",
+        "isNotifyHiddenPage",
+        "isNotifyAutoPlayPresentation",
+        "isEnableTwoFingerGestureInPresentationMode",
+        "isEnableFingerGestureSlideShowControl",
+        "isSupportWPS"
+      ],
+      "additionalProperties": false
+    },
+    "canvas": {
+      "type": "object",
+      "properties": {
+        "inkWidth": {
+          "type": "number"
+        },
+        "inkAlpha": {
+          "type": "number"
+        },
+        "isCompressPicturesUploaded": {
+          "type": "boolean"
+        },
+        "isShowCursor": {
+          "type": "boolean"
+        },
+        "inkStyle": {
+          "type": "number"
+        },
+        "eraserSize": {
+          "type": "number"
+        },
+        "eraserType": {
+          "type": "number"
+        },
+        "hideStrokeWhenSelecting": {
+          "type": "boolean"
+        },
+        "usingWhiteboard": {
+          "type": "boolean"
+        },
+        "hyperbolaAsymptoteOption": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "inkWidth",
+        "inkAlpha",
+        "isCompressPicturesUploaded",
+        "isShowCursor",
+        "inkStyle",
+        "eraserSize",
+        "eraserType",
+        "hideStrokeWhenSelecting",
+        "usingWhiteboard",
+        "hyperbolaAsymptoteOption"
+      ],
+      "additionalProperties": false
+    },
+    "gesture": {
+      "type": "object",
+      "properties": {
+        "isEnableMultiTouchMode": {
+          "type": "boolean"
+        },
+        "isEnableTwoFingerZoom": {
+          "type": "boolean"
+        },
+        "isEnableTwoFingerTranslate": {
+          "type": "boolean"
+        },
+        "AutoSwitchTwoFingerGesture": {
+          "type": "boolean"
+        },
+        "isEnableTwoFingerRotation": {
+          "type": "boolean"
+        },
+        "isEnableTwoFingerRotationOnSelection": {
+          "type": "boolean"
+        },
+        "matrixTransformCenterPoint": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "isEnableMultiTouchMode",
+        "isEnableTwoFingerZoom",
+        "isEnableTwoFingerTranslate",
+        "AutoSwitchTwoFingerGesture",
+        "isEnableTwoFingerRotation",
+        "isEnableTwoFingerRotationOnSelection",
+        "matrixTransformCenterPoint"
+      ],
+      "additionalProperties": false
+    },
+    "inkToShape": {
+      "type": "object",
+      "properties": {
+        "isInkToShapeEnabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "isInkToShapeEnabled"
+      ],
+      "additionalProperties": false
+    },
+    "startup": {
+      "type": "object",
+      "properties": {
+        "isAutoUpdate": {
+          "type": "boolean"
+        },
+        "isAutoUpdateWithSilence": {
+          "type": "boolean"
+        },
+        "isAutoUpdateWithSilenceStartTime": {
+          "type": "string"
+        },
+        "isAutoUpdateWithSilenceEndTime": {
+          "type": "string"
+        },
+        "isEnableNibMode": {
+          "type": "boolean"
+        },
+        "isFoldAtStartup": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "isAutoUpdate",
+        "isAutoUpdateWithSilence",
+        "isAutoUpdateWithSilenceStartTime",
+        "isAutoUpdateWithSilenceEndTime",
+        "isEnableNibMode",
+        "isFoldAtStartup"
+      ],
+      "additionalProperties": false
+    },
+    "randSettings": {
+      "type": "object",
+      "properties": {
+        "peopleCount": {
+          "type": "number"
+        },
+        "isNotRepeatName": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "peopleCount",
+        "isNotRepeatName"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "advanced",
+    "appearance",
+    "automation",
+    "behavior",
+    "canvas",
+    "gesture",
+    "inkToShape",
+    "startup",
+    "randSettings"
+  ],
+  "additionalProperties": false
 }

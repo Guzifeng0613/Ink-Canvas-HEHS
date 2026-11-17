@@ -1,6 +1,6 @@
 // 黄金向量运行器：零依赖执行 ArkTS/TS 纯逻辑模块。
-// 用法：node --experimental-transform-types parity/run-vectors.mjs [--only <vector-id>]...
-// 向量文件结构：{ id, entry, cases: [{ id, fn, input: any[], expected, tolerance? }] }
+// 用法：node --experimental-transform-types --experimental-loader ./parity/ts-resolve-loader.mjs parity/run-vectors.mjs [--only <vector-id>]...
+// 向量文件结构：{ id, entry, cases: [{ id, fn, input: any[], expected, tolerance?, expectError? }] }
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -78,6 +78,16 @@ async function main() {
         continue;
       }
       let actual;
+      if (c.expectError === true) {
+        try {
+          fn(...(c.input || []));
+          failed++;
+          failures.push(file + '#' + c.id + ': 期望抛错但正常返回');
+        } catch (e) {
+          passed++;
+        }
+        continue;
+      }
       try {
         actual = fn(...(c.input || []));
       } catch (e) {

@@ -5,8 +5,10 @@ export interface BoardStrokeSummary {
   Color: number;
   Width: number;
   Highlighter: boolean;
+  HighlighterAlpha: number;
   Taper: number;
   Shape: boolean;
+  ObjectFrame: number[] | null;
   Points: number[][];
 }
 
@@ -52,6 +54,24 @@ function bool(value: Object | undefined, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value as boolean : fallback;
 }
 
+class RectShape {
+  Left: number;
+  Top: number;
+  Right: number;
+  Bottom: number;
+
+  constructor(left: number, top: number, right: number, bottom: number) {
+    this.Left = left;
+    this.Top = top;
+    this.Right = right;
+    this.Bottom = bottom;
+  }
+
+  isEmpty(): boolean {
+    return this.Right - this.Left <= 0 || this.Bottom - this.Top <= 0;
+  }
+}
+
 function normalizeBackground(value: string): string {
   const lower = value.toLowerCase();
   if (lower === 'white') {
@@ -90,12 +110,35 @@ function parseStroke(raw: object): BoardStrokeSummary | null {
       }
     }
   }
+  let objectFrame: number[] | null = null;
+  const rawFrame = dict['ObjectFrame'];
+  if (Array.isArray(rawFrame) && (rawFrame as Object[]).length === 10) {
+    const values = rawFrame as number[];
+    let finite = true;
+    const copy: number[] = [];
+    for (let k = 0; k < 10; k++) {
+      const v = num(values[k], 0);
+      if (!isFinite(v)) {
+        finite = false;
+      }
+      copy.push(v);
+    }
+    if (finite) {
+      const bounds = new RectShape(copy[0], copy[1], copy[2], copy[3]);
+      const det = copy[4] * copy[7] - copy[5] * copy[6];
+      if (!bounds.isEmpty() && Math.abs(det) > 1e-6) {
+        objectFrame = copy;
+      }
+    }
+  }
   return {
-    Color: num(dict['Color'], 0xFF000000),
-    Width: num(dict['Width'], 3),
+    Color: num(dict['Color'], 0),
+    Width: num(dict['Width'], 0),
     Highlighter: bool(dict['Highlighter'], false),
+    HighlighterAlpha: num(dict['HighlighterAlpha'], 96),
     Taper: taper,
     Shape: bool(dict['Shape'], false),
+    ObjectFrame: objectFrame,
     Points: points
   };
 }
@@ -189,6 +232,9 @@ export function parseBoardPack(text: string): BoardPackSummary {
         pages.push(parsePage(page));
       }
     }
+  }
+  if (pages.length > 99) {
+    throw new Error('A board can contain at most 99 pages.');
   }
   if (pages.length === 0) {
     pages.push({ Strokes: [], Images: [], Media: [] });

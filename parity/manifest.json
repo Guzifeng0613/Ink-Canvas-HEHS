@@ -10,14 +10,16 @@
       "csharp": [
         "src/InkCanvas.Core/Ink/StrokeEraser.cs",
         "src/InkCanvas.Core/Ink/InkDocument.cs",
-        "src/InkCanvas.Ink/InkController.cs"
+        "src/InkCanvas.Ink/InkController.cs",
+        "src/InkCanvas.Core/Ink/StrokeGeometry.cs"
       ],
       "arkts": [
         "harmony/core/src/main/ets/ink/StrokeEraser.ts",
         "harmony/core/src/main/ets/ink/StrokeGeometry.ts"
       ],
       "vectors": [
-        "parity/vectors/stroke-eraser.json"
+        "parity/vectors/stroke-eraser.json",
+        "parity/vectors/document.json"
       ],
       "tests": [
         "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
@@ -164,12 +166,14 @@
       ],
       "vectors": [
         "parity/vectors/ink-color.json",
-        "parity/vectors/stroke-attributes.json"
+        "parity/vectors/stroke-attributes.json",
+        "parity/vectors/ink-core.json",
+        "parity/vectors/document.json"
       ],
       "tests": [
         "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
       ],
-      "notes": "笔画/点/文档数据模型（Phase A）；Phase A 完成（黄金向量）"
+      "notes": "Phase A 完成（含 InkDocument 命中/面积擦/边界与 InkStroke bounds/ObjectFrame/setter 重算）"
     },
     {
       "id": "ink-stroke-region",
@@ -255,18 +259,24 @@
       "phase": "A",
       "status": "ported",
       "csharp": [
-        "src/InkCanvas.Features/Persistence/Stores.cs"
+        "src/InkCanvas.Features/Persistence/Stores.cs",
+        "src/InkCanvas.Features/Board/BoardService.cs",
+        "src/InkCanvas.Features/Ppt/PptInkFileStore.cs"
       ],
       "arkts": [
-        "harmony/core/src/main/ets/persistence/IcinkCodec.ts"
+        "harmony/core/src/main/ets/persistence/IcinkCodec.ts",
+        "harmony/core/src/main/ets/persistence/BoardPackCodec.ts",
+        "harmony/core/src/main/ets/persistence/PptManifestCodec.ts"
       ],
       "vectors": [
-        "parity/vectors/icink-roundtrip.json"
+        "parity/vectors/icink-roundtrip.json",
+        "parity/vectors/board-roundtrip.json",
+        "parity/vectors/ppt-manifest.json"
       ],
       "tests": [
         "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
       ],
-      "notes": ".icink 单表面持久化（Phase A）；Phase A 完成（黄金向量）"
+      "notes": "Phase A 完成（.icink + 画板包 + PPT manifest 编解码；画板包 99 页上限与 ObjectFrame/HighlighterAlpha 保留）"
     },
     {
       "id": "system-settings-store",

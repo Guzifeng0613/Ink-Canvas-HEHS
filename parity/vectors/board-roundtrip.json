@@ -3,10 +3,20 @@
   "entry": "harmony/core/src/main/ets/persistence/BoardPackCodec.ts",
   "cases": [
     {
+      "id": "board-100-pages-error",
+      "fn": "boardRoundtrip",
+      "input": [
+        "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"Black\",\"GridSpacing\":40,\"Pages\":[{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]},{\"Strokes\":[],\"Images\":[],\"Media\":[]}]}"
+      ],
+      "expected": null,
+      "expectError": true,
+      "tolerance": 0
+    },
+    {
       "id": "board-full",
       "fn": "boardRoundtrip",
       "input": [
-        "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"Black\",\"GridSpacing\":40,\"Pages\":[{\"Strokes\":[{\"Color\":4278190080,\"Width\":2.5,\"Highlighter\":false,\"Taper\":1,\"Shape\":false,\"Points\":[[10,20,0.5,2.5,0],[30,40,0.5,2.5,10]]}],\"Images\":[{\"Id\":\"0f8fad5b-d9cb-469f-a165-70867728950e\",\"Name\":\"a.png\",\"Data\":\"iVBORw0KGgo=\",\"ContentType\":\"image/png\",\"Left\":100,\"Top\":100,\"Width\":640,\"Height\":360,\"Transform\":[1,0,0,1,0,0]}],\"Media\":[{\"Id\":\"m1\",\"Name\":\"v.mp4\",\"Data\":\"AAAAIGZ0eXA=\",\"ContentType\":\"video/mp4\",\"Left\":200,\"Top\":200,\"Width\":360,\"Height\":240,\"Transform\":null}]}]}"
+        "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"Black\",\"GridSpacing\":40,\"Pages\":[{\"Strokes\":[{\"Color\":4278190080,\"Width\":2.5,\"Highlighter\":false,\"Taper\":1,\"Shape\":false,\"HighlighterAlpha\":140,\"ObjectFrame\":[1,2,3,4,1,0,0,1,5,6],\"Points\":[[10,20,0.5,2.5,0],[30,40,0.5,2.5,10]]}],\"Images\":[{\"Id\":\"0f8fad5b-d9cb-469f-a165-70867728950e\",\"Name\":\"a.png\",\"Data\":\"iVBORw0KGgo=\",\"ContentType\":\"image/png\",\"Left\":100,\"Top\":100,\"Width\":640,\"Height\":360,\"Transform\":[1,0,0,1,0,0]}],\"Media\":[{\"Id\":\"m1\",\"Name\":\"v.mp4\",\"Data\":\"AAAAIGZ0eXA=\",\"ContentType\":\"video/mp4\",\"Left\":200,\"Top\":200,\"Width\":360,\"Height\":240,\"Transform\":null}]}]}"
       ],
       "expected": {
         "Format": "inkcanvas-board",
@@ -22,6 +32,19 @@
                 "Highlighter": false,
                 "Taper": 1,
                 "Shape": false,
+                "HighlighterAlpha": 140,
+                "ObjectFrame": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  1,
+                  0,
+                  0,
+                  1,
+                  5,
+                  6
+                ],
                 "Points": [
                   [
                     10,

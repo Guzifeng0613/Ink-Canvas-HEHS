@@ -1,8 +1,189 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "parity/schemas/board-pack.schema.json",
-  "title": "画板包（多页 + 元素）",
-  "description": "字段以 BoardService.cs 实际输出为准；保留缺失 HighlighterAlpha 的 v1 行为。Task 9 补全。",
+  "title": "board-pack",
   "type": "object",
-  "additionalProperties": true
+  "properties": {
+    "Format": {
+      "type": "string"
+    },
+    "Version": {
+      "type": "number"
+    },
+    "Background": {
+      "type": "string"
+    },
+    "GridSpacing": {
+      "type": "number"
+    },
+    "Pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "Strokes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "Color": {
+                  "type": "number"
+                },
+                "Width": {
+                  "type": "number"
+                },
+                "Highlighter": {
+                  "type": "boolean"
+                },
+                "Taper": {
+                  "type": "number"
+                },
+                "Shape": {
+                  "type": "boolean"
+                },
+                "HighlighterAlpha": {
+                  "type": "number"
+                },
+                "ObjectFrame": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "Points": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  }
+                }
+              },
+              "required": [
+                "Color",
+                "Width",
+                "Highlighter",
+                "Taper",
+                "Shape",
+                "HighlighterAlpha",
+                "ObjectFrame",
+                "Points"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "Images": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "Id": {
+                  "type": "string"
+                },
+                "Name": {
+                  "type": "string"
+                },
+                "Data": {
+                  "type": "string"
+                },
+                "ContentType": {
+                  "type": "string"
+                },
+                "Left": {
+                  "type": "number"
+                },
+                "Top": {
+                  "type": "number"
+                },
+                "Width": {
+                  "type": "number"
+                },
+                "Height": {
+                  "type": "number"
+                },
+                "Transform": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                }
+              },
+              "required": [
+                "Id",
+                "Name",
+                "Data",
+                "ContentType",
+                "Left",
+                "Top",
+                "Width",
+                "Height",
+                "Transform"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "Media": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "Id": {
+                  "type": "string"
+                },
+                "Name": {
+                  "type": "string"
+                },
+                "Data": {
+                  "type": "string"
+                },
+                "ContentType": {
+                  "type": "string"
+                },
+                "Left": {
+                  "type": "number"
+                },
+                "Top": {
+                  "type": "number"
+                },
+                "Width": {
+                  "type": "number"
+                },
+                "Height": {
+                  "type": "number"
+                },
+                "Transform": {}
+              },
+              "required": [
+                "Id",
+                "Name",
+                "Data",
+                "ContentType",
+                "Left",
+                "Top",
+                "Width",
+                "Height",
+                "Transform"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "Strokes",
+          "Images",
+          "Media"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "Format",
+    "Version",
+    "Background",
+    "GridSpacing",
+    "Pages"
+  ],
+  "additionalProperties": false
 }

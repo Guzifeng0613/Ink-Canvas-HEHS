@@ -20,6 +20,7 @@ export interface IcinkStrokeSummary {
   HighlighterAlpha: number;
   Taper: number;
   Shape: boolean;
+  ObjectFrame: number[] | null;
   Points: number[][];
 }
 
@@ -53,11 +54,11 @@ export function parseIcink(text: string): InkStroke[] {
     }
     const dict = asDict(raw);
     const attributes = new StrokeAttributes();
-    attributes.Color = InkColor.fromPackedArgb(num(dict['Color'], 0xFF000000));
-    attributes.BaseWidth = num(dict['Width'], 3);
+    attributes.Color = InkColor.fromPackedArgb(num(dict['Color'], 0));
+    attributes.BaseWidth = num(dict['Width'], 0);
     attributes.IsHighlighter = bool(dict['Highlighter'], false);
     attributes.HighlighterAlpha = num(dict['HighlighterAlpha'], 96);
-    attributes.TaperKind = num(dict['Taper'], 1) as TaperKind;
+    attributes.TaperKind = num(dict['Taper'], 0) as TaperKind;
     const stroke = new InkStroke(attributes);
     stroke.IsRecognizedShape = bool(dict['Shape'], false);
     const points: InkPoint[] = [];
@@ -76,6 +77,17 @@ export function parseIcink(text: string): InkStroke[] {
     }
     stroke.restorePoints(points);
     stroke.complete();
+    const frameValue = dict['ObjectFrame'];
+    let frame: number[] | null = null;
+    if (Array.isArray(frameValue) && (frameValue as Object[]).length === 10) {
+      const values = frameValue as number[];
+      const copy: number[] = [];
+      for (let k = 0; k < 10; k++) {
+        copy.push(num(values[k], 0));
+      }
+      frame = copy;
+    }
+    stroke.importObjectFrame(frame);
     strokes.push(stroke);
   }
   return strokes;
@@ -94,6 +106,7 @@ function summaryOf(stroke: InkStroke): IcinkStrokeSummary {
     HighlighterAlpha: stroke.Attributes.HighlighterAlpha,
     Taper: stroke.Attributes.TaperKind,
     Shape: stroke.IsRecognizedShape,
+    ObjectFrame: stroke.exportObjectFrame(),
     Points: points
   };
 }
@@ -114,6 +127,7 @@ export function stringifyIcink(strokes: InkStroke[]): string {
       HighlighterAlpha: s.Attributes.HighlighterAlpha,
       Taper: s.Attributes.TaperKind,
       Shape: s.IsRecognizedShape,
+      ObjectFrame: s.exportObjectFrame(),
       Points: points
     });
   }

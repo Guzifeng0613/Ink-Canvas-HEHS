@@ -1,4 +1,4 @@
-// @parity src/InkCanvas.Ink/Manipulation/TwoFingerManipulator.cs
+// @parity src/InkCanvas.Core/Selection/SelectionGeometry.cs
 // System.Numerics.Matrix3x2 的行向量语义：p' = p * M；a * b 表示先 a 后 b。
 export class Point2 {
   X: number;

@@ -1,5 +1,7 @@
 using InkCanvas.Core.Ink;
+using InkCanvas.Core.Selection;
 using InkCanvas.Features.Persistence;
+using System.Numerics;
 using System.Text.Json;
 
 internal static class PersistenceVectors
@@ -29,6 +31,7 @@ internal static class PersistenceVectors
         s1.AddPoint(30, 40, 0.7f, 16);
         s1.Complete();
         s1.IsRecognizedShape = true;
+        s1.ObjectFrame = new SelectionFrame(new Rect(5, 6, 25, 26), Matrix3x2.CreateRotation(0.5f));
         strokes.Add(s1);
 
         var b = new StrokeAttributes
@@ -81,6 +84,7 @@ internal static class PersistenceVectors
                 HighlighterAlpha = (int)s.Attributes.HighlighterAlpha,
                 Taper = (int)s.Attributes.TaperKind,
                 Shape = s.IsRecognizedShape,
+                ObjectFrame = s.ExportObjectFrame(),
                 Points = s.Points.Select(p => new double[]
                 {
                     (double)p.X, (double)p.Y, (double)p.Pressure, (double)p.Width, (double)p.TimeMs
@@ -92,12 +96,22 @@ internal static class PersistenceVectors
 
     private static void WriteBoard(string dir)
     {
-        const string full = "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"Black\",\"GridSpacing\":40,\"Pages\":[{\"Strokes\":[{\"Color\":4278190080,\"Width\":2.5,\"Highlighter\":false,\"Taper\":1,\"Shape\":false,\"Points\":[[10,20,0.5,2.5,0],[30,40,0.5,2.5,10]]}],\"Images\":[{\"Id\":\"0f8fad5b-d9cb-469f-a165-70867728950e\",\"Name\":\"a.png\",\"Data\":\"iVBORw0KGgo=\",\"ContentType\":\"image/png\",\"Left\":100,\"Top\":100,\"Width\":640,\"Height\":360,\"Transform\":[1,0,0,1,0,0]}],\"Media\":[{\"Id\":\"m1\",\"Name\":\"v.mp4\",\"Data\":\"AAAAIGZ0eXA=\",\"ContentType\":\"video/mp4\",\"Left\":200,\"Top\":200,\"Width\":360,\"Height\":240,\"Transform\":null}]}]}";
+        const string full = "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"Black\",\"GridSpacing\":40,\"Pages\":[{\"Strokes\":[{\"Color\":4278190080,\"Width\":2.5,\"Highlighter\":false,\"Taper\":1,\"Shape\":false,\"HighlighterAlpha\":140,\"ObjectFrame\":[1,2,3,4,1,0,0,1,5,6],\"Points\":[[10,20,0.5,2.5,0],[30,40,0.5,2.5,10]]}],\"Images\":[{\"Id\":\"0f8fad5b-d9cb-469f-a165-70867728950e\",\"Name\":\"a.png\",\"Data\":\"iVBORw0KGgo=\",\"ContentType\":\"image/png\",\"Left\":100,\"Top\":100,\"Width\":640,\"Height\":360,\"Transform\":[1,0,0,1,0,0]}],\"Media\":[{\"Id\":\"m1\",\"Name\":\"v.mp4\",\"Data\":\"AAAAIGZ0eXA=\",\"ContentType\":\"video/mp4\",\"Left\":200,\"Top\":200,\"Width\":360,\"Height\":240,\"Transform\":null}]}]}";
         const string videoOnly = "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"grid\",\"GridSpacing\":30,\"Pages\":[{\"Strokes\":[],\"Images\":[],\"Media\":[{\"Id\":\"m2\",\"Name\":\"v.mp4\",\"Data\":\"AAAA\",\"ContentType\":\"video/mp4\",\"Left\":5,\"Top\":6}]}]}";
         const string emptyPages = "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"white\",\"GridSpacing\":0,\"Pages\":[]}";
 
+        var manyPages = new System.Text.StringBuilder();
+        manyPages.Append("{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"Black\",\"GridSpacing\":40,\"Pages\":[");
+        for (var i = 0; i < 100; i++)
+        {
+            if (i > 0) manyPages.Append(',');
+            manyPages.Append("{\"Strokes\":[],\"Images\":[],\"Media\":[]}");
+        }
+        manyPages.Append("]}");
+
         var cases = new List<object>
         {
+            new { id = "board-100-pages-error", fn = "boardRoundtrip", input = new object[] { manyPages.ToString() }, expected = (object?)null, expectError = true, tolerance = 0 },
             new { id = "board-full", fn = "boardRoundtrip", input = new object[] { full }, expected = JsonDocument.Parse(full).RootElement.Clone(), tolerance = 1e-4 },
             new
             {
