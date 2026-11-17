@@ -1,4 +1,121 @@
 {
-  "note": "ArkTS 侧 @parity 锚点由 parity-check.mjs 扫描；C# 侧锚点因工作树未清理延后（Task 10 记录）。此文件登记没有 C# 侧锚点的临时对。",
-  "pairs": []
+  "note": "C# 侧 @parity 锚点因用户工作树未清理延后；ArkTS→C# 方向已全部登记，由 parity-check 校验目标存在。",
+  "pairs": [
+    {
+      "arkts": "harmony/core/src/main/ets/history/UndoStack.ts",
+      "csharp": "src/InkCanvas.Core/History/UndoStack.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/imaging/PixelCompositing.ts",
+      "csharp": "src/InkCanvas.Core/Imaging/PixelCompositing.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/ink/InkColor.ts",
+      "csharp": "src/InkCanvas.Core/Ink/InkColor.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/ink/InkDocument.ts",
+      "csharp": "src/InkCanvas.Core/Ink/InkDocument.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/ink/InkPoint.ts",
+      "csharp": "src/InkCanvas.Core/Ink/InkPoint.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/ink/InkStroke.ts",
+      "csharp": "src/InkCanvas.Core/Ink/InkStroke.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/ink/MatrixTransformCenter.ts",
+      "csharp": "src/InkCanvas.Core/Ink/MatrixTransformCenter.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/ink/StrokeAttributes.ts",
+      "csharp": "src/InkCanvas.Core/Ink/StrokeAttributes.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/ink/StrokeEraser.ts",
+      "csharp": "src/InkCanvas.Core/Ink/StrokeEraser.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/ink/StrokeGeometry.ts",
+      "csharp": "src/InkCanvas.Core/Ink/StrokeGeometry.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/ink/TaperProfile.ts",
+      "csharp": "src/InkCanvas.Core/Ink/TaperProfile.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/ink/TwoFingerManipulator.ts",
+      "csharp": "src/InkCanvas.Ink/Manipulation/TwoFingerManipulator.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/input/PalmRejector.ts",
+      "csharp": "src/InkCanvas.Platform/Input/PalmRejector.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/input/TouchContactClassifier.ts",
+      "csharp": "src/InkCanvas.Core/Input/TouchContactClassifier.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/math/Matrix3x2.ts",
+      "csharp": "src/InkCanvas.Ink/Manipulation/TwoFingerManipulator.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/persistence/BoardPackCodec.ts",
+      "csharp": "src/InkCanvas.Features/Board/BoardService.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/persistence/IcinkCodec.ts",
+      "csharp": "src/InkCanvas.Features/Persistence/Stores.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/persistence/PptManifestCodec.ts",
+      "csharp": "src/InkCanvas.Features/Ppt/PptInkFileStore.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/persistence/SettingsCodec.ts",
+      "csharp": "src/InkCanvas.Features/Persistence/Stores.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/recognition/ShapeRecognizer.ts",
+      "csharp": "src/InkCanvas.Core/Recognition/ShapeRecognizer.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/replay/InkReplaySession.ts",
+      "csharp": "src/InkCanvas.Core/Replay/InkReplaySession.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/replay/ReplayClock.ts",
+      "csharp": "src/InkCanvas.Core/Replay/ReplayClock.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/selection/SelectionGeometry.ts",
+      "csharp": "src/InkCanvas.Core/Selection/SelectionGeometry.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/settings/AppSettings.ts",
+      "csharp": "src/InkCanvas.Core/Settings/AppSettings.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/shapes/ShapeGenerator.ts",
+      "csharp": "src/InkCanvas.Core/Shapes/ShapeGenerator.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/theming/ThemeResolver.ts",
+      "csharp": "src/InkCanvas.Core/Theming/ThemeResolver.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/update/ReleaseFeed.ts",
+      "csharp": "src/InkCanvas.Core/Update/ReleaseFeed.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/update/UpdatePolicy.ts",
+      "csharp": "src/InkCanvas.Core/Update/UpdatePolicy.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/versioning/AppVersion.ts",
+      "csharp": "src/InkCanvas.Core/Versioning/AppVersion.cs"
+    }
+  ]
 }

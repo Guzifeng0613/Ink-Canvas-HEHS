@@ -6,101 +6,148 @@
       "id": "ink-erase",
       "name": "面积擦与线条擦",
       "phase": "A",
-      "status": "planned",
+      "status": "ported",
       "csharp": [
         "src/InkCanvas.Core/Ink/StrokeEraser.cs",
         "src/InkCanvas.Core/Ink/InkDocument.cs",
         "src/InkCanvas.Ink/InkController.cs"
       ],
-      "arkts": [],
-      "vectors": [],
-      "tests": [],
-      "notes": "面积擦与线条擦（Phase A）"
+      "arkts": [
+        "harmony/core/src/main/ets/ink/StrokeEraser.ts",
+        "harmony/core/src/main/ets/ink/StrokeGeometry.ts"
+      ],
+      "vectors": [
+        "parity/vectors/stroke-eraser.json"
+      ],
+      "tests": [
+        "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
+      ],
+      "notes": "面积擦与线条擦（Phase A）；Phase A 完成（黄金向量）"
     },
     {
       "id": "ink-palm-rejection",
       "name": "手掌拒绝（无视觉副作用）",
       "phase": "A",
-      "status": "planned",
+      "status": "ported",
       "csharp": [
         "src/InkCanvas.Platform/Input/PalmRejector.cs"
       ],
-      "arkts": [],
-      "vectors": [],
-      "tests": [],
-      "notes": "手掌拒绝（无视觉副作用）（Phase A）"
+      "arkts": [
+        "harmony/core/src/main/ets/input/PalmRejector.ts"
+      ],
+      "vectors": [
+        "parity/vectors/palm.json"
+      ],
+      "tests": [
+        "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
+      ],
+      "notes": "手掌拒绝（无视觉副作用）（Phase A）；Phase A 完成（黄金向量）"
     },
     {
       "id": "ink-pixel-compositing",
       "name": "预乘 BGRA source-over 合成",
       "phase": "A",
-      "status": "planned",
+      "status": "ported",
       "csharp": [
         "src/InkCanvas.Core/Imaging/PixelCompositing.cs"
       ],
-      "arkts": [],
-      "vectors": [],
-      "tests": [],
-      "notes": "预乘 BGRA source-over 合成（Phase A）"
+      "arkts": [
+        "harmony/core/src/main/ets/imaging/PixelCompositing.ts"
+      ],
+      "vectors": [
+        "parity/vectors/compositing.json"
+      ],
+      "tests": [
+        "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
+      ],
+      "notes": "预乘 BGRA source-over 合成（Phase A）；Phase A 完成（黄金向量）"
     },
     {
       "id": "ink-replay-logic",
       "name": "回放时钟与会话",
       "phase": "A",
-      "status": "planned",
+      "status": "ported",
       "csharp": [
         "src/InkCanvas.Core/Replay/ReplayClock.cs",
         "src/InkCanvas.Core/Replay/InkReplaySession.cs"
       ],
-      "arkts": [],
-      "vectors": [],
-      "tests": [],
-      "notes": "回放时钟与会话（Phase A）"
+      "arkts": [
+        "harmony/core/src/main/ets/replay/ReplayClock.ts",
+        "harmony/core/src/main/ets/replay/InkReplaySession.ts"
+      ],
+      "vectors": [
+        "parity/vectors/replay-clock.json",
+        "parity/vectors/replay-session.json"
+      ],
+      "tests": [
+        "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
+      ],
+      "notes": "回放时钟与会话（Phase A）；Phase A 完成（黄金向量）"
     },
     {
       "id": "ink-selection",
       "name": "选区命中、缩放、旋转、平移",
       "phase": "A",
-      "status": "planned",
+      "status": "ported",
       "csharp": [
         "src/InkCanvas.Core/Selection/SelectionGeometry.cs"
       ],
-      "arkts": [],
-      "vectors": [],
-      "tests": [],
-      "notes": "选区命中、缩放、旋转、平移（Phase A）"
+      "arkts": [
+        "harmony/core/src/main/ets/selection/SelectionGeometry.ts",
+        "harmony/core/src/main/ets/math/Matrix3x2.ts"
+      ],
+      "vectors": [
+        "parity/vectors/selection.json",
+        "parity/vectors/matrix.json"
+      ],
+      "tests": [
+        "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
+      ],
+      "notes": "选区命中、缩放、旋转、平移（Phase A）；Phase A 完成（黄金向量）"
     },
     {
       "id": "ink-shape-generator",
       "name": "24 预设图形与两步几何",
       "phase": "A",
-      "status": "planned",
+      "status": "ported",
       "csharp": [
         "src/InkCanvas.Core/Shapes/ShapeGenerator.cs"
       ],
-      "arkts": [],
-      "vectors": [],
-      "tests": [],
-      "notes": "24 预设图形与两步几何（Phase A）"
+      "arkts": [
+        "harmony/core/src/main/ets/shapes/ShapeGenerator.ts"
+      ],
+      "vectors": [
+        "parity/vectors/shapes.json"
+      ],
+      "tests": [
+        "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
+      ],
+      "notes": "24 预设图形与两步几何（Phase A）；Phase A 完成（黄金向量）"
     },
     {
       "id": "ink-shape-recognition",
       "name": "托管几何图形识别",
       "phase": "A",
-      "status": "planned",
+      "status": "ported",
       "csharp": [
         "src/InkCanvas.Core/Recognition/ShapeRecognizer.cs"
       ],
-      "arkts": [],
-      "vectors": [],
-      "tests": [],
-      "notes": "托管几何图形识别（Phase A）"
+      "arkts": [
+        "harmony/core/src/main/ets/recognition/ShapeRecognizer.ts"
+      ],
+      "vectors": [
+        "parity/vectors/recognizer.json"
+      ],
+      "tests": [
+        "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
+      ],
+      "notes": "托管几何图形识别（Phase A）；Phase A 完成（黄金向量）"
     },
     {
       "id": "ink-stroke-model",
       "name": "笔画/点/文档数据模型",
       "phase": "A",
-      "status": "planned",
+      "status": "ported",
       "csharp": [
         "src/InkCanvas.Core/Ink/InkStroke.cs",
         "src/InkCanvas.Core/Ink/InkPoint.cs",
@@ -108,90 +155,139 @@
         "src/InkCanvas.Core/Ink/InkColor.cs",
         "src/InkCanvas.Core/Ink/InkDocument.cs"
       ],
-      "arkts": [],
-      "vectors": [],
-      "tests": [],
-      "notes": "笔画/点/文档数据模型（Phase A）"
+      "arkts": [
+        "harmony/core/src/main/ets/ink/InkPoint.ts",
+        "harmony/core/src/main/ets/ink/InkColor.ts",
+        "harmony/core/src/main/ets/ink/StrokeAttributes.ts",
+        "harmony/core/src/main/ets/ink/InkStroke.ts",
+        "harmony/core/src/main/ets/ink/InkDocument.ts"
+      ],
+      "vectors": [
+        "parity/vectors/ink-color.json",
+        "parity/vectors/stroke-attributes.json"
+      ],
+      "tests": [
+        "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
+      ],
+      "notes": "笔画/点/文档数据模型（Phase A）；Phase A 完成（黄金向量）"
     },
     {
       "id": "ink-stroke-region",
       "name": "同向 capsule 轮廓与 Winding 合成",
       "phase": "A",
-      "status": "planned",
+      "status": "ported",
       "csharp": [
         "src/InkCanvas.Core/Ink/StrokeGeometry.cs"
       ],
-      "arkts": [],
-      "vectors": [],
-      "tests": [],
-      "notes": "同向 capsule 轮廓与 Winding 合成（Phase A）"
+      "arkts": [
+        "harmony/core/src/main/ets/ink/StrokeGeometry.ts"
+      ],
+      "vectors": [
+        "parity/vectors/stroke-geometry.json"
+      ],
+      "tests": [
+        "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
+      ],
+      "notes": "同向 capsule 轮廓与 Winding 合成（Phase A）；Phase A 完成（黄金向量）"
     },
     {
       "id": "ink-taper-causal",
       "name": "因果增量笔锋（None/Tail/Velocity）",
       "phase": "A",
-      "status": "planned",
+      "status": "ported",
       "csharp": [
         "src/InkCanvas.Core/Ink/TaperProfile.cs",
         "src/InkCanvas.Core/Ink/InkStroke.cs"
       ],
-      "arkts": [],
-      "vectors": [],
-      "tests": [],
-      "notes": "因果增量笔锋（None/Tail/Velocity）（Phase A）"
+      "arkts": [
+        "harmony/core/src/main/ets/ink/TaperProfile.ts"
+      ],
+      "vectors": [
+        "parity/vectors/taper-tail.json",
+        "parity/vectors/taper-velocity.json"
+      ],
+      "tests": [
+        "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
+      ],
+      "notes": "因果增量笔锋（None/Tail/Velocity）（Phase A）；Phase A 完成（黄金向量）"
     },
     {
       "id": "ink-touch-classifier",
       "name": "特殊屏触摸分档（QuadIR/倍数/阈值）",
       "phase": "A",
-      "status": "planned",
+      "status": "ported",
       "csharp": [
         "src/InkCanvas.Core/Input/TouchContactClassifier.cs"
       ],
-      "arkts": [],
-      "vectors": [],
-      "tests": [],
-      "notes": "特殊屏触摸分档（QuadIR/倍数/阈值）（Phase A）"
+      "arkts": [
+        "harmony/core/src/main/ets/input/TouchContactClassifier.ts"
+      ],
+      "vectors": [
+        "parity/vectors/touch-classifier.json"
+      ],
+      "tests": [
+        "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
+      ],
+      "notes": "特殊屏触摸分档（QuadIR/倍数/阈值）（Phase A）；Phase A 完成（黄金向量）"
     },
     {
       "id": "ink-undo-history",
       "name": "撤销/重做历史",
       "phase": "A",
-      "status": "planned",
+      "status": "ported",
       "csharp": [
         "src/InkCanvas.Core/History/UndoStack.cs"
       ],
-      "arkts": [],
-      "vectors": [],
-      "tests": [],
-      "notes": "撤销/重做历史（Phase A）"
+      "arkts": [
+        "harmony/core/src/main/ets/history/UndoStack.ts"
+      ],
+      "vectors": [
+        "parity/vectors/undo.json"
+      ],
+      "tests": [
+        "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
+      ],
+      "notes": "撤销/重做历史（Phase A）；Phase A 完成（黄金向量）"
     },
     {
       "id": "system-icink",
       "name": ".icink 单表面持久化",
       "phase": "A",
-      "status": "planned",
+      "status": "ported",
       "csharp": [
         "src/InkCanvas.Features/Persistence/Stores.cs"
       ],
-      "arkts": [],
-      "vectors": [],
-      "tests": [],
-      "notes": ".icink 单表面持久化（Phase A）"
+      "arkts": [
+        "harmony/core/src/main/ets/persistence/IcinkCodec.ts"
+      ],
+      "vectors": [
+        "parity/vectors/icink-roundtrip.json"
+      ],
+      "tests": [
+        "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
+      ],
+      "notes": ".icink 单表面持久化（Phase A）；Phase A 完成（黄金向量）"
     },
     {
       "id": "system-settings-store",
       "name": "Settings.json 兼容读写",
       "phase": "A",
-      "status": "planned",
+      "status": "ported",
       "csharp": [
         "src/InkCanvas.Features/Persistence/Stores.cs",
         "src/InkCanvas.Core/Settings/AppSettings.cs"
       ],
-      "arkts": [],
-      "vectors": [],
-      "tests": [],
-      "notes": "Settings.json 兼容读写（Phase A）"
+      "arkts": [
+        "harmony/core/src/main/ets/settings/AppSettings.ts",
+        "harmony/core/src/main/ets/persistence/SettingsCodec.ts"
+      ],
+      "vectors": [
+        "parity/vectors/settings-roundtrip.json"
+      ],
+      "tests": [
+        "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
+      ],
+      "notes": "Settings.json 兼容读写（Phase A）；Phase A 完成（黄金向量）"
     },
     {
       "id": "ink-gestures",
