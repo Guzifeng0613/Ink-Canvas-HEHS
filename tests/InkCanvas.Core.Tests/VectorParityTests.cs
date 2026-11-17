@@ -1,9 +1,12 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using InkCanvas.Core.Ink;
+using InkCanvas.Core.Recognition;
 using InkCanvas.Core.Selection;
 using InkCanvas.Core.Settings;
+using InkCanvas.Core.Shapes;
 using InkCanvas.Ink.Manipulation;
+using System.Numerics;
 using Xunit;
 
 namespace InkCanvas.Core.Tests;
@@ -313,6 +316,99 @@ public sealed class VectorParityTests
             AssertNear(c.GetProperty("expected"), Node(new { X = resolved.X, Y = resolved.Y }), 0);
         }
     }
+
+    [Fact]
+    public void ShapeVectorsMatch()
+    {
+        using var doc = Load("shapes.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var input = c.GetProperty("input");
+            var fn = c.GetProperty("fn").GetString();
+            object actual;
+            switch (fn)
+            {
+                case "generate":
+                {
+                    var kind = (ShapeKind)input[0].GetInt32();
+                    actual = ShapeSummaries(ShapeGenerator.Generate(
+                        kind, Vec(input[1], input[2]), Vec(input[3], input[4]), ShapeAttrs(input[5])));
+                    break;
+                }
+                case "generateCuboidDepth":
+                    actual = ShapeSummaries(ShapeGenerator.GenerateCuboidDepth(
+                        Vec(input[0], input[1]), Vec(input[2], input[3]),
+                        input[4].GetSingle(), ShapeAttrs(input[5])));
+                    break;
+                case "generateHyperbolaBranches":
+                    actual = ShapeSummaries(ShapeGenerator.GenerateHyperbolaBranches(
+                        Vec(input[0], input[1]), input[2].GetSingle(), Vec(input[3], input[4]),
+                        input[5].GetBoolean(), ShapeAttrs(input[6])));
+                    break;
+                case "snapParallelEnd":
+                {
+                    var p = ShapeGenerator.SnapParallelEnd(Vec(input[0], input[1]), Vec(input[2], input[3]));
+                    actual = new { p.X, p.Y };
+                    break;
+                }
+                default:
+                    throw new InvalidOperationException("unknown shape fn " + fn);
+            }
+            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
+        }
+    }
+
+    [Fact]
+    public void RecognizerVectorsMatch()
+    {
+        using var doc = Load("recognizer.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var pts = c.GetProperty("input")[0].EnumerateArray()
+                .Select(p => new Vector2(p.GetProperty("X").GetSingle(), p.GetProperty("Y").GetSingle()))
+                .ToArray();
+            var stroke = new InkStroke(new StrokeAttributes { BaseWidth = 3f });
+            foreach (var p in pts)
+            {
+                stroke.AddPoint(p.X, p.Y);
+            }
+            stroke.Complete();
+            var result = ShapeRecognizer.Recognize(new[] { stroke });
+            var actual = new
+            {
+                kind = (int)result.Shape,
+                centerX = result.Center.X,
+                centerY = result.Center.Y,
+                radiusX = result.RadiusX,
+                radiusY = result.RadiusY,
+                confidence = result.Confidence,
+                corners = result.Corners.Select(p => new { p.X, p.Y }).ToArray()
+            };
+            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
+        }
+    }
+
+    private static Vector2 Vec(JsonElement x, JsonElement y) => new(x.GetSingle(), y.GetSingle());
+
+    private static StrokeAttributes ShapeAttrs(JsonElement e) => new()
+    {
+        Color = InkColor.FromPackedArgb(e.GetProperty("ColorPacked").GetUInt32()),
+        BaseWidth = e.GetProperty("BaseWidth").GetSingle(),
+        IsHighlighter = e.GetProperty("IsHighlighter").GetBoolean(),
+        HighlighterAlpha = e.GetProperty("HighlighterAlpha").GetByte(),
+        TaperKind = (TaperKind)e.GetProperty("TaperKind").GetInt32()
+    };
+
+    private static object[] ShapeSummaries(List<InkStroke> strokes) => strokes.Select(s => new
+    {
+        Points = s.Points.Select(p => new { p.X, p.Y, p.Pressure, p.Width, p.TimeMs }).ToArray(),
+        ColorPacked = s.Attributes.Color.PackedArgb,
+        BaseWidth = s.Attributes.BaseWidth,
+        IsHighlighter = s.Attributes.IsHighlighter,
+        HighlighterAlpha = (int)s.Attributes.HighlighterAlpha,
+        TaperKind = (int)s.Attributes.TaperKind,
+        IsRecognizedShape = s.IsRecognizedShape
+    }).ToArray();
 
     private static System.Numerics.Matrix3x2 Mat(JsonElement e) => new(
         e[0].GetSingle(), e[1].GetSingle(), e[2].GetSingle(),

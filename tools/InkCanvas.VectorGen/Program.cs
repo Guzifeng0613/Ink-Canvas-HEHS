@@ -16,4 +16,5 @@ TaperVectors.Write(outDir);
 GeometryVectors.Write(outDir);
 TransformVectors.Write(outDir);
 SettingsVectors.Write(outDir);
+ShapeVectors.Write(outDir);
 Console.WriteLine($"vectors written to {outDir}");

@@ -65,3 +65,36 @@ export type {
   RandSettings
 } from './src/main/ets/settings/AppSettings';
 export { parseSettings, stringifySettings, settingsRoundtrip } from './src/main/ets/persistence/SettingsCodec';
+export {
+  ShapeKind,
+  DashLength,
+  DashPeriod,
+  DotPeriod,
+  DotPressure,
+  EllipseDashStep,
+  EllipseDashPeriod,
+  SolidEllipseRatio,
+  generate,
+  generateCuboidDepth,
+  generateHyperbolaBranches,
+  snapParallelEnd,
+  parallelLines,
+  stroke,
+  dot,
+  arrow,
+  axisArrow,
+  dashedLine,
+  dots,
+  dottedLine,
+  ellipseStroke,
+  ellipsePoints,
+  dashedEllipseArcs
+} from './src/main/ets/shapes/ShapeGenerator';
+export type { PointLike, SnapResult, StrokeSummary, StrokePointSummary } from './src/main/ets/shapes/ShapeGenerator';
+export {
+  RecognizedShape,
+  MinSize,
+  recognize,
+  recognizeStrokes
+} from './src/main/ets/recognition/ShapeRecognizer';
+export type { InkPointLike, RecognitionPoint, RecognitionSummary } from './src/main/ets/recognition/ShapeRecognizer';
