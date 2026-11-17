@@ -78,7 +78,8 @@ public class ShapeGeneratorTests
         {
             var strokes = ShapeGenerator.Generate(kind, A, B, Attrs);
             Assert.True(strokes.Count > 0, $"{kind} produced no strokes");
-            Assert.All(strokes, s => Assert.True(s.Count >= 2, $"{kind} produced a degenerate stroke"));
+            // Focus dots and dot-line dots are single-point strokes (WPF pressure dots).
+            Assert.All(strokes, s => Assert.True(s.Count >= 1, $"{kind} produced an empty stroke"));
             Assert.All(strokes, s => Assert.True(s.IsCompleted));
         }
     }

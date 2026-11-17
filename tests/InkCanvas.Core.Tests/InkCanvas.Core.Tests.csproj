@@ -18,5 +18,6 @@
     <ProjectReference Include="..\..\src\InkCanvas.Core\InkCanvas.Core.csproj" />
     <ProjectReference Include="..\..\src\InkCanvas.Platform\InkCanvas.Platform.csproj" />
     <ProjectReference Include="..\..\src\InkCanvas.Ink\InkCanvas.Ink.csproj" />
+    <ProjectReference Include="..\..\src\InkCanvas.Features\InkCanvas.Features.csproj" />
   </ItemGroup>
 </Project>

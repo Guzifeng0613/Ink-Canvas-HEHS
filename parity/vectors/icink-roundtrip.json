@@ -1,0 +1,119 @@
+{
+  "id": "icink-roundtrip",
+  "entry": "harmony/core/src/main/ets/persistence/IcinkCodec.ts",
+  "cases": [
+    {
+      "id": "icink-roundtrip",
+      "fn": "icinkRoundtrip",
+      "input": [
+        "{\"Version\":1,\"Strokes\":[{\"Color\":4279312947,\"Width\":2.5,\"Highlighter\":true,\"HighlighterAlpha\":140,\"Taper\":0,\"Shape\":true,\"ObjectFrame\":null,\"Points\":[[10,20,0.5,2.5,0],[30,40,0.7,2.5,16]]},{\"Color\":2164195328,\"Width\":7.5,\"Highlighter\":false,\"HighlighterAlpha\":96,\"Taper\":2,\"Shape\":false,\"ObjectFrame\":null,\"Points\":[[0,0,0.5,7.5,0],[5,2,0.5,7.5,10],[10,4,0.5,6.605563,20],[15,6,0.5,6.605563,30],[20,8,0.5,6.605563,40]]}]}"
+      ],
+      "expected": [
+        {
+          "Color": 4279312947,
+          "Width": 2.5,
+          "Highlighter": true,
+          "HighlighterAlpha": 140,
+          "Taper": 0,
+          "Shape": true,
+          "Points": [
+            [
+              10,
+              20,
+              0.5,
+              2.5,
+              0
+            ],
+            [
+              30,
+              40,
+              0.699999988079071,
+              2.5,
+              16
+            ]
+          ]
+        },
+        {
+          "Color": 2164195328,
+          "Width": 7.5,
+          "Highlighter": false,
+          "HighlighterAlpha": 96,
+          "Taper": 2,
+          "Shape": false,
+          "Points": [
+            [
+              0,
+              0,
+              0.5,
+              7.5,
+              0
+            ],
+            [
+              5,
+              2,
+              0.5,
+              7.5,
+              10
+            ],
+            [
+              10,
+              4,
+              0.5,
+              6.605563163757324,
+              20
+            ],
+            [
+              15,
+              6,
+              0.5,
+              6.605563163757324,
+              30
+            ],
+            [
+              20,
+              8,
+              0.5,
+              6.605563163757324,
+              40
+            ]
+          ]
+        }
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "icink-legacy-fields",
+      "fn": "icinkRoundtrip",
+      "input": [
+        "{\"Version\":1,\"Strokes\":[{\"Color\":4278190080,\"Width\":3,\"Highlighter\":false,\"Taper\":9,\"Shape\":false,\"Points\":[[1,2,0.5,3],[4,5,0.6,3,18]]}]}"
+      ],
+      "expected": [
+        {
+          "Color": 4278190080,
+          "Width": 3,
+          "Highlighter": false,
+          "HighlighterAlpha": 96,
+          "Taper": 9,
+          "Shape": false,
+          "Points": [
+            [
+              1,
+              2,
+              0.5,
+              3,
+              0
+            ],
+            [
+              4,
+              5,
+              0.6000000238418579,
+              3,
+              18
+            ]
+          ]
+        }
+      ],
+      "tolerance": 0.0001
+    }
+  ]
+}

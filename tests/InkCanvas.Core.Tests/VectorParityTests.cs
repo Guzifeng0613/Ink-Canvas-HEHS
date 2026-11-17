@@ -753,6 +753,67 @@ public sealed class VectorParityTests
         }
     }
 
+    [Fact]
+    public void IcinkVectorsMatch()
+    {
+        using var doc = Load("icink-roundtrip.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var text = c.GetProperty("input")[0].GetString()!;
+            var temp = Path.Combine(Path.GetTempPath(), "inkcanvas-test-" + Guid.NewGuid().ToString("N") + ".icink");
+            File.WriteAllText(temp, text);
+            var loaded = InkCanvas.Features.Persistence.InkFileStore.Load(temp);
+            File.Delete(temp);
+
+            var actual = loaded.Select(s => new
+            {
+                Color = s.Attributes.Color.PackedArgb,
+                Width = (double)s.Attributes.BaseWidth,
+                Highlighter = s.Attributes.IsHighlighter,
+                HighlighterAlpha = (int)s.Attributes.HighlighterAlpha,
+                Taper = (int)s.Attributes.TaperKind,
+                Shape = s.IsRecognizedShape,
+                Points = s.Points.Select(p => new double[]
+                {
+                    (double)p.X, (double)p.Y, (double)p.Pressure, (double)p.Width, (double)p.TimeMs
+                }).ToArray()
+            }).ToArray();
+            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
+        }
+    }
+
+    [Fact]
+    public void BoardVectorsMatch()
+    {
+        using var doc = Load("board-roundtrip.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            using var fixture = JsonDocument.Parse(c.GetProperty("input")[0].GetString()!);
+            Assert.Equal("inkcanvas-board", fixture.RootElement.GetProperty("Format").GetString());
+            Assert.Equal(1, fixture.RootElement.GetProperty("Version").GetInt32());
+            var expected = c.GetProperty("expected");
+            Assert.Equal(JsonValueKind.Object, expected.ValueKind);
+            Assert.Equal("inkcanvas-board", expected.GetProperty("Format").GetString());
+            Assert.Equal(1, expected.GetProperty("Version").GetInt32());
+            Assert.True(expected.GetProperty("Pages").GetArrayLength() >= 1);
+        }
+    }
+
+    [Fact]
+    public void PptManifestVectorsMatch()
+    {
+        using var doc = Load("ppt-manifest.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            using var fixture = JsonDocument.Parse(c.GetProperty("input")[0].GetString()!);
+            Assert.True(fixture.RootElement.TryGetProperty("Slides", out var slides));
+            Assert.Equal(JsonValueKind.Array, slides.ValueKind);
+            var expected = c.GetProperty("expected");
+            Assert.True(expected.TryGetProperty("Slides", out var expectedSlides));
+            Assert.Equal(JsonValueKind.Array, expectedSlides.ValueKind);
+        }
+    }
+
     private static AdvancedSettings? ParseAdvanced(JsonElement element)
     {
         if (element.ValueKind != JsonValueKind.Object)

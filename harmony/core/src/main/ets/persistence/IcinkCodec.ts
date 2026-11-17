@@ -1,0 +1,130 @@
+// @parity src/InkCanvas.Features/Persistence/Stores.cs (InkFileStore)
+// .icink 单表面墨迹存档：PascalCase 字段、点行 float[5]、读取不校验 Version、损坏 JSON 抛错。
+import { InkColor } from '../ink/InkColor';
+import { InkPoint } from '../ink/InkPoint';
+import { InkStroke } from '../ink/InkStroke';
+import { StrokeAttributes, TaperKind } from '../ink/StrokeAttributes';
+
+export interface IcinkPointRow {
+  X: number;
+  Y: number;
+  Pressure: number;
+  Width: number;
+  TimeMs: number;
+}
+
+export interface IcinkStrokeSummary {
+  Color: number;
+  Width: number;
+  Highlighter: boolean;
+  HighlighterAlpha: number;
+  Taper: number;
+  Shape: boolean;
+  Points: number[][];
+}
+
+function asDict(value: object): Record<string, Object> {
+  return value as Record<string, Object>;
+}
+
+function num(value: Object | undefined, fallback: number): number {
+  return typeof value === 'number' && isFinite(value as number) ? value as number : fallback;
+}
+
+function bool(value: Object | undefined, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value as boolean : fallback;
+}
+
+export function parseIcink(text: string): InkStroke[] {
+  const root = JSON.parse(text) as object;
+  if (root === null || typeof root !== 'object' || Array.isArray(root)) {
+    throw new Error('Invalid .icink document');
+  }
+  const rawStrokes = asDict(root)['Strokes'];
+  if (!Array.isArray(rawStrokes)) {
+    return [];
+  }
+  const strokes: InkStroke[] = [];
+  const list = rawStrokes as Object[];
+  for (let i = 0; i < list.length; i++) {
+    const raw = list[i];
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+      continue;
+    }
+    const dict = asDict(raw);
+    const attributes = new StrokeAttributes();
+    attributes.Color = InkColor.fromPackedArgb(num(dict['Color'], 0xFF000000));
+    attributes.BaseWidth = num(dict['Width'], 3);
+    attributes.IsHighlighter = bool(dict['Highlighter'], false);
+    attributes.HighlighterAlpha = num(dict['HighlighterAlpha'], 96);
+    attributes.TaperKind = num(dict['Taper'], 1) as TaperKind;
+    const stroke = new InkStroke(attributes);
+    stroke.IsRecognizedShape = bool(dict['Shape'], false);
+    const points: InkPoint[] = [];
+    const rawPoints = dict['Points'];
+    if (Array.isArray(rawPoints)) {
+      const rows = rawPoints as Object[];
+      for (let j = 0; j < rows.length; j++) {
+        const row = rows[j];
+        if (Array.isArray(row) && (row as Object[]).length >= 4) {
+          const values = row as number[];
+          points.push(new InkPoint(
+            num(values[0], 0), num(values[1], 0), num(values[2], 0.5),
+            num(values[3], 0), values.length > 4 ? num(values[4], 0) : 0));
+        }
+      }
+    }
+    stroke.restorePoints(points);
+    stroke.complete();
+    strokes.push(stroke);
+  }
+  return strokes;
+}
+
+function summaryOf(stroke: InkStroke): IcinkStrokeSummary {
+  const points: number[][] = [];
+  for (let i = 0; i < stroke.Count; i++) {
+    const p = stroke.Points[i];
+    points.push([p.X, p.Y, p.Pressure, p.Width, p.TimeMs]);
+  }
+  return {
+    Color: stroke.Attributes.Color.packedArgb(),
+    Width: stroke.Attributes.BaseWidth,
+    Highlighter: stroke.Attributes.IsHighlighter,
+    HighlighterAlpha: stroke.Attributes.HighlighterAlpha,
+    Taper: stroke.Attributes.TaperKind,
+    Shape: stroke.IsRecognizedShape,
+    Points: points
+  };
+}
+
+export function stringifyIcink(strokes: InkStroke[]): string {
+  const list: Object[] = [];
+  for (let i = 0; i < strokes.length; i++) {
+    const s = strokes[i];
+    const points: number[][] = [];
+    for (let j = 0; j < s.Count; j++) {
+      const p = s.Points[j];
+      points.push([p.X, p.Y, p.Pressure, p.Width, p.TimeMs]);
+    }
+    list.push({
+      Color: s.Attributes.Color.packedArgb(),
+      Width: s.Attributes.BaseWidth,
+      Highlighter: s.Attributes.IsHighlighter,
+      HighlighterAlpha: s.Attributes.HighlighterAlpha,
+      Taper: s.Attributes.TaperKind,
+      Shape: s.IsRecognizedShape,
+      Points: points
+    });
+  }
+  return JSON.stringify({ Version: 1, Strokes: list });
+}
+
+export function icinkRoundtrip(text: string): IcinkStrokeSummary[] {
+  const strokes = parseIcink(stringifyIcink(parseIcink(text)));
+  const result: IcinkStrokeSummary[] = [];
+  for (let i = 0; i < strokes.length; i++) {
+    result.push(summaryOf(strokes[i]));
+  }
+  return result;
+}

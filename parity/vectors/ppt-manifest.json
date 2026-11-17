@@ -1,0 +1,60 @@
+{
+  "id": "ppt-manifest",
+  "entry": "harmony/core/src/main/ets/persistence/PptManifestCodec.ts",
+  "cases": [
+    {
+      "id": "ppt-full",
+      "fn": "pptManifestRoundtrip",
+      "input": [
+        "{\"Version\":1,\"LastSlideIndex\":5,\"LastShowPosition\":8,\"Slides\":[{\"SlideId\":256,\"SlideIndex\":1,\"File\":\"slide-256.icink\"}]}"
+      ],
+      "expected": {
+        "Version": 1,
+        "LastSlideIndex": 5,
+        "LastShowPosition": 8,
+        "Slides": [
+          {
+            "SlideId": 256,
+            "SlideIndex": 1,
+            "File": "slide-256.icink"
+          }
+        ]
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "ppt-nulls",
+      "fn": "pptManifestRoundtrip",
+      "input": [
+        "{\"Version\":1,\"LastSlideIndex\":null,\"LastShowPosition\":null,\"Slides\":[]}"
+      ],
+      "expected": {
+        "Version": 1,
+        "LastSlideIndex": null,
+        "LastShowPosition": null,
+        "Slides": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "ppt-partial-defaults",
+      "fn": "pptManifestRoundtrip",
+      "input": [
+        "{\"Slides\":[{\"SlideId\":1,\"SlideIndex\":2,\"File\":\"s.icink\"}]}"
+      ],
+      "expected": {
+        "Version": 1,
+        "LastSlideIndex": null,
+        "LastShowPosition": null,
+        "Slides": [
+          {
+            "SlideId": 1,
+            "SlideIndex": 2,
+            "File": "s.icink"
+          }
+        ]
+      },
+      "tolerance": 0.0001
+    }
+  ]
+}

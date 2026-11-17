@@ -1,0 +1,136 @@
+{
+  "id": "board-roundtrip",
+  "entry": "harmony/core/src/main/ets/persistence/BoardPackCodec.ts",
+  "cases": [
+    {
+      "id": "board-full",
+      "fn": "boardRoundtrip",
+      "input": [
+        "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"Black\",\"GridSpacing\":40,\"Pages\":[{\"Strokes\":[{\"Color\":4278190080,\"Width\":2.5,\"Highlighter\":false,\"Taper\":1,\"Shape\":false,\"Points\":[[10,20,0.5,2.5,0],[30,40,0.5,2.5,10]]}],\"Images\":[{\"Id\":\"0f8fad5b-d9cb-469f-a165-70867728950e\",\"Name\":\"a.png\",\"Data\":\"iVBORw0KGgo=\",\"ContentType\":\"image/png\",\"Left\":100,\"Top\":100,\"Width\":640,\"Height\":360,\"Transform\":[1,0,0,1,0,0]}],\"Media\":[{\"Id\":\"m1\",\"Name\":\"v.mp4\",\"Data\":\"AAAAIGZ0eXA=\",\"ContentType\":\"video/mp4\",\"Left\":200,\"Top\":200,\"Width\":360,\"Height\":240,\"Transform\":null}]}]}"
+      ],
+      "expected": {
+        "Format": "inkcanvas-board",
+        "Version": 1,
+        "Background": "Black",
+        "GridSpacing": 40,
+        "Pages": [
+          {
+            "Strokes": [
+              {
+                "Color": 4278190080,
+                "Width": 2.5,
+                "Highlighter": false,
+                "Taper": 1,
+                "Shape": false,
+                "Points": [
+                  [
+                    10,
+                    20,
+                    0.5,
+                    2.5,
+                    0
+                  ],
+                  [
+                    30,
+                    40,
+                    0.5,
+                    2.5,
+                    10
+                  ]
+                ]
+              }
+            ],
+            "Images": [
+              {
+                "Id": "0f8fad5b-d9cb-469f-a165-70867728950e",
+                "Name": "a.png",
+                "Data": "iVBORw0KGgo=",
+                "ContentType": "image/png",
+                "Left": 100,
+                "Top": 100,
+                "Width": 640,
+                "Height": 360,
+                "Transform": [
+                  1,
+                  0,
+                  0,
+                  1,
+                  0,
+                  0
+                ]
+              }
+            ],
+            "Media": [
+              {
+                "Id": "m1",
+                "Name": "v.mp4",
+                "Data": "AAAAIGZ0eXA=",
+                "ContentType": "video/mp4",
+                "Left": 200,
+                "Top": 200,
+                "Width": 360,
+                "Height": 240,
+                "Transform": null
+              }
+            ]
+          }
+        ]
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "board-video-only-defaults",
+      "fn": "boardRoundtrip",
+      "input": [
+        "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"grid\",\"GridSpacing\":30,\"Pages\":[{\"Strokes\":[],\"Images\":[],\"Media\":[{\"Id\":\"m2\",\"Name\":\"v.mp4\",\"Data\":\"AAAA\",\"ContentType\":\"video/mp4\",\"Left\":5,\"Top\":6}]}]}"
+      ],
+      "expected": {
+        "Format": "inkcanvas-board",
+        "Version": 1,
+        "Background": "Grid",
+        "GridSpacing": 30,
+        "Pages": [
+          {
+            "Strokes": [],
+            "Images": [],
+            "Media": [
+              {
+                "Id": "m2",
+                "Name": "v.mp4",
+                "Data": "AAAA",
+                "ContentType": "video/mp4",
+                "Left": 5,
+                "Top": 6,
+                "Width": 360,
+                "Height": 240,
+                "Transform": null
+              }
+            ]
+          }
+        ]
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "board-empty-pages",
+      "fn": "boardRoundtrip",
+      "input": [
+        "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"white\",\"GridSpacing\":0,\"Pages\":[]}"
+      ],
+      "expected": {
+        "Format": "inkcanvas-board",
+        "Version": 1,
+        "Background": "White",
+        "GridSpacing": 40,
+        "Pages": [
+          {
+            "Strokes": [],
+            "Images": [],
+            "Media": []
+          }
+        ]
+      },
+      "tolerance": 0.0001
+    }
+  ]
+}

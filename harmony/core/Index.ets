@@ -87,6 +87,17 @@ export type {
   RandSettings
 } from './src/main/ets/settings/AppSettings';
 export { parseSettings, stringifySettings, settingsRoundtrip } from './src/main/ets/persistence/SettingsCodec';
+export { parseIcink, stringifyIcink, icinkRoundtrip } from './src/main/ets/persistence/IcinkCodec';
+export type { IcinkStrokeSummary, IcinkPointRow } from './src/main/ets/persistence/IcinkCodec';
+export { parseBoardPack, stringifyBoardPack, boardRoundtrip } from './src/main/ets/persistence/BoardPackCodec';
+export type {
+  BoardPackSummary,
+  BoardPageSummary,
+  BoardAssetSummary,
+  BoardStrokeSummary
+} from './src/main/ets/persistence/BoardPackCodec';
+export { parsePptManifest, stringifyPptManifest, pptManifestRoundtrip } from './src/main/ets/persistence/PptManifestCodec';
+export type { PptManifest, PptManifestSlide } from './src/main/ets/persistence/PptManifestCodec';
 export {
   ShapeKind,
   DashLength,
