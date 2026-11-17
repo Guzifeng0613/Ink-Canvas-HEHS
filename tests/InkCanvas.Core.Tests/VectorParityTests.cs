@@ -1,11 +1,19 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using InkCanvas.Core.Imaging;
 using InkCanvas.Core.Ink;
+using InkCanvas.Core.Input;
 using InkCanvas.Core.Recognition;
+using InkCanvas.Core.Replay;
 using InkCanvas.Core.Selection;
 using InkCanvas.Core.Settings;
 using InkCanvas.Core.Shapes;
+using InkCanvas.Core.Theming;
+using InkCanvas.Core.Update;
+using InkCanvas.Core.Versioning;
 using InkCanvas.Ink.Manipulation;
+using InkCanvas.Platform.Input;
+using InkCanvas.Platform.Windows;
 using System.Numerics;
 using Xunit;
 
@@ -448,6 +456,9 @@ public sealed class VectorParityTests
             case JsonValueKind.String:
                 Assert.Equal(expected.GetString(), actual!.GetValue<string>());
                 break;
+            case JsonValueKind.Null:
+                Assert.Null(actual);
+                break;
             case JsonValueKind.Array:
             {
                 var array = actual!.AsArray();
@@ -473,6 +484,293 @@ public sealed class VectorParityTests
             default:
                 throw new InvalidOperationException("unsupported json kind " + expected.ValueKind);
         }
+    }
+
+    [Fact]
+    public void TouchClassifierVectorsMatch()
+    {
+        using var doc = Load("touch-classifier.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var input = c.GetProperty("input");
+            object actual;
+            switch (c.GetProperty("fn").GetString())
+            {
+                case "measureContactWidth":
+                    actual = TouchContactClassifier.MeasureContactWidth(
+                        input[0].GetDouble(), input[1].GetDouble(), input[2].GetBoolean());
+                    break;
+                case "classifyContact":
+                {
+                    var spec = input[0];
+                    var advanced = ParseAdvanced(spec.GetProperty("advanced"));
+                    var decision = TouchContactClassifier.Classify(
+                        spec.GetProperty("contactWidth").GetDouble(),
+                        advanced!,
+                        spec.GetProperty("nibMode").GetBoolean(),
+                        spec.GetProperty("forceEraser").GetBoolean(),
+                        spec.GetProperty("isDrawingShape").GetBoolean(),
+                        spec.GetProperty("forcePointEraser").GetBoolean(),
+                        spec.GetProperty("pptGestureEligible").GetBoolean());
+                    actual = new { intent = (int)decision.Intent, eraserDiameter = decision.EraserDiameter };
+                    break;
+                }
+                default:
+                    throw new InvalidOperationException("unknown touch fn");
+            }
+            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
+        }
+    }
+
+    [Fact]
+    public void PalmVectorsMatch()
+    {
+        using var doc = Load("palm.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var input = c.GetProperty("input");
+            var options = input[1];
+            var rejector = new PalmRejector
+            {
+                PalmContactThreshold = options.GetProperty("palmContactThreshold").GetSingle(),
+                PenHasPriority = options.GetProperty("penHasPriority").GetBoolean(),
+                Advanced = ParseAdvanced(options.GetProperty("advanced")),
+                NibMode = options.GetProperty("nibMode").GetBoolean(),
+                ForceEraser = options.GetProperty("forceEraser").GetBoolean(),
+                ForcePointEraser = options.GetProperty("forcePointEraser").GetBoolean(),
+                PptGestureEligible = options.GetProperty("pptGestureEligible").GetBoolean()
+            };
+            var results = new List<object>();
+            foreach (var e in input[0].EnumerateArray())
+            {
+                var pointer = new OverlayPointer(
+                    e.GetProperty("id").GetUInt32(), 0, 0, 0.5f,
+                    e.GetProperty("contactWidth").GetSingle(),
+                    e.GetProperty("contactHeight").GetSingle(),
+                    (OverlayPointerKind)e.GetProperty("kind").GetInt32(), 0);
+                if (e.GetProperty("type").GetString() == "down")
+                {
+                    rejector.OnDown(pointer);
+                }
+                else
+                {
+                    rejector.OnUp(pointer);
+                }
+                var decision = rejector.ClassifyContact(pointer);
+                results.Add(new
+                {
+                    shouldDraw = rejector.ShouldDraw(pointer),
+                    shouldErase = rejector.ShouldErase(pointer),
+                    intent = (int)decision.Intent,
+                    eraserDiameter = decision.EraserDiameter
+                });
+            }
+            var actual = new
+            {
+                results,
+                isPenActive = rejector.IsPenActive,
+                activePalms = rejector.ActivePalms.OrderBy(x => x).ToArray()
+            };
+            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
+        }
+    }
+
+    [Fact]
+    public void ReplayClockVectorsMatch()
+    {
+        using var doc = Load("replay-clock.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var input = c.GetProperty("input");
+            var clock = new ReplayClock(TimeSpan.FromMilliseconds(input[0].GetDouble()))
+            {
+                Speed = input[1].GetSingle()
+            };
+            foreach (var op in input[2].EnumerateArray().Select(e => e.GetString()!))
+            {
+                if (op == "play") clock.Play();
+                else if (op == "pause") clock.Pause();
+                else if (op == "toggle") clock.Toggle();
+                else if (op.StartsWith("seek:")) clock.Seek(float.Parse(op.Substring(5)));
+                else if (op.StartsWith("advance:")) clock.Advance(float.Parse(op.Substring(8)));
+            }
+            var actual = new
+            {
+                elapsed = (double)clock.ElapsedMs,
+                playing = clock.IsPlaying,
+                complete = clock.IsComplete,
+                progress = (double)clock.Progress
+            };
+            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
+        }
+    }
+
+    [Fact]
+    public void ReplaySessionVectorsMatch()
+    {
+        using var doc = Load("replay-session.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var input = c.GetProperty("input");
+            var counts = input[0].EnumerateArray().Select(e => e.GetInt32()).ToArray();
+            var strokes = counts.Select(count =>
+            {
+                var stroke = new InkStroke(new StrokeAttributes());
+                for (var i = 0; i < count; i++)
+                {
+                    stroke.AddPoint(i, 0);
+                }
+                return stroke;
+            }).ToList();
+            var session = new InkReplaySession(strokes, input[1].GetSingle());
+            var elapsed = input[2].GetSingle();
+            var actual = new
+            {
+                counts = session.VisibleAt(elapsed).Select(s => s.Count).ToArray(),
+                complete = session.IsComplete(elapsed)
+            };
+            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
+        }
+    }
+
+    [Fact]
+    public void CompositingVectorsMatch()
+    {
+        using var doc = Load("compositing.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var input = c.GetProperty("input");
+            var dst = input[0].EnumerateArray().Select(e => (byte)e.GetInt32()).ToArray();
+            var src = input[5].EnumerateArray().Select(e => (byte)e.GetInt32()).ToArray();
+            PixelCompositing.BlendOver(
+                dst, input[1].GetInt32(), input[2].GetInt32(), input[3].GetInt32(), input[4].GetInt32(),
+                src, input[6].GetInt32(), input[7].GetInt32());
+            AssertNear(c.GetProperty("expected"), Node(dst.Select(b => (int)b).ToArray()), c.GetProperty("tolerance").GetDouble());
+        }
+    }
+
+    [Fact]
+    public void ThemeVectorsMatch()
+    {
+        using var doc = Load("theme.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var input = c.GetProperty("input");
+            object actual = c.GetProperty("fn").GetString() switch
+            {
+                "getMainWindowTheme" => (int)ThemeResolver.GetMainWindowTheme(
+                    input[0].GetInt32(), input[1].GetBoolean(), input[2].GetBoolean()),
+                "getBoardTheme" => (int)ThemeResolver.GetBoardTheme(input[0].GetBoolean()),
+                _ => throw new InvalidOperationException("unknown theme fn")
+            };
+            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
+        }
+    }
+
+    [Fact]
+    public void AppVersionVectorsMatch()
+    {
+        using var doc = Load("app-version.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var input = c.GetProperty("input");
+            object actual;
+            switch (c.GetProperty("fn").GetString())
+            {
+                case "parseVersion":
+                {
+                    var ok = AppVersion.TryParse(input[0].GetString()!, out var version);
+                    actual = new
+                    {
+                        ok,
+                        major = ok ? version.Major : 0,
+                        minor = ok ? version.Minor : 0,
+                        patch = ok ? version.Patch : 0,
+                        build = ok ? version.Build : 0,
+                        formatted = ok ? version.ToString() : ""
+                    };
+                    break;
+                }
+                case "compareVersions":
+                {
+                    var a = input[0].EnumerateArray().Select(e => e.GetInt32()).ToArray();
+                    var b = input[1].EnumerateArray().Select(e => e.GetInt32()).ToArray();
+                    actual = Math.Sign(new AppVersion(a[0], a[1], a[2], a[3])
+                        .CompareTo(new AppVersion(b[0], b[1], b[2], b[3])));
+                    break;
+                }
+                default:
+                    throw new InvalidOperationException("unknown version fn");
+            }
+            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
+        }
+    }
+
+    [Fact]
+    public void UpdatePolicyVectorsMatch()
+    {
+        using var doc = Load("update-policy.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var input = c.GetProperty("input");
+            var spec = input[0];
+            var settings = new StartupSettings
+            {
+                IsAutoUpdate = spec.GetProperty("isAutoUpdate").GetBoolean(),
+                IsAutoUpdateWithSilence = spec.GetProperty("isAutoUpdateWithSilence").GetBoolean(),
+                AutoUpdateWithSilenceStartTime = spec.GetProperty("startTime").GetString()!,
+                AutoUpdateWithSilenceEndTime = spec.GetProperty("endTime").GetString()!
+            };
+            var now = new DateTime(2026, 1, 1, input[1].GetInt32(), input[2].GetInt32(), 0);
+            var actual = UpdatePolicy.MayInstallSilently(settings, now);
+            AssertNear(c.GetProperty("expected"), Node(actual), 0);
+        }
+    }
+
+    [Fact]
+    public void ReleaseFeedVectorsMatch()
+    {
+        using var doc = Load("release-feed.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var json = c.GetProperty("input")[0].GetString()!;
+            var info = c.GetProperty("fn").GetString()!.StartsWith("parseLatest")
+                ? ReleaseFeed.ParseLatest(json)
+                : ReleaseFeed.ParseNewestStable(json);
+            object? actual = info is null
+                ? null
+                : new
+                {
+                    Tag = info.Tag,
+                    Version = new[] { info.Version.Major, info.Version.Minor, info.Version.Patch, info.Version.Build },
+                    info.Name,
+                    info.Notes,
+                    info.PageUrl,
+                    info.InstallerUrl,
+                    info.InstallerSize
+                };
+            AssertNear(c.GetProperty("expected"), Node(actual!), c.GetProperty("tolerance").GetDouble());
+        }
+    }
+
+    private static AdvancedSettings? ParseAdvanced(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+        return new AdvancedSettings
+        {
+            IsSpecialScreen = element.GetProperty("isSpecialScreen").GetBoolean(),
+            IsQuadIR = element.GetProperty("isQuadIR").GetBoolean(),
+            TouchMultiplier = element.GetProperty("touchMultiplier").GetDouble(),
+            NibModeBoundsWidth = element.GetProperty("nibModeBoundsWidth").GetInt32(),
+            FingerModeBoundsWidth = element.GetProperty("fingerModeBoundsWidth").GetInt32(),
+            NibModeBoundsWidthThresholdValue = element.GetProperty("nibModeBoundsWidthThresholdValue").GetDouble(),
+            FingerModeBoundsWidthThresholdValue = element.GetProperty("fingerModeBoundsWidthThresholdValue").GetDouble(),
+            NibModeBoundsWidthEraserSize = element.GetProperty("nibModeBoundsWidthEraserSize").GetDouble(),
+            FingerModeBoundsWidthEraserSize = element.GetProperty("fingerModeBoundsWidthEraserSize").GetDouble()
+        };
     }
 
     private static InkStroke MakeStrokeFromPoints(JsonElement points)

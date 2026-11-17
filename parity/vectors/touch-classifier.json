@@ -1,0 +1,389 @@
+{
+  "id": "touch-classifier",
+  "entry": "harmony/core/src/main/ets/input/TouchContactClassifier.ts",
+  "cases": [
+    {
+      "id": "measure-normal",
+      "fn": "measureContactWidth",
+      "input": [
+        10,
+        20,
+        false
+      ],
+      "expected": 10,
+      "tolerance": 0.0001
+    },
+    {
+      "id": "measure-quadir",
+      "fn": "measureContactWidth",
+      "input": [
+        10,
+        20,
+        true
+      ],
+      "expected": 14.142135623730951,
+      "tolerance": 0.0001
+    },
+    {
+      "id": "measure-zero",
+      "fn": "measureContactWidth",
+      "input": [
+        0,
+        0,
+        true
+      ],
+      "expected": 0,
+      "tolerance": 0.0001
+    },
+    {
+      "id": "classify-draw",
+      "fn": "classifyContact",
+      "input": [
+        {
+          "contactWidth": 5,
+          "advanced": {
+            "isSpecialScreen": false,
+            "isQuadIR": false,
+            "touchMultiplier": 0.25,
+            "nibModeBoundsWidth": 10,
+            "fingerModeBoundsWidth": 30,
+            "nibModeBoundsWidthThresholdValue": 2.5,
+            "fingerModeBoundsWidthThresholdValue": 2.5,
+            "nibModeBoundsWidthEraserSize": 0.8,
+            "fingerModeBoundsWidthEraserSize": 0.8
+          },
+          "nibMode": false,
+          "forceEraser": false,
+          "isDrawingShape": false,
+          "forcePointEraser": true,
+          "pptGestureEligible": false
+        }
+      ],
+      "expected": {
+        "intent": 0,
+        "eraserDiameter": 50
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "classify-draw-no-point-eraser",
+      "fn": "classifyContact",
+      "input": [
+        {
+          "contactWidth": 5,
+          "advanced": {
+            "isSpecialScreen": false,
+            "isQuadIR": false,
+            "touchMultiplier": 0.25,
+            "nibModeBoundsWidth": 10,
+            "fingerModeBoundsWidth": 30,
+            "nibModeBoundsWidthThresholdValue": 2.5,
+            "fingerModeBoundsWidthThresholdValue": 2.5,
+            "nibModeBoundsWidthEraserSize": 0.8,
+            "fingerModeBoundsWidthEraserSize": 0.8
+          },
+          "nibMode": false,
+          "forceEraser": false,
+          "isDrawingShape": false,
+          "forcePointEraser": false,
+          "pptGestureEligible": false
+        }
+      ],
+      "expected": {
+        "intent": 0,
+        "eraserDiameter": 5
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "classify-null-advanced",
+      "fn": "classifyContact",
+      "input": [
+        {
+          "contactWidth": 100,
+          "advanced": null,
+          "nibMode": false,
+          "forceEraser": false,
+          "isDrawingShape": false,
+          "forcePointEraser": true,
+          "pptGestureEligible": false
+        }
+      ],
+      "expected": {
+        "intent": 0,
+        "eraserDiameter": 5
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "classify-erase-stroke",
+      "fn": "classifyContact",
+      "input": [
+        {
+          "contactWidth": 40,
+          "advanced": {
+            "isSpecialScreen": false,
+            "isQuadIR": false,
+            "touchMultiplier": 0.25,
+            "nibModeBoundsWidth": 10,
+            "fingerModeBoundsWidth": 30,
+            "nibModeBoundsWidthThresholdValue": 2.5,
+            "fingerModeBoundsWidthThresholdValue": 2.5,
+            "nibModeBoundsWidthEraserSize": 0.8,
+            "fingerModeBoundsWidthEraserSize": 0.8
+          },
+          "nibMode": false,
+          "forceEraser": false,
+          "isDrawingShape": false,
+          "forcePointEraser": true,
+          "pptGestureEligible": false
+        }
+      ],
+      "expected": {
+        "intent": 1,
+        "eraserDiameter": 5
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "classify-erase-point",
+      "fn": "classifyContact",
+      "input": [
+        {
+          "contactWidth": 100,
+          "advanced": {
+            "isSpecialScreen": false,
+            "isQuadIR": false,
+            "touchMultiplier": 0.25,
+            "nibModeBoundsWidth": 10,
+            "fingerModeBoundsWidth": 30,
+            "nibModeBoundsWidthThresholdValue": 2.5,
+            "fingerModeBoundsWidthThresholdValue": 2.5,
+            "nibModeBoundsWidthEraserSize": 0.8,
+            "fingerModeBoundsWidthEraserSize": 0.8
+          },
+          "nibMode": false,
+          "forceEraser": false,
+          "isDrawingShape": false,
+          "forcePointEraser": true,
+          "pptGestureEligible": false
+        }
+      ],
+      "expected": {
+        "intent": 2,
+        "eraserDiameter": 80
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "classify-erase-point-special",
+      "fn": "classifyContact",
+      "input": [
+        {
+          "contactWidth": 100,
+          "advanced": {
+            "isSpecialScreen": true,
+            "isQuadIR": false,
+            "touchMultiplier": 0.3,
+            "nibModeBoundsWidth": 10,
+            "fingerModeBoundsWidth": 30,
+            "nibModeBoundsWidthThresholdValue": 2.5,
+            "fingerModeBoundsWidthThresholdValue": 2.5,
+            "nibModeBoundsWidthEraserSize": 0.8,
+            "fingerModeBoundsWidthEraserSize": 0.8
+          },
+          "nibMode": false,
+          "forceEraser": false,
+          "isDrawingShape": false,
+          "forcePointEraser": true,
+          "pptGestureEligible": false
+        }
+      ],
+      "expected": {
+        "intent": 2,
+        "eraserDiameter": 24
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "classify-multiplier-zero-disables-eraser",
+      "fn": "classifyContact",
+      "input": [
+        {
+          "contactWidth": 100,
+          "advanced": {
+            "isSpecialScreen": true,
+            "isQuadIR": false,
+            "touchMultiplier": 0,
+            "nibModeBoundsWidth": 10,
+            "fingerModeBoundsWidth": 30,
+            "nibModeBoundsWidthThresholdValue": 2.5,
+            "fingerModeBoundsWidthThresholdValue": 2.5,
+            "nibModeBoundsWidthEraserSize": 0.8,
+            "fingerModeBoundsWidthEraserSize": 0.8
+          },
+          "nibMode": false,
+          "forceEraser": false,
+          "isDrawingShape": false,
+          "forcePointEraser": true,
+          "pptGestureEligible": false
+        }
+      ],
+      "expected": {
+        "intent": 0,
+        "eraserDiameter": 50
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "classify-nib-stroke",
+      "fn": "classifyContact",
+      "input": [
+        {
+          "contactWidth": 15,
+          "advanced": {
+            "isSpecialScreen": false,
+            "isQuadIR": false,
+            "touchMultiplier": 0.25,
+            "nibModeBoundsWidth": 10,
+            "fingerModeBoundsWidth": 30,
+            "nibModeBoundsWidthThresholdValue": 2.5,
+            "fingerModeBoundsWidthThresholdValue": 2.5,
+            "nibModeBoundsWidthEraserSize": 0.8,
+            "fingerModeBoundsWidthEraserSize": 0.8
+          },
+          "nibMode": true,
+          "forceEraser": false,
+          "isDrawingShape": false,
+          "forcePointEraser": true,
+          "pptGestureEligible": false
+        }
+      ],
+      "expected": {
+        "intent": 1,
+        "eraserDiameter": 5
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "classify-nib-point",
+      "fn": "classifyContact",
+      "input": [
+        {
+          "contactWidth": 30,
+          "advanced": {
+            "isSpecialScreen": false,
+            "isQuadIR": false,
+            "touchMultiplier": 0.25,
+            "nibModeBoundsWidth": 10,
+            "fingerModeBoundsWidth": 30,
+            "nibModeBoundsWidthThresholdValue": 2.5,
+            "fingerModeBoundsWidthThresholdValue": 2.5,
+            "nibModeBoundsWidthEraserSize": 0.8,
+            "fingerModeBoundsWidthEraserSize": 0.8
+          },
+          "nibMode": true,
+          "forceEraser": false,
+          "isDrawingShape": false,
+          "forcePointEraser": true,
+          "pptGestureEligible": false
+        }
+      ],
+      "expected": {
+        "intent": 2,
+        "eraserDiameter": 24
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "classify-force-eraser-ignore",
+      "fn": "classifyContact",
+      "input": [
+        {
+          "contactWidth": 100,
+          "advanced": {
+            "isSpecialScreen": false,
+            "isQuadIR": false,
+            "touchMultiplier": 0.25,
+            "nibModeBoundsWidth": 10,
+            "fingerModeBoundsWidth": 30,
+            "nibModeBoundsWidthThresholdValue": 2.5,
+            "fingerModeBoundsWidthThresholdValue": 2.5,
+            "nibModeBoundsWidthEraserSize": 0.8,
+            "fingerModeBoundsWidthEraserSize": 0.8
+          },
+          "nibMode": false,
+          "forceEraser": true,
+          "isDrawingShape": false,
+          "forcePointEraser": true,
+          "pptGestureEligible": false
+        }
+      ],
+      "expected": {
+        "intent": 4,
+        "eraserDiameter": 0
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "classify-force-eraser-drawing-shape",
+      "fn": "classifyContact",
+      "input": [
+        {
+          "contactWidth": 100,
+          "advanced": {
+            "isSpecialScreen": false,
+            "isQuadIR": false,
+            "touchMultiplier": 0.25,
+            "nibModeBoundsWidth": 10,
+            "fingerModeBoundsWidth": 30,
+            "nibModeBoundsWidthThresholdValue": 2.5,
+            "fingerModeBoundsWidthThresholdValue": 2.5,
+            "nibModeBoundsWidthEraserSize": 0.8,
+            "fingerModeBoundsWidthEraserSize": 0.8
+          },
+          "nibMode": false,
+          "forceEraser": true,
+          "isDrawingShape": true,
+          "forcePointEraser": true,
+          "pptGestureEligible": false
+        }
+      ],
+      "expected": {
+        "intent": 2,
+        "eraserDiameter": 80
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "classify-ppt-gesture",
+      "fn": "classifyContact",
+      "input": [
+        {
+          "contactWidth": 40,
+          "advanced": {
+            "isSpecialScreen": false,
+            "isQuadIR": false,
+            "touchMultiplier": 0.25,
+            "nibModeBoundsWidth": 10,
+            "fingerModeBoundsWidth": 30,
+            "nibModeBoundsWidthThresholdValue": 2.5,
+            "fingerModeBoundsWidthThresholdValue": 2.5,
+            "nibModeBoundsWidthEraserSize": 0.8,
+            "fingerModeBoundsWidthEraserSize": 0.8
+          },
+          "nibMode": false,
+          "forceEraser": false,
+          "isDrawingShape": false,
+          "forcePointEraser": true,
+          "pptGestureEligible": true
+        }
+      ],
+      "expected": {
+        "intent": 3,
+        "eraserDiameter": 5
+      },
+      "tolerance": 0.0001
+    }
+  ]
+}

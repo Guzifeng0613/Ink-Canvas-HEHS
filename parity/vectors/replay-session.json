@@ -1,0 +1,132 @@
+{
+  "id": "replay-session",
+  "entry": "harmony/core/src/main/ets/replay/InkReplaySession.ts",
+  "cases": [
+    {
+      "id": "session-start",
+      "fn": "replayVisibleCounts",
+      "input": [
+        [
+          3,
+          2,
+          1
+        ],
+        12,
+        0
+      ],
+      "expected": {
+        "counts": [
+          1
+        ],
+        "complete": false
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "session-partial",
+      "fn": "replayVisibleCounts",
+      "input": [
+        [
+          3,
+          2,
+          1
+        ],
+        12,
+        10
+      ],
+      "expected": {
+        "counts": [
+          1
+        ],
+        "complete": false
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "session-boundary",
+      "fn": "replayVisibleCounts",
+      "input": [
+        [
+          3,
+          2,
+          1
+        ],
+        12,
+        36
+      ],
+      "expected": {
+        "counts": [
+          3,
+          1
+        ],
+        "complete": false
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "session-later",
+      "fn": "replayVisibleCounts",
+      "input": [
+        [
+          3,
+          2,
+          1
+        ],
+        12,
+        50
+      ],
+      "expected": {
+        "counts": [
+          3,
+          1
+        ],
+        "complete": false
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "session-end",
+      "fn": "replayVisibleCounts",
+      "input": [
+        [
+          3,
+          2,
+          1
+        ],
+        12,
+        72
+      ],
+      "expected": {
+        "counts": [
+          3,
+          2,
+          1
+        ],
+        "complete": true
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "session-done",
+      "fn": "replayVisibleCounts",
+      "input": [
+        [
+          3,
+          2,
+          1
+        ],
+        12,
+        200
+      ],
+      "expected": {
+        "counts": [
+          3,
+          2,
+          1
+        ],
+        "complete": true
+      },
+      "tolerance": 0
+    }
+  ]
+}

@@ -1,0 +1,262 @@
+{
+  "id": "app-version",
+  "entry": "harmony/core/src/main/ets/versioning/AppVersion.ts",
+  "cases": [
+    {
+      "id": "parse-3.0.0",
+      "fn": "parseVersion",
+      "input": [
+        "3.0.0"
+      ],
+      "expected": {
+        "ok": true,
+        "major": 3,
+        "minor": 0,
+        "patch": 0,
+        "build": 0,
+        "formatted": "3.0.0"
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "parse-v3.1.2",
+      "fn": "parseVersion",
+      "input": [
+        "v3.1.2"
+      ],
+      "expected": {
+        "ok": true,
+        "major": 3,
+        "minor": 1,
+        "patch": 2,
+        "build": 0,
+        "formatted": "3.1.2"
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "parse-V26.10.7",
+      "fn": "parseVersion",
+      "input": [
+        "V26.10.7"
+      ],
+      "expected": {
+        "ok": true,
+        "major": 26,
+        "minor": 10,
+        "patch": 7,
+        "build": 0,
+        "formatted": "26.10.7"
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "parse-1.2.3.4",
+      "fn": "parseVersion",
+      "input": [
+        "1.2.3.4"
+      ],
+      "expected": {
+        "ok": true,
+        "major": 1,
+        "minor": 2,
+        "patch": 3,
+        "build": 4,
+        "formatted": "1.2.3.4"
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "parse-_latest_",
+      "fn": "parseVersion",
+      "input": [
+        " latest "
+      ],
+      "expected": {
+        "ok": false,
+        "major": 0,
+        "minor": 0,
+        "patch": 0,
+        "build": 0,
+        "formatted": ""
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "parse-3",
+      "fn": "parseVersion",
+      "input": [
+        "3"
+      ],
+      "expected": {
+        "ok": false,
+        "major": 0,
+        "minor": 0,
+        "patch": 0,
+        "build": 0,
+        "formatted": ""
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "parse-1.2.3.4.5",
+      "fn": "parseVersion",
+      "input": [
+        "1.2.3.4.5"
+      ],
+      "expected": {
+        "ok": false,
+        "major": 0,
+        "minor": 0,
+        "patch": 0,
+        "build": 0,
+        "formatted": ""
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "parse--1.2",
+      "fn": "parseVersion",
+      "input": [
+        "-1.2"
+      ],
+      "expected": {
+        "ok": false,
+        "major": 0,
+        "minor": 0,
+        "patch": 0,
+        "build": 0,
+        "formatted": ""
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "parse-3.x.0",
+      "fn": "parseVersion",
+      "input": [
+        "3.x.0"
+      ],
+      "expected": {
+        "ok": false,
+        "major": 0,
+        "minor": 0,
+        "patch": 0,
+        "build": 0,
+        "formatted": ""
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "parse-__v2.5__",
+      "fn": "parseVersion",
+      "input": [
+        "  v2.5  "
+      ],
+      "expected": {
+        "ok": true,
+        "major": 2,
+        "minor": 5,
+        "patch": 0,
+        "build": 0,
+        "formatted": "2.5.0"
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "parse-empty",
+      "fn": "parseVersion",
+      "input": [
+        ""
+      ],
+      "expected": {
+        "ok": false,
+        "major": 0,
+        "minor": 0,
+        "patch": 0,
+        "build": 0,
+        "formatted": ""
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "compare-3.0.0.0-3.0.1.0",
+      "fn": "compareVersions",
+      "input": [
+        [
+          3,
+          0,
+          0,
+          0
+        ],
+        [
+          3,
+          0,
+          1,
+          0
+        ]
+      ],
+      "expected": -1,
+      "tolerance": 0
+    },
+    {
+      "id": "compare-3.1.0.0-3.0.9.9",
+      "fn": "compareVersions",
+      "input": [
+        [
+          3,
+          1,
+          0,
+          0
+        ],
+        [
+          3,
+          0,
+          9,
+          9
+        ]
+      ],
+      "expected": 1,
+      "tolerance": 0
+    },
+    {
+      "id": "compare-1.2.3.4-1.2.3.4",
+      "fn": "compareVersions",
+      "input": [
+        [
+          1,
+          2,
+          3,
+          4
+        ],
+        [
+          1,
+          2,
+          3,
+          4
+        ]
+      ],
+      "expected": 0,
+      "tolerance": 0
+    },
+    {
+      "id": "compare-0.0.0.0-0.0.0.1",
+      "fn": "compareVersions",
+      "input": [
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          1
+        ]
+      ],
+      "expected": -1,
+      "tolerance": 0
+    }
+  ]
+}

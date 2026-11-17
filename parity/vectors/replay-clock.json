@@ -1,0 +1,125 @@
+{
+  "id": "replay-clock",
+  "entry": "harmony/core/src/main/ets/replay/ReplayClock.ts",
+  "cases": [
+    {
+      "id": "clock-basic",
+      "fn": "simulateReplayClock",
+      "input": [
+        1000,
+        1,
+        [
+          "play",
+          "advance:16",
+          "advance:16"
+        ]
+      ],
+      "expected": {
+        "elapsed": 32,
+        "playing": true,
+        "complete": false,
+        "progress": 0.03200000151991844
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "clock-speed-2",
+      "fn": "simulateReplayClock",
+      "input": [
+        1000,
+        2,
+        [
+          "play",
+          "advance:100"
+        ]
+      ],
+      "expected": {
+        "elapsed": 200,
+        "playing": true,
+        "complete": false,
+        "progress": 0.20000000298023224
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "clock-complete",
+      "fn": "simulateReplayClock",
+      "input": [
+        100,
+        1,
+        [
+          "play",
+          "advance:150"
+        ]
+      ],
+      "expected": {
+        "elapsed": 100,
+        "playing": false,
+        "complete": true,
+        "progress": 1
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "clock-seek-clamp",
+      "fn": "simulateReplayClock",
+      "input": [
+        1000,
+        1,
+        [
+          "seek:1500",
+          "seek:-5"
+        ]
+      ],
+      "expected": {
+        "elapsed": 0,
+        "playing": false,
+        "complete": false,
+        "progress": 0
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "clock-toggle",
+      "fn": "simulateReplayClock",
+      "input": [
+        1000,
+        1,
+        [
+          "toggle",
+          "advance:100",
+          "toggle",
+          "advance:100",
+          "toggle"
+        ]
+      ],
+      "expected": {
+        "elapsed": 100,
+        "playing": true,
+        "complete": false,
+        "progress": 0.10000000149011612
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "clock-complete-replay",
+      "fn": "simulateReplayClock",
+      "input": [
+        100,
+        1,
+        [
+          "play",
+          "advance:100",
+          "play"
+        ]
+      ],
+      "expected": {
+        "elapsed": 0,
+        "playing": true,
+        "complete": false,
+        "progress": 0
+      },
+      "tolerance": 0.0001
+    }
+  ]
+}

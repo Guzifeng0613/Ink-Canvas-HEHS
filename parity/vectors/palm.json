@@ -1,0 +1,280 @@
+{
+  "id": "palm",
+  "entry": "harmony/core/src/main/ets/input/PalmRejector.ts",
+  "cases": [
+    {
+      "id": "palm-sequence",
+      "fn": "simulatePalm",
+      "input": [
+        [
+          {
+            "type": "down",
+            "id": 1,
+            "kind": 0,
+            "contactWidth": 0,
+            "contactHeight": 0
+          },
+          {
+            "type": "down",
+            "id": 2,
+            "kind": 1,
+            "contactWidth": 8,
+            "contactHeight": 8
+          },
+          {
+            "type": "down",
+            "id": 3,
+            "kind": 1,
+            "contactWidth": 40,
+            "contactHeight": 35
+          },
+          {
+            "type": "up",
+            "id": 1,
+            "kind": 0,
+            "contactWidth": 0,
+            "contactHeight": 0
+          },
+          {
+            "type": "up",
+            "id": 3,
+            "kind": 1,
+            "contactWidth": 40,
+            "contactHeight": 35
+          },
+          {
+            "type": "up",
+            "id": 2,
+            "kind": 1,
+            "contactWidth": 8,
+            "contactHeight": 8
+          }
+        ],
+        {
+          "palmContactThreshold": 30,
+          "penHasPriority": true,
+          "advanced": {
+            "isSpecialScreen": false,
+            "isQuadIR": false,
+            "touchMultiplier": 0.25,
+            "nibModeBoundsWidth": 10,
+            "fingerModeBoundsWidth": 30,
+            "nibModeBoundsWidthThresholdValue": 2.5,
+            "fingerModeBoundsWidthThresholdValue": 2.5,
+            "nibModeBoundsWidthEraserSize": 0.8,
+            "fingerModeBoundsWidthEraserSize": 0.8
+          },
+          "nibMode": false,
+          "forceEraser": false,
+          "forcePointEraser": true,
+          "pptGestureEligible": false
+        }
+      ],
+      "expected": {
+        "results": [
+          {
+            "shouldDraw": true,
+            "shouldErase": false,
+            "intent": 0,
+            "eraserDiameter": 50
+          },
+          {
+            "shouldDraw": false,
+            "shouldErase": false,
+            "intent": 0,
+            "eraserDiameter": 50
+          },
+          {
+            "shouldDraw": false,
+            "shouldErase": true,
+            "intent": 1,
+            "eraserDiameter": 5
+          },
+          {
+            "shouldDraw": true,
+            "shouldErase": false,
+            "intent": 0,
+            "eraserDiameter": 50
+          },
+          {
+            "shouldDraw": true,
+            "shouldErase": false,
+            "intent": 1,
+            "eraserDiameter": 5
+          },
+          {
+            "shouldDraw": true,
+            "shouldErase": false,
+            "intent": 0,
+            "eraserDiameter": 50
+          }
+        ],
+        "isPenActive": false,
+        "activePalms": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "palm-no-priority",
+      "fn": "simulatePalm",
+      "input": [
+        [
+          {
+            "type": "down",
+            "id": 1,
+            "kind": 0,
+            "contactWidth": 0,
+            "contactHeight": 0
+          },
+          {
+            "type": "down",
+            "id": 2,
+            "kind": 1,
+            "contactWidth": 8,
+            "contactHeight": 8
+          },
+          {
+            "type": "down",
+            "id": 3,
+            "kind": 1,
+            "contactWidth": 40,
+            "contactHeight": 35
+          },
+          {
+            "type": "up",
+            "id": 1,
+            "kind": 0,
+            "contactWidth": 0,
+            "contactHeight": 0
+          },
+          {
+            "type": "up",
+            "id": 3,
+            "kind": 1,
+            "contactWidth": 40,
+            "contactHeight": 35
+          },
+          {
+            "type": "up",
+            "id": 2,
+            "kind": 1,
+            "contactWidth": 8,
+            "contactHeight": 8
+          }
+        ],
+        {
+          "palmContactThreshold": 30,
+          "penHasPriority": false,
+          "advanced": {
+            "isSpecialScreen": false,
+            "isQuadIR": false,
+            "touchMultiplier": 0.25,
+            "nibModeBoundsWidth": 10,
+            "fingerModeBoundsWidth": 30,
+            "nibModeBoundsWidthThresholdValue": 2.5,
+            "fingerModeBoundsWidthThresholdValue": 2.5,
+            "nibModeBoundsWidthEraserSize": 0.8,
+            "fingerModeBoundsWidthEraserSize": 0.8
+          },
+          "nibMode": false,
+          "forceEraser": false,
+          "forcePointEraser": true,
+          "pptGestureEligible": false
+        }
+      ],
+      "expected": {
+        "results": [
+          {
+            "shouldDraw": true,
+            "shouldErase": false,
+            "intent": 0,
+            "eraserDiameter": 50
+          },
+          {
+            "shouldDraw": true,
+            "shouldErase": false,
+            "intent": 0,
+            "eraserDiameter": 50
+          },
+          {
+            "shouldDraw": false,
+            "shouldErase": true,
+            "intent": 1,
+            "eraserDiameter": 5
+          },
+          {
+            "shouldDraw": true,
+            "shouldErase": false,
+            "intent": 0,
+            "eraserDiameter": 50
+          },
+          {
+            "shouldDraw": true,
+            "shouldErase": false,
+            "intent": 1,
+            "eraserDiameter": 5
+          },
+          {
+            "shouldDraw": true,
+            "shouldErase": false,
+            "intent": 0,
+            "eraserDiameter": 50
+          }
+        ],
+        "isPenActive": false,
+        "activePalms": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "palm-threshold-boundary",
+      "fn": "simulatePalm",
+      "input": [
+        [
+          {
+            "type": "down",
+            "id": 1,
+            "kind": 1,
+            "contactWidth": 30,
+            "contactHeight": 10
+          },
+          {
+            "type": "up",
+            "id": 1,
+            "kind": 1,
+            "contactWidth": 30,
+            "contactHeight": 10
+          }
+        ],
+        {
+          "palmContactThreshold": 30,
+          "penHasPriority": true,
+          "advanced": null,
+          "nibMode": false,
+          "forceEraser": false,
+          "forcePointEraser": true,
+          "pptGestureEligible": false
+        }
+      ],
+      "expected": {
+        "results": [
+          {
+            "shouldDraw": false,
+            "shouldErase": true,
+            "intent": 0,
+            "eraserDiameter": 50
+          },
+          {
+            "shouldDraw": true,
+            "shouldErase": false,
+            "intent": 0,
+            "eraserDiameter": 50
+          }
+        ],
+        "isPenActive": false,
+        "activePalms": []
+      },
+      "tolerance": 0.0001
+    }
+  ]
+}

@@ -17,4 +17,5 @@ GeometryVectors.Write(outDir);
 TransformVectors.Write(outDir);
 SettingsVectors.Write(outDir);
 ShapeVectors.Write(outDir);
+MiscVectors.Write(outDir);
 Console.WriteLine($"vectors written to {outDir}");

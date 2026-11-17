@@ -51,6 +51,28 @@ export type { BoundsInput } from './src/main/ets/selection/SelectionGeometry';
 export { TwoFingerManipulator, simulateTwoFinger } from './src/main/ets/ink/TwoFingerManipulator';
 export type { TwoFingerOptionsInput, TwoFingerSample, TwoFingerUpdate, TwoFingerSimResult } from './src/main/ets/ink/TwoFingerManipulator';
 export { MatrixTransformCenterPointOptions, resolvePivot } from './src/main/ets/ink/MatrixTransformCenter';
+export { TouchIntent, TouchDecision, measureContactWidth, boundsWidth, classifyContact } from './src/main/ets/input/TouchContactClassifier';
+export type { AdvancedTouchInput, TouchClassifyInput } from './src/main/ets/input/TouchContactClassifier';
+export { PalmRejector, OverlayPointerKind, simulatePalm } from './src/main/ets/input/PalmRejector';
+export type { PalmEvent, PalmOptions, PalmEventResult, PalmSimResult } from './src/main/ets/input/PalmRejector';
+export { ReplayClock, simulateReplayClock } from './src/main/ets/replay/ReplayClock';
+export type { ReplayClockSimResult } from './src/main/ets/replay/ReplayClock';
+export { InkReplaySession, replayVisibleCounts } from './src/main/ets/replay/InkReplaySession';
+export type { ReplayVisibleResult } from './src/main/ets/replay/InkReplaySession';
+export { blendOver } from './src/main/ets/imaging/PixelCompositing';
+export { AppTheme, getMainWindowTheme, getBoardTheme } from './src/main/ets/theming/ThemeResolver';
+export { AppVersion, parseVersion, compareVersions } from './src/main/ets/versioning/AppVersion';
+export type { VersionParseSummary } from './src/main/ets/versioning/AppVersion';
+export { mayInstallSilently } from './src/main/ets/update/UpdatePolicy';
+export type { StartupPolicyInput } from './src/main/ets/update/UpdatePolicy';
+export {
+  ReleaseInfo,
+  parseLatest,
+  parseNewestStable,
+  parseLatestSummary,
+  parseNewestStableSummary
+} from './src/main/ets/update/ReleaseFeed';
+export type { ReleaseSummary } from './src/main/ets/update/ReleaseFeed';
 export { createDefaultSettings } from './src/main/ets/settings/AppSettings';
 export type {
   AppSettings,

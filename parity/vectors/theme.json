@@ -1,0 +1,112 @@
+{
+  "id": "theme",
+  "entry": "harmony/core/src/main/ets/theming/ThemeResolver.ts",
+  "cases": [
+    {
+      "id": "theme-0-True-True",
+      "fn": "getMainWindowTheme",
+      "input": [
+        0,
+        true,
+        true
+      ],
+      "expected": 0,
+      "tolerance": 0
+    },
+    {
+      "id": "theme-0-True-False",
+      "fn": "getMainWindowTheme",
+      "input": [
+        0,
+        true,
+        false
+      ],
+      "expected": 1,
+      "tolerance": 0
+    },
+    {
+      "id": "theme-0-False-True",
+      "fn": "getMainWindowTheme",
+      "input": [
+        0,
+        false,
+        true
+      ],
+      "expected": 0,
+      "tolerance": 0
+    },
+    {
+      "id": "theme-0-False-False",
+      "fn": "getMainWindowTheme",
+      "input": [
+        0,
+        false,
+        false
+      ],
+      "expected": 1,
+      "tolerance": 0
+    },
+    {
+      "id": "theme-1-True-True",
+      "fn": "getMainWindowTheme",
+      "input": [
+        1,
+        true,
+        true
+      ],
+      "expected": 0,
+      "tolerance": 0
+    },
+    {
+      "id": "theme-1-True-False",
+      "fn": "getMainWindowTheme",
+      "input": [
+        1,
+        true,
+        false
+      ],
+      "expected": 0,
+      "tolerance": 0
+    },
+    {
+      "id": "theme-1-False-True",
+      "fn": "getMainWindowTheme",
+      "input": [
+        1,
+        false,
+        true
+      ],
+      "expected": 1,
+      "tolerance": 0
+    },
+    {
+      "id": "theme-1-False-False",
+      "fn": "getMainWindowTheme",
+      "input": [
+        1,
+        false,
+        false
+      ],
+      "expected": 1,
+      "tolerance": 0
+    },
+    {
+      "id": "board-theme-True",
+      "fn": "getBoardTheme",
+      "input": [
+        true
+      ],
+      "expected": 0,
+      "tolerance": 0
+    },
+    {
+      "id": "board-theme-False",
+      "fn": "getBoardTheme",
+      "input": [
+        false
+      ],
+      "expected": 1,
+      "tolerance": 0
+    }
+  ]
+}

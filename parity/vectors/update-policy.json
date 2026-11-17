@@ -1,0 +1,1014 @@
+{
+  "id": "update-policy",
+  "entry": "harmony/core/src/main/ets/update/UpdatePolicy.ts",
+  "cases": [
+    {
+      "id": "policy-True-True-0000-0000-0-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        0,
+        0
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-0000-0000-3-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        3,
+        0
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-0000-0000-7-39",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        7,
+        39
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-0000-0000-7-40",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        7,
+        40
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-0000-0000-12-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        12,
+        0
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-0000-0000-18-20",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        18,
+        20
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-0000-0000-23-59",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        23,
+        59
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-0000-0000-9-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        9,
+        0
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-0000-0000-17-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        17,
+        0
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-1820-0740-0-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "18:20",
+          "endTime": "07:40"
+        },
+        0,
+        0
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-1820-0740-3-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "18:20",
+          "endTime": "07:40"
+        },
+        3,
+        0
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-1820-0740-7-39",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "18:20",
+          "endTime": "07:40"
+        },
+        7,
+        39
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-1820-0740-7-40",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "18:20",
+          "endTime": "07:40"
+        },
+        7,
+        40
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-1820-0740-12-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "18:20",
+          "endTime": "07:40"
+        },
+        12,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-1820-0740-18-20",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "18:20",
+          "endTime": "07:40"
+        },
+        18,
+        20
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-1820-0740-23-59",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "18:20",
+          "endTime": "07:40"
+        },
+        23,
+        59
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-1820-0740-9-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "18:20",
+          "endTime": "07:40"
+        },
+        9,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-1820-0740-17-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "18:20",
+          "endTime": "07:40"
+        },
+        17,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-0900-1700-0-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "09:00",
+          "endTime": "17:00"
+        },
+        0,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-0900-1700-3-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "09:00",
+          "endTime": "17:00"
+        },
+        3,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-0900-1700-7-39",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "09:00",
+          "endTime": "17:00"
+        },
+        7,
+        39
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-0900-1700-7-40",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "09:00",
+          "endTime": "17:00"
+        },
+        7,
+        40
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-0900-1700-12-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "09:00",
+          "endTime": "17:00"
+        },
+        12,
+        0
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-0900-1700-18-20",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "09:00",
+          "endTime": "17:00"
+        },
+        18,
+        20
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-0900-1700-23-59",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "09:00",
+          "endTime": "17:00"
+        },
+        23,
+        59
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-0900-1700-9-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "09:00",
+          "endTime": "17:00"
+        },
+        9,
+        0
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-0900-1700-17-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "09:00",
+          "endTime": "17:00"
+        },
+        17,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-False-True-0000-0000-0-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": false,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        0,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-False-True-0000-0000-3-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": false,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        3,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-False-True-0000-0000-7-39",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": false,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        7,
+        39
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-False-True-0000-0000-7-40",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": false,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        7,
+        40
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-False-True-0000-0000-12-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": false,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        12,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-False-True-0000-0000-18-20",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": false,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        18,
+        20
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-False-True-0000-0000-23-59",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": false,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        23,
+        59
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-False-True-0000-0000-9-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": false,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        9,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-False-True-0000-0000-17-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": false,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        17,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-False-0000-0000-0-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": false,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        0,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-False-0000-0000-3-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": false,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        3,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-False-0000-0000-7-39",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": false,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        7,
+        39
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-False-0000-0000-7-40",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": false,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        7,
+        40
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-False-0000-0000-12-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": false,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        12,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-False-0000-0000-18-20",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": false,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        18,
+        20
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-False-0000-0000-23-59",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": false,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        23,
+        59
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-False-0000-0000-9-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": false,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        9,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-False-0000-0000-17-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": false,
+          "startTime": "00:00",
+          "endTime": "00:00"
+        },
+        17,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-bad-0740-0-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "bad",
+          "endTime": "07:40"
+        },
+        0,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-bad-0740-3-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "bad",
+          "endTime": "07:40"
+        },
+        3,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-bad-0740-7-39",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "bad",
+          "endTime": "07:40"
+        },
+        7,
+        39
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-bad-0740-7-40",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "bad",
+          "endTime": "07:40"
+        },
+        7,
+        40
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-bad-0740-12-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "bad",
+          "endTime": "07:40"
+        },
+        12,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-bad-0740-18-20",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "bad",
+          "endTime": "07:40"
+        },
+        18,
+        20
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-bad-0740-23-59",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "bad",
+          "endTime": "07:40"
+        },
+        23,
+        59
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-bad-0740-9-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "bad",
+          "endTime": "07:40"
+        },
+        9,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-bad-0740-17-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "bad",
+          "endTime": "07:40"
+        },
+        17,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-2400-0740-0-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "24:00",
+          "endTime": "07:40"
+        },
+        0,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-2400-0740-3-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "24:00",
+          "endTime": "07:40"
+        },
+        3,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-2400-0740-7-39",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "24:00",
+          "endTime": "07:40"
+        },
+        7,
+        39
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-2400-0740-7-40",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "24:00",
+          "endTime": "07:40"
+        },
+        7,
+        40
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-2400-0740-12-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "24:00",
+          "endTime": "07:40"
+        },
+        12,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-2400-0740-18-20",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "24:00",
+          "endTime": "07:40"
+        },
+        18,
+        20
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-2400-0740-23-59",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "24:00",
+          "endTime": "07:40"
+        },
+        23,
+        59
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-2400-0740-9-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "24:00",
+          "endTime": "07:40"
+        },
+        9,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "policy-True-True-2400-0740-17-0",
+      "fn": "mayInstallSilently",
+      "input": [
+        {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": true,
+          "startTime": "24:00",
+          "endTime": "07:40"
+        },
+        17,
+        0
+      ],
+      "expected": false,
+      "tolerance": 0
+    }
+  ]
+}
