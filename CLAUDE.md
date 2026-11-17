@@ -28,7 +28,7 @@ Ink Canvas Artistry 的 WinUI 3 迁移版（GPL-3.0），并进行 HarmonyOS（A
 
 - Windows：`.\build.ps1 build|test|run`（dotnet 10 SDK）。**构建前先结束运行中的 InkCanvas.App 进程**（文件锁会导致构建失败）。
 - HarmonyOS 纯逻辑测试：`node parity/run-vectors.mjs`（逻辑层写成兼容 TS 的 ArkTS 严格子集，无需 SDK 即可验证）。
-- HAP 构建需 DevEco Studio 26.0.0（compatibleSdkVersion 6.1.1(24)，targetSdkVersion 26.0.0；**不要写 compileSdkVersion**，否则报 00303313）。命令行工具（内嵌 SDK）位于 `E:\EcoStudioCLI\command-line-tools`；**构建缓存在 `E:\harmony-cache`**（hvigor/ohpm/npm，会话环境用 `tools/harmony-env.ps1`）。构建命令：`. tools/harmony-env.ps1; hvigorw assembleHap --mode module -p product=default -p buildMode=debug --no-daemon`（未签名 HAP，编译验证够用）。本机 SDK 为 26.0.1 Beta1（唯一可得），生产上架须换 26.0.0 Release 工具链——如实记录。
+- HAP 构建需 DevEco Studio 26.0.0（compatibleSdkVersion 6.1.1(24)，targetSdkVersion 26.0.0；**不要写 compileSdkVersion**，否则报 00303313；`modelVersion` 在 `hvigor/hvigor-config.json5` 与根 `oh-package.json5` 中必须一致，统一 26.0.0）。命令行工具（内嵌 SDK）位于 `E:\EcoStudioCLI\command-line-tools`；**构建缓存在 `E:\harmony-cache`**（hvigor/ohpm/npm，会话环境用 `tools/harmony-env.ps1`）。构建命令：`. tools/harmony-env.ps1; hvigorw assembleHap --mode module -p product=default -p buildMode=debug --no-daemon`（未签名 HAP，编译验证够用）。本机 SDK 为 26.0.1 Beta1（唯一可得），生产上架须换 26.0.0 Release 工具链——如实记录。
 - 运行时验证 harness（SendInput / Z-order / 截图）在 `D:\tmp\inkrepro`；PowerShell 5.1 注意 ANSI 转义输出陷阱。
 
 ## 诚实记录验证边界
