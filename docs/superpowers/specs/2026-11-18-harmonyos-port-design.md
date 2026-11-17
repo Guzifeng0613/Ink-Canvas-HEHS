@@ -90,7 +90,7 @@ harmony/                          DevEco 26 工程
 1. **锚点互指**：成对文件头部与关键算法处写 `@parity` 注释，C# → ArkTS 路径、ArkTS → C# 路径；
    `tools/parity-check.mjs` 校验：目标存在、双向成对、manifest 覆盖全部锚点文件。
 2. **权威功能清单** `parity/manifest.json`（schema 见 §5.1）：
-   每项 `status ∈ {ported, adapted, not-ported}` + `notes` 必填；覆盖率 = (ported+adapted)/分母，见 §9。
+   每项 `status ∈ {ported, adapted, not-ported}`（开发期允许 `planned`，`--final` 校验拒绝）+ `notes` 必填；覆盖率 = (ported+adapted)/分母，见 §9。
 3. **共享黄金向量**：`parity/vectors/*.json` 由 C# 生成器（`tools/InkCanvas.VectorGen`，新增独立项目）产出，
    两侧测试共同消费；`node --experimental-transform-types parity/run-vectors.mjs` 零依赖执行。
    向量集（首版）：`taper-tail`、`taper-velocity`、`stroke-geometry`、`stroke-eraser`、`undo`、
