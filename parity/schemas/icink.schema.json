@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "parity/schemas/icink.schema.json",
+  "title": ".icink 墨迹存档（单表面）",
+  "description": "字段以 WinUI3 Stores.cs 实际输出为准（PascalCase），由 Task 9 的往返向量钉住；本文件在 Task 9 补全。",
+  "type": "object",
+  "additionalProperties": true
+}

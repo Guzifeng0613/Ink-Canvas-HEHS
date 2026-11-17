@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "parity/schemas/board-pack.schema.json",
+  "title": "画板包（多页 + 元素）",
+  "description": "字段以 BoardService.cs 实际输出为准；保留缺失 HighlighterAlpha 的 v1 行为。Task 9 补全。",
+  "type": "object",
+  "additionalProperties": true
+}

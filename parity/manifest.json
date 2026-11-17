@@ -1,0 +1,788 @@
+{
+  "schemaVersion": 1,
+  "denominator": 56,
+  "features": [
+    {
+      "id": "ink-erase",
+      "name": "面积擦与线条擦",
+      "phase": "A",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Core/Ink/StrokeEraser.cs",
+        "src/InkCanvas.Core/Ink/InkDocument.cs",
+        "src/InkCanvas.Ink/InkController.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "面积擦与线条擦（Phase A）"
+    },
+    {
+      "id": "ink-palm-rejection",
+      "name": "手掌拒绝（无视觉副作用）",
+      "phase": "A",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Platform/Input/PalmRejector.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "手掌拒绝（无视觉副作用）（Phase A）"
+    },
+    {
+      "id": "ink-pixel-compositing",
+      "name": "预乘 BGRA source-over 合成",
+      "phase": "A",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Core/Imaging/PixelCompositing.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "预乘 BGRA source-over 合成（Phase A）"
+    },
+    {
+      "id": "ink-replay-logic",
+      "name": "回放时钟与会话",
+      "phase": "A",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Core/Replay/ReplayClock.cs",
+        "src/InkCanvas.Core/Replay/InkReplaySession.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "回放时钟与会话（Phase A）"
+    },
+    {
+      "id": "ink-selection",
+      "name": "选区命中、缩放、旋转、平移",
+      "phase": "A",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Core/Selection/SelectionGeometry.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "选区命中、缩放、旋转、平移（Phase A）"
+    },
+    {
+      "id": "ink-shape-generator",
+      "name": "24 预设图形与两步几何",
+      "phase": "A",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Core/Shapes/ShapeGenerator.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "24 预设图形与两步几何（Phase A）"
+    },
+    {
+      "id": "ink-shape-recognition",
+      "name": "托管几何图形识别",
+      "phase": "A",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Core/Recognition/ShapeRecognizer.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "托管几何图形识别（Phase A）"
+    },
+    {
+      "id": "ink-stroke-model",
+      "name": "笔画/点/文档数据模型",
+      "phase": "A",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Core/Ink/InkStroke.cs",
+        "src/InkCanvas.Core/Ink/InkPoint.cs",
+        "src/InkCanvas.Core/Ink/StrokeAttributes.cs",
+        "src/InkCanvas.Core/Ink/InkColor.cs",
+        "src/InkCanvas.Core/Ink/InkDocument.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "笔画/点/文档数据模型（Phase A）"
+    },
+    {
+      "id": "ink-stroke-region",
+      "name": "同向 capsule 轮廓与 Winding 合成",
+      "phase": "A",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Core/Ink/StrokeGeometry.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "同向 capsule 轮廓与 Winding 合成（Phase A）"
+    },
+    {
+      "id": "ink-taper-causal",
+      "name": "因果增量笔锋（None/Tail/Velocity）",
+      "phase": "A",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Core/Ink/TaperProfile.cs",
+        "src/InkCanvas.Core/Ink/InkStroke.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "因果增量笔锋（None/Tail/Velocity）（Phase A）"
+    },
+    {
+      "id": "ink-touch-classifier",
+      "name": "特殊屏触摸分档（QuadIR/倍数/阈值）",
+      "phase": "A",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Core/Input/TouchContactClassifier.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "特殊屏触摸分档（QuadIR/倍数/阈值）（Phase A）"
+    },
+    {
+      "id": "ink-undo-history",
+      "name": "撤销/重做历史",
+      "phase": "A",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Core/History/UndoStack.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "撤销/重做历史（Phase A）"
+    },
+    {
+      "id": "system-icink",
+      "name": ".icink 单表面持久化",
+      "phase": "A",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Features/Persistence/Stores.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": ".icink 单表面持久化（Phase A）"
+    },
+    {
+      "id": "system-settings-store",
+      "name": "Settings.json 兼容读写",
+      "phase": "A",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Features/Persistence/Stores.cs",
+        "src/InkCanvas.Core/Settings/AppSettings.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "Settings.json 兼容读写（Phase A）"
+    },
+    {
+      "id": "ink-gestures",
+      "name": "双指缩放/平移/旋转与枢轴",
+      "phase": "B",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Ink/InkController.cs",
+        "src/InkCanvas.Ink/Manipulation/TwoFingerManipulator.cs",
+        "src/InkCanvas.Core/Ink/MatrixTransformCenter.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "双指缩放/平移/旋转与枢轴（Phase B）"
+    },
+    {
+      "id": "ink-layered-window",
+      "name": "透明分层窗口与 WM_POINTER 输入",
+      "phase": "B",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Platform/Windows/LayeredInkWindow.cs",
+        "src/InkCanvas.Platform/Interop/NativeMethods.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "无三方悬浮窗权限；Phase B 改为主窗内输入路由（adapted）。"
+    },
+    {
+      "id": "ink-overlay-render",
+      "name": "覆盖层预乘 alpha 渲染与局部回读",
+      "phase": "B",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Ink/Rendering/OverlayInkPresenter.cs",
+        "src/InkCanvas.Ink/Rendering/StrokeRenderer.cs",
+        "src/InkCanvas.Ink/Rendering/InkSceneRenderer.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "跨应用覆盖层不可行（TYPE_FLOAT 需 system_basic）；Phase B 改为应用内 Canvas 渲染（adapted）。"
+    },
+    {
+      "id": "ink-slide-flip",
+      "name": "放映手指翻页（>60px）",
+      "phase": "B",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Ink/InkController.cs",
+        "src/InkCanvas.App/Services/ShellController.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "放映手指翻页（>60px）（Phase B）"
+    },
+    {
+      "id": "platform-desktop-acrylic",
+      "name": "DesktopAcrylic 半透背景",
+      "phase": "C",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.App/Services/ChromeBackdrop.cs",
+        "src/InkCanvas.App/Views/FloatingBarWindow.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "backdropBlur 半透 + 不透明回退（adapted）。"
+    },
+    {
+      "id": "ppt-com-interop",
+      "name": "PowerPoint/WPS COM 晚绑定适配",
+      "phase": "C",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Features/Ppt/PptInteropService.cs",
+        "src/InkCanvas.Features/Ppt/PptModels.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "无 COM/进程互操作；Phase C/E 改为 PDF 课件模式（adapted）。"
+    },
+    {
+      "id": "system-autostart",
+      "name": "HKCU 开机自启",
+      "phase": "C",
+      "status": "not-ported",
+      "csharp": [
+        "src/InkCanvas.Platform/System/SystemServices.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "HarmonyOS 无三方自启 API；not-ported。替代：用户手动快捷方式/服务卡片。"
+    },
+    {
+      "id": "system-edge-gesture",
+      "name": "Windows 边缘手势抑制",
+      "phase": "C",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Platform/System/EdgeGestureService.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "无边缘手势抑制 API；改为沉浸式说明（adapted）。"
+    },
+    {
+      "id": "system-filelog",
+      "name": "文件日志（Log.txt）",
+      "phase": "C",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Core/Diagnostics/FileLog.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "文件日志（Log.txt）（Phase C）"
+    },
+    {
+      "id": "system-foreground-autofold",
+      "name": "前台进程识别与自动收纳",
+      "phase": "C",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Platform/System/SystemServices.cs",
+        "src/InkCanvas.App/Services/ShellController.cs",
+        "src/InkCanvas.App/Views/SettingsWindow.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "无法读前台应用；移除自动收纳设置（adapted）。"
+    },
+    {
+      "id": "system-update",
+      "name": "GitHub 自动更新（检查/下载/安装）",
+      "phase": "C",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Core/Update/ReleaseFeed.cs",
+        "src/InkCanvas.Core/Update/UpdatePolicy.cs",
+        "src/InkCanvas.Core/Versioning/AppVersion.cs",
+        "src/InkCanvas.Features/Update/UpdateService.cs",
+        "src/InkCanvas.App/Services/UpdateCoordinator.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "无 HAP 自更新；改为版本提示/应用市场说明（adapted/Deferred）。"
+    },
+    {
+      "id": "tool-launchers",
+      "name": "EasiCamera/Desmos 启动器",
+      "phase": "C",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Platform/System/SoftwareLauncher.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "EasiCamera/Desmos 启动器（Phase C）"
+    },
+    {
+      "id": "tool-screenshot",
+      "name": "GDI 截图与 PNG 编码",
+      "phase": "C",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Features/Tools/Tools.cs",
+        "src/InkCanvas.App/Services/ShellController.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "无跨应用截图 API；改为应用内快照（adapted）。"
+    },
+    {
+      "id": "ui-hotkeys",
+      "name": "全局热键（WPF 键位）",
+      "phase": "C",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Platform/Input/HotkeyService.cs",
+        "src/InkCanvas.App/Services/OverlayHost.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "无全局热键；改为应用内快捷键（adapted）。"
+    },
+    {
+      "id": "ui-mouse-mode",
+      "name": "鼠标穿透模式与快照",
+      "phase": "C",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.App/Services/ShellController.cs",
+        "src/InkCanvas.App/Services/OverlayHost.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "鼠标穿透模式与快照（Phase C）"
+    },
+    {
+      "id": "ui-selftest",
+      "name": "运行时自检（布局/几何/回读）",
+      "phase": "C",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.App/Diagnostics/SelfTest.cs",
+        "docs/superpowers/evidence/runtime-selftest.json"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "日志/自检改为应用内诊断页与 Node 向量（adapted）。"
+    },
+    {
+      "id": "ui-startup-args",
+      "name": "启动参数与 --shot/--open/--selftest 钩子",
+      "phase": "C",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.App/App.xaml.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "启动参数与 --shot/--open/--selftest 钩子（Phase C）"
+    },
+    {
+      "id": "ui-window-chrome",
+      "name": "无边框/DWM/DPI/拖动/Z 序窗口 chrome",
+      "phase": "C",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.App/Services/WindowChrome.cs",
+        "src/InkCanvas.App/Services/ChromeBackdrop.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "单主窗 + 应用内浮层；无独立置顶窗（adapted）。"
+    },
+    {
+      "id": "ppt-navigation-ui",
+      "name": "四个 PPT 导航/页码面板",
+      "phase": "D",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.App/Views/PptNavigationWindow.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "四个 PPT 导航/页码面板（Phase D）"
+    },
+    {
+      "id": "tool-countdown",
+      "name": "倒计时窗口（圆环/编辑/紧凑/全屏/铃声）",
+      "phase": "D",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.App/Views/CountdownWindow.cs",
+        "src/InkCanvas.Controls/Controls/CountdownRing.cs",
+        "src/InkCanvas.Features/Tools/Tools.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "倒计时窗口（圆环/编辑/紧凑/全屏/铃声）（Phase D）"
+    },
+    {
+      "id": "tool-lottery",
+      "name": "抽奖（名单/替换/滚动/单次模式）",
+      "phase": "D",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.App/Views/LotteryWindow.cs",
+        "src/InkCanvas.Features/Tools/Tools.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "抽奖（名单/替换/滚动/单次模式）（Phase D）"
+    },
+    {
+      "id": "tool-replay-ui",
+      "name": "回放窗口",
+      "phase": "D",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.App/Views/ReplayWindow.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "回放窗口（Phase D）"
+    },
+    {
+      "id": "ui-floating-bar",
+      "name": "WPF 1:1 浮动工具栏/折叠/拖动/弹窗",
+      "phase": "D",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Controls/Controls/FloatingBar.cs",
+        "src/InkCanvas.App/Views/FloatingBarWindow.cs",
+        "src/InkCanvas.App/Views/FoldedBarHandleWindow.cs",
+        "src/InkCanvas.App/Views/BarPanelWindow.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "WPF 1:1 浮动工具栏/折叠/拖动/弹窗（Phase D）"
+    },
+    {
+      "id": "ui-guide-changelog",
+      "name": "操作指南/更新日志窗口",
+      "phase": "D",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.App/Views/InfoWindow.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "操作指南/更新日志窗口（Phase D）"
+    },
+    {
+      "id": "ui-motion",
+      "name": "入场/按压动效",
+      "phase": "D",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Controls/Animation/Motion.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "入场/按压动效（Phase D）"
+    },
+    {
+      "id": "ui-pen-palette",
+      "name": "笔/荧光笔独立调色盘",
+      "phase": "D",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Controls/Controls/PenPalette.cs",
+        "src/InkCanvas.Core/Settings/OriginalMenuCatalog.cs",
+        "src/InkCanvas.App/Views/PickerWindows.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "笔/荧光笔独立调色盘（Phase D）"
+    },
+    {
+      "id": "ui-settings",
+      "name": "440DIP 设置面板与推荐重置",
+      "phase": "D",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.App/Views/SettingsWindow.cs",
+        "src/InkCanvas.Core/Settings/AppSettings.cs",
+        "src/InkCanvas.Core/Settings/OriginalMenuCatalog.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "440DIP 设置面板与推荐重置（Phase D）"
+    },
+    {
+      "id": "ui-shape-picker",
+      "name": "所见即所得图形菜单（24 预览）",
+      "phase": "D",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Controls/Controls/ShapePreview.cs",
+        "src/InkCanvas.App/Views/PickerWindows.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "所见即所得图形菜单（24 预览）（Phase D）"
+    },
+    {
+      "id": "ui-theme-tokens",
+      "name": "主题 token、弹窗色板、主题判定",
+      "phase": "D",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Controls/Themes/Tokens.xaml",
+        "src/InkCanvas.Controls/Theming/PopupBrushes.cs",
+        "src/InkCanvas.Core/Theming/ThemeResolver.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "主题 token、弹窗色板、主题判定（Phase D）"
+    },
+    {
+      "id": "ui-touch-button",
+      "name": "触控图标按钮与 22DIP 图标区",
+      "phase": "D",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Controls/Controls/TouchIconButton.cs",
+        "src/InkCanvas.Controls/Themes/Tokens.xaml"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "触控图标按钮与 22DIP 图标区（Phase D）"
+    },
+    {
+      "id": "ui-yes-no",
+      "name": "450x160 是/否通知窗",
+      "phase": "D",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.App/Views/YesOrNoWindow.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "450x160 是/否通知窗（Phase D）"
+    },
+    {
+      "id": "board-images",
+      "name": "画板图片对象与变换撤销",
+      "phase": "E",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Features/Board/BoardService.cs",
+        "src/InkCanvas.App/Views/BoardWindow.cs",
+        "src/InkCanvas.App/Views/BoardImageLayer.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "画板图片对象与变换撤销（Phase E）"
+    },
+    {
+      "id": "board-persistence",
+      "name": "画板/页 .icink 保存加载",
+      "phase": "E",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Features/Board/BoardService.cs",
+        "src/InkCanvas.Features/Persistence/Stores.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "画板/页 .icink 保存加载（Phase E）"
+    },
+    {
+      "id": "board-service",
+      "name": "99 页画板模型与页导航",
+      "phase": "E",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Features/Board/BoardService.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "99 页画板模型与页导航（Phase E）"
+    },
+    {
+      "id": "board-tools",
+      "name": "画板更多工具与外部启动",
+      "phase": "E",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.App/Views/BoardWindow.cs",
+        "src/InkCanvas.App/Services/ShellController.cs",
+        "src/InkCanvas.Platform/System/SoftwareLauncher.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "画板更多工具与外部启动（Phase E）"
+    },
+    {
+      "id": "board-ui",
+      "name": "画板三浮条/选区面板/手势/纸型",
+      "phase": "E",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.App/Views/BoardWindow.cs",
+        "src/InkCanvas.App/Views/BoardImageLayer.cs",
+        "src/InkCanvas.App/Views/BoardMediaLayer.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "画板三浮条/选区面板/手势/纸型（Phase E）"
+    },
+    {
+      "id": "board-video",
+      "name": "画板视频对象（MediaPlayerElement）",
+      "phase": "E",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Features/Board/BoardService.cs",
+        "src/InkCanvas.App/Views/BoardMediaLayer.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "画板视频对象（MediaPlayerElement）（Phase E）"
+    },
+    {
+      "id": "ppt-file-store",
+      "name": "每演示文稿逐页墨迹存档",
+      "phase": "E",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Features/Ppt/PptInkFileStore.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "每演示文稿逐页墨迹存档（Phase E）"
+    },
+    {
+      "id": "ppt-ink-session",
+      "name": "PPT 墨迹状态机/通知/截图抑制",
+      "phase": "E",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Features/Ppt/PptInkSession.cs",
+        "src/InkCanvas.Features/Ppt/PptModels.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "PPT 墨迹状态机/通知/截图抑制（Phase E）"
+    },
+    {
+      "id": "ppt-shell-integration",
+      "name": "放映模式接线/红笔/退画板/手势门控",
+      "phase": "E",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.App/Services/ShellController.cs",
+        "src/InkCanvas.Controls/Controls/FloatingBar.cs",
+        "src/InkCanvas.Features/Ppt/PptInkSession.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "放映模式接线/红笔/退画板/手势门控（Phase E）"
+    },
+    {
+      "id": "system-app-services",
+      "name": "依赖装配与设置应用",
+      "phase": "E",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.App/Services/AppServices.cs",
+        "src/InkCanvas.App/Services/ShellController.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "依赖装配与设置应用（Phase E）"
+    },
+    {
+      "id": "tool-autosave",
+      "name": "自动快照与过期清理",
+      "phase": "E",
+      "status": "planned",
+      "csharp": [
+        "src/InkCanvas.Features/Persistence/Stores.cs"
+      ],
+      "arkts": [],
+      "vectors": [],
+      "tests": [],
+      "notes": "自动快照与过期清理（Phase E）"
+    }
+  ]
+}

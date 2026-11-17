@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "parity/schemas/settings.schema.json",
+  "title": "Settings.json（WinUI3 兼容）",
+  "description": "字段的权威清单在 Task 3 由 docs/superpowers/research/harmony/06-features.md 抽取，并由 SettingsCodec 的往返黄金向量钉住；本文件在 Task 3 随编解码器补全。",
+  "type": "object",
+  "additionalProperties": true
+}
