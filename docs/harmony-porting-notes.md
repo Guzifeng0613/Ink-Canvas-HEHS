@@ -42,6 +42,13 @@
 - 仍为部分/待补（已在 manifest notes 标注）：弹簧动效与 ConnectedAnimation、更新日志窗口、画板图片变换手势、视频进度保持、系统材质/blur、设置页全量字段、Symbol 图标映射（当前文字兜底）、多断点精细布局。
 - 模拟器/真机验证：本机 Hyper-V 不可用，待具备虚拟化的宿主或真机执行。
 
+## 部署与验证工具（2026-11-18）
+
+- 本机（ECS，无嵌套虚拟化）**已移除模拟器相关文件**：system-image（4.21GB）、Emulator26.0 配置、实例目录、CLI emulator 程序；保留 hvigor/ohpm/SDK/hdc 构建链。
+- 真机安装验证：`tools/device-install.ps1`（安装+启动+截图+hilog）、`tools/device-verify.ps1`（冒烟+崩溃检查+15 项人工清单）。
+- 物理机模拟器部署+联调：SKILL `.claude/skills/harmony-emulator-setup/SKILL.md` + `tools/setup-emulator-host.ps1`（Hyper-V 检查/镜像/实例/启动/hdc）。
+- 回放可复用帧：ArkTS 已同步 C# `WriteVisibleAt`/`RestorePrefix`（replay-frame 向量）。
+
 ## C# 基线演进同步（2026-11-18 评审修复轮）
 
 会话期间用户 C# 工作树演进，黄金向量暴露并已同步：

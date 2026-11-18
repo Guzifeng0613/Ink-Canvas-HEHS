@@ -1,0 +1,41 @@
+{
+  "id": "replay-frame",
+  "entry": "harmony/core/src/main/ets/replay/InkReplaySession.ts",
+  "cases": [
+    {
+      "id": "reusable-frame",
+      "fn": "replayFrameProbe",
+      "input": [
+        40,
+        10,
+        [
+          0,
+          200,
+          300,
+          100,
+          400
+        ]
+      ],
+      "expected": {
+        "Counts": [
+          [],
+          [
+            20
+          ],
+          [
+            30
+          ],
+          [
+            10
+          ],
+          [
+            40
+          ]
+        ],
+        "PartialReused": true,
+        "SourceUnchanged": true
+      },
+      "tolerance": 0
+    }
+  ]
+}

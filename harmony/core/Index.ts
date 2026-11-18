@@ -59,7 +59,8 @@ export { PalmRejector, OverlayPointerKind, simulatePalm } from './src/main/ets/i
 export type { PalmEvent, PalmOptions, PalmEventResult, PalmSimResult } from './src/main/ets/input/PalmRejector';
 export { ReplayClock, simulateReplayClock } from './src/main/ets/replay/ReplayClock';
 export type { ReplayClockSimResult } from './src/main/ets/replay/ReplayClock';
-export { InkReplaySession, replayVisibleCounts } from './src/main/ets/replay/InkReplaySession';
+export { InkReplaySession, replayVisibleCounts, replayFrameProbe } from './src/main/ets/replay/InkReplaySession';
+export type { ReplayFrameProbeResult } from './src/main/ets/replay/InkReplaySession';
 export type { ReplayVisibleResult } from './src/main/ets/replay/InkReplaySession';
 export { blendOver } from './src/main/ets/imaging/PixelCompositing';
 export { AppTheme, getMainWindowTheme, getBoardTheme } from './src/main/ets/theming/ThemeResolver';

@@ -180,6 +180,17 @@ export class InkStroke {
     }
   }
 
+  restorePrefix(points: InkPoint[], count: number): void {
+    const copy: InkPoint[] = [];
+    const n = Math.min(count, points.length);
+    for (let i = 0; i < n; i++) {
+      copy.push(points[i].clone());
+    }
+    this.points = copy;
+    this.cachedBounds = null;
+    this.objectFrame = null;
+  }
+
   bounds(): Rect {
     if (this.cachedBounds !== null) {
       return this.cachedBounds;
