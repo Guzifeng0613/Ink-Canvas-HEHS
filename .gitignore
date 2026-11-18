@@ -30,3 +30,6 @@ tools/toolchain.local.json
 
 # superpowers execution workspace
 .superpowers/
+
+# generated per-machine HarmonyOS env
+tools/harmony-env.ps1
