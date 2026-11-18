@@ -26,10 +26,18 @@
 - 覆盖率（Phase A 范围）：14/14。
 - 独立评审修复轮：1 Critical（ObjectFrame/画板 HighlighterAlpha）+ 7 Important（bounds/setter、面积擦与文档命中、99 页上限、manifest/schema 收口、checker 假绿）已修复并回归。
 
+### 模拟器环境（2026-11-18）
+
+- 镜像与实例已就绪：API 26 平板镜像下载成功；实例 `InkPad26`（E:\harmony-cache\emu-instances，MatePad Pro 13）。
+- **启动失败**：`ErrorCode 00801001 未开启 Hyper-V`。宿主 `systeminfo` 显示 hypervisor 存在但 Windows 可选功能不可用（`Get-WindowsOptionalFeature: 没有注册类`），本机无法启用 Hyper-V/嵌套虚拟化。
+- 结论：本机**无法进行模拟器运行验证**；L1 向量与 L2 构建继续为准，模拟器/真机验证待具备虚拟化的宿主执行。
+- HAP 安装另需签名（OpenHarmony 调试证书材料已在 SDK `toolchains/lib`，待模拟器可用时配置）。
+
 ### 仍需后续阶段（B–G）
 
-InkController 运行时与渲染、platform 兼容层、controls/UI、画板/课件/计时/抽奖/回放界面、入口外壳、
-manifest 其余 42 个单元、api-matrix 全量、真机验证。
+- 已完成：platform compat/输入归一化/双层 Canvas 渲染、controls token/浮条/调色盘/图形菜单、entry 主页面壳。
+- 进行中：InkController 状态机（B2/B3）。
+- 待完成：画板/课件/计时/抽奖/回放、设置/指南、入口模式机与多形态、manifest 其余单元、api-matrix 全量、模拟器/真机验证。
 
 ## 与 WinUI3 基线的已知差异（设计决定）
 
