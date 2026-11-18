@@ -56,6 +56,7 @@ export { MatrixTransformCenterPointOptions, resolvePivot } from './src/main/ets/
 export { TouchIntent, TouchDecision, measureContactWidth, boundsWidth, classifyContact } from './src/main/ets/input/TouchContactClassifier';
 export type { AdvancedTouchInput, TouchClassifyInput } from './src/main/ets/input/TouchContactClassifier';
 export { PalmRejector, OverlayPointerKind, simulatePalm } from './src/main/ets/input/PalmRejector';
+export { calibrationMultiplier } from './src/main/ets/input/TouchCalibration';
 export type { PalmEvent, PalmOptions, PalmEventResult, PalmSimResult } from './src/main/ets/input/PalmRejector';
 export { ReplayClock, simulateReplayClock } from './src/main/ets/replay/ReplayClock';
 export type { ReplayClockSimResult } from './src/main/ets/replay/ReplayClock';
@@ -63,6 +64,8 @@ export { InkReplaySession, replayVisibleCounts, replayFrameProbe } from './src/m
 export type { ReplayFrameProbeResult } from './src/main/ets/replay/InkReplaySession';
 export type { ReplayVisibleResult } from './src/main/ets/replay/InkReplaySession';
 export { blendOver } from './src/main/ets/imaging/PixelCompositing';
+export { compressTargetSize } from './src/main/ets/imaging/CompressMath';
+export type { CompressTarget } from './src/main/ets/imaging/CompressMath';
 export { AppTheme, getMainWindowTheme, getBoardTheme } from './src/main/ets/theming/ThemeResolver';
 export { AppVersion, parseVersion, compareVersions } from './src/main/ets/versioning/AppVersion';
 export type { VersionParseSummary } from './src/main/ets/versioning/AppVersion';

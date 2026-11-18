@@ -39,10 +39,11 @@
 - 已完成：InkController 状态机/手势/选区（B2/B3）并接入 entry 触摸输入；画板分页/元素变换/保存语义（E1）。
 - 已完成：课件(PDF)/计时/抽奖/回放、设置面板/指南/是否窗、画板模式（分页/背景/插图/视频/保存打开）、应用内快捷键/沉浸式/Desmos/更新提示、manifest 56 项收口（98.21%）、api-matrix 补全。
 - 覆盖率：**55/56 = 98.21%**（32 ported + 23 adapted + 1 not-ported=开机自启）。
-- 仍为部分/待补（已在 manifest notes 标注）：画板三浮条与 PPT 四导航面板的简化形态、多断点精细布局、视频切换首帧（待真机）；WPS 响应/PiP 空 surface/市场更新弹框均待真机核对。
+- 仍为部分/待补：仅剩平台不可行项（跨应用批注/全局热键/鼠标穿透/前台识别自动收纳/进程查杀/边缘手势抑制/希沃视频展台/PPT 放映控制待 WPS 开放）+ 开机自启（跳过）；其余功能子缺口已补齐。运行时行为（WPS 响应/PiP 空 surface/市场弹框/弹簧曲线/matrix4/压感/SymbolGlyph/视频首帧）待真机核对。
 - 已补齐（2026-11-18 缺口轮）：设置全量 88 字段、更新日志窗口、系统材质/blur（API26 门控）、画板图片 matrix4 精确变换、视频进度保持/续播、SymbolGlyph 46 项映射（文字兜底）、浮层/浮条动效。
 - 已补齐（2026-11-18 缺口轮 2）：倒计时圆环进度/紧凑/全屏/结束提示音（TimerDownNotice.wav）、抽奖滚动闪烁/替换名单（old-->new）/单次模式/多人抽选/分组输出（LotteryRoll 向量）、画板图片拖拽手势（Select/Pan 命中接管 + BoardElementHistory 单撤销单元，向量）、动效升级弹簧曲线 curves.springMotion + 共享元素 geometryTransition。弹窗界面按 ArkTS 设计特色差异化（用户授权）。
 - 已补齐（2026-11-18 缺口轮 3，平台对接调研后落地）：PPT 放映→WPS 鸿蒙版（WpsInterop：文件打开 Want + UTD + FLAG_AUTH_READ，手机/Pad 包自适应，16000019 回退引导安装；无公开放映 intent，放映控制待 WPS 开放）；自更新→市场更新（MarketUpdate：updateManager.checkAppUpdate/showUpdateDialog + AppGallery appdetail 详情页）；顶层置顶→倒计时画中画悬浮窗（CountdownPiP：PiPWindow typeNode + customUIController 圆环数字，三方免权限，系统播放/暂停复用为暂停/继续，退桌面自动拉起）。调研依据 docs/superpowers/research/harmony/14/15。
+- 已补齐（2026-11-18 缺口轮 4，代码缺口+布局精细+基线功能 ArkTS 实现）：上传压缩至 1080P（CompressMath 向量+ImageCompress）、画板 UI 缩放、手指模式切换按钮、退出按钮+二次确认（terminateSelf）、鼠标模式自动清屏、自动开关两指缩放、调色盘笔尖模式切换（PenNib 圆/椭圆45°）、画笔光标（跟随指针指示环）、触摸校准垫（TouchCalibration 向量+采集面板）、课件选择时墨迹隐藏开关；布局精细化：画板三独立浮条（页面/背景/文件）、PPT 四导航面板（底部+侧边翻页/页码）、断点感知面板宽度（手机 360/平板 440）。原「与基线一致」缺项按用户要求以 ArkTS 实现推进。
 - 模拟器/真机验证：本机 Hyper-V 不可用，待具备虚拟化的宿主或真机执行。
 
 ## 部署与验证工具（2026-11-18）

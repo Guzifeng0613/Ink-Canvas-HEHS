@@ -29,6 +29,8 @@ export struct PenPalette {
   @Prop currentPacked: number = 0xFF000000;
   @Prop uiScale: number = 1;
   @Prop materialBlur: boolean = false;
+  @Prop showNibToggler: boolean = false;
+  @Prop penNib: number = 0;
   onColor: (packed: number) => void = (packed: number) => {
     void packed;
   };
@@ -42,6 +44,9 @@ export struct PenPalette {
     void kind;
   };
   onToggleScheme: () => void = () => {
+  };
+  onNib: (nib: number) => void = (nib: number) => {
+    void nib;
   };
   onClose: () => void = () => {
   };
@@ -69,6 +74,9 @@ export struct PenPalette {
         if (!this.highlighter) {
           this.TaperRow()
           this.WidthRow()
+          if (this.showNibToggler) {
+            this.NibRow()
+          }
           this.ColorGrid()
         } else {
           this.AlphaRow()
@@ -87,6 +95,28 @@ export struct PenPalette {
     .backgroundBlurStyle(this.materialBlur ? BlurStyle.Thin : BlurStyle.NONE)
     .border({ width: 1, color: this.tokens().floatBarBorder })
     .borderRadius(5 * this.uiScale)
+  }
+
+  // 笔尖模式切换（圆/椭圆45°），由设置 isEnableDisPlayNibModeToggler 控制显示。
+  @Builder
+  NibRow() {
+    Row({ space: 8 * this.uiScale }) {
+      Text('笔尖')
+        .fontSize(12 * this.uiScale)
+        .fontColor(this.tokens().textSecondary)
+      ForEach([0, 1], (nib: number) => {
+        Text(nib === 0 ? '圆形' : '椭圆45°')
+          .fontSize(12 * this.uiScale)
+          .fontColor(this.penNib === nib ? Color.White : this.tokens().textPrimary)
+          .backgroundColor(this.penNib === nib ? '#FF0067C0' : this.tokens().surfaceAlt)
+          .padding({ left: 10 * this.uiScale, right: 10 * this.uiScale, top: 4 * this.uiScale, bottom: 4 * this.uiScale })
+          .borderRadius(4 * this.uiScale)
+          .onClick(() => {
+            this.onNib(nib);
+          })
+      }, (nib: number) => nib.toString())
+    }
+    .width('100%')
   }
 
   @Builder

@@ -608,7 +608,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "四导航面板简化为课件底部导航（上一页/页码/下一页）。"
+      "notes": "四导航面板：底部翻页/页码 + 侧边翻页面板/侧边页码（isShowSidePPTNavigationPanel/isShowPPTNavigationSides）均已接；侧边为竖排简化形态。"
     },
     {
       "id": "tool-countdown",
@@ -829,11 +829,13 @@
       "arkts": [
         "harmony/entry/src/main/ets/pages/Index.ets",
         "harmony/features/src/main/ets/board/BoardDocument.ts",
-        "harmony/features/src/main/ets/board/BoardElementHistory.ts"
+        "harmony/features/src/main/ets/board/BoardElementHistory.ts",
+        "harmony/core/src/main/ets/imaging/CompressMath.ts",
+        "harmony/platform/src/main/ets/media/ImageCompress.ts"
       ],
       "vectors": [],
       "tests": [],
-      "notes": "插入/渲染/缓存/释放/matrix4 精确变换/拖拽手势（Select/Pan 命中接管，单页内撤销单元 BoardElementHistory）已接；matrix4 渲染需真机核对。"
+      "notes": "插入/渲染/缓存/释放/matrix4 精确变换/拖拽手势（单页内撤销单元）/上传压缩至 1080P（CompressMath 向量 + ImageCompress）已接；matrix4 渲染需真机核对。"
     },
     {
       "id": "board-persistence",
@@ -899,7 +901,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "三浮条简化为左上页面/背景/文件面板；工具复用主浮条。"
+      "notes": "三浮条（页面/背景/文件独立浮条）+ 画板 UI 缩放（enableViewboxBlackBoardScaleTransform）+ 选区/手势/纸型已接；左上定位，形态按 ArkTS 差异化。"
     },
     {
       "id": "board-video",

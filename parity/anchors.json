@@ -46,6 +46,10 @@
       "csharp": "src/InkCanvas.Core/History/UndoStack.cs"
     },
     {
+      "arkts": "harmony/core/src/main/ets/imaging/CompressMath.ts",
+      "csharp": "src/InkCanvas.Features/Board/BoardService.cs"
+    },
+    {
       "arkts": "harmony/core/src/main/ets/imaging/PixelCompositing.ts",
       "csharp": "src/InkCanvas.Core/Imaging/PixelCompositing.cs"
     },
@@ -92,6 +96,10 @@
     {
       "arkts": "harmony/core/src/main/ets/input/PalmRejector.ts",
       "csharp": "src/InkCanvas.Platform/Input/PalmRejector.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/input/TouchCalibration.ts",
+      "csharp": "src/InkCanvas.App/Views/SettingsWindow.cs"
     },
     {
       "arkts": "harmony/core/src/main/ets/input/TouchContactClassifier.ts",
@@ -232,6 +240,10 @@
     {
       "arkts": "harmony/platform/src/main/ets/layout/WindowLayout.ts",
       "csharp": "src/InkCanvas.App/Services/WindowChrome.cs"
+    },
+    {
+      "arkts": "harmony/platform/src/main/ets/media/ImageCompress.ts",
+      "csharp": "src/InkCanvas.Features/Board/BoardService.cs"
     },
     {
       "arkts": "harmony/platform/src/main/ets/media/SoundService.ts",

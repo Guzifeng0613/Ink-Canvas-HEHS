@@ -13,6 +13,8 @@ import {
   systemMotionReduced,
   setLogEnabled,
   playCountdownFinish,
+  compressImageBuffer,
+  COMPRESS_MAX_DIM,
   CountdownPiPService,
   CountdownPiPParams,
   openInWps,
@@ -22,7 +24,9 @@ import {
   WPS_PAD_BUNDLE,
   WPS_PHONE_BUNDLE,
   isTablet,
-  is2in1
+  is2in1,
+  breakpointForWidth,
+  isFullLayout
 } from '@inkcanvas/platform';
 import {
   FloatingBar,
@@ -47,7 +51,7 @@ import {
   Invalidation
 } from '@inkcanvas/ink';
 import type { SceneStrokeInput, SceneSelectionInput } from '@inkcanvas/ink';
-import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings, matrixToArray, transformPointByMatrix } from '@inkcanvas/core';
+import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings, matrixToArray, transformPointByMatrix, PenNib, calibrationMultiplier } from '@inkcanvas/core';
 import type { ShapeKind, StrokePointInput, AppSettings, AdvancedTouchInput, Matrix3x2 } from '@inkcanvas/core';
 import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground, renderMatrix4Values, applyReplaceRules, lotteryDisplayName, lotteryFlicker, lotteryDrawUnique, lotterySplitGroups, appendTransform, transformedBounds, snapshotGeometry, recordTransform } from '@inkcanvas/features';
 import type { CoursewarePageFile } from '@inkcanvas/features';
@@ -209,6 +213,13 @@ struct Index {
   private dragStartX: number = 0;
   private dragStartY: number = 0;
   private dragPointerId: number = -1;
+  // 画笔光标（isShowCursor）：跟随指针的指示环。
+  @State cursorX: number = 0;
+  @State cursorY: number = 0;
+  @State cursorVisible: boolean = false;
+  // 触摸校准垫：采集接触宽度样本。
+  @State calibrationOpen: boolean = false;
+  @State calibrationSamples: number[] = [];
 
   aboutToDisappear(): void {
     this.stopCountdownTimer();
@@ -290,6 +301,11 @@ struct Index {
 
   private isMotionReduced(): boolean {
     return this.reduceMotion || this.systemReduceMotion;
+  }
+
+  // 断点布局：平板/2in1（md+）走完整布局，手机初步适配（更窄面板）。
+  private fullLayout(): boolean {
+    return isFullLayout(breakpointForWidth(this.windowWidth));
   }
 
   private rebuildAutoSave(): void {
@@ -458,6 +474,56 @@ struct Index {
         this.handleTouch(event);
       })
 
+      if (this.cursorVisible && this.settings.canvas.isShowCursor) {
+        Circle()
+          .width(this.cursorDiameter())
+          .height(this.cursorDiameter())
+          .fill(Color.Transparent)
+          .stroke(this.dark ? Color.White : Color.Black)
+          .strokeWidth(1)
+          .position({ x: this.cursorX - this.cursorDiameter() / 2, y: this.cursorY - this.cursorDiameter() / 2 })
+          .hitTestBehavior(HitTestMode.None)
+      }
+
+      if (this.calibrationOpen) {
+        Stack({ alignContent: Alignment.Center }) {
+          Column({ space: 12 }) {
+            Text('触摸大小校准').fontSize(18).fontColor(this.dark ? Color.White : Color.Black)
+            Text('用手指在下方区域多次触摸，采集接触宽度后应用乘数。').fontSize(12).fontColor(this.dark ? '#A8FFFFFF' : '#9E000000')
+            Stack()
+              .width(240).height(150)
+              .backgroundColor('#220067C0')
+              .border({ width: 1, color: '#FF0067C0' })
+              .borderRadius(8)
+              .onTouch((event: TouchEvent) => {
+                if (event.type === TouchType.Down) {
+                  const t = event.changedTouches[0];
+                  const w = t.width === undefined ? 0 : t.width;
+                  if (w > 0) {
+                    this.calibrationSamples.push(w);
+                  }
+                }
+              })
+            Text('已采集 ' + this.calibrationSamples.length + ' 次').fontSize(13).fontColor(this.dark ? Color.White : Color.Black)
+            Row({ space: 10 }) {
+              Text('应用校准').fontSize(14).fontColor(Color.White).padding({ left: 16, right: 16, top: 8, bottom: 8 }).backgroundColor('#FF0067C0').borderRadius(6)
+                .onClick(() => { this.applyCalibration(); })
+              Text('重置').fontSize(14).fontColor(Color.White).padding(8).backgroundColor('#FF888888').borderRadius(6)
+                .onClick(() => { this.calibrationSamples = []; })
+              Text('关闭').fontSize(14).fontColor(Color.White).padding(8).backgroundColor('#FF666666').borderRadius(6)
+                .onClick(() => { this.calibrationOpen = false; this.calibrationSamples = []; })
+            }
+          }
+          .padding(24)
+          .backgroundColor(panelBackground(this.dark, this.blurEnabled))
+          .backgroundBlurStyle(panelBlurStyle(this.blurEnabled))
+          .borderRadius(16)
+          .transition(panelTransition(this.isMotionReduced()))
+        }
+        .width('100%').height('100%')
+        .hitTestBehavior(HitTestMode.Transparent)
+      }
+
       if (this.mode === 'courseware' && this.settings.behavior.isShowBottomPPTNavigationPanel) {
         Stack({ alignContent: Alignment.Bottom }) {
           Row({ space: 12 }) {
@@ -495,6 +561,27 @@ struct Index {
         .hitTestBehavior(HitTestMode.Transparent)
       }
 
+      if (this.mode === 'courseware' && this.settings.behavior.isShowSidePPTNavigationPanel) {
+        Stack({ alignContent: Alignment.Start }) {
+          Column({ space: 8 }) {
+            Text('▲')
+              .fontSize(20).fontColor(Color.White).padding(10).backgroundColor('#99000000').borderRadius(6)
+              .onClick(() => { this.showCoursewarePage(this.coursewareIndex - 1); })
+            if (this.settings.behavior.isShowPPTNavigationSides) {
+              Text((this.coursewareIndex + 1) + '/' + this.coursewareCount)
+                .fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(6)
+            }
+            Text('▼')
+              .fontSize(20).fontColor(Color.White).padding(10).backgroundColor('#99000000').borderRadius(6)
+              .onClick(() => { this.showCoursewarePage(this.coursewareIndex + 1); })
+          }
+          .margin({ left: 12 })
+        }
+        .width('100%')
+        .height('100%')
+        .hitTestBehavior(HitTestMode.Transparent)
+      }
+
       if (this.paletteOpen) {
         Stack({ alignContent: Alignment.Bottom }) {
           PenPalette({
@@ -507,6 +594,8 @@ struct Index {
             currentPacked: this.currentPacked,
             uiScale: this.settings.appearance.enableViewboxFloatingBarScaleTransform / 100,
             materialBlur: this.blurEnabled,
+            showNibToggler: this.settings.appearance.isEnableDisPlayNibModeToggler,
+            penNib: this.settings.canvas.penNib,
             onColor: (packed: number) => {
               this.currentPacked = packed;
               this.controller.CurrentAttributes.Color = InkColor.fromPackedArgb(packed);
@@ -530,6 +619,11 @@ struct Index {
             onToggleScheme: () => {
               this.dark = !this.dark;
               this.settings.appearance.theme = this.dark ? 2 : 1;
+              this.persistSettings();
+            },
+            onNib: (nib: number) => {
+              this.settings.canvas.penNib = nib;
+              this.controller.CurrentAttributes.Nib = nib === 1 ? PenNib.Ellipse45 : PenNib.Round;
               this.persistSettings();
             },
             onClose: () => {
@@ -785,7 +879,7 @@ struct Index {
             .alignItems(HorizontalAlign.Start)
           }
           .width('92%')
-          .constraintSize({ maxWidth: 440 })
+          .constraintSize({ maxWidth: this.fullLayout() ? 440 : 360 })
           .height('82%')
           .constraintSize({ maxHeight: 620 })
           .backgroundColor(panelBackground(this.dark, this.blurEnabled))
@@ -802,9 +896,10 @@ struct Index {
 
       if (this.boardOpen) {
         Stack({ alignContent: Alignment.TopStart }) {
-          Column({ space: 6 }) {
-            Text('画板 ' + (this.boardIndex + 1) + '/' + this.boardPageCount).fontSize(14).fontColor(Color.White)
+          Column({ space: 8 }) {
+            // 页面浮条
             Row({ space: 6 }) {
+              Text('画板 ' + (this.boardIndex + 1) + '/' + this.boardPageCount).fontSize(13).fontColor(Color.White)
               Text('上一页').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
                 .onClick(() => { this.boardNavigate(-1); })
               Text('下一页').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
@@ -814,6 +909,8 @@ struct Index {
               Text('删除').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
                 .onClick(() => { this.board.removePage(this.boardIndex); this.syncBoard(); })
             }
+            .padding(8).backgroundColor('#CC1A1A1A').borderRadius(8)
+            // 背景浮条
             Row({ space: 6 }) {
               Text('黑').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
                 .onClick(() => { this.board.Background = BoardBackground.Black; this.boardBackground = 0; })
@@ -824,6 +921,8 @@ struct Index {
               Text('横线').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
                 .onClick(() => { this.board.Background = BoardBackground.Lined; this.boardBackground = 3; this.drawBoardGrid(); })
             }
+            .padding(8).backgroundColor('#CC1A1A1A').borderRadius(8)
+            // 文件浮条
             Row({ space: 6 }) {
               Text('插图').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
                 .onClick(() => { this.insertBoardImage(); })
@@ -834,9 +933,11 @@ struct Index {
               Text('退出画板').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
                 .onClick(() => { this.exitBoard(); })
             }
+            .padding(8).backgroundColor('#CC1A1A1A').borderRadius(8)
           }
-          .padding(10)
           .margin({ left: 12, top: 12 })
+          .alignItems(HorizontalAlign.Start)
+          .scale({ x: this.settings.appearance.enableViewboxBlackBoardScaleTransform / 100, y: this.settings.appearance.enableViewboxBlackBoardScaleTransform / 100 })
         }
         .width('100%').height('100%')
         .hitTestBehavior(HitTestMode.Transparent)
@@ -922,7 +1023,7 @@ struct Index {
             .alignItems(HorizontalAlign.Start)
           }
           .width('92%')
-          .constraintSize({ maxWidth: 440 })
+          .constraintSize({ maxWidth: this.fullLayout() ? 440 : 360 })
           .height('76%')
           .constraintSize({ maxHeight: 560 })
           .backgroundColor(panelBackground(this.dark, this.blurEnabled))
@@ -976,6 +1077,8 @@ struct Index {
           showEraserButton: this.settings.appearance.isShowEraserButton,
           showHideControlButton: this.settings.appearance.isShowHideControlButton,
           showLRSwitchButton: this.settings.appearance.isShowLRSwitchButton,
+          showExitButton: this.settings.appearance.isShowExitButton,
+          showFingerToggle: this.settings.appearance.isShowModeFingerToggleSwitch,
           colorfulBackground: this.settings.appearance.isColorfulViewboxFloatingBar,
           transparentButtons: this.settings.appearance.isTransparentButtonBackground,
           onAction: (id: string) => {
@@ -1169,6 +1272,27 @@ struct Index {
   }
 
   @Builder
+  SettingButton(label: string, buttonLabel: string, onTap: () => void) {
+    Row() {
+      Text(label)
+        .fontSize(13)
+        .fontColor(this.dark ? Color.White : Color.Black)
+        .layoutWeight(1)
+      Text(buttonLabel)
+        .fontSize(13)
+        .fontColor(Color.White)
+        .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+        .backgroundColor('#FF0067C0')
+        .borderRadius(4)
+        .onClick(() => {
+          onTap();
+        })
+    }
+    .width('100%')
+    .constraintSize({ minHeight: 40 })
+  }
+
+  @Builder
   SettingInfo(note: string) {
     Text(note)
       .fontSize(11)
@@ -1202,8 +1326,17 @@ struct Index {
   @Builder
   SettingsCanvas() {
     this.SettingSection('画板选项')
-    this.SettingDeferred('上传图片压缩至 1080P', '图片压缩尚未接入。')
-    this.SettingDeferred('显示画笔光标', '画笔光标行为尚未接入（与基线一致）。')
+    this.SettingToggle('上传图片压缩至 1080P', this.settings.canvas.isCompressPicturesUploaded, (v: boolean) => {
+      this.settings.canvas.isCompressPicturesUploaded = v;
+      this.touchSettings();
+    })
+    this.SettingToggle('显示画笔光标', this.settings.canvas.isShowCursor, (v: boolean) => {
+      this.settings.canvas.isShowCursor = v;
+      if (!v) {
+        this.cursorVisible = false;
+      }
+      this.touchSettings();
+    })
     this.SettingOptions('橡皮大小', ['小', '较小', '中（默认）', '较大', '大'],
       this.settings.canvas.eraserSize, (i: number) => {
         this.settings.canvas.eraserSize = i;
@@ -1265,7 +1398,10 @@ struct Index {
         this.controller.TransformCenterOption = i;
         this.touchSettings();
       })
-    this.SettingDeferred('自动开关两指缩放功能', '离开/进入画板时自动切换手势尚未接入（与基线一致）。')
+    this.SettingToggle('自动开关两指缩放功能', this.settings.gesture.AutoSwitchTwoFingerGesture, (v: boolean) => {
+      this.settings.gesture.AutoSwitchTwoFingerGesture = v;
+      this.touchSettings();
+    })
     this.SettingToggle('允许双指旋转选中的墨迹', this.settings.gesture.isEnableTwoFingerRotationOnSelection, (v: boolean) => {
       this.settings.gesture.isEnableTwoFingerRotationOnSelection = v;
       this.controller.GesturesTargetSelection = v;
@@ -1331,13 +1467,18 @@ struct Index {
       this.settings.appearance.enableViewboxFloatingBarScaleTransform = v;
       this.touchSettings();
     })
-    this.SettingDeferred('画板 UI 缩放 (%)',
-      '当前值：' + Math.round(this.settings.appearance.enableViewboxBlackBoardScaleTransform) + '%；画板 UI 缩放尚未接入。')
+    this.SettingSlider('画板 UI 缩放 (%)', this.settings.appearance.enableViewboxBlackBoardScaleTransform, 50, 200, 5, (v: number) => {
+      this.settings.appearance.enableViewboxBlackBoardScaleTransform = v;
+      this.touchSettings();
+    })
     this.SettingToggle('按钮背景透明', this.settings.appearance.isTransparentButtonBackground, (v: boolean) => {
       this.settings.appearance.isTransparentButtonBackground = v;
       this.touchSettings();
     })
-    this.SettingDeferred('显示退出按钮', '退出按钮尚未加入浮条（应用内无退出流程）。')
+    this.SettingToggle('显示退出按钮', this.settings.appearance.isShowExitButton, (v: boolean) => {
+      this.settings.appearance.isShowExitButton = v;
+      this.touchSettings();
+    })
     this.SettingToggle('显示橡皮按钮', this.settings.appearance.isShowEraserButton, (v: boolean) => {
       this.settings.appearance.isShowEraserButton = v;
       this.touchSettings();
@@ -1350,8 +1491,14 @@ struct Index {
       this.settings.appearance.isShowLRSwitchButton = v;
       this.touchSettings();
     })
-    this.SettingDeferred('显示手指模式切换按钮', '手指模式切换按钮尚未加入浮条。')
-    this.SettingDeferred('调色盘显示笔尖模式切换', '笔尖模式切换控件尚未在调色盘中实现（与基线一致）。')
+    this.SettingToggle('显示手指模式切换按钮', this.settings.appearance.isShowModeFingerToggleSwitch, (v: boolean) => {
+      this.settings.appearance.isShowModeFingerToggleSwitch = v;
+      this.touchSettings();
+    })
+    this.SettingToggle('调色盘显示笔尖模式切换', this.settings.appearance.isEnableDisPlayNibModeToggler, (v: boolean) => {
+      this.settings.appearance.isEnableDisPlayNibModeToggler = v;
+      this.touchSettings();
+    })
     this.SettingToggle('减少动效（应用内）', this.reduceMotion, (v: boolean) => {
       this.reduceMotion = v;
       this.persistUiPrefs();
@@ -1373,7 +1520,14 @@ struct Index {
       this.settings.behavior.isShowPPTNavigationBottom = v;
       this.touchSettings();
     })
-    this.SettingDeferred('侧边翻页面板 / 侧边页码', '侧边导航面板尚未实现。')
+    this.SettingToggle('侧边翻页面板', this.settings.behavior.isShowSidePPTNavigationPanel, (v: boolean) => {
+      this.settings.behavior.isShowSidePPTNavigationPanel = v;
+      this.touchSettings();
+    })
+    this.SettingToggle('侧边页码', this.settings.behavior.isShowPPTNavigationSides, (v: boolean) => {
+      this.settings.behavior.isShowPPTNavigationSides = v;
+      this.touchSettings();
+    })
     this.SettingInfo('WPS 支持：工具面板「PPT（WPS）」拉起 WPS 鸿蒙版（手机/Pad 包自适应）；未安装引导应用市场。放映控制待 WPS 官方开放。')
     this.SettingDeferred('进入放映时自动批注', '无放映状态检测。')
     this.SettingDeferred('放映模式双指手势', '放映专属手势门控尚未移植（与基线一致）。')
@@ -1387,7 +1541,12 @@ struct Index {
       this.touchSettings();
     })
     this.SettingDeferred('记忆上次播放位置 / 提示隐藏幻灯片 / 提示自动播放', '无 PPT 状态通知。')
-    this.SettingDeferred('选择时不清除墨迹', '墨迹隐藏/显示控件尚未移植（与基线一致）。')
+    this.SettingToggle('选择时不清除墨迹（课件）', this.settings.behavior.isNoClearStrokeOnSelectWhenInPowerPoint, (v: boolean) => {
+      this.settings.behavior.isNoClearStrokeOnSelectWhenInPowerPoint = v;
+      this.settings.behavior.isShowStrokeOnSelectInPowerPoint = v;
+      this.touchSettings();
+      this.refreshScene();
+    })
     this.SettingToggle('鼠标模式时显示课件墨迹', this.settings.behavior.isShowStrokeOnSelectInPowerPoint, (v: boolean) => {
       this.settings.behavior.isShowStrokeOnSelectInPowerPoint = v;
       this.touchSettings();
@@ -1409,7 +1568,11 @@ struct Index {
       this.applySettings();
       this.touchSettings();
     })
-    this.SettingDeferred('触摸大小倍数校准', '原校准垫尚未移植（与基线一致）。')
+    this.SettingButton('触摸大小倍数校准', '打开校准垫', () => {
+      this.settingsOpen = false;
+      this.calibrationSamples = [];
+      this.calibrationOpen = true;
+    })
     this.SettingSlider('笔尖模式 BoundsWidth', this.settings.advanced.nibModeBoundsWidth, 1, 50, 1, (v: number) => {
       this.settings.advanced.nibModeBoundsWidth = v;
       this.applySettings();
@@ -1450,7 +1613,10 @@ struct Index {
       setLogEnabled(v);
       this.touchSettings();
     })
-    this.SettingDeferred('关闭软件时二次弹窗确认', '退出确认流程尚未接入（与基线一致）。')
+    this.SettingToggle('关闭软件时二次弹窗确认', this.settings.advanced.isSecondConfimeWhenShutdownApp, (v: boolean) => {
+      this.settings.advanced.isSecondConfimeWhenShutdownApp = v;
+      this.touchSettings();
+    })
     this.SettingDeferred('阻止系统边缘手势', '无边缘手势抑制 API；沉浸式全屏下系统手势由系统决定。')
     this.SettingInfo('特殊屏幕与触摸参数按原 WPF 算法移植；请在实际触控屏与压感笔上复核（需真机验证）。')
   }
@@ -1485,7 +1651,10 @@ struct Index {
       this.settings.automation.isAutoSaveStrokesAtScreenshot = v;
       this.touchSettings();
     })
-    this.SettingDeferred('切换到鼠标模式后自动清屏', '退出书写模式自动清屏尚未接入（与基线一致）。')
+    this.SettingToggle('切换到鼠标模式后自动清屏', this.settings.automation.isAutoClearWhenExitingWritingMode, (v: boolean) => {
+      this.settings.automation.isAutoClearWhenExitingWritingMode = v;
+      this.touchSettings();
+    })
     this.SettingSlider('自动保存所需最少墨迹数（0 不限制）', this.settings.automation.minimumAutomationStrokeNumber, 0, 10, 1, (v: number) => {
       this.settings.automation.minimumAutomationStrokeNumber = Math.round(v);
       this.touchSettings();
@@ -1737,9 +1906,12 @@ struct Index {
     }
     const file = fileIo.openSync(path, fileIo.OpenMode.READ_ONLY);
     const stat = fileIo.statSync(file.fd);
-    const buffer = new ArrayBuffer(stat.size);
+    let buffer = new ArrayBuffer(stat.size);
     fileIo.readSync(file.fd, buffer);
     fileIo.closeSync(file);
+    if (this.settings.canvas.isCompressPicturesUploaded) {
+      buffer = await compressImageBuffer(buffer, COMPRESS_MAX_DIM);
+    }
     const helper = new util.Base64Helper();
     const encoded = helper.encodeSync(new Uint8Array(buffer));
     let data = '';
@@ -1803,6 +1975,10 @@ struct Index {
     this.controller.BindDocument(this.board.Current.Document);
     this.boardOpen = true;
     this.mode = 'board';
+    // 自动开关两指缩放：进入画板临时启用两指缩放（离开恢复设置值）。
+    if (this.settings.gesture.AutoSwitchTwoFingerGesture) {
+      this.controller.ConfigureGestures(true, this.settings.gesture.isEnableTwoFingerTranslate, this.settings.gesture.isEnableTwoFingerRotation);
+    }
     this.syncBoard();
     this.refreshScene();
   }
@@ -1812,7 +1988,76 @@ struct Index {
     this.boardOpen = false;
     this.mode = 'annotate';
     this.controller.BindDocument(this.annotateDocument);
+    if (this.settings.gesture.AutoSwitchTwoFingerGesture) {
+      this.applyGestures();
+    }
     this.refreshScene();
+  }
+
+  // 切换到鼠标模式：若启用「退出书写模式自动清屏」且当前在书写且有墨迹，则清空。
+  private enterMouseMode(): void {
+    const wasWriting = this.controller.Tool === InkTool.Pen || this.controller.Tool === InkTool.Highlighter;
+    if (this.settings.automation.isAutoClearWhenExitingWritingMode && wasWriting && this.controller.Document.Count > 0) {
+      if (this.autoSave !== null &&
+        this.controller.Document.Strokes.length >= this.settings.automation.minimumAutomationStrokeNumber) {
+        this.autoSave.saveSnapshot(this.controller.Document.Strokes, 'clear');
+      }
+      this.controller.ClearSelection();
+      this.controller.Clear();
+    }
+    this.controller.Tool = InkTool.Pan;
+    this.selectedId = 'mouse';
+    this.paletteOpen = false;
+    this.shapeOpen = false;
+  }
+
+  // 手指/笔尖模式快速切换（浮条按钮，等价设置「启用笔尖模式」）。
+  private toggleFingerMode(): void {
+    const next = !this.settings.startup.isEnableNibMode;
+    this.settings.startup.isEnableNibMode = next;
+    this.controller.Palm.NibMode = next;
+    this.persistSettings();
+    promptAction.showToast({ message: next ? '笔尖模式' : '手指模式', duration: 1200 });
+  }
+
+  // 退出应用：二次确认（advanced.isSecondConfimeWhenShutdownApp）后 terminateSelf。
+  private requestExit(): void {
+    if (this.settings.advanced.isSecondConfimeWhenShutdownApp && this.pendingYesNo !== 'exit') {
+      this.yesNoMessage = '退出 InkCanvas？';
+      this.pendingYesNo = 'exit';
+      this.yesNoOpen = true;
+      return;
+    }
+    this.pendingYesNo = '';
+    this.terminateApp();
+  }
+
+  private terminateApp(): void {
+    const context = getContext(this) as common.UIAbilityContext;
+    context.terminateSelf().catch((e: Object) => {
+      void e;
+    });
+  }
+
+  // 画笔光标直径：橡皮按擦除半径，书写按笔宽。
+  private cursorDiameter(): number {
+    if (this.controller.Tool === InkTool.Eraser) {
+      return Math.max(8, this.eraserRadiusForSize(this.settings.canvas.eraserSize) * 2);
+    }
+    return Math.max(8, this.controller.CurrentAttributes.BaseWidth * 2);
+  }
+
+  // 应用触摸校准：乘数 = 目标参考宽度 / 平均接触宽度，写入 advanced.touchMultiplier。
+  private applyCalibration(): void {
+    const m = calibrationMultiplier(this.calibrationSamples, this.settings.advanced.nibModeBoundsWidthThresholdValue);
+    this.settings.advanced.touchMultiplier = m;
+    if (this.controller.Palm.Advanced !== null) {
+      this.controller.Palm.Advanced.touchMultiplier = m;
+    }
+    this.persistSettings();
+    this.calibrationOpen = false;
+    this.calibrationSamples = [];
+    promptAction.showToast({ message: '校准乘数 ' + m.toFixed(2), duration: 2000 });
   }
 
   private syncBoard(): void {
@@ -2105,6 +2350,11 @@ struct Index {
         pointerKind(event.source, event.sourceTool),
         timeMs
       );
+      if (this.settings.canvas.isShowCursor) {
+        this.cursorX = touch.x;
+        this.cursorY = touch.y;
+        this.cursorVisible = event.type === TouchType.Down || event.type === TouchType.Move;
+      }
       if (this.routeBoardImageDrag(event.type, touch.id, touch.x, touch.y)) {
         continue;
       }
@@ -2402,10 +2652,11 @@ struct Index {
       this.paletteOpen = false;
       this.shapeOpen = false;
     } else if (id === 'mouse') {
-      this.controller.Tool = InkTool.Pan;
-      this.selectedId = id;
-      this.paletteOpen = false;
-      this.shapeOpen = false;
+      this.enterMouseMode();
+    } else if (id === 'fingerMode') {
+      this.toggleFingerMode();
+    } else if (id === 'exit') {
+      this.requestExit();
     } else if (id === 'clear' || id === 'clearAndMouse') {
       if (this.controller.Document.Count > 0 && this.pendingYesNo !== id) {
         this.yesNoMessage = '清空当前墨迹？';

@@ -22,6 +22,8 @@ export struct FloatingBar {
   @Prop showEraserButton: boolean = true;
   @Prop showHideControlButton: boolean = false;
   @Prop showLRSwitchButton: boolean = false;
+  @Prop showExitButton: boolean = false;
+  @Prop showFingerToggle: boolean = false;
   @Prop colorfulBackground: boolean = false;
   @Prop transparentButtons: boolean = true;
   onAction: (id: string) => void = (id: string) => {
@@ -128,11 +130,45 @@ export struct FloatingBar {
           this.ButtonCell(button)
         }
       }, (button: FloatingBarButton) => button.Id)
+      if (this.showFingerToggle) {
+        this.ExtraCell('fingerMode', '手指', 'hand_tap')
+      }
+      if (this.showExitButton) {
+        this.ExtraCell('exit', '退出', 'xmark')
+      }
     }
     .padding({ left: 3, right: 3, top: 0, bottom: 0 })
     .linearGradient(this.barGradient(this.tokens().surface))
     .borderRadius(this.tokens().buttonRadius)
     .transition(barCollapseTransition(this.reduceMotion))
+  }
+
+  // 目录外的条件按钮（退出/手指模式），不改 19 按钮目录（floating-bar-catalog 向量钉住）。
+  @Builder
+  ExtraCell(id: string, label: string, symbol: string) {
+    Column() {
+      IconGlyph({
+        symbol: symbol,
+        fallback: this.textIconFallback ? label.substring(0, 1) : '',
+        size: 16 * this.uiScale,
+        color: this.tokens().textPrimary,
+        enabled: this.symbolIcons
+      })
+      if (this.showLabels) {
+        Text(label)
+          .fontSize(this.tokens().labelSize * this.uiScale)
+          .fontColor(this.tokens().textPrimary)
+          .margin({ top: -1.389 * this.uiScale })
+      }
+    }
+    .width(Math.max(44, this.tokens().buttonWidth * this.uiScale))
+    .height(Math.max(44, this.tokens().buttonHeight * this.uiScale))
+    .justifyContent(FlexAlign.Center)
+    .borderRadius(this.selectedId === id ? this.tokens().selectedRadius : this.tokens().buttonRadius)
+    .backgroundColor(this.selectedId === id ? this.tokens().floatBarSelected : this.buttonBase())
+    .onClick(() => {
+      this.onAction(id);
+    })
   }
 
   @Builder

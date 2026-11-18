@@ -1,0 +1,41 @@
+{
+  "id": "compress-math",
+  "entry": "harmony/core/src/main/ets/imaging/CompressMath.ts",
+  "cases": [
+    {
+      "id": "compress-landscape",
+      "fn": "compressTargetSize",
+      "input": [2000, 1000, 1080],
+      "expected": { "width": 1080, "height": 540, "scale": 0.54 },
+      "tolerance": 1e-9
+    },
+    {
+      "id": "compress-portrait",
+      "fn": "compressTargetSize",
+      "input": [1000, 2000, 1080],
+      "expected": { "width": 540, "height": 1080, "scale": 0.54 },
+      "tolerance": 1e-9
+    },
+    {
+      "id": "compress-noop-small",
+      "fn": "compressTargetSize",
+      "input": [800, 600, 1080],
+      "expected": { "width": 800, "height": 600, "scale": 1 },
+      "tolerance": 0
+    },
+    {
+      "id": "compress-noop-exact",
+      "fn": "compressTargetSize",
+      "input": [1080, 1080, 1080],
+      "expected": { "width": 1080, "height": 1080, "scale": 1 },
+      "tolerance": 0
+    },
+    {
+      "id": "compress-zero",
+      "fn": "compressTargetSize",
+      "input": [0, 0, 1080],
+      "expected": { "width": 0, "height": 0, "scale": 1 },
+      "tolerance": 0
+    }
+  ]
+}

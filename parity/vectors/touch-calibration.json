@@ -1,0 +1,48 @@
+{
+  "id": "touch-calibration",
+  "entry": "harmony/core/src/main/ets/input/TouchCalibration.ts",
+  "cases": [
+    {
+      "id": "calibrate-basic",
+      "fn": "calibrationMultiplier",
+      "input": [[10, 10, 10], 2.5],
+      "expected": 0.25,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "calibrate-average",
+      "fn": "calibrationMultiplier",
+      "input": [[4, 6], 2.5],
+      "expected": 0.5,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "calibrate-empty",
+      "fn": "calibrationMultiplier",
+      "input": [[], 2.5],
+      "expected": 1,
+      "tolerance": 0
+    },
+    {
+      "id": "calibrate-zero-avg",
+      "fn": "calibrationMultiplier",
+      "input": [[0, 0], 2.5],
+      "expected": 1,
+      "tolerance": 0
+    },
+    {
+      "id": "calibrate-clamp-high",
+      "fn": "calibrationMultiplier",
+      "input": [[0.1], 2.5],
+      "expected": 5,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "calibrate-clamp-low",
+      "fn": "calibrationMultiplier",
+      "input": [[100], 2.5],
+      "expected": 0.1,
+      "tolerance": 1e-9
+    }
+  ]
+}
