@@ -1,0 +1,21 @@
+{
+  "id": "floating-bar-catalog",
+  "entry": "harmony/controls/src/main/ets/FloatingBarCatalog.ts",
+  "cases": [
+    {
+      "id": "catalog-19",
+      "fn": "catalogSummary",
+      "input": [],
+      "expected": {
+        "Count": 19,
+        "DefaultVisibleCount": 17,
+        "Ids": [
+          "mouse", "pen", "highlighter", "clear", "eraserCircle", "eraserStroke",
+          "select", "shapes", "insertImage", "insertVideo", "undo", "redo",
+          "clearAndMouse", "hideControl", "lrSwitch", "board", "tools", "fold", "gesture"
+        ]
+      },
+      "tolerance": 0
+    }
+  ]
+}
