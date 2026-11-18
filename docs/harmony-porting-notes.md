@@ -8,10 +8,10 @@
 
 | 层 | 手段 | 当前结果 |
 |---|---|---|
-| L1 逻辑互认 | C# 生成黄金向量 + Node 运行 ArkTS | **Phase A：339 用例 / 28 个向量文件全部通过** |
+| L1 逻辑互认 | C# 生成黄金向量 + Node 运行 ArkTS | **当前：407 用例 / 39 个向量文件全部通过（Phase A–E1）** |
 | L2 编译 | `hvigorw assembleHap`（26.0.1 Beta1 SDK） | 通过（未签名 debug HAP，73 tasks） |
 | L3 运行/UI | 真机 | **未实机验证**（本机无设备；模拟器不可靠） |
-| L4 基线回归 | `dotnet test`（向量子集） | 28/28 通过；完整 WinUI3 套件未在本轮重跑 |
+| L4 基线回归 | `dotnet test`（向量子集） | 30/30 通过；完整 WinUI3 套件未在本轮重跑 |
 
 ### Phase A 已交付（纯逻辑核心）
 
@@ -36,8 +36,8 @@
 ### 仍需后续阶段（B–G）
 
 - 已完成：platform compat/输入归一化/双层 Canvas 渲染、controls token/浮条/调色盘/图形菜单、entry 主页面壳。
-- 进行中：InkController 状态机（B2/B3）。
-- 待完成：画板/课件/计时/抽奖/回放、设置/指南、入口模式机与多形态、manifest 其余单元、api-matrix 全量、模拟器/真机验证。
+- 已完成：InkController 状态机/手势/选区（B2/B3）并接入 entry 触摸输入；画板分页/元素变换/保存语义（E1）。
+- 待完成：课件(PDF)/计时/抽奖/回放界面、设置/指南、入口模式机与多形态、manifest 其余单元、api-matrix 全量、模拟器/真机验证。
 
 ## 与 WinUI3 基线的已知差异（设计决定）
 
