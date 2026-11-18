@@ -1,0 +1,66 @@
+{
+  "id": "board-document",
+  "entry": "harmony/features/src/main/ets/board/BoardDocument.ts",
+  "cases": [
+    {
+      "id": "board-roundtrip-full",
+      "fn": "boardRoundtrip",
+      "input": [
+        "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"Black\",\"GridSpacing\":40,\"Pages\":[{\"Strokes\":[{\"Color\":4278190080,\"Width\":2.5,\"Highlighter\":false,\"HighlighterAlpha\":96,\"Taper\":1,\"Shape\":false,\"ObjectFrame\":null,\"Points\":[[10,20,0.5,2.5,0],[30,40,0.5,2.5,10]]}],\"Images\":[{\"Id\":\"i1\",\"Name\":\"a.png\",\"Data\":\"iVBORw0KGgo=\",\"ContentType\":\"image/png\",\"Left\":100,\"Top\":100,\"Width\":640,\"Height\":360,\"Transform\":[1,0,0,1,0,0]}],\"Media\":[{\"Id\":\"m1\",\"Name\":\"v.mp4\",\"Data\":\"AAAA\",\"ContentType\":\"video/mp4\",\"Left\":5,\"Top\":6,\"Width\":360,\"Height\":240,\"Transform\":null}]},{\"Strokes\":[],\"Images\":[],\"Media\":[]}]}"
+      ],
+      "expected": {
+        "Pages": 2,
+        "Current": 0,
+        "Background": "Black",
+        "GridSpacing": 40,
+        "CurrentStrokes": 1,
+        "CurrentImages": 1,
+        "CurrentMedia": 1
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "board-roundtrip-icink",
+      "fn": "boardRoundtrip",
+      "input": [
+        "{\"Version\":1,\"Strokes\":[{\"Color\":4278190080,\"Width\":2.5,\"Highlighter\":false,\"HighlighterAlpha\":96,\"Taper\":1,\"Shape\":false,\"ObjectFrame\":null,\"Points\":[[10,20,0.5,2.5,0],[30,40,0.5,2.5,10]]}]}"
+      ],
+      "expected": {
+        "Pages": 1,
+        "Current": 0,
+        "Background": "Black",
+        "GridSpacing": 40,
+        "CurrentStrokes": 1,
+        "CurrentImages": 0,
+        "CurrentMedia": 0
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "savepage-video-only-loses-media",
+      "fn": "boardSavePageProbe",
+      "input": [
+        "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"White\",\"GridSpacing\":30,\"Pages\":[{\"Strokes\":[],\"Images\":[],\"Media\":[{\"Id\":\"m1\",\"Name\":\"v.mp4\",\"Data\":\"AAAA\",\"ContentType\":\"video/mp4\",\"Left\":5,\"Top\":6,\"Width\":360,\"Height\":240,\"Transform\":null}]}]}",
+        0
+      ],
+      "expected": {
+        "IsBoardPack": false,
+        "MediaCount": 0
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "savepage-with-image-keeps-media",
+      "fn": "boardSavePageProbe",
+      "input": [
+        "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"Black\",\"GridSpacing\":40,\"Pages\":[{\"Strokes\":[{\"Color\":4278190080,\"Width\":2.5,\"Highlighter\":false,\"HighlighterAlpha\":96,\"Taper\":1,\"Shape\":false,\"ObjectFrame\":null,\"Points\":[[10,20,0.5,2.5,0],[30,40,0.5,2.5,10]]}],\"Images\":[{\"Id\":\"i1\",\"Name\":\"a.png\",\"Data\":\"iVBORw0KGgo=\",\"ContentType\":\"image/png\",\"Left\":100,\"Top\":100,\"Width\":640,\"Height\":360,\"Transform\":[1,0,0,1,0,0]}],\"Media\":[{\"Id\":\"m1\",\"Name\":\"v.mp4\",\"Data\":\"AAAA\",\"ContentType\":\"video/mp4\",\"Left\":5,\"Top\":6,\"Width\":360,\"Height\":240,\"Transform\":null}]},{\"Strokes\":[],\"Images\":[],\"Media\":[]}]}",
+        0
+      ],
+      "expected": {
+        "IsBoardPack": true,
+        "MediaCount": 1
+      },
+      "tolerance": 0
+    }
+  ]
+}

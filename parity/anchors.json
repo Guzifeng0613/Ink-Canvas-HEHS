@@ -146,6 +146,14 @@
       "csharp": "src/InkCanvas.Core/Versioning/AppVersion.cs"
     },
     {
+      "arkts": "harmony/features/src/main/ets/board/BoardDocument.ts",
+      "csharp": "src/InkCanvas.Features/Board/BoardService.cs"
+    },
+    {
+      "arkts": "harmony/features/src/main/ets/board/BoardElementMath.ts",
+      "csharp": "src/InkCanvas.Features/Board/BoardService.cs"
+    },
+    {
       "arkts": "harmony/ink/src/main/ets/ControllerTypes.ts",
       "csharp": "src/InkCanvas.Platform/Windows/LayeredInkWindow.cs"
     },

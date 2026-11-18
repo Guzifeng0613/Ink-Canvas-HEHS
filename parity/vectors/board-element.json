@@ -1,0 +1,220 @@
+{
+  "id": "board-element",
+  "entry": "harmony/features/src/main/ets/board/BoardElementMath.ts",
+  "cases": [
+    {
+      "id": "read-null",
+      "fn": "readTransformArray",
+      "input": [
+        null
+      ],
+      "expected": [
+        1,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "read-short",
+      "fn": "readTransformArray",
+      "input": [
+        [
+          1,
+          2
+        ]
+      ],
+      "expected": [
+        1,
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "read-valid",
+      "fn": "readTransformArray",
+      "input": [
+        [
+          0.7071067690849304,
+          0.7071067690849304,
+          -0.7071067690849304,
+          0.7071067690849304,
+          0,
+          0
+        ]
+      ],
+      "expected": [
+        0.7071067690849304,
+        0.7071067690849304,
+        -0.7071067690849304,
+        0.7071067690849304,
+        0,
+        0
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "append-rotation-translation",
+      "fn": "appendTransform",
+      "input": [
+        [
+          0.7071067690849304,
+          0.7071067690849304,
+          -0.7071067690849304,
+          0.7071067690849304,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0,
+          1,
+          5,
+          6
+        ]
+      ],
+      "expected": [
+        0.7071067690849304,
+        0.7071067690849304,
+        -0.7071067690849304,
+        0.7071067690849304,
+        5,
+        6
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "same-null-null",
+      "fn": "sameTransform",
+      "input": [
+        null,
+        null
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "same-null-array",
+      "fn": "sameTransform",
+      "input": [
+        null,
+        [
+          1,
+          0,
+          0,
+          1,
+          0,
+          0
+        ]
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "same-equal",
+      "fn": "sameTransform",
+      "input": [
+        [
+          0.7071067690849304,
+          0.7071067690849304,
+          -0.7071067690849304,
+          0.7071067690849304,
+          0,
+          0
+        ],
+        [
+          0.7071067690849304,
+          0.7071067690849304,
+          -0.7071067690849304,
+          0.7071067690849304,
+          0,
+          0
+        ]
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "same-different",
+      "fn": "sameTransform",
+      "input": [
+        [
+          0.7071067690849304,
+          0.7071067690849304,
+          -0.7071067690849304,
+          0.7071067690849304,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0,
+          1,
+          5,
+          6
+        ]
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "bounds-rotation",
+      "fn": "transformedBounds",
+      "input": [
+        10,
+        20,
+        100,
+        50,
+        [
+          0,
+          1,
+          -1,
+          0,
+          0,
+          0
+        ]
+      ],
+      "expected": [
+        -70,
+        10,
+        -20,
+        110
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "render-rotation",
+      "fn": "renderMatrix",
+      "input": [
+        10,
+        20,
+        [
+          0,
+          1,
+          -1,
+          0,
+          0,
+          0
+        ]
+      ],
+      "expected": [
+        0,
+        1,
+        -1,
+        0,
+        -30,
+        -10
+      ],
+      "tolerance": 0.0001
+    }
+  ]
+}

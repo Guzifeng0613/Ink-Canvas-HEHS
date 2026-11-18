@@ -5,5 +5,7 @@
   "main": "Index.ets",
   "author": "",
   "license": "GPL-3.0",
-  "dependencies": {}
+  "dependencies": {
+    "@inkcanvas/core": "file:../core"
+  }
 }

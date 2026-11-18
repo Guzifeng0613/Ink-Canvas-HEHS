@@ -929,6 +929,54 @@ public sealed class VectorParityTests
         return hits.Select(h => all.IndexOf(h)).ToArray();
     }
 
+    [Fact]
+    public void BoardElementVectorsMatch()
+    {
+        using var doc = Load("board-element.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var input = c.GetProperty("input");
+            object actual;
+            switch (c.GetProperty("fn").GetString())
+            {
+                case "readTransformArray":
+                    actual = Arr(InkCanvas.Features.Board.BoardElementMath.Read(FloatArray(input[0])));
+                    break;
+                case "appendTransform":
+                    actual = InkCanvas.Features.Board.BoardElementMath.Append(
+                        FloatArray(input[0]), Mat(input[1]));
+                    break;
+                case "sameTransform":
+                    actual = InkCanvas.Features.Board.BoardElementMath.Same(FloatArray(input[0]), FloatArray(input[1]));
+                    break;
+                case "transformedBounds":
+                {
+                    var bounds = InkCanvas.Features.Board.BoardElementMath.TransformedBounds(
+                        input[0].GetSingle(), input[1].GetSingle(), input[2].GetSingle(), input[3].GetSingle(),
+                        FloatArray(input[4]));
+                    actual = new double[] { bounds.Left, bounds.Top, bounds.Right, bounds.Bottom };
+                    break;
+                }
+                case "renderMatrix":
+                    actual = Arr(InkCanvas.Features.Board.BoardElementMath.RenderMatrix(
+                        input[0].GetSingle(), input[1].GetSingle(), FloatArray(input[2])));
+                    break;
+                default:
+                    throw new InvalidOperationException("unknown board fn");
+            }
+            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
+        }
+    }
+
+    private static float[]? FloatArray(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+        return element.EnumerateArray().Select(e => e.GetSingle()).ToArray();
+    }
+
     private static AdvancedSettings? ParseAdvanced(JsonElement element)
     {
         if (element.ValueKind != JsonValueKind.Object)
