@@ -1,9 +1,11 @@
 {
   "name": "@inkcanvas/platform",
   "version": "3.4.0",
-  "description": "Ink Canvas HarmonyOS platform module",
+  "description": "Ink Canvas HarmonyOS platform adapters",
   "main": "Index.ets",
   "author": "",
   "license": "GPL-3.0",
-  "dependencies": {}
+  "dependencies": {
+    "@inkcanvas/core": "file:../core"
+  }
 }

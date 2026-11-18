@@ -1,0 +1,9 @@
+{
+  "id": "capabilities",
+  "entry": "harmony/platform/src/main/ets/compat/CapabilityMatrix.ts",
+  "cases": [
+    { "id": "api23", "fn": "capabilityMatrix", "input": [23], "expected": { "Api26": false, "SystemMaterial": false, "StylusBoost": false, "OverlayManagerTiers": false, "ContainerReader": false }, "tolerance": 0 },
+    { "id": "api24", "fn": "capabilityMatrix", "input": [24], "expected": { "Api26": false, "SystemMaterial": false, "StylusBoost": false, "OverlayManagerTiers": false, "ContainerReader": false }, "tolerance": 0 },
+    { "id": "api26", "fn": "capabilityMatrix", "input": [26], "expected": { "Api26": true, "SystemMaterial": true, "StylusBoost": true, "OverlayManagerTiers": true, "ContainerReader": true }, "tolerance": 0 }
+  ]
+}

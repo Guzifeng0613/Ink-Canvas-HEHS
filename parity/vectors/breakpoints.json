@@ -1,0 +1,16 @@
+{
+  "id": "breakpoints",
+  "entry": "harmony/platform/src/main/ets/device/Breakpoints.ts",
+  "cases": [
+    { "id": "bp-319", "fn": "breakpointForWidth", "input": [319], "expected": "xs", "tolerance": 0 },
+    { "id": "bp-320", "fn": "breakpointForWidth", "input": [320], "expected": "sm", "tolerance": 0 },
+    { "id": "bp-599", "fn": "breakpointForWidth", "input": [599], "expected": "sm", "tolerance": 0 },
+    { "id": "bp-600", "fn": "breakpointForWidth", "input": [600], "expected": "md", "tolerance": 0 },
+    { "id": "bp-839", "fn": "breakpointForWidth", "input": [839], "expected": "md", "tolerance": 0 },
+    { "id": "bp-840", "fn": "breakpointForWidth", "input": [840], "expected": "lg", "tolerance": 0 },
+    { "id": "bp-1200", "fn": "breakpointForWidth", "input": [1200], "expected": "lg", "tolerance": 0 },
+    { "id": "bp-1201", "fn": "breakpointForWidth", "input": [1201], "expected": "xl", "tolerance": 0 },
+    { "id": "full-md", "fn": "isFullLayout", "input": ["md"], "expected": true, "tolerance": 0 },
+    { "id": "full-sm", "fn": "isFullLayout", "input": ["sm"], "expected": false, "tolerance": 0 }
+  ]
+}
