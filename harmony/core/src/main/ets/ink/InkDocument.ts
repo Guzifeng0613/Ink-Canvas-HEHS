@@ -12,9 +12,18 @@ import {
 
 export class InkDocument {
   private strokes: InkStroke[] = [];
+  private version: number = 0;
 
   get Strokes(): InkStroke[] {
     return this.strokes;
+  }
+
+  get Version(): number {
+    return this.version;
+  }
+
+  private bump(): void {
+    this.version += 1;
   }
 
   get Count(): number {
@@ -26,13 +35,19 @@ export class InkDocument {
       return;
     }
     this.strokes.push(stroke);
+    this.bump();
   }
 
   addRange(strokes: InkStroke[]): void {
+    let any = false;
     for (let i = 0; i < strokes.length; i++) {
       if (strokes[i] !== null) {
         this.strokes.push(strokes[i]);
+        any = true;
       }
+    }
+    if (any) {
+      this.bump();
     }
   }
 
@@ -42,6 +57,7 @@ export class InkDocument {
       return false;
     }
     this.strokes.splice(index, 1);
+    this.bump();
     return true;
   }
 
@@ -54,17 +70,26 @@ export class InkDocument {
         removed++;
       }
     }
+    if (removed > 0) {
+      this.bump();
+    }
     return removed;
   }
 
   insert(index: number, stroke: InkStroke): void {
     const at = Math.min(Math.max(index, 0), this.strokes.length);
     this.strokes.splice(at, 0, stroke);
+    this.bump();
   }
 
   insertRange(entries: { Index: number; Stroke: InkStroke }[]): void {
+    let any = false;
     for (let i = 0; i < entries.length; i++) {
       this.insert(entries[i].Index, entries[i].Stroke);
+      any = true;
+    }
+    if (!any) {
+      return;
     }
   }
 
@@ -77,11 +102,16 @@ export class InkDocument {
     for (let i = 0; i < replacement.length; i++) {
       this.strokes.splice(index + i, 0, replacement[i]);
     }
+    this.bump();
     return true;
   }
 
   clear(): void {
+    if (this.strokes.length === 0) {
+      return;
+    }
     this.strokes = [];
+    this.bump();
   }
 
   bounds(): Rect {
@@ -178,6 +208,10 @@ export class InkDocument {
       this.removeAll(hits);
     }
     return hits;
+  }
+
+  touch(): void {
+    this.bump();
   }
 
   clone(): InkDocument {

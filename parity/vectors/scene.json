@@ -1,0 +1,58 @@
+{
+  "id": "scene",
+  "entry": "harmony/ink/src/main/ets/SceneBuilder.ts",
+  "cases": [
+    {
+      "id": "scene-basic",
+      "fn": "sceneSummary",
+      "input": [
+        [
+          {
+            "BaseWidth": 3.0,
+            "ColorPacked": 4278190080,
+            "IsHighlighter": false,
+            "HighlighterAlpha": 96,
+            "TaperKind": 1,
+            "Points": [
+              { "X": 0, "Y": 0, "Width": 3 },
+              { "X": 10, "Y": 0, "Width": 3 },
+              { "X": 20, "Y": 5, "Width": 3 }
+            ]
+          },
+          {
+            "BaseWidth": 2.5,
+            "ColorPacked": 4294950912,
+            "IsHighlighter": true,
+            "HighlighterAlpha": 140,
+            "TaperKind": 0,
+            "Points": [
+              { "X": 0, "Y": 20, "Width": 2.5 },
+              { "X": 10, "Y": 20, "Width": 2.5 }
+            ]
+          }
+        ],
+        {
+          "BaseWidth": 3.0,
+          "ColorPacked": 4292628006,
+          "IsHighlighter": false,
+          "HighlighterAlpha": 96,
+          "TaperKind": 1,
+          "Points": [
+            { "X": 30, "Y": 30, "Width": 3 },
+            { "X": 40, "Y": 30, "Width": 3 }
+          ]
+        },
+        { "Left": 0, "Top": 0, "Right": 100, "Bottom": 50, "RotationRadians": 0 }
+      ],
+      "expected": {
+        "Committed": [
+          { "Contours": 2, "Color": 4278190080 },
+          { "Contours": 1, "Color": 2365571072 }
+        ],
+        "Active": { "Contours": 1, "Color": 4292628006 },
+        "Selection": { "HandleCount": 5, "Bounds": [0, 0, 100, 50] }
+      },
+      "tolerance": 0
+    }
+  ]
+}
