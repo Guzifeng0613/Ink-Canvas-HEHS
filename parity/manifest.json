@@ -11,11 +11,13 @@
         "src/InkCanvas.Core/Ink/StrokeEraser.cs",
         "src/InkCanvas.Core/Ink/InkDocument.cs",
         "src/InkCanvas.Ink/InkController.cs",
-        "src/InkCanvas.Core/Ink/StrokeGeometry.cs"
+        "src/InkCanvas.Core/Ink/StrokeGeometry.cs",
+        "src/InkCanvas.Core/Selection/LassoGeometry.cs"
       ],
       "arkts": [
         "harmony/core/src/main/ets/ink/StrokeEraser.ts",
-        "harmony/core/src/main/ets/ink/StrokeGeometry.ts"
+        "harmony/core/src/main/ets/ink/StrokeGeometry.ts",
+        "harmony/core/src/main/ets/selection/LassoGeometry.ts"
       ],
       "vectors": [
         "parity/vectors/stroke-eraser.json",
@@ -24,7 +26,7 @@
       "tests": [
         "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
       ],
-      "notes": "面积擦与线条擦（Phase A）；Phase A 完成（黄金向量）"
+      "notes": "面积擦/线条擦 + G1 套索擦（LassoGeometry even/odd 命中 + 4096 抽稀 + 恢复保序，向量互认）+ 橡皮悬停预览由画笔光标环承担；浮条套索按钮。"
     },
     {
       "id": "ink-palm-rejection",
@@ -143,7 +145,7 @@
       "tests": [
         "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
       ],
-      "notes": "托管几何图形识别（Phase A）；Phase A 完成（黄金向量）"
+      "notes": "单笔直线优先 + 端点按住 450ms/3px 门控 + TryLine 最大垂偏与路径/直线比 ≥0.97 + 识别统一宽度 + 圆中心锚定；jitter-hold/hook/back-over/多笔向量互认。"
     },
     {
       "id": "ink-stroke-model",
@@ -251,7 +253,7 @@
       "tests": [
         "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
       ],
-      "notes": "撤销/重做历史（Phase A）；Phase A 完成（黄金向量）"
+      "notes": "撤销/重做 + G4 语义对齐（两步体尊重 StickyShape、空结果不回笔、Invalidated 与 C# 一致）；套索/选区手势单撤销单元。"
     },
     {
       "id": "system-icink",
@@ -869,7 +871,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "99 页画板模型与页导航（Phase E）"
+      "notes": "分页/保存/打开 + 页语义（原子清空/衍至新页/翻页携带状态，board-page-ops 向量）+ 媒体插入；页内元素撤销 BoardElementHistory。"
     },
     {
       "id": "board-tools",
@@ -921,7 +923,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "Video 播放/进度保持/续播/onPrepared seek 已接；切换首帧需真机核对。"
+      "notes": "Video 播放/进度保持/续播 + G12 插入入口（画板文件栏）；切换首帧需真机核对。"
     },
     {
       "id": "ppt-file-store",

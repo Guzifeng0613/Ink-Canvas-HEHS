@@ -26,6 +26,9 @@ export {
   SelectionHandle, HANDLE_RADIUS, ROTATE_OFFSET, rotateHandlePositionRect, hitTestRect,
   dragMatrixRect, selectionHitTest, selectionDragMatrix, rotateHandlePosition
 } from '../../harmony/core/src/main/ets/selection/SelectionGeometry';
+export { placeToolbar, boardDockLayout } from '../../harmony/core/src/main/ets/selection/LayoutHelpers';
+export { LassoGeometry } from '../../harmony/core/src/main/ets/selection/LassoGeometry';
+export type { LassoPoint } from '../../harmony/core/src/main/ets/selection/LassoGeometry';
 export { TwoFingerManipulator, simulateTwoFinger } from '../../harmony/core/src/main/ets/ink/TwoFingerManipulator';
 export { MatrixTransformCenterPointOptions, resolvePivot } from '../../harmony/core/src/main/ets/ink/MatrixTransformCenter';
 export { TouchIntent, TouchDecision, measureContactWidth, boundsWidth, classifyContact } from '../../harmony/core/src/main/ets/input/TouchContactClassifier';

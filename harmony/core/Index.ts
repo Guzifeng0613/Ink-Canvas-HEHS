@@ -53,6 +53,10 @@ export {
   rotateHandlePosition
 } from './src/main/ets/selection/SelectionGeometry';
 export type { BoundsInput } from './src/main/ets/selection/SelectionGeometry';
+export { placeToolbar, boardDockLayout } from './src/main/ets/selection/LayoutHelpers';
+export type { BoardDockLayoutResult } from './src/main/ets/selection/LayoutHelpers';
+export { LassoGeometry } from './src/main/ets/selection/LassoGeometry';
+export type { LassoPoint } from './src/main/ets/selection/LassoGeometry';
 export { TwoFingerManipulator, simulateTwoFinger } from './src/main/ets/ink/TwoFingerManipulator';
 export type { TwoFingerOptionsInput, TwoFingerSample, TwoFingerUpdate, TwoFingerSimResult } from './src/main/ets/ink/TwoFingerManipulator';
 export { MatrixTransformCenterPointOptions, resolvePivot } from './src/main/ets/ink/MatrixTransformCenter';

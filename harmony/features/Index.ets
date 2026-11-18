@@ -15,9 +15,10 @@ export {
   BoardDocument,
   boardDocumentSummary,
   boardRoundtrip,
-  boardSavePageProbe
+  boardSavePageProbe,
+  boardPageOpsProbe
 } from './src/main/ets/board/BoardDocument';
-export type { BoardAsset, BoardDocumentSummary, BoardSavePageProbe } from './src/main/ets/board/BoardDocument';
+export type { BoardAsset, BoardDocumentSummary, BoardSavePageProbe, BoardPageCounts } from './src/main/ets/board/BoardDocument';
 export {
   BoardElementHistory,
   snapshotGeometry,

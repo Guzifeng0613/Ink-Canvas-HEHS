@@ -1,0 +1,48 @@
+{
+  "id": "layout-helpers",
+  "entry": "harmony/core/src/main/ets/selection/LayoutHelpers.ts",
+  "cases": [
+    {
+      "id": "toolbar-place-below",
+      "fn": "placeToolbar",
+      "input": [[0, 0, 1000, 800], [400, 300, 600, 500], [0, 0, 0, 0], 100, 50, 10],
+      "expected": [450, 510, 550, 560],
+      "tolerance": 1e-6
+    },
+    {
+      "id": "toolbar-place-avoid-obstacle",
+      "fn": "placeToolbar",
+      "input": [[0, 0, 1000, 800], [400, 300, 600, 500], [440, 490, 560, 570], 100, 50, 10],
+      "expected": [450, 240, 550, 290],
+      "tolerance": 1e-6
+    },
+    {
+      "id": "dock-single-row",
+      "fn": "boardDockLayout",
+      "input": [1920, 1, 200, 300, 150],
+      "expected": { "Scale": 1, "TwoRows": false, "Height": 55 },
+      "tolerance": 1e-9
+    },
+    {
+      "id": "dock-two-rows-narrow",
+      "fn": "boardDockLayout",
+      "input": [600, 1, 200, 300, 150],
+      "expected": { "Scale": 1, "TwoRows": true, "Height": 114 },
+      "tolerance": 1e-9
+    },
+    {
+      "id": "dock-scale-clamp",
+      "fn": "boardDockLayout",
+      "input": [1920, 2, 200, 300, 150],
+      "expected": { "Scale": 1.5, "TwoRows": false, "Height": 82.5 },
+      "tolerance": 1e-9
+    },
+    {
+      "id": "dock-two-rows-scaled",
+      "fn": "boardDockLayout",
+      "input": [600, 1.5, 200, 300, 150],
+      "expected": { "Scale": 1.5, "TwoRows": true, "Height": 171 },
+      "tolerance": 1e-9
+    }
+  ]
+}

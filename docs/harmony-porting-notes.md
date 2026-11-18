@@ -76,11 +76,16 @@
 
 ### 剩余演进缺口（调研 docs/superpowers/research/harmony/16-baseline-evolution-gap.md，G1–G17）
 
-- **P0（正确性，下轮先做）**：G4 撤销语义 3 处对齐（手势单撤销单元/两步体尊重 StickyShape/单次 Invalidated）；G5 识别加固（单笔直线/450ms 端点按住/TryLine 偏差与路径比/统一宽度/中心圆）。
-- **P1（选区特性集）**：G1 套索擦 → G2 元素选区桥（SelectedElements/SetPresent）→ G3+G15+G16 选区命令工具条+入口 → G10 画板页语义（携带状态/衍至新页/原子清空）。
-- **P2**：G6 落点动画、G7 橡皮悬停预览、G11 元素撤销入栈、G12 视频插入、G14 选区装饰细节。
-- **P3**：G9 控制器级回放（已有独立回放窗）、G17 课件轮询节奏（200/1000ms）。
-- 纯 WinUI3 窗口 chrome（BarPanelWindow/FoldedBarHandle/ChromeBackdrop/TransientWindowDismissal/渲染性能管道）不构成 ArkTS 行为缺口（报告 §3）。
+**已补齐（2026-11-19 缺口轮 6，全部向量互认 + BUILD SUCCESSFUL）**：
+- **G1 套索擦端到端**：core `LassoGeometry`（even/odd、点/段/笔画/框相交，6 向量）+ 控制器路径（视图 DIP、4096 抽稀、抬指闭合、恢复保叠放序 insertRange、"lasso erase" 单撤销单元、CancelLassoErase 公开命令）+ 浮条「套索」按钮 + 覆盖层（闭合虚线 + 35α 填充）。
+- **G4 撤销语义对齐**：两步体（立方体/双曲线）完成后尊重 StickyShape；一般图形空结果不回笔；Invalidated 次数与 C# 逐路径核对一致（原头注三条"保留缺陷"中两条实为已对齐，注释已更正）。
+- **G5 识别加固**：单笔直线优先（多笔拼接不进直线分支）；端点按住 ≥450ms/3px 门控；TryLine 最大垂偏（2.5px/跨度2%）+ 路径/直线比 ≥0.97（钩笔/回笔拒绝）+ <3px 静止抖动不计路径；识别结果统一宽度；ConfirmTap 屏幕空间落点收拢（触摸 4–6px/笔 1.5–3px，动画状态未建）。向量：jitter-hold/hook/back-over/multi-stroke。
+- **G8 ConfigurePenWidths**（上一轮）+ **G10 画板页语义**：原子清空（墨迹+图片+视频单撤销单元）、衍至新页（选中克隆 + 新页单撤销）、翻页携带绘制状态（单控制器天然成立）；board-page-ops 3 向量。
+- **G12 视频插入**：画板文件栏「视频」入口（选择→base64→Media 资产，渲染/进度已有）。
+- **G16 布局纯逻辑**：FloatingToolbarLayout（候选位评分放置）+ BoardDockLayout（55DIP 三条两行自适应），6 向量。
+- 模拟压感笔锋相对时间（_strokeStartTimes）同步到控制器书写路径。
+
+**仍待补（下轮）**：G2 元素选区桥（SelectedElements/SetPresent，套索/选区作用于图片视频）→ G3+G15 选区命令工具条（Recolor/ScaleWidth/TransformSelectionUndoable + 入口）；G6 落点圆点动画状态；G7 橡皮悬停预览 API（ArkTS 无 hover，触摸期间由画笔光标环承担）；G9 控制器级回放融合；G11 元素撤销并入页栈统一；G14 选区装饰细节；G17 课件轮询节奏（200/1000ms）。纯 WinUI3 窗口 chrome 不构成缺口（报告 §3）。
 
 ## 与 WinUI3 基线的已知差异（设计决定）
 

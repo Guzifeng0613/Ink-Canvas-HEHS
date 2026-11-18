@@ -156,8 +156,63 @@ internal static class ShapeVectors
             {
                 new Vector2(100, 100), new Vector2(110, 105), new Vector2(120, 100),
                 new Vector2(130, 105), new Vector2(140, 100)
+            }),
+            // 基线演进加固：端点按住时的静止抖动（<3px 步长）仍认直线。
+            RecognizeCase("recognize-line-jitter-hold", new[]
+            {
+                new Vector2(100, 100), new Vector2(130, 100), new Vector2(160, 100), new Vector2(190, 100),
+                new Vector2(220, 100), new Vector2(250, 100), new Vector2(280, 100),
+                new Vector2(281, 99.4f), new Vector2(280.2f, 100.6f), new Vector2(280.8f, 100.2f), new Vector2(280.1f, 99.8f)
+            }, 2e-3), // 角点含近轴对齐轴向量：C# float 舍入 vs ArkTS double 残差 ~1e-3，放宽容差
+            // 钩笔（末端垂偏 > 最大垂偏）是手写，不认直线。
+            RecognizeCase("reject-hook", new[]
+            {
+                new Vector2(100, 100), new Vector2(140, 100), new Vector2(180, 100), new Vector2(220, 100),
+                new Vector2(260, 100), new Vector2(270, 100), new Vector2(277, 95), new Vector2(280, 88)
+            }),
+            // 回笔（路径/直线比 < 0.97）是手写，不认直线。
+            RecognizeCase("reject-back-over", new[]
+            {
+                new Vector2(100, 100), new Vector2(140, 100), new Vector2(180, 100), new Vector2(220, 100),
+                new Vector2(260, 100), new Vector2(220, 100), new Vector2(180, 100), new Vector2(120, 100)
+            }),
+            // 多笔拼接不进直线分支（strokes.Count == 1 门控）。
+            RecognizeStrokesCase("reject-multi-stroke-line", new[]
+            {
+                new[] { new Vector2(100, 100), new Vector2(140, 100), new Vector2(180, 100) },
+                new[] { new Vector2(180, 100), new Vector2(220, 100), new Vector2(260, 100) }
             })
         };
+    }
+
+    private static object RecognizeStrokesCase(string id, Vector2[][] strokes)
+    {
+        var inkStrokes = strokes.Select(points =>
+        {
+            var stroke = new InkStroke(new StrokeAttributes { BaseWidth = 3f });
+            foreach (var p in points)
+            {
+                stroke.AddPoint(p.X, p.Y);
+            }
+            stroke.Complete();
+            return stroke;
+        }).ToList();
+        var result = ShapeRecognizer.Recognize(inkStrokes);
+        var input = new object[]
+        {
+            strokes.Select(points => points.Select(p => new { p.X, p.Y }).ToArray()).ToArray()
+        };
+        var expected = new
+        {
+            kind = (int)result.Shape,
+            centerX = result.Center.X,
+            centerY = result.Center.Y,
+            radiusX = result.RadiusX,
+            radiusY = result.RadiusY,
+            confidence = result.Confidence,
+            corners = result.Corners.Select(c => new { c.X, c.Y }).ToArray()
+        };
+        return Case(id, "recognizeStrokes", input, expected);
     }
 
     private static object Gen(string id, int kind, float sx, float sy, float ex, float ey, AttrSpec attrs)
@@ -189,7 +244,7 @@ internal static class ShapeVectors
         return Case(id, "snapParallelEnd", new object[] { sx, sy, ex, ey }, new { p.X, p.Y });
     }
 
-    private static object RecognizeCase(string id, Vector2[] points)
+    private static object RecognizeCase(string id, Vector2[] points, double tolerance = 1e-4)
     {
         var stroke = new InkStroke(new StrokeAttributes { BaseWidth = 3f });
         foreach (var p in points)
@@ -212,16 +267,16 @@ internal static class ShapeVectors
             confidence = result.Confidence,
             corners = result.Corners.Select(c => new { c.X, c.Y }).ToArray()
         };
-        return Case(id, "recognize", input, expected);
+        return Case(id, "recognize", input, expected, tolerance);
     }
 
-    private static object Case(string id, string fn, object[] input, object expected) => new
+    private static object Case(string id, string fn, object[] input, object expected, double tolerance = 1e-4) => new
     {
         id,
         fn,
         input,
         expected,
-        tolerance = 1e-4
+        tolerance
     };
 
     private static object[] Summaries(List<InkStroke> strokes) => strokes.Select(s => new

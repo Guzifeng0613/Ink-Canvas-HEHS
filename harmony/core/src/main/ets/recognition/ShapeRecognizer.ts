@@ -185,6 +185,29 @@ function tryLine(pts: RecognitionPoint[]): RecognitionSummary | null {
     { X: c.X + axis.X * min, Y: c.Y + axis.Y * min },
     { X: c.X + axis.X * max, Y: c.Y + axis.Y * max }
   ];
+  // 基线演进加固：最大垂偏（2.5px 或跨度 2%）+ 路径/直线长比 ≥0.97（钩笔/回笔是手写，
+  // 即使 RMS 展幅小）；<3px 的静止抖动包不计入路径（按住端点时笔包抖动）。
+  const directLength = distance(pts[0], pts[pts.length - 1]);
+  let pathLength = 0;
+  const maxDeviation = Math.max(2.5, (max - min) * 0.02);
+  for (let i = 0; i < pts.length; i++) {
+    if (Math.abs((pts[i].X - c.X) * axis.Y - (pts[i].Y - c.Y) * axis.X) > maxDeviation) {
+      return null;
+    }
+  }
+  let lastProgress = pts[0];
+  for (let i = 1; i < pts.length; i++) {
+    const step = distance(lastProgress, pts[i]);
+    if (step < 3) {
+      continue;
+    }
+    pathLength += step;
+    lastProgress = pts[i];
+  }
+  pathLength += distance(lastProgress, pts[pts.length - 1]);
+  if (pathLength <= 0 || directLength / pathLength < 0.97) {
+    return null;
+  }
   return {
     kind: RecognizedShape.Line,
     centerX: c.X,
@@ -415,7 +438,8 @@ export function recognizeStrokes(strokes: InkPointLike[][]): RecognitionSummary 
 
   const c = centroid(pts);
 
-  const line = tryLine(pts);
+  // 基线演进：直线只认单笔输入（多笔拼接不走直线分支）。
+  const line = strokes.length === 1 ? tryLine(pts) : null;
   if (line !== null) {
     return line;
   }

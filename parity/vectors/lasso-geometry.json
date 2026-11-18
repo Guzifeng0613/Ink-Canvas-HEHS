@@ -1,0 +1,48 @@
+{
+  "id": "lasso-geometry",
+  "entry": "harmony/core/src/main/ets/selection/LassoGeometry.ts",
+  "cases": [
+    {
+      "id": "lasso-valid-square",
+      "fn": "lassoValidProbe",
+      "input": [[[100, 100], [200, 100], [200, 200], [100, 200]]],
+      "expected": { "Valid": true, "Bounds": [100, 100, 200, 200] },
+      "tolerance": 1e-6
+    },
+    {
+      "id": "lasso-invalid-tiny",
+      "fn": "lassoValidProbe",
+      "input": [[[0, 0], [2, 0], [2, 2], [0, 2]]],
+      "expected": { "Valid": false, "Bounds": [0, 0, 2, 2] },
+      "tolerance": 1e-6
+    },
+    {
+      "id": "lasso-invalid-swipe",
+      "fn": "lassoValidProbe",
+      "input": [[[0, 0], [100, 0], [200, 0]]],
+      "expected": { "Valid": false, "Bounds": [0, 0, 200, 0] },
+      "tolerance": 1e-6
+    },
+    {
+      "id": "lasso-contains",
+      "fn": "lassoContainsProbe",
+      "input": [[[100, 100], [200, 100], [200, 200], [100, 200]], [[150, 150], [300, 150], [100, 150]]],
+      "expected": [true, false, true],
+      "tolerance": 0
+    },
+    {
+      "id": "lasso-segment",
+      "fn": "lassoSegmentProbe",
+      "input": [[[100, 100], [200, 100], [200, 200], [100, 200]], [[150, 50, 150, 150], [50, 50, 60, 60]]],
+      "expected": [true, false],
+      "tolerance": 0
+    },
+    {
+      "id": "lasso-stroke",
+      "fn": "lassoStrokeProbe",
+      "input": [[[100, 100], [200, 100], [200, 200], [100, 200]], [[150, 120, 150, 180], [300, 300, 320, 300]]],
+      "expected": [true, false],
+      "tolerance": 0
+    }
+  ]
+}

@@ -12,15 +12,29 @@
 // - 选区 Move/Rotate 拖拽与选区双指手势延迟写点：期间以 SelectionPreviewTransform
 //   表达预览（PreviewStrokes/IsPreviewStroke 供渲染层消费），抬指一次性落点。
 //
-// 已知基线缺陷（按工作树 1:1 保留，勿“顺手修”）：
-// - 选区双指手势路径（TransformSelectionByGesture）每个 move 压入一个撤销单元；
-// - 图形两步体完成后无条件回笔，忽略 StickyShape；
-// - 单笔提交连发两次 Invalidated（CommitStrokes 内一次、OnPointerUp 再一次）。
+// 已知基线差异（2026-11-19 同步后）：
+// - 选区双指手势（Select 工具）走 Begin/Apply/EndSelectionGesture 延迟写点、整手势一个撤销单元，
+//   与 C# 一致；GesturesTargetSelection 非 Select 工具路径两侧均为逐 move 单元（C# 631 同款）。
+// - 两步体完成后尊重 StickyShape；一般图形仅在生成结果非空时回笔（C# 934/962/971）。
+// - 单笔提交 Invalidated 两次（CommitStrokes 内一次 + Up 尾部一次）——与 C# OnPointerUp 完全一致。
+// - 未移植（待 G2/G3 轮）：SelectedElements/SelectionFrame 元素、
+//   TransformSelectionUndoable、落点圆点动画（ConfirmTap 已收拢为单点，动画状态未建）。
+// - G1 套索擦已移植：LassoGeometry（core/selection，向量互认）+ 视图 DIP 路径 +
+//   4096 抽稀 + even/odd 命中 + 恢复保叠放序（insertRange）。
+const LINE_HOLD_MS = 450;
+const LINE_HOLD_RADIUS = 3;
+
+interface LineEndpoint {
+  X: number;
+  Y: number;
+  Since: number;
+}
 import {
   InkDocument,
   InkStroke,
   Rect,
   InkPoint,
+  LassoGeometry,
   InkColor,
   StrokeAttributes,
   TaperKind,
@@ -56,7 +70,7 @@ import {
   Point2,
   Matrix3x2
 } from '@inkcanvas/core';
-import type { UndoAction, StrokeSummary, TwoFingerUpdate, BoundsInput } from '@inkcanvas/core';
+import type { UndoAction, StrokeSummary, TwoFingerUpdate, BoundsInput, LassoPoint } from '@inkcanvas/core';
 import {
   InkTool,
   InkEraserMode,
@@ -475,6 +489,15 @@ export class InkController {
   private _manipulator: TwoFingerManipulator = new TwoFingerManipulator();
   private _selectionManipulator: TwoFingerManipulator = new TwoFingerManipulator();
   private _recentForRecognition: InkStroke[] = [];
+  // 基线演进：直线识别端点按住门控（450ms / 3px）+ 模拟压感笔锋相对时间起点。
+  private _lineEndpoints: Map<number, LineEndpoint> = new Map<number, LineEndpoint>();
+  private _strokeStartTimes: Map<number, number> = new Map<number, number>();
+  // G1 套索擦：闭合手绘多边形（视图 DIP），even/odd 填充；4096 点抽稀。
+  private _lassoPath: LassoPoint[] = [];
+  private _lassoBounds: Rect = Rect.empty();
+  private _lassoPointerId: number = -1;
+  private _lassoViewAtStart: Matrix3x2 = identityMatrix();
+  private _lassoErasing: boolean = false;
   private _shapeDragStart: Map<number, Point2> = new Map<number, Point2>();
   private _shapePreview: InkStroke[] = [];
 
@@ -570,7 +593,7 @@ export class InkController {
         : this.configuredPenWidth;
     }
     this._panPointerId = null;
-    this.cancelLassoErase();
+    this.CancelLassoErase();
     if (previous === InkTool.Eraser && this._erasing) {
       this.endErase();
     }
@@ -634,7 +657,7 @@ export class InkController {
     if (this._eraserMode === value) {
       return;
     }
-    this.cancelLassoErase();
+    this.CancelLassoErase();
     if (this._erasing) {
       this.endErase();
     }
@@ -666,6 +689,8 @@ export class InkController {
     this.ClearSelection();
     this._live.clear();
     this._liveIds = [];
+    this._lineEndpoints.clear();
+    this._strokeStartTimes.clear();
     this._recentForRecognition = [];
     this._shapePreview = [];
     this._stepPending = [];
@@ -749,9 +774,8 @@ export class InkController {
     const world = this.toWorld(p.X, p.Y);
 
     if (this._tool === InkTool.Eraser && this._eraserMode === InkEraserMode.Lasso) {
-      // 未移植：C# BeginLassoErase 需要 core LassoGeometry（Phase B2/B3 范围外）。
-      // 保留枚举与状态位，避免误走面积擦造成破坏。
-      this.invalidate();
+      // G1 套索擦：起笔开始路径（视图 DIP），抬指自动闭合提交。
+      this.beginLassoErase(p);
       return;
     }
 
@@ -868,7 +892,10 @@ export class InkController {
       return;
     }
     if (this._tool === InkTool.Eraser && this._eraserMode === InkEraserMode.Lasso) {
-      return; // 未移植（见 onPointerDown）
+      if (this._lassoErasing && p.Id === this._lassoPointerId) {
+        this.appendLassoPoint(p.X, p.Y);
+      }
+      return;
     }
 
     const world = this.toWorld(p.X, p.Y);
@@ -975,14 +1002,24 @@ export class InkController {
 
     const stroke = this._live.get(p.Id);
     if (stroke !== undefined) {
-      // 宽度在点到达时结算，绝不在抬笔后重算。
-      stroke.addPoint(world.X, world.Y, p.Pressure, this.pointerTime(p));
+      // 端点 = 指针最后一次"在移动"的位置及其时刻（3px 内的静止抖动不刷新）。
+      const endpoint = this._lineEndpoints.get(p.Id);
+      if (endpoint === undefined
+        || (p.X - endpoint.X) * (p.X - endpoint.X) + (p.Y - endpoint.Y) * (p.Y - endpoint.Y)
+          > LINE_HOLD_RADIUS * LINE_HOLD_RADIUS) {
+        this._lineEndpoints.set(p.Id, { X: p.X, Y: p.Y, Since: p.TimeMs });
+      }
+      // 宽度在点到达时结算，绝不在抬笔后重算；模拟压感笔锋用相对时间。
+      const startTime = this._strokeStartTimes.get(p.Id);
+      const time = startTime !== undefined ? p.TimeMs - startTime : this.pointerTime(p);
+      stroke.addPoint(world.X, world.Y, p.Pressure, time);
       this.markGeometry(stroke);
       this.invalidate();
     }
   }
 
-  onPointerUp(p: PointerSample): void {
+  /** 抬笔；canceled=true 时输入被取消（不做落点收拢，但已写墨迹仍提交，与 C# 一致）。 */
+  onPointerUp(p: PointerSample, canceled: boolean = false): void {
     if (this._tool === InkTool.Pan) {
       this.onPointerMove(p);
       if (this._panPointerId === p.Id) {
@@ -993,8 +1030,13 @@ export class InkController {
       return;
     }
     if (this._tool === InkTool.Eraser && this._eraserMode === InkEraserMode.Lasso) {
+      if (this._lassoErasing && p.Id === this._lassoPointerId) {
+        // 抬指的最终样本可能携带新位置：先补点再闭合提交。
+        this.appendLassoPoint(p.X, p.Y, true);
+        this.commitLassoErase();
+      }
       this.Palm.onUp(p.Id);
-      return; // 未移植
+      return;
     }
     if (this._selectionGesture) {
       this.onPointerMove(p);
@@ -1078,18 +1120,84 @@ export class InkController {
     const stroke = this._live.get(p.Id);
     if (stroke !== undefined) {
       this.removeLive(p.Id);
-      // 无移动的 down/up 是合法圆点；渲染支持单点墨迹。
-      if (stroke.Count >= 1) {
-        const strokes: InkStroke[] = [stroke];
-        this.commitStrokes(strokes, 'ink');
+      // 直线识别门控：抬笔位置在端点 3px 内且距端点时刻 ≥450ms。
+      const endpoint = this._lineEndpoints.get(p.Id);
+      this._lineEndpoints.delete(p.Id);
+      const held = endpoint !== undefined
+        && (p.X - endpoint.X) * (p.X - endpoint.X) + (p.Y - endpoint.Y) * (p.Y - endpoint.Y)
+          <= LINE_HOLD_RADIUS * LINE_HOLD_RADIUS
+        && p.TimeMs - endpoint.Since >= LINE_HOLD_MS;
+      let final = stroke;
+      if (!canceled) {
+        final = this.confirmTap(stroke, world, p.Kind);
+      }
+      if (final.Count >= 1) {
+        const strokes: InkStroke[] = [final];
+        this.commitStrokes(strokes, 'ink', held);
       }
       this.invalidate();
     }
   }
 
-  /** 取消的 Lasso 输入不删除；其它工具沿用最后样本行为。 */
+  /** 取消的输入不做落点收拢；已写墨迹仍按 C# 语义提交。 */
   onPointerCanceled(p: PointerSample): void {
-    this.onPointerUp(p);
+    this.onPointerUp(p, true);
+  }
+
+  // 基线演进 ConfirmTap：屏幕空间容差内的小幅漂移收拢为单点圆点
+  // （触摸 4–6px、笔 1.5–3px；超容差原样返回）。动画状态（InkDotAnimation）未建。
+  private confirmTap(stroke: InkStroke, end: Point2, kind: number): InkStroke {
+    if (stroke.Count === 0) {
+      return stroke;
+    }
+    const view = this.ViewTransform;
+    const first = stroke.Points[0];
+    const firstScreen = transformPointByMatrix(view, first.X, first.Y);
+    const endScreen = transformPointByMatrix(view, end.X, end.Y);
+    const determinant = view.M11 * view.M22 - view.M12 * view.M21;
+    const scale = Math.sqrt(Math.abs(determinant));
+    const screenWidth = stroke.Attributes.BaseWidth * scale;
+    const tolerance = kind === PointerKind.Touch
+      ? Math.min(Math.max(screenWidth * 0.35, 4), 6)
+      : Math.min(Math.max(screenWidth * 0.25, 1.5), 3);
+    let minX = Math.min(firstScreen.X, endScreen.X);
+    let minY = Math.min(firstScreen.Y, endScreen.Y);
+    let maxX = Math.max(firstScreen.X, endScreen.X);
+    let maxY = Math.max(firstScreen.Y, endScreen.Y);
+    if (maxX - minX > tolerance * 2 || maxY - minY > tolerance * 2) {
+      return stroke;
+    }
+    for (let i = 0; i < stroke.Count; i++) {
+      const screen = transformPointByMatrix(view, stroke.Points[i].X, stroke.Points[i].Y);
+      minX = Math.min(minX, screen.X);
+      minY = Math.min(minY, screen.Y);
+      maxX = Math.max(maxX, screen.X);
+      maxY = Math.max(maxY, screen.Y);
+      if (maxX - minX > tolerance * 2 || maxY - minY > tolerance * 2) {
+        return stroke;
+      }
+    }
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    const endDx = centerX - endScreen.X;
+    const endDy = centerY - endScreen.Y;
+    if (endDx * endDx + endDy * endDy > tolerance * tolerance) {
+      return stroke;
+    }
+    for (let i = 0; i < stroke.Count; i++) {
+      const screen = transformPointByMatrix(view, stroke.Points[i].X, stroke.Points[i].Y);
+      const dx = centerX - screen.X;
+      const dy = centerY - screen.Y;
+      if (dx * dx + dy * dy > tolerance * tolerance) {
+        return stroke;
+      }
+    }
+    // invertMatrix 退化时返回单位阵（与 toWorld 同约定）。
+    const inverse = invertMatrix(view);
+    const worldCenter = transformPointByMatrix(inverse, centerX, centerY);
+    const dot = new InkStroke(stroke.Attributes.clone());
+    dot.restorePoints([new InkPoint(worldCenter.X, worldCenter.Y, first.Pressure, stroke.Attributes.BaseWidth, first.TimeMs)]);
+    return dot;
   }
 
   // ---- 视图 --------------------------------------------------------------
@@ -1123,7 +1231,15 @@ export class InkController {
     const attributes = this.CurrentAttributes.clone();
     attributes.IsHighlighter = this._tool === InkTool.Highlighter;
     const stroke = new InkStroke(attributes);
-    stroke.addPoint(world.X, world.Y, p.Pressure, this.pointerTime(p));
+    // 模拟压感笔锋（SmoothPen..Calligraphy）用相对时间（首点 0），其余用原始事件时间。
+    const taper = attributes.effectiveTaper();
+    const relativeTime = taper === TaperKind.SmoothPen || taper === TaperKind.SoftPen
+      || taper === TaperKind.Natural || taper === TaperKind.Calligraphy;
+    if (relativeTime) {
+      this._strokeStartTimes.set(p.Id, p.TimeMs);
+    }
+    stroke.addPoint(world.X, world.Y, p.Pressure, relativeTime ? 0 : this.pointerTime(p));
+    this._lineEndpoints.set(p.Id, { X: p.X, Y: p.Y, Since: p.TimeMs });
     if (!this._live.has(p.Id)) {
       this._liveIds.push(p.Id);
     }
@@ -1136,7 +1252,7 @@ export class InkController {
    * Complete + 移入文档 + 记录历史，然后只失效一次。
    * 注意：C# OnPointerUp 在 CommitStrokes 之后还会再发一次 Invalidated —— 保留该基线行为。
    */
-  private commitStrokes(strokes: InkStroke[], name: string): void {
+  private commitStrokes(strokes: InkStroke[], name: string, lineEndpointHeld: boolean = false): void {
     for (let i = 0; i < strokes.length; i++) {
       strokes[i].complete();
     }
@@ -1151,12 +1267,25 @@ export class InkController {
       }
     ));
     if (this.RecognizeShapes && name === 'ink') {
-      this.tryRecognize(strokes);
+      this.tryRecognize(strokes, lineEndpointHeld);
     }
     this.invalidate();
   }
 
-  private tryRecognize(committed: InkStroke[]): void {
+  private recognitionGroups(strokes: InkStroke[]): RecognizerPoint[][] {
+    const groups: RecognizerPoint[][] = [];
+    for (let i = 0; i < strokes.length; i++) {
+      const points = strokes[i].Points;
+      const group: RecognizerPoint[] = [];
+      for (let j = 0; j < points.length; j++) {
+        group.push({ X: points[j].X, Y: points[j].Y });
+      }
+      groups.push(group);
+    }
+    return groups;
+  }
+
+  private tryRecognize(committed: InkStroke[], lineEndpointHeld: boolean = false): void {
     for (let i = 0; i < committed.length; i++) {
       this._recentForRecognition.push(committed[i]);
     }
@@ -1175,18 +1304,18 @@ export class InkController {
       return;
     }
 
-    const groups: RecognizerPoint[][] = [];
-    for (let i = 0; i < this._recentForRecognition.length; i++) {
-      const points = this._recentForRecognition[i].Points;
-      const group: RecognizerPoint[] = [];
-      for (let j = 0; j < points.length; j++) {
-        group.push({ X: points[j].X, Y: points[j].Y });
-      }
-      groups.push(group);
-    }
-    const result = recognizeStrokes(groups);
+    // C#：直线属于刚提交的笔画（单笔优先）；附近的手写绝不被合并直线拟合替换。
+    const single = recognizeStrokes(this.recognitionGroups(committed));
+    const result = single.kind === RecognizedShape.Line
+      ? single
+      : recognizeStrokes(this.recognitionGroups(this._recentForRecognition));
     if (result.kind === RecognizedShape.None || result.kind === RecognizedShape.Triangle) {
       return; // 三角形被刻意忽略（复刻基线）
+    }
+    // 直线额外门控（C# TryRecognize）：端点按住、单笔、非荧光笔，缺一不认。
+    if (result.kind === RecognizedShape.Line && (!lineEndpointHeld || committed.length !== 1
+      || single.kind !== RecognizedShape.Line || committed[0].Attributes.IsHighlighter)) {
+      return;
     }
 
     const attributes = committed[0].Attributes.clone();
@@ -1230,7 +1359,9 @@ export class InkController {
       return;
     }
 
-    const removed = this._recentForRecognition.slice();
+    const removed = result.kind === RecognizedShape.Line
+      ? committed.slice()
+      : this._recentForRecognition.slice();
     this.Document.removeAll(removed);
     this.Document.addRange(replacement);
     this.History.push(new ControllerAction(
@@ -1336,7 +1467,9 @@ export class InkController {
       this._shapeStep = 0;
       this._shapePreview = [];
       this.commitStrokes(solid, 'shape');
-      this.Tool = InkTool.Pen; // 基线的两步体完成后无条件回笔
+      if (!this.StickyShape) {
+        this.Tool = InkTool.Pen; // 基线演进：两步体完成后尊重 StickyShape（C# 934）
+      }
       return;
     }
 
@@ -1379,7 +1512,9 @@ export class InkController {
       if (hyperbola.length > 0) {
         this.commitStrokes(hyperbola, 'shape');
       }
-      this.Tool = InkTool.Pen;
+      if (!this.StickyShape) {
+        this.Tool = InkTool.Pen; // 基线演进：尊重 StickyShape（C# 962）
+      }
       return;
     }
 
@@ -1389,8 +1524,8 @@ export class InkController {
       this.commitStrokes(shapes, 'shape');
     }
     this.invalidate();
-    if (!this.StickyShape) {
-      this.Tool = InkTool.Pen; // upstream:1502-1518
+    if (shapes.length > 0 && !this.StickyShape) {
+      this.Tool = InkTool.Pen; // upstream:1502-1518；退化拖拽（空结果）留在图形模式（C# 971）
     }
   }
 
@@ -1933,7 +2068,7 @@ export class InkController {
   // ---- 命令 --------------------------------------------------------------
 
   Undo(): void {
-    this.cancelLassoErase();
+    this.CancelLassoErase();
     if (this.History.undo()) {
       this.pruneSelection();
       this.invalidate();
@@ -1941,7 +2076,7 @@ export class InkController {
   }
 
   Redo(): void {
-    this.cancelLassoErase();
+    this.CancelLassoErase();
     if (this.History.redo()) {
       this.pruneSelection();
       this.invalidate();
@@ -1965,7 +2100,7 @@ export class InkController {
   }
 
   Clear(): void {
-    this.cancelLassoErase();
+    this.CancelLassoErase();
     this.ClearSelection();
     if (this.Document.Count === 0) {
       return;
@@ -1988,8 +2123,97 @@ export class InkController {
     this.DeleteSelection();
   }
 
-  private cancelLassoErase(): void {
-    // 未移植 Lasso：保留 C# 的公开命令以维持工具切换路径。
+  // ---- 套索擦（G1，C# BeginLassoErase/AppendLassoPoint/CommitLassoErase/CancelLassoErase） ----
+
+  get IsLassoErasing(): boolean {
+    return this._lassoErasing;
+  }
+
+  get LassoPath(): LassoPoint[] {
+    return this._lassoPath;
+  }
+
+  get LassoVisualBounds(): Rect {
+    return this._lassoErasing ? this._lassoBounds.inflate(4) : Rect.empty();
+  }
+
+  private beginLassoErase(p: PointerSample): void {
+    this._lassoPath = [];
+    this._lassoPointerId = p.Id;
+    this._lassoViewAtStart = this.ViewTransform;
+    this._lassoBounds = new Rect(p.X, p.Y, p.X, p.Y);
+    this._lassoErasing = true;
+    this.appendLassoPoint(p.X, p.Y, true);
+  }
+
+  private appendLassoPoint(x: number, y: number, final: boolean = false): void {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return;
+    }
+    if (this._lassoPath.length > 0) {
+      const last = this._lassoPath[this._lassoPath.length - 1];
+      const dx = x - last.X;
+      const dy = y - last.Y;
+      if (dx * dx + dy * dy < (final ? 0.001 : 4)) {
+        return;
+      }
+    }
+    // 超长手势限内存与路径渲染量：保序抽稀（隔点保留）。
+    if (this._lassoPath.length >= 4096) {
+      const thinned: LassoPoint[] = [this._lassoPath[0]];
+      for (let i = 2; i < this._lassoPath.length; i += 2) {
+        thinned.push(this._lassoPath[i]);
+      }
+      this._lassoPath = thinned;
+    }
+    this._lassoPath.push({ X: x, Y: y });
+    this._lassoBounds = new Rect(
+      Math.min(this._lassoBounds.Left, x), Math.min(this._lassoBounds.Top, y),
+      Math.max(this._lassoBounds.Right, x), Math.max(this._lassoBounds.Bottom, y));
+    this.invalidate();
+  }
+
+  private commitLassoErase(): void {
+    const lasso = new LassoGeometry(this._lassoPath.slice());
+    const view = this._lassoViewAtStart;
+    // 文档通知可渲染已提交帧之前，先清瞬态路径。
+    this._lassoErasing = false;
+    this._lassoPath = [];
+    this._lassoBounds = Rect.empty();
+    if (lasso.IsValid) {
+      const removed: { Index: number; Stroke: InkStroke }[] = [];
+      const strokes = this.Document.Strokes;
+      for (let i = 0; i < strokes.length; i++) {
+        if (lasso.IntersectsStroke(strokes[i], view)) {
+          removed.push({ Index: i, Stroke: strokes[i] });
+        }
+      }
+      if (removed.length > 0) {
+        const removedStrokes: InkStroke[] = [];
+        for (let i = 0; i < removed.length; i++) {
+          removedStrokes.push(removed[i].Stroke);
+        }
+        const apply = (): void => {
+          this.Document.removeAll(removedStrokes);
+        };
+        const restore = (): void => {
+          this.Document.insertRange(removed);
+        };
+        apply();
+        this.History.push(new ControllerAction('lasso erase', apply, restore));
+      }
+    }
+    this.invalidate();
+  }
+
+  CancelLassoErase(): void {
+    if (!this._lassoErasing) {
+      return;
+    }
+    this._lassoErasing = false;
+    this._lassoPath = [];
+    this._lassoBounds = Rect.empty();
+    this.invalidate();
   }
 
   private cancelTouchInk(): void {
@@ -2047,6 +2271,8 @@ export class InkController {
 
   private removeLive(id: number): void {
     this._live.delete(id);
+    this._lineEndpoints.delete(id);
+    this._strokeStartTimes.delete(id);
     const index = this._liveIds.indexOf(id);
     if (index >= 0) {
       this._liveIds.splice(index, 1);

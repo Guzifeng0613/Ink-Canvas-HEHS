@@ -200,6 +200,9 @@ struct Index {
   private board: BoardDocument = new BoardDocument();
   private boardGridSettings: RenderingContextSettings = new RenderingContextSettings(true);
   private boardGridContext: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.boardGridSettings);
+  // G1 套索擦覆盖层：闭合虚线多边形 + 35α 填充（视图 DIP）。
+  private lassoSettings: RenderingContextSettings = new RenderingContextSettings(true);
+  private lassoContext: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.lassoSettings);
   private pendingYesNo: string = '';
   private mediaPaths: Map<string, string> = new Map<string, string>();
   private boardPixelMaps: Map<string, image.PixelMap> = new Map<string, image.PixelMap>();
@@ -477,6 +480,14 @@ struct Index {
       .onTouch((event: TouchEvent) => {
         this.handleTouch(event);
       })
+
+      if (this.controller.IsLassoErasing) {
+        Canvas(this.lassoContext)
+          .width('100%')
+          .height('100%')
+          .hitTestBehavior(HitTestMode.None)
+          .onReady(() => { this.drawLassoOverlay(); })
+      }
 
       if (this.cursorVisible && this.settings.canvas.isShowCursor) {
         Circle()
@@ -925,6 +936,10 @@ struct Index {
                 .onClick(() => { this.board.addPage(); this.syncBoard(); })
               Text('删除').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
                 .onClick(() => { this.board.removePage(this.boardIndex); this.syncBoard(); })
+              Text('清页').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+                .onClick(() => { this.clearBoardPage(); })
+              Text('衍至新页').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+                .onClick(() => { this.cloneSelectionToNewPage(); })
             }
             .padding(8).backgroundColor('#CC1A1A1A').borderRadius(8)
             // 背景浮条
@@ -943,6 +958,8 @@ struct Index {
             Row({ space: 6 }) {
               Text('插图').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
                 .onClick(() => { this.insertBoardImage(); })
+              Text('视频').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+                .onClick(() => { this.insertBoardVideo(); })
               Text('保存').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
                 .onClick(() => { this.saveBoard(); })
               Text('打开').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
@@ -1957,6 +1974,52 @@ struct Index {
     this.boardImagesVersion++;
   }
 
+  // 插入画板视频（G12）：选视频 → base64 → Media 资产；BoardVideo 渲染 + 进度保持已有。
+  private async insertBoardVideo(): Promise<void> {
+    if (this.storage === null) {
+      return;
+    }
+    let result: picker.PhotoSelectResult;
+    try {
+      const videoPicker = new picker.PhotoViewPicker();
+      result = await videoPicker.select({ MIMEType: picker.PhotoViewMIMETypes.VIDEO_TYPE, maxSelectNumber: 1 });
+    } catch (e) {
+      return;
+    }
+    if (result.photoUris.length === 0) {
+      return;
+    }
+    const id = 'vid-' + Date.now();
+    const path = this.storage.importUriToSandbox(result.photoUris[0], id + '.mp4');
+    if (path === null) {
+      promptAction.showToast({ message: '视频导入失败', duration: 2000 });
+      return;
+    }
+    const file = fileIo.openSync(path, fileIo.OpenMode.READ_ONLY);
+    const stat = fileIo.statSync(file.fd);
+    const buffer = new ArrayBuffer(stat.size);
+    fileIo.readSync(file.fd, buffer);
+    fileIo.closeSync(file);
+    const helper = new util.Base64Helper();
+    const encoded = helper.encodeSync(new Uint8Array(buffer));
+    let data = '';
+    for (let i = 0; i < encoded.length; i++) {
+      data += String.fromCharCode(encoded[i]);
+    }
+    this.board.Current.Media.push({
+      Id: id,
+      Name: id + '.mp4',
+      Data: data,
+      ContentType: 'video/mp4',
+      Left: Math.max(0, (this.windowWidth - 360) / 2),
+      Top: Math.max(0, (this.windowHeight - 240) / 2),
+      Width: 360,
+      Height: 240,
+      Transform: null
+    });
+    this.boardImagesVersion++;
+  }
+
   private applyGestures(): void {
     this.controller.ConfigureGestures(
       this.settings.gesture.isEnableTwoFingerZoom,
@@ -1970,6 +2033,32 @@ struct Index {
       return '#FFFAFAFA';
     }
     return '#FF1F3B2C';
+  }
+
+  // G1 套索擦覆盖层：闭合路径 + 虚线描边 + 35α 填充（视图 DIP，与控制器 LassoPath 同坐标）。
+  private drawLassoOverlay(): void {
+    const context = this.lassoContext;
+    context.clearRect(0, 0, this.windowWidth, this.windowHeight);
+    if (!this.controller.IsLassoErasing) {
+      return;
+    }
+    const path = this.controller.LassoPath;
+    if (path.length < 2) {
+      return;
+    }
+    context.beginPath();
+    context.moveTo(path[0].X, path[0].Y);
+    for (let i = 1; i < path.length; i++) {
+      context.lineTo(path[i].X, path[i].Y);
+    }
+    context.closePath();
+    context.fillStyle = '#230067C0';
+    context.fill();
+    context.strokeStyle = '#FF0067C0';
+    context.setLineDash([8, 6]);
+    context.lineWidth = 1.5;
+    context.stroke();
+    context.setLineDash([]);
   }
 
   private drawBoardGrid(): void {
@@ -2098,6 +2187,26 @@ struct Index {
   private boardNavigate(delta: number): void {
     this.board.navigate(delta);
     this.syncBoard();
+  }
+
+  // 原子清空当前画板页（墨迹+图片+视频，单页内撤销单元整体恢复）。
+  private clearBoardPage(): void {
+    if (this.board.clearCurrentPage()) {
+      this.releaseBoardPixelMaps();
+      this.boardImagesVersion++;
+      this.refreshScene();
+    }
+  }
+
+  // 衍至新页：选中墨迹克隆到新页（单撤销单元在新页）。元素选区桥（G2）未建，图片/视频暂不随行。
+  private cloneSelectionToNewPage(): void {
+    if (this.controller.Selection.length === 0) {
+      promptAction.showToast({ message: '请先框选墨迹', duration: 1500 });
+      return;
+    }
+    if (this.board.cloneSelectionToNewPage(this.controller.Selection.slice(), [], [], 'c' + Date.now())) {
+      this.syncBoard();
+    }
   }
 
   private async saveBoard(): Promise<void> {
@@ -2532,6 +2641,7 @@ struct Index {
       };
     }
     this.renderer.render(buildScene(committed, active, selection, matrixToArray(this.controller.ViewTransform)), Invalidation.full());
+    this.drawLassoOverlay();
   }
 
   private async openCourseware(): Promise<void> {
@@ -2668,6 +2778,13 @@ struct Index {
       this.controller.EraserMode = InkEraserMode.WholeStroke;
       this.settings.canvas.eraserType = 2;
       this.persistSettings();
+      this.selectedId = id;
+      this.paletteOpen = false;
+      this.shapeOpen = false;
+    } else if (id === 'eraserLasso') {
+      // G1 套索擦：会话级模式（不落 eraserType 设置；与 C# EraserPalette 套索入口一致）。
+      this.controller.Tool = InkTool.Eraser;
+      this.controller.EraserMode = InkEraserMode.Lasso;
       this.selectedId = id;
       this.paletteOpen = false;
       this.shapeOpen = false;
