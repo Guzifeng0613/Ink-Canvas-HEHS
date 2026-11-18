@@ -18,3 +18,7 @@ export { StorageService, describeError } from './src/main/ets/storage/StorageSer
 export { logInfo, logWarn, logError } from './src/main/ets/diagnostics/LogService';
 export { PointerKind, normalizePointer, pointerKind, isMouseEvent } from './src/main/ets/input/InputAdapter';
 export type { RawTouchEvent, NormalizedPointer } from './src/main/ets/input/InputAdapter';
+export { floatingBarPosition, clampToWindow, cornerPanelPosition } from './src/main/ets/layout/WindowLayout';
+export type { PointResult } from './src/main/ets/layout/WindowLayout';
+export { CanvasInkRenderer } from './src/main/ets/rendering/CanvasInkRenderer';
+export { InkCanvasSurface } from './src/main/ets/rendering/InkCanvasSurface';

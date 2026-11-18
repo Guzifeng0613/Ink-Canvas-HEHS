@@ -1,0 +1,12 @@
+{
+  "id": "window-layout",
+  "entry": "harmony/platform/src/main/ets/layout/WindowLayout.ts",
+  "cases": [
+    { "id": "bar-center", "fn": "floatingBarPosition", "input": [1920, 1200, 600, 50, 100], "expected": { "X": 660, "Y": 1050 }, "tolerance": 1e-4 },
+    { "id": "bar-small-window", "fn": "floatingBarPosition", "input": [500, 300, 600, 50, 20], "expected": { "X": 0, "Y": 230 }, "tolerance": 1e-4 },
+    { "id": "clamp-basic", "fn": "clampToWindow", "input": [-10, 500, 100, 50, 800, 600], "expected": { "X": 0, "Y": 500 }, "tolerance": 1e-4 },
+    { "id": "clamp-max", "fn": "clampToWindow", "input": [900, 700, 100, 50, 800, 600], "expected": { "X": 700, "Y": 550 }, "tolerance": 1e-4 },
+    { "id": "corner-0", "fn": "cornerPanelPosition", "input": [0, 1000, 700, 200, 100, 20], "expected": { "X": 20, "Y": 20 }, "tolerance": 1e-4 },
+    { "id": "corner-3", "fn": "cornerPanelPosition", "input": [3, 1000, 700, 200, 100, 20], "expected": { "X": 20, "Y": 580 }, "tolerance": 1e-4 }
+  ]
+}
