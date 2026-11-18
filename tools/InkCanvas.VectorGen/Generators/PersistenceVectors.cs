@@ -83,6 +83,8 @@ internal static class PersistenceVectors
                 Highlighter = s.Attributes.IsHighlighter,
                 HighlighterAlpha = (int)s.Attributes.HighlighterAlpha,
                 Taper = (int)s.Attributes.TaperKind,
+                Nib = (int)s.Attributes.Nib,
+                NibRotation = (double)s.Attributes.NibRotation,
                 Shape = s.IsRecognizedShape,
                 ObjectFrame = s.ExportObjectFrame(),
                 Points = s.Points.Select(p => new double[]
@@ -96,7 +98,7 @@ internal static class PersistenceVectors
 
     private static void WriteBoard(string dir)
     {
-        const string full = "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"Black\",\"GridSpacing\":40,\"Pages\":[{\"Strokes\":[{\"Color\":4278190080,\"Width\":2.5,\"Highlighter\":false,\"Taper\":1,\"Shape\":false,\"HighlighterAlpha\":140,\"ObjectFrame\":[1,2,3,4,1,0,0,1,5,6],\"Points\":[[10,20,0.5,2.5,0],[30,40,0.5,2.5,10]]}],\"Images\":[{\"Id\":\"0f8fad5b-d9cb-469f-a165-70867728950e\",\"Name\":\"a.png\",\"Data\":\"iVBORw0KGgo=\",\"ContentType\":\"image/png\",\"Left\":100,\"Top\":100,\"Width\":640,\"Height\":360,\"Transform\":[1,0,0,1,0,0]}],\"Media\":[{\"Id\":\"m1\",\"Name\":\"v.mp4\",\"Data\":\"AAAAIGZ0eXA=\",\"ContentType\":\"video/mp4\",\"Left\":200,\"Top\":200,\"Width\":360,\"Height\":240,\"Transform\":null}]}]}";
+        const string full = "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"Black\",\"GridSpacing\":40,\"Pages\":[{\"Strokes\":[{\"Color\":4278190080,\"Width\":2.5,\"Highlighter\":false,\"Taper\":1,\"Nib\":0,\"NibRotation\":0,\"Shape\":false,\"HighlighterAlpha\":140,\"ObjectFrame\":[1,2,3,4,1,0,0,1,5,6],\"Points\":[[10,20,0.5,2.5,0],[30,40,0.5,2.5,10]]}],\"Images\":[{\"Id\":\"0f8fad5b-d9cb-469f-a165-70867728950e\",\"Name\":\"a.png\",\"Data\":\"iVBORw0KGgo=\",\"ContentType\":\"image/png\",\"Left\":100,\"Top\":100,\"Width\":640,\"Height\":360,\"Transform\":[1,0,0,1,0,0]}],\"Media\":[{\"Id\":\"m1\",\"Name\":\"v.mp4\",\"Data\":\"AAAAIGZ0eXA=\",\"ContentType\":\"video/mp4\",\"Left\":200,\"Top\":200,\"Width\":360,\"Height\":240,\"Transform\":null}]}]}";
         const string videoOnly = "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"grid\",\"GridSpacing\":30,\"Pages\":[{\"Strokes\":[],\"Images\":[],\"Media\":[{\"Id\":\"m2\",\"Name\":\"v.mp4\",\"Data\":\"AAAA\",\"ContentType\":\"video/mp4\",\"Left\":5,\"Top\":6}]}]}";
         const string emptyPages = "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"white\",\"GridSpacing\":0,\"Pages\":[]}";
 

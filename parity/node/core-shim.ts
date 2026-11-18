@@ -3,10 +3,15 @@
 export const MODULE: string = 'core';
 export { InkPoint } from '../../harmony/core/src/main/ets/ink/InkPoint';
 export { InkColor, packArgb, unpackArgb, withAlphaArgb } from '../../harmony/core/src/main/ets/ink/InkColor';
-export { StrokeAttributes, TaperKind, strokeAttributesEffective } from '../../harmony/core/src/main/ets/ink/StrokeAttributes';
-export { effectiveWidths, applyTaperAt } from '../../harmony/core/src/main/ets/ink/TaperProfile';
-export { InkStroke, Rect, SelectionFrameState, strokeBounds, setTaperAndWidths } from '../../harmony/core/src/main/ets/ink/InkStroke';
-export type { StrokePointInput } from '../../harmony/core/src/main/ets/ink/InkStroke';
+export { StrokeAttributes, TaperKind, PenNib, strokeAttributesEffective } from '../../harmony/core/src/main/ets/ink/StrokeAttributes';
+export {
+  effectiveWidths, applyTaperAt, createTaperProfile, TaperProfile,
+  NoneTaperProfile, VelocityTaperProfile, TailTaperProfile, SimulatedPressureTaperProfile
+} from '../../harmony/core/src/main/ets/ink/TaperProfile';
+export { OneEuroFilter } from '../../harmony/core/src/main/ets/ink/OneEuroFilter';
+export { toTaperKind, toPenStyle, toEraserRadius, menuCatalogProbe } from '../../harmony/core/src/main/ets/settings/OriginalMenuCatalog';
+export { InkStroke, Rect, SelectionFrameState, strokeBounds, setTaperAndWidths, strokeTaperProbe } from '../../harmony/core/src/main/ets/ink/InkStroke';
+export type { StrokePointInput, StrokeTaperSampleInput, StrokeTaperProbeResult } from '../../harmony/core/src/main/ets/ink/InkStroke';
 export { InkDocument, documentHitTestPoint, documentHitTestRect, documentEraseAt, documentBounds } from '../../harmony/core/src/main/ets/ink/InkDocument';
 export type { DocumentStrokeInput, DocumentEraseResult } from '../../harmony/core/src/main/ets/ink/InkDocument';
 export { buildSegmentOutline, buildUnionContours, buildOutlineFlat, signedAreaOfFlat } from '../../harmony/core/src/main/ets/ink/StrokeGeometry';

@@ -7,6 +7,8 @@ export interface BoardStrokeSummary {
   Highlighter: boolean;
   HighlighterAlpha: number;
   Taper: number;
+  Nib: number;
+  NibRotation: number;
   Shape: boolean;
   ObjectFrame: number[] | null;
   Points: number[][];
@@ -92,7 +94,8 @@ function parseStroke(raw: object): BoardStrokeSummary | null {
   }
   const dict = asDict(raw);
   let taper = num(dict['Taper'], 0);
-  if (taper !== 0 && taper !== 1 && taper !== 2) {
+  // TaperKind 0..6（基线演进含 4 种模拟压感笔锋）；越界/非整数回落 0。
+  if (taper < 0 || taper > 6 || !Number.isInteger(taper)) {
     taper = 0;
   }
   const points: number[][] = [];
@@ -137,6 +140,8 @@ function parseStroke(raw: object): BoardStrokeSummary | null {
     Highlighter: bool(dict['Highlighter'], false),
     HighlighterAlpha: num(dict['HighlighterAlpha'], 96),
     Taper: taper,
+    Nib: num(dict['Nib'], 0) === 1 ? 1 : 0,
+    NibRotation: num(dict['NibRotation'], 0),
     Shape: bool(dict['Shape'], false),
     ObjectFrame: objectFrame,
     Points: points

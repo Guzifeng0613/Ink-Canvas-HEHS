@@ -742,15 +742,17 @@
       "csharp": [
         "src/InkCanvas.App/Views/SettingsWindow.cs",
         "src/InkCanvas.Features/Persistence/Stores.cs",
-        "src/InkCanvas.App/Services/ShellController.cs"
+        "src/InkCanvas.App/Services/ShellController.cs",
+        "src/InkCanvas.Core/Settings/OriginalMenuCatalog.cs"
       ],
       "arkts": [
         "harmony/entry/src/main/ets/pages/Index.ets",
-        "harmony/core/src/main/ets/persistence/SettingsCodec.ts"
+        "harmony/core/src/main/ets/persistence/SettingsCodec.ts",
+        "harmony/core/src/main/ets/settings/OriginalMenuCatalog.ts"
       ],
       "vectors": [],
       "tests": [],
-      "notes": "设置面板覆盖 AppSettings 全部 88 字段（10 分组）；不可用项注明原因；持久化往返。"
+      "notes": "设置面板覆盖 AppSettings 全部字段（含 highlighterWidth 可空：null 省略写出、缺省跟随笔宽）；重置设置=ResetToRecommendation 推荐默认集；持久化往返向量互认。"
     },
     {
       "id": "ui-shape-picker",
@@ -835,7 +837,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "插入/渲染/缓存/释放/matrix4 精确变换/拖拽手势（单页内撤销单元）/上传压缩至 1080P（CompressMath 向量 + ImageCompress）已接；matrix4 渲染需真机核对。"
+      "notes": "插入/渲染/缓存/释放/matrix4 精确变换/拖拽（页内撤销）/1080P 压缩/笔尖 Nib+NibRotation 存档持久化（.icink 与画板包双向，向量互认）已接。"
     },
     {
       "id": "board-persistence",

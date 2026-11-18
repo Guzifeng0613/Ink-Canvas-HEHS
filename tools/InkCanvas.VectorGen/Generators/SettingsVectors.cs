@@ -13,7 +13,9 @@ internal static class SettingsVectors
             "{\"advanced\":{\"isSpecialScreen\":true,\"touchMultiplier\":0.3},\"appearance\":{\"theme\":2},\"automation\":{\"autoSavedStrokesLocation\":\"D:\\\\Ink Canvas\",\"autoDelSavedFilesDaysThreshold\":30},\"behavior\":{\"isSupportWPS\":false},\"canvas\":{\"inkWidth\":7.5,\"inkStyle\":1,\"hyperbolaAsymptoteOption\":0},\"gesture\":{\"AutoSwitchTwoFingerGesture\":false,\"matrixTransformCenterPoint\":2},\"inkToShape\":{\"isInkToShapeEnabled\":false},\"startup\":{\"isAutoUpdateWithSilence\":true,\"isAutoUpdateWithSilenceStartTime\":\"22:30\"},\"randSettings\":{\"peopleCount\":42},\"futureFlag\":true}",
             "{\"canvas\":{\"INKWIDTH\":7.5},\"appearance\":{\"THEME\":1}}",
             "{\"automation\":{\"autoSavedStrokesLocation\":\"C:\\\\Users\\\\Teacher\\\\Desktop\\\\notes\"}}",
-            "{}"
+            "{}",
+            "{\"canvas\":{\"highlighterWidth\":12.5}}",
+            "{\"canvas\":{\"highlighterWidth\":null}}"
         };
 
         var cases = new List<object>();

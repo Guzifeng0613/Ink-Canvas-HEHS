@@ -3,7 +3,7 @@
 import { InkColor } from '../ink/InkColor';
 import { InkPoint } from '../ink/InkPoint';
 import { InkStroke } from '../ink/InkStroke';
-import { StrokeAttributes, TaperKind } from '../ink/StrokeAttributes';
+import { StrokeAttributes, TaperKind, PenNib } from '../ink/StrokeAttributes';
 
 export interface IcinkPointRow {
   X: number;
@@ -19,6 +19,8 @@ export interface IcinkStrokeSummary {
   Highlighter: boolean;
   HighlighterAlpha: number;
   Taper: number;
+  Nib: number;
+  NibRotation: number;
   Shape: boolean;
   ObjectFrame: number[] | null;
   Points: number[][];
@@ -59,6 +61,11 @@ export function parseIcink(text: string): InkStroke[] {
     attributes.IsHighlighter = bool(dict['Highlighter'], false);
     attributes.HighlighterAlpha = num(dict['HighlighterAlpha'], 96);
     attributes.TaperKind = num(dict['Taper'], 0) as TaperKind;
+    // Nib 缺省 Round(0)、NibRotation 缺省 0（与 C# StrokeFile 默认一致；越界回落）。
+    const nibValue = num(dict['Nib'], 0);
+    attributes.Nib = (nibValue === 1 ? 1 : 0) as PenNib;
+    const nibRotationValue = num(dict['NibRotation'], 0);
+    attributes.NibRotation = isFinite(nibRotationValue) ? nibRotationValue : 0;
     const stroke = new InkStroke(attributes);
     stroke.IsRecognizedShape = bool(dict['Shape'], false);
     const points: InkPoint[] = [];
@@ -105,6 +112,8 @@ function summaryOf(stroke: InkStroke): IcinkStrokeSummary {
     Highlighter: stroke.Attributes.IsHighlighter,
     HighlighterAlpha: stroke.Attributes.HighlighterAlpha,
     Taper: stroke.Attributes.TaperKind,
+    Nib: stroke.Attributes.Nib,
+    NibRotation: stroke.Attributes.NibRotation,
     Shape: stroke.IsRecognizedShape,
     ObjectFrame: stroke.exportObjectFrame(),
     Points: points

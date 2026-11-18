@@ -19,6 +19,9 @@ const BOOL = 0;
 const INT = 1;
 const NUM = 2;
 const STR = 3;
+// 可空数值：读取接受 number/null（缺失/非法回落 null）；写出时 null 省略
+// （对应 C# JsonIgnore(WhenWritingNull)，如 highlighterWidth）。
+const NUM_NULL = 4;
 
 class FieldDef {
   key: string;
@@ -116,6 +119,7 @@ const DEF_BEHAVIOR = new SectionDef('behavior', [
 
 const DEF_CANVAS = new SectionDef('canvas', [
   new FieldDef('inkWidth', NUM),
+  new FieldDef('highlighterWidth', NUM_NULL),
   new FieldDef('inkAlpha', INT),
   new FieldDef('isCompressPicturesUploaded', BOOL),
   new FieldDef('isShowCursor', BOOL),
@@ -175,6 +179,13 @@ function coerce(value: Object, kind: number, fallback: Object): Object {
   if (kind === BOOL) {
     return typeof value === 'boolean' ? value : fallback;
   }
+  if (kind === NUM_NULL) {
+    if (value === null) {
+      return null;
+    }
+    const nullable = Number(value);
+    return isFinite(nullable) ? nullable : fallback;
+  }
   if (kind === INT || kind === NUM) {
     const n = Number(value);
     if (!isFinite(n)) {
@@ -202,6 +213,13 @@ function readSection(root: Object, def: SectionDef, defaults: Object): Object {
       }
     }
   }
+  // 可空字段为 null 时键不存在（对应 C# JsonIgnore(WhenWritingNull) 的序列化形态）。
+  for (let i = 0; i < def.fields.length; i++) {
+    const field = def.fields[i];
+    if (field.kind === NUM_NULL && out[field.key] === null) {
+      delete out[field.key];
+    }
+  }
   return out;
 }
 
@@ -209,7 +227,15 @@ function pickSection(section: Object, def: SectionDef): Object {
   const src = asDict(section);
   const dst: Record<string, Object> = {};
   for (let i = 0; i < def.fields.length; i++) {
-    dst[def.fields[i].key] = src[def.fields[i].key];
+    const field = def.fields[i];
+    const value = src[field.key];
+    if (field.kind === NUM_NULL) {
+      if (value !== null && value !== undefined) {
+        dst[field.key] = value;
+      }
+      continue;
+    }
+    dst[field.key] = value;
   }
   return dst;
 }

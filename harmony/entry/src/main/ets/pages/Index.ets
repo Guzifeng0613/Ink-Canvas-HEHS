@@ -51,7 +51,7 @@ import {
   Invalidation
 } from '@inkcanvas/ink';
 import type { SceneStrokeInput, SceneSelectionInput } from '@inkcanvas/ink';
-import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings, matrixToArray, transformPointByMatrix, PenNib, calibrationMultiplier } from '@inkcanvas/core';
+import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings, matrixToArray, transformPointByMatrix, PenNib, calibrationMultiplier, toTaperKind, toPenStyle, toEraserRadius, resetToRecommendation, TaperKind } from '@inkcanvas/core';
 import type { ShapeKind, StrokePointInput, AppSettings, AdvancedTouchInput, Matrix3x2 } from '@inkcanvas/core';
 import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground, renderMatrix4Values, applyReplaceRules, lotteryDisplayName, lotteryFlicker, lotteryDrawUnique, lotterySplitGroups, appendTransform, transformedBounds, snapshotGeometry, recordTransform } from '@inkcanvas/features';
 import type { CoursewarePageFile } from '@inkcanvas/features';
@@ -327,7 +327,13 @@ struct Index {
     this.taperIndex = this.settings.canvas.inkStyle;
     this.controller.CurrentAttributes.BaseWidth = this.settings.canvas.inkWidth;
     this.controller.CurrentAttributes.HighlighterAlpha = this.settings.canvas.inkAlpha;
-    this.controller.CurrentAttributes.TaperKind = this.settings.canvas.inkStyle === 1 ? 2 : (this.settings.canvas.inkStyle === 2 ? 0 : 1);
+    // inkStyle 持久化为菜单索引（OriginalMenuCatalog.ToTaperKind 映射，含 4 种模拟压感笔锋）。
+    this.controller.CurrentAttributes.TaperKind = toTaperKind(this.settings.canvas.inkStyle);
+    // 笔/荧光笔独立宽度（highlighterWidth 缺省 = 跟随笔宽），切工具互换 BaseWidth。
+    this.controller.ConfigurePenWidths(
+      this.settings.canvas.inkWidth,
+      typeof this.settings.canvas.highlighterWidth === 'number' ? this.settings.canvas.highlighterWidth : this.settings.canvas.inkWidth
+    );
     this.applyGestures();
     this.controller.MultiTouchEnabled = this.settings.gesture.isEnableMultiTouchMode;
     this.controller.GesturesTargetSelection = this.settings.gesture.isEnableTwoFingerRotationOnSelection;
@@ -359,9 +365,7 @@ struct Index {
 
   // C# OriginalMenuCatalog.ToEraserRadius：45 * {0.5, 0.8, 1, 1.25, 1.8}[clamp(size,0,4)]。
   private eraserRadiusForSize(size: number): number {
-    const factors: number[] = [0.5, 0.8, 1, 1.25, 1.8];
-    const index = Math.min(Math.max(Math.round(size), 0), factors.length - 1);
-    return 45 * factors[index];
+    return toEraserRadius(size);
   }
 
   // eraserType：0=图标切换（保持当前模式），1=面积擦，2=线条擦。
@@ -588,7 +592,9 @@ struct Index {
             highlighter: this.paletteHighlighter,
             dark: this.dark,
             lightColorScheme: !this.dark,
-            widthMenu: this.widthMenu,
+            widthMenu: this.paletteHighlighter && typeof this.settings.canvas.highlighterWidth === 'number'
+              ? this.settings.canvas.highlighterWidth * 2
+              : this.widthMenu,
             alpha: this.alpha,
             taperIndex: this.taperIndex,
             currentPacked: this.currentPacked,
@@ -602,7 +608,17 @@ struct Index {
               this.paletteOpen = false;
             },
             onWidth: (stored: number) => {
-              this.widthMenu = stored * 2;
+              if (this.paletteHighlighter) {
+                // 荧光笔独立宽度（canvas.highlighterWidth，null=跟随笔宽；菜单上限 120）。
+                this.settings.canvas.highlighterWidth = Math.min(stored, 60);
+                this.controller.ConfigurePenWidths(this.settings.canvas.inkWidth, this.settings.canvas.highlighterWidth);
+              } else {
+                this.widthMenu = stored * 2;
+                const highlighter = typeof this.settings.canvas.highlighterWidth === 'number'
+                  ? this.settings.canvas.highlighterWidth
+                  : stored;
+                this.controller.ConfigurePenWidths(stored, highlighter);
+              }
               this.controller.CurrentAttributes.BaseWidth = stored;
               this.persistSettings();
             },
@@ -612,7 +628,8 @@ struct Index {
               this.persistSettings();
             },
             onTaper: (kind: number) => {
-              this.taperIndex = kind === 1 ? 0 : (kind === 2 ? 1 : 2);
+              // kind 为 TaperKind；taperIndex 持久化菜单索引（ToPenStyle 反向映射）。
+              this.taperIndex = toPenStyle(kind as TaperKind);
               this.controller.CurrentAttributes.TaperKind = kind;
               this.persistSettings();
             },
@@ -1348,11 +1365,11 @@ struct Index {
       this.touchSettings();
       this.refreshScene();
     })
-    this.SettingOptions('笔迹风格', ['点集笔锋', '速率笔锋', '关闭笔锋'],
+    this.SettingOptions('笔迹风格', ['点集笔锋', '速率笔锋', '关闭笔锋', '平滑硬笔', '柔和压感', '自然笔锋', '书法笔锋'],
       this.settings.canvas.inkStyle, (i: number) => {
         this.settings.canvas.inkStyle = i;
         this.taperIndex = i;
-        this.controller.CurrentAttributes.TaperKind = i === 1 ? 2 : (i === 2 ? 0 : 1);
+        this.controller.CurrentAttributes.TaperKind = toTaperKind(i);
         this.touchSettings();
       })
     this.SettingOptions('笔尖', ['圆形', '椭圆 · 右斜 45°'],
@@ -1712,6 +1729,14 @@ struct Index {
     this.SettingSection('关于 Ink Canvas Artistry')
     this.SettingInfo('当前版本：3.4.0（HarmonyOS 移植）· 开源协议 GPL-3.0')
     this.SettingInfo('上游：InkCanvas/Ink-Canvas-Artistry ← WXRIW/Ink-Canvas。')
+    this.SettingButton('重置设置（恢复推荐默认）', '重置', () => {
+      // C# ResetToRecommendation：就地改写并保留自动删除配置；随后重新应用并保存。
+      resetToRecommendation(this.settings);
+      this.applySettings();
+      this.touchSettings();
+      this.refreshScene();
+      promptAction.showToast({ message: '已恢复推荐设置', duration: 2000 });
+    })
     Row({ space: 8 }) {
       Text('检查更新')
         .fontSize(13).fontColor(Color.White).padding(10)

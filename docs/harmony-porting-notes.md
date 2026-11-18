@@ -62,7 +62,28 @@
 - 控制器：两步长方体改 GenerateCuboid（带符号深度）、双曲线渐近线按 kind 决定、识别圆改 CircleFromCenter、选区拖拽/克隆与双指钳制对齐当前 C#。
 - 评审修复：跨文档撤销隔离（BindDocument）、课件墨迹持久化与 PDF/PixelMap 释放、手势/Pan/视图矩阵/翻页接线、触摸下移到画布层、修饰键大小写与焦点、是否窗 pending、截图建目录与提示、picker/IO 错误处理、画板加载坏文件不清空、画板资产缓存/释放/Transform、抽奖不重复修复、自动保存开关/prune 接线、浮条拖动与文字开关、resize 重绘。
 
+## C# 基线演进同步（2026-11-19 缺口轮 5：笔锋/设置格式/存档契约）
+
+用户 C# 工作树再次大幅演进（47 文件 +11k/−2.3k）。以 C# VectorGen 重生成黄金向量为 oracle 逐项同步：
+
+- **笔锋（ink-taper）**：TaperKind 0..6（新增 平滑硬笔/柔和压感/自然/书法）；`SimulatedPressureTaper`（时间戳虚拟压感 EMA 速度 + 距离三次笔尾 + 64 槽环缓冲）与 `OneEuroFilter`（自适应低通、maxLag 2.5）1:1 移植；`TaperProfile` 类化（InkStroke 持有状态实例，换 kind 重建）；`StablePointCount` 稳定前缀 + `GeometryVersion`。新向量：taper-simulated（8）+ taper-stroke（5，滤波位置/稳定数全链路）。
+- **Settings.json 契约**：新增可空 `canvas.highlighterWidth`（荧光笔独立宽度；null 时键省略 = C# JsonIgnore WhenWritingNull，解析缺失回落）；`inkStyle` 语义改为菜单索引（OriginalMenuCatalog.ToTaperKind 映射，7 项风格菜单）；`resetToRecommendation()`（重置设置推荐默认集，保留自动删除配置）+ 设置面板「重置」按钮。
+- **OriginalMenuCatalog（core/settings 新文件）**：PEN_STYLES(7)/PEN_NIBS/ToTaperKind/ToPenStyle/ToEraserRadius（45×{.5,.8,1,1.25,1.8}）/HighlighterWidthMaximum(120) 等；向量 original-menu（2）。
+- **笔/荧光笔宽度互换（G8）**：controller.ConfigurePenWidths + Tool setter 换 BaseWidth；entry 调色盘/设置接线（荧光笔宽独立存储、笔宽独立）。
+- **存档契约（G13）**：.icink 与画板包 StrokeFile 增 `Nib`/`NibRotation` 持久化（双向，PascalCase，缺省 Round/0，越界回落）；画板包 Taper 校验扩到 0..6；schemas 同步。
+- 调色盘 7 风格菜单 + 设置笔迹风格 7 项 + 橡皮半径统一走 toEraserRadius。
+- 验证：**473 向量 / 50 文件全绿**（含重生成 oracle：taper-simulated/taper-stroke/settings-roundtrip 扩展/original-menu）；BUILD SUCCESSFUL；parity-check 见下轮收口。
+
+### 剩余演进缺口（调研 docs/superpowers/research/harmony/16-baseline-evolution-gap.md，G1–G17）
+
+- **P0（正确性，下轮先做）**：G4 撤销语义 3 处对齐（手势单撤销单元/两步体尊重 StickyShape/单次 Invalidated）；G5 识别加固（单笔直线/450ms 端点按住/TryLine 偏差与路径比/统一宽度/中心圆）。
+- **P1（选区特性集）**：G1 套索擦 → G2 元素选区桥（SelectedElements/SetPresent）→ G3+G15+G16 选区命令工具条+入口 → G10 画板页语义（携带状态/衍至新页/原子清空）。
+- **P2**：G6 落点动画、G7 橡皮悬停预览、G11 元素撤销入栈、G12 视频插入、G14 选区装饰细节。
+- **P3**：G9 控制器级回放（已有独立回放窗）、G17 课件轮询节奏（200/1000ms）。
+- 纯 WinUI3 窗口 chrome（BarPanelWindow/FoldedBarHandle/ChromeBackdrop/TransientWindowDismissal/渲染性能管道）不构成 ArkTS 行为缺口（报告 §3）。
+
 ## 与 WinUI3 基线的已知差异（设计决定）
+
 
 - 跨应用全屏批注不可行（`TYPE_FLOAT` 需 system_basic）→ 应用内批注 + 课件/图片/截图导入。
 - PPT/WPS COM 不可行 → PDF 课件模式（逐页渲染 + 自绘墨迹）。

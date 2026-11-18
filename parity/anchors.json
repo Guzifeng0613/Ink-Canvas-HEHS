@@ -74,6 +74,10 @@
       "csharp": "src/InkCanvas.Core/Ink/MatrixTransformCenter.cs"
     },
     {
+      "arkts": "harmony/core/src/main/ets/ink/OneEuroFilter.ts",
+      "csharp": "src/InkCanvas.Core/Ink/OneEuroFilter.cs"
+    },
+    {
       "arkts": "harmony/core/src/main/ets/ink/StrokeAttributes.ts",
       "csharp": "src/InkCanvas.Core/Ink/StrokeAttributes.cs"
     },
@@ -144,6 +148,14 @@
     {
       "arkts": "harmony/core/src/main/ets/settings/AppSettings.ts",
       "csharp": "src/InkCanvas.Core/Settings/AppSettings.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/settings/AppSettings.ts",
+      "csharp": "src/InkCanvas.Core/Settings/AppSettings.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/settings/OriginalMenuCatalog.ts",
+      "csharp": "src/InkCanvas.Core/Settings/OriginalMenuCatalog.cs"
     },
     {
       "arkts": "harmony/core/src/main/ets/shapes/ShapeGenerator.ts",

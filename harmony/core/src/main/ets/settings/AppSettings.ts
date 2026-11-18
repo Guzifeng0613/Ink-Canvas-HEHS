@@ -35,6 +35,8 @@ export interface AppearanceSettings {
 
 export interface CanvasSettings {
   inkWidth: number;
+  // 荧光笔独立宽度（null/缺省 = 跟随笔宽）；写出时 null 省略（C# JsonIgnore WhenWritingNull）。
+  highlighterWidth?: number | null;
   inkAlpha: number;
   isCompressPicturesUploaded: boolean;
   isShowCursor: boolean;
@@ -203,6 +205,7 @@ export function createDefaultSettings(): AppSettings {
     },
     canvas: {
       inkWidth: 2.5,
+      highlighterWidth: null,
       inkAlpha: 140,
       isCompressPicturesUploaded: false,
       isShowCursor: false,
@@ -238,4 +241,110 @@ export function createDefaultSettings(): AppSettings {
       isNotRepeatName: false
     }
   };
+}
+
+// @parity src/InkCanvas.Core/Settings/AppSettings.cs（ResetToRecommendation —「重置设置」推荐默认集）
+// 上游 SetSettingsToRecommendation() 1:1：就地改写（保持 AutoSaveService/Palm 持有的引用有效），
+// 调用方随后重新应用并保存。上游保留自动删除配置；未列字段回落构造默认值。
+export function resetToRecommendation(settings: AppSettings): void {
+  const autoDelSavedFiles = settings.automation.autoDelSavedFiles;
+  const autoDelDaysThreshold = settings.automation.autoDelSavedFilesDaysThreshold;
+
+  settings.advanced.isSpecialScreen = true;
+  settings.advanced.isQuadIR = false;
+  settings.advanced.touchMultiplier = 0.3;
+  settings.advanced.nibModeBoundsWidth = 5;
+  settings.advanced.fingerModeBoundsWidth = 20;
+  settings.advanced.nibModeBoundsWidthThresholdValue = 2.5;
+  settings.advanced.fingerModeBoundsWidthThresholdValue = 2.5;
+  settings.advanced.nibModeBoundsWidthEraserSize = 0.8;
+  settings.advanced.fingerModeBoundsWidthEraserSize = 0.8;
+  settings.advanced.isLogEnabled = true;
+  settings.advanced.isSecondConfimeWhenShutdownApp = false;
+  settings.advanced.isEnableEdgeGestureUtil = false;
+
+  settings.appearance.isEnableDisPlayFloatBarText = false;
+  settings.appearance.isEnableDisPlayNibModeToggler = false;
+  settings.appearance.isColorfulViewboxFloatingBar = false;
+  settings.appearance.enableViewboxFloatingBarScaleTransform = 100.0;
+  settings.appearance.enableViewboxBlackBoardScaleTransform = 100.0;
+  settings.appearance.floatingBarBottomMargin = 100.0;
+  settings.appearance.isTransparentButtonBackground = true;
+  settings.appearance.isShowExitButton = true;
+  settings.appearance.isShowEraserButton = true;
+  settings.appearance.isShowHideControlButton = false;
+  settings.appearance.isShowLRSwitchButton = false;
+  settings.appearance.isShowModeFingerToggleSwitch = true;
+  settings.appearance.theme = 0;
+
+  settings.automation.isAutoFoldInEasiNote = true;
+  settings.automation.isAutoFoldInEasiNoteIgnoreDesktopAnno = true;
+  settings.automation.isAutoFoldInEasiCamera = true;
+  settings.automation.isAutoFoldInEasiNote3C = false;
+  settings.automation.isAutoFoldInSeewoPincoTeacher = false;
+  settings.automation.isAutoFoldInHiteTouchPro = false;
+  settings.automation.isAutoFoldInHiteCamera = false;
+  settings.automation.isAutoFoldInWxBoardMain = false;
+  settings.automation.isAutoFoldInOldZyBoard = false;
+  settings.automation.isAutoFoldInMSWhiteboard = false;
+  settings.automation.isAutoFoldInPPTSlideShow = false;
+  settings.automation.isAutoKillPptService = false;
+  settings.automation.isAutoKillEasiNote = false;
+  settings.automation.isSaveScreenshotsInDateFolders = false;
+  settings.automation.isAutoSaveStrokesAtScreenshot = true;
+  settings.automation.isAutoSaveStrokesAtClear = true;
+  settings.automation.isAutoClearWhenExitingWritingMode = false;
+  settings.automation.minimumAutomationStrokeNumber = 0;
+  settings.automation.autoSavedStrokesLocation = 'D:\\Ink Canvas';
+  settings.automation.autoDelSavedFiles = autoDelSavedFiles;
+  settings.automation.autoDelSavedFilesDaysThreshold = autoDelDaysThreshold;
+
+  settings.behavior.isShowPPTNavigationBottom = false;
+  settings.behavior.isShowPPTNavigationSides = true;
+  settings.behavior.isShowBottomPPTNavigationPanel = true;
+  settings.behavior.isShowSidePPTNavigationPanel = true;
+  settings.behavior.powerPointSupport = true;
+  settings.behavior.isShowCanvasAtNewSlideShow = true;
+  settings.behavior.isNoClearStrokeOnSelectWhenInPowerPoint = true;
+  settings.behavior.isShowStrokeOnSelectInPowerPoint = false;
+  settings.behavior.isAutoSaveStrokesInPowerPoint = true;
+  settings.behavior.isAutoSaveScreenShotInPowerPoint = true;
+  settings.behavior.isNotifyPreviousPage = false;
+  settings.behavior.isNotifyHiddenPage = false;
+  settings.behavior.isNotifyAutoPlayPresentation = true;
+  settings.behavior.isEnableTwoFingerGestureInPresentationMode = false;
+  settings.behavior.isEnableFingerGestureSlideShowControl = false;
+  settings.behavior.isSupportWPS = true;
+
+  settings.canvas.inkWidth = 2.5;
+  settings.canvas.highlighterWidth = null;
+  settings.canvas.inkAlpha = 80;
+  settings.canvas.isCompressPicturesUploaded = false;
+  settings.canvas.isShowCursor = false;
+  settings.canvas.inkStyle = 0;
+  settings.canvas.penNib = 0;
+  settings.canvas.eraserSize = 1;
+  settings.canvas.eraserType = 0;
+  settings.canvas.hideStrokeWhenSelecting = false;
+  settings.canvas.usingWhiteboard = false;
+
+  settings.gesture.matrixTransformCenterPoint = 0;
+  settings.gesture.AutoSwitchTwoFingerGesture = true;
+  settings.gesture.isEnableTwoFingerTranslate = true;
+  settings.gesture.isEnableTwoFingerZoom = false;
+  settings.gesture.isEnableTwoFingerRotation = false;
+  settings.gesture.isEnableTwoFingerRotationOnSelection = true;
+  settings.gesture.isEnableMultiTouchMode = true;
+
+  settings.inkToShape.isInkToShapeEnabled = true;
+
+  settings.startup.isEnableNibMode = false;
+  settings.startup.isAutoUpdate = true;
+  settings.startup.isAutoUpdateWithSilence = true;
+  settings.startup.isAutoUpdateWithSilenceStartTime = '18:20';
+  settings.startup.isAutoUpdateWithSilenceEndTime = '07:40';
+  settings.startup.isFoldAtStartup = false;
+
+  settings.randSettings.peopleCount = 60;
+  settings.randSettings.isNotRepeatName = false;
 }

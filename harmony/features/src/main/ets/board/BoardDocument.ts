@@ -5,6 +5,7 @@ import {
   InkPoint,
   InkColor,
   StrokeAttributes,
+  PenNib,
   parseBoardPack,
   stringifyBoardPack,
   parseIcink,
@@ -85,6 +86,8 @@ function strokeSummary(stroke: InkStroke): BoardStrokeSummary {
     Highlighter: stroke.Attributes.IsHighlighter,
     HighlighterAlpha: stroke.Attributes.HighlighterAlpha,
     Taper: stroke.Attributes.TaperKind,
+    Nib: stroke.Attributes.Nib,
+    NibRotation: stroke.Attributes.NibRotation,
     Shape: stroke.IsRecognizedShape,
     ObjectFrame: stroke.exportObjectFrame(),
     Points: points
@@ -98,6 +101,8 @@ function strokeFromSummary(summary: BoardStrokeSummary): InkStroke {
   attributes.IsHighlighter = summary.Highlighter;
   attributes.HighlighterAlpha = summary.HighlighterAlpha;
   attributes.TaperKind = summary.Taper;
+  attributes.Nib = summary.Nib === 1 ? PenNib.Ellipse45 : PenNib.Round;
+  attributes.NibRotation = summary.NibRotation;
   const stroke = new InkStroke(attributes);
   stroke.IsRecognizedShape = summary.Shape;
   const points: InkPoint[] = [];

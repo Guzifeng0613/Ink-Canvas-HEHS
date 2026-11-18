@@ -1,5 +1,7 @@
 // @parity src/InkCanvas.Core/Settings/OriginalMenuCatalog.cs
 // 9 色笔板（深/浅两套）与 6 色荧光笔板；宽度 1–30（存储 0.5–15）、透明度 20–240/20。
+import { toTaperKind } from '@inkcanvas/core';
+
 export interface Swatch {
   Name: string;
   R: number;
@@ -47,7 +49,13 @@ export const HIGHLIGHTER_ALPHA_MIN: number = 20;
 export const HIGHLIGHTER_ALPHA_MAX: number = 240;
 export const HIGHLIGHTER_ALPHA_STEP: number = 20;
 export const HIGHLIGHTER_ALPHA_DEFAULT: number = 140;
-export const TAPER_LABELS: string[] = ['点集笔锋', '速率笔锋', '关闭笔锋'];
+// 基线演进：7 种笔迹风格（含 4 种模拟压感笔锋）；映射统一走 core OriginalMenuCatalog。
+export const TAPER_LABELS: string[] = [
+  '点集笔锋', '速率笔锋', '关闭笔锋',
+  '平滑硬笔', '柔和压感', '自然笔锋', '书法笔锋'
+];
+// 荧光笔独立宽度菜单上限（存储 60；null = 跟随笔宽）。
+export const HIGHLIGHTER_WIDTH_MAX: number = 120;
 
 export function toStoredPenWidth(menuWidth: number): number {
   return menuWidth / 2;
@@ -61,15 +69,9 @@ export function snap(value: number, minimum: number, step: number): number {
   return minimum + Math.round((value - minimum) / step) * step;
 }
 
-// 菜单索引 → TaperKind：0→Tail(1)、1→Velocity(2)、2→None(0)。
+// 菜单索引（inkStyle）→ TaperKind：委托 core OriginalMenuCatalog.toTaperKind（0..6）。
 export function taperKindForIndex(index: number): number {
-  if (index === 1) {
-    return 2;
-  }
-  if (index === 2) {
-    return 0;
-  }
-  return 1;
+  return toTaperKind(index);
 }
 
 export function packedSwatch(swatch: Swatch): number {

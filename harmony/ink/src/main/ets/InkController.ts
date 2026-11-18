@@ -563,6 +563,12 @@ export class InkController {
     }
     const previous = this._tool;
     this._tool = value;
+    // 笔/荧光笔独立宽度：配置过 ConfigurePenWidths 后，切工具换 BaseWidth（C# Tool setter）。
+    if (this.configuredPenWidth !== null) {
+      this.CurrentAttributes.BaseWidth = value === InkTool.Highlighter
+        ? this.configuredHighlighterWidth
+        : this.configuredPenWidth;
+    }
     this._panPointerId = null;
     this.cancelLassoErase();
     if (previous === InkTool.Eraser && this._erasing) {
@@ -578,6 +584,16 @@ export class InkController {
       this.StickyShape = false;
     }
     this.notifyToolChanged();
+  }
+
+  // 配置笔/荧光笔独立宽度（null=未配置不换宽）；当前工具立即生效。
+  private configuredPenWidth: number | null = null;
+  private configuredHighlighterWidth: number = 2.5;
+
+  ConfigurePenWidths(pen: number, highlighter: number): void {
+    this.configuredPenWidth = pen;
+    this.configuredHighlighterWidth = highlighter;
+    this.CurrentAttributes.BaseWidth = this.Tool === InkTool.Highlighter ? highlighter : pen;
   }
 
   get ShapeKind(): ShapeKind {

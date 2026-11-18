@@ -58,6 +58,18 @@
                       "type": "number"
                     }
                   }
+                },
+                "Nib": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1
+                  ],
+                  "description": "Pen nib: 0 round, 1 Ellipse45"
+                },
+                "NibRotation": {
+                  "type": "number",
+                  "description": "Extra nib rotation in radians; default 0"
                 }
               },
               "required": [

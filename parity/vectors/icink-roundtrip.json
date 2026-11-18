@@ -15,6 +15,8 @@
           "Highlighter": true,
           "HighlighterAlpha": 140,
           "Taper": 0,
+          "Nib": 0,
+          "NibRotation": 0,
           "Shape": true,
           "ObjectFrame": [
             5,
@@ -51,6 +53,8 @@
           "Highlighter": false,
           "HighlighterAlpha": 96,
           "Taper": 2,
+          "Nib": 0,
+          "NibRotation": 0,
           "Shape": false,
           "ObjectFrame": null,
           "Points": [
@@ -107,6 +111,8 @@
           "Highlighter": false,
           "HighlighterAlpha": 96,
           "Taper": 9,
+          "Nib": 0,
+          "NibRotation": 0,
           "Shape": false,
           "ObjectFrame": null,
           "Points": [

@@ -16,6 +16,91 @@ internal static class TaperVectors
             entry = "harmony/core/src/main/ets/ink/TaperProfile.ts",
             cases = VelocityCases()
         });
+        JsonWriter.Write(dir, "taper-simulated.json", new
+        {
+            id = "taper-simulated",
+            entry = "harmony/core/src/main/ets/ink/TaperProfile.ts",
+            cases = SimulatedCases()
+        });
+        JsonWriter.Write(dir, "taper-stroke.json", new
+        {
+            id = "taper-stroke",
+            entry = "harmony/core/src/main/ets/ink/InkStroke.ts",
+            cases = StrokeCases()
+        });
+    }
+
+    // 基线演进：4 种模拟压感笔锋（SmoothPen/SoftPen/Natural/Calligraphy）宽度序列。
+    private static List<object> SimulatedCases()
+    {
+        return new List<object>
+        {
+            Case("sim-smoothpen-line", 10, Line(12, 10f), TaperKind.SmoothPen),
+            Case("sim-softpen-line", 10, Line(12, 10f), TaperKind.SoftPen),
+            Case("sim-natural-line", 10, Line(12, 10f), TaperKind.Natural),
+            Case("sim-calligraphy-line", 10, Line(12, 10f), TaperKind.Calligraphy),
+            Case("sim-natural-accelerate", 8, new[]
+            {
+                (0f, 0f, 0f), (3f, 0f, 10f), (7f, 0f, 20f), (15f, 0f, 30f),
+                (30f, 0f, 40f), (52f, 0f, 50f), (80f, 0f, 60f), (81f, 0f, 70f)
+            }, TaperKind.Natural),
+            Case("sim-calligraphy-turn", 10, new[]
+            {
+                (0f, 0f, 0f), (6f, 0f, 10f), (12f, 1f, 20f), (17f, 4f, 30f), (20f, 9f, 40f),
+                (20f, 15f, 50f), (17f, 20f, 60f), (12f, 23f, 70f), (6f, 24f, 80f), (0f, 22f, 90f)
+            }, TaperKind.Calligraphy),
+            Case("sim-smoothpen-40", 6, Line(40, 6f), TaperKind.SmoothPen),
+            Case("sim-softpen-irregular", 7.5f, new[]
+            {
+                (0f, 0f, 0f), (3f, 1f, 8f), (9f, -2f, 17f), (12f, 4f, 25f), (20f, 8f, 31f),
+                (21f, 15f, 40f), (18f, 19f, 49f)
+            }, TaperKind.SoftPen)
+        };
+    }
+
+    // 笔画级探针：InkStroke 全链路（OneEuroFilter 位置滤波 → 状态化笔锋 → StablePointCount）。
+    private static List<object> StrokeCases()
+    {
+        return new List<object>
+        {
+            StrokeCase("stroke-natural-filter-jitter", 10, new[]
+            {
+                (0f, 0f, 0f), (5f, 0.8f, 10f), (9f, -0.5f, 20f), (14f, 0.9f, 30f),
+                (18f, 0f, 40f), (23f, -0.7f, 50f), (27f, 0.6f, 60f), (32f, 0f, 70f)
+            }, TaperKind.Natural),
+            StrokeCase("stroke-calligraphy-line", 10, Line(14, 10f), TaperKind.Calligraphy),
+            StrokeCase("stroke-smoothpen-line", 10, Line(14, 10f), TaperKind.SmoothPen),
+            StrokeCase("stroke-tail-stable", 10, Line(24, 10f), TaperKind.Tail),
+            StrokeCase("stroke-natural-stable", 10, Line(60, 8f), TaperKind.Natural)
+        };
+    }
+
+    private static object StrokeCase(string id, float baseWidth, (float X, float Y, float TimeMs)[] samples, TaperKind kind)
+    {
+        var attributes = new StrokeAttributes { BaseWidth = baseWidth, TaperKind = kind };
+        var stroke = new InkStroke(attributes);
+        var widths = new List<double>();
+        var stable = new List<int>();
+        var xs = new List<double>();
+        var ys = new List<double>();
+        foreach (var s in samples)
+        {
+            stroke.AddPoint(s.X, s.Y, 0.5f, s.TimeMs);
+            var last = stroke.Points[^1];
+            widths.Add(last.Width);
+            stable.Add(stroke.StablePointCount);
+            xs.Add(last.X);
+            ys.Add(last.Y);
+        }
+        var inputPoints = samples.Select(s => new { s.X, s.Y, s.TimeMs }).ToArray();
+        return new
+        {
+            id,
+            fn = "strokeTaperProbe",
+            input = new object[] { baseWidth, inputPoints, (int)kind },
+            expected = new { widths, stable, x = xs, y = ys },
+            tolerance = 1e-4
+        };
     }
 
     private static List<object> TailCases()

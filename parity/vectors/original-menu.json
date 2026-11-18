@@ -1,0 +1,28 @@
+{
+  "id": "original-menu",
+  "entry": "harmony/core/src/main/ets/settings/OriginalMenuCatalog.ts",
+  "cases": [
+    {
+      "id": "style-kind-roundtrip",
+      "fn": "menuCatalogProbe",
+      "input": [[0, 1, 2, 3, 4, 5, 6, 9, -1], [0, 1, 2, 3, 4]],
+      "expected": {
+        "Kinds": [1, 2, 0, 3, 4, 5, 6, 1, 1],
+        "BackStyles": [0, 1, 2, 3, 4, 5, 6, 0, 0],
+        "Radii": [22.5, 36, 45, 56.25, 81]
+      },
+      "tolerance": 1e-6
+    },
+    {
+      "id": "eraser-radius-clamp",
+      "fn": "menuCatalogProbe",
+      "input": [[], [7, -3, 2]],
+      "expected": {
+        "Kinds": [],
+        "BackStyles": [],
+        "Radii": [81, 22.5, 45]
+      },
+      "tolerance": 1e-6
+    }
+  ]
+}

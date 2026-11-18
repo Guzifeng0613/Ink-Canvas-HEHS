@@ -465,6 +465,239 @@
         }
       },
       "tolerance": 0
+    },
+    {
+      "id": "settings-4",
+      "fn": "settingsRoundtrip",
+      "input": [
+        "{\"canvas\":{\"highlighterWidth\":12.5}}"
+      ],
+      "expected": {
+        "advanced": {
+          "isSpecialScreen": false,
+          "isQuadIR": false,
+          "touchMultiplier": 0.25,
+          "nibModeBoundsWidth": 10,
+          "fingerModeBoundsWidth": 30,
+          "nibModeBoundsWidthThresholdValue": 2.5,
+          "fingerModeBoundsWidthThresholdValue": 2.5,
+          "nibModeBoundsWidthEraserSize": 0.8,
+          "fingerModeBoundsWidthEraserSize": 0.8,
+          "isEnableEdgeGestureUtil": false,
+          "isLogEnabled": true,
+          "isSecondConfimeWhenShutdownApp": false
+        },
+        "appearance": {
+          "isEnableDisPlayFloatBarText": false,
+          "isEnableDisPlayNibModeToggler": true,
+          "isColorfulViewboxFloatingBar": false,
+          "enableViewboxFloatingBarScaleTransform": 100,
+          "enableViewboxBlackBoardScaleTransform": 100,
+          "floatingBarBottomMargin": 100,
+          "isTransparentButtonBackground": true,
+          "isShowExitButton": true,
+          "isShowEraserButton": true,
+          "isShowHideControlButton": false,
+          "isShowLRSwitchButton": false,
+          "isShowModeFingerToggleSwitch": true,
+          "theme": 0
+        },
+        "automation": {
+          "isAutoFoldInEasiNote": false,
+          "isAutoFoldInEasiNoteIgnoreDesktopAnno": false,
+          "isAutoFoldInEasiCamera": false,
+          "isAutoFoldInEasiNote3C": false,
+          "isAutoFoldInSeewoPincoTeacher": false,
+          "isAutoFoldInHiteTouchPro": false,
+          "isAutoFoldInHiteCamera": false,
+          "isAutoFoldInWxBoardMain": false,
+          "isAutoFoldInOldZyBoard": false,
+          "isAutoFoldInMSWhiteboard": false,
+          "isAutoFoldInPPTSlideShow": false,
+          "isAutoKillPptService": false,
+          "isAutoKillEasiNote": false,
+          "isSaveScreenshotsInDateFolders": false,
+          "isAutoSaveStrokesAtScreenshot": false,
+          "isAutoSaveStrokesAtClear": false,
+          "isAutoClearWhenExitingWritingMode": false,
+          "minimumAutomationStrokeNumber": 0,
+          "autoSavedStrokesLocation": "D:\\Ink Canvas",
+          "autoDelSavedFiles": false,
+          "autoDelSavedFilesDaysThreshold": 15
+        },
+        "behavior": {
+          "isShowPPTNavigationBottom": true,
+          "isShowPPTNavigationSides": true,
+          "isShowBottomPPTNavigationPanel": true,
+          "isShowSidePPTNavigationPanel": true,
+          "powerPointSupport": true,
+          "isShowCanvasAtNewSlideShow": true,
+          "isNoClearStrokeOnSelectWhenInPowerPoint": true,
+          "isShowStrokeOnSelectInPowerPoint": false,
+          "isAutoSaveStrokesInPowerPoint": true,
+          "isAutoSaveScreenShotInPowerPoint": false,
+          "isNotifyPreviousPage": false,
+          "isNotifyHiddenPage": true,
+          "isNotifyAutoPlayPresentation": true,
+          "isEnableTwoFingerGestureInPresentationMode": false,
+          "isEnableFingerGestureSlideShowControl": true,
+          "isSupportWPS": true
+        },
+        "canvas": {
+          "inkWidth": 2.5,
+          "highlighterWidth": 12.5,
+          "inkAlpha": 140,
+          "isCompressPicturesUploaded": false,
+          "isShowCursor": false,
+          "inkStyle": 0,
+          "penNib": 0,
+          "eraserSize": 2,
+          "eraserType": 0,
+          "hideStrokeWhenSelecting": true,
+          "usingWhiteboard": false
+        },
+        "gesture": {
+          "isEnableMultiTouchMode": true,
+          "isEnableTwoFingerZoom": true,
+          "isEnableTwoFingerTranslate": true,
+          "AutoSwitchTwoFingerGesture": true,
+          "isEnableTwoFingerRotation": false,
+          "isEnableTwoFingerRotationOnSelection": false,
+          "matrixTransformCenterPoint": 0
+        },
+        "inkToShape": {
+          "isInkToShapeEnabled": true
+        },
+        "startup": {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": false,
+          "isAutoUpdateWithSilenceStartTime": "00:00",
+          "isAutoUpdateWithSilenceEndTime": "00:00",
+          "isEnableNibMode": false,
+          "isFoldAtStartup": false
+        },
+        "randSettings": {
+          "peopleCount": 60,
+          "isNotRepeatName": false
+        }
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "settings-5",
+      "fn": "settingsRoundtrip",
+      "input": [
+        "{\"canvas\":{\"highlighterWidth\":null}}"
+      ],
+      "expected": {
+        "advanced": {
+          "isSpecialScreen": false,
+          "isQuadIR": false,
+          "touchMultiplier": 0.25,
+          "nibModeBoundsWidth": 10,
+          "fingerModeBoundsWidth": 30,
+          "nibModeBoundsWidthThresholdValue": 2.5,
+          "fingerModeBoundsWidthThresholdValue": 2.5,
+          "nibModeBoundsWidthEraserSize": 0.8,
+          "fingerModeBoundsWidthEraserSize": 0.8,
+          "isEnableEdgeGestureUtil": false,
+          "isLogEnabled": true,
+          "isSecondConfimeWhenShutdownApp": false
+        },
+        "appearance": {
+          "isEnableDisPlayFloatBarText": false,
+          "isEnableDisPlayNibModeToggler": true,
+          "isColorfulViewboxFloatingBar": false,
+          "enableViewboxFloatingBarScaleTransform": 100,
+          "enableViewboxBlackBoardScaleTransform": 100,
+          "floatingBarBottomMargin": 100,
+          "isTransparentButtonBackground": true,
+          "isShowExitButton": true,
+          "isShowEraserButton": true,
+          "isShowHideControlButton": false,
+          "isShowLRSwitchButton": false,
+          "isShowModeFingerToggleSwitch": true,
+          "theme": 0
+        },
+        "automation": {
+          "isAutoFoldInEasiNote": false,
+          "isAutoFoldInEasiNoteIgnoreDesktopAnno": false,
+          "isAutoFoldInEasiCamera": false,
+          "isAutoFoldInEasiNote3C": false,
+          "isAutoFoldInSeewoPincoTeacher": false,
+          "isAutoFoldInHiteTouchPro": false,
+          "isAutoFoldInHiteCamera": false,
+          "isAutoFoldInWxBoardMain": false,
+          "isAutoFoldInOldZyBoard": false,
+          "isAutoFoldInMSWhiteboard": false,
+          "isAutoFoldInPPTSlideShow": false,
+          "isAutoKillPptService": false,
+          "isAutoKillEasiNote": false,
+          "isSaveScreenshotsInDateFolders": false,
+          "isAutoSaveStrokesAtScreenshot": false,
+          "isAutoSaveStrokesAtClear": false,
+          "isAutoClearWhenExitingWritingMode": false,
+          "minimumAutomationStrokeNumber": 0,
+          "autoSavedStrokesLocation": "D:\\Ink Canvas",
+          "autoDelSavedFiles": false,
+          "autoDelSavedFilesDaysThreshold": 15
+        },
+        "behavior": {
+          "isShowPPTNavigationBottom": true,
+          "isShowPPTNavigationSides": true,
+          "isShowBottomPPTNavigationPanel": true,
+          "isShowSidePPTNavigationPanel": true,
+          "powerPointSupport": true,
+          "isShowCanvasAtNewSlideShow": true,
+          "isNoClearStrokeOnSelectWhenInPowerPoint": true,
+          "isShowStrokeOnSelectInPowerPoint": false,
+          "isAutoSaveStrokesInPowerPoint": true,
+          "isAutoSaveScreenShotInPowerPoint": false,
+          "isNotifyPreviousPage": false,
+          "isNotifyHiddenPage": true,
+          "isNotifyAutoPlayPresentation": true,
+          "isEnableTwoFingerGestureInPresentationMode": false,
+          "isEnableFingerGestureSlideShowControl": true,
+          "isSupportWPS": true
+        },
+        "canvas": {
+          "inkWidth": 2.5,
+          "inkAlpha": 140,
+          "isCompressPicturesUploaded": false,
+          "isShowCursor": false,
+          "inkStyle": 0,
+          "penNib": 0,
+          "eraserSize": 2,
+          "eraserType": 0,
+          "hideStrokeWhenSelecting": true,
+          "usingWhiteboard": false
+        },
+        "gesture": {
+          "isEnableMultiTouchMode": true,
+          "isEnableTwoFingerZoom": true,
+          "isEnableTwoFingerTranslate": true,
+          "AutoSwitchTwoFingerGesture": true,
+          "isEnableTwoFingerRotation": false,
+          "isEnableTwoFingerRotationOnSelection": false,
+          "matrixTransformCenterPoint": 0
+        },
+        "inkToShape": {
+          "isInkToShapeEnabled": true
+        },
+        "startup": {
+          "isAutoUpdate": true,
+          "isAutoUpdateWithSilence": false,
+          "isAutoUpdateWithSilenceStartTime": "00:00",
+          "isAutoUpdateWithSilenceEndTime": "00:00",
+          "isEnableNibMode": false,
+          "isFoldAtStartup": false
+        },
+        "randSettings": {
+          "peopleCount": 60,
+          "isNotRepeatName": false
+        }
+      },
+      "tolerance": 0
     }
   ]
 }
