@@ -1,7 +1,7 @@
 // @parity src/InkCanvas.Controls/Controls/ShapePreview.cs
 // 24 图形菜单：预览由 core ShapeGenerator 生成轮廓（图形语义与绘制一致）。
 import { generate, buildUnionContours, InkPoint } from '@inkcanvas/core';
-import type { StrokeSummary } from '@inkcanvas/core';
+import type { StrokeSummary, StrokeAttributesInput } from '@inkcanvas/core';
 import { SHAPE_MENU_ROWS, ShapeMenuEntry } from './ShapePickerCatalog';
 import { ThemeTokens, themeTokens } from './ThemeTokens';
 
@@ -48,7 +48,7 @@ export struct ShapePreviewCell {
   private draw(): void {
     const tokens = themeTokens(this.dark);
     const color = this.dark ? 0xFFFFFFFF : 0xFF000000;
-    const attributes = {
+    const attributes: StrokeAttributesInput = {
       ColorPacked: color,
       BaseWidth: 1.5,
       IsHighlighter: false,
@@ -95,14 +95,14 @@ export struct ShapePreviewCell {
 export struct ShapePicker {
   @Prop dark: boolean = true;
   @Prop selectedKind: number = -1;
-  @Prop scale: number = 1;
+  @Prop uiScale: number = 1;
   onSelect: (kind: number, longPress: boolean) => void = (kind: number, longPress: boolean) => {
     void kind;
     void longPress;
   };
 
   build() {
-    Column({ space: -8 * this.scale }) {
+    Column({ space: -8 * this.uiScale }) {
       ForEach(SHAPE_MENU_ROWS, (row: ShapeMenuEntry[], rowIndex: number) => {
         Row() {
           ForEach(row, (entry: ShapeMenuEntry) => {
@@ -112,24 +112,24 @@ export struct ShapePicker {
               rotation: entry.Rotation,
               selected: this.selectedKind === entry.Kind,
               dark: this.dark,
-              cellSize: 50 * this.scale,
+              cellSize: 50 * this.uiScale,
               onSelect: (kind: number, longPress: boolean) => {
                 this.onSelect(kind, longPress);
               }
             })
               .margin({
-                left: entry.Margin[0] * this.scale,
-                top: entry.Margin[1] * this.scale,
-                right: entry.Margin[2] * this.scale,
-                bottom: entry.Margin[3] * this.scale
+                left: entry.Margin[0] * this.uiScale,
+                top: entry.Margin[1] * this.uiScale,
+                right: entry.Margin[2] * this.uiScale,
+                bottom: entry.Margin[3] * this.uiScale
               })
           }, (entry: ShapeMenuEntry) => entry.Id)
         }
       }, (row: ShapeMenuEntry[], rowIndex: number) => rowIndex.toString())
     }
-    .padding(8 * this.scale)
+    .padding(8 * this.uiScale)
     .backgroundColor(themeTokens(this.dark).floatBarBackground)
     .border({ width: 1, color: themeTokens(this.dark).floatBarBorder })
-    .borderRadius(5 * this.scale)
+    .borderRadius(5 * this.uiScale)
   }
 }

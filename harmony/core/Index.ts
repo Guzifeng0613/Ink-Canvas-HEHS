@@ -1,10 +1,11 @@
-export { MODULE } from './IndexConstants';
+export const MODULE: string = 'core';
 export { InkPoint } from './src/main/ets/ink/InkPoint';
 export { InkColor, packArgb, unpackArgb, withAlphaArgb } from './src/main/ets/ink/InkColor';
 export { StrokeAttributes, TaperKind, strokeAttributesEffective } from './src/main/ets/ink/StrokeAttributes';
+export type { StrokeAttributesInput } from './src/main/ets/ink/StrokeAttributes';
 export { effectiveWidths, applyTaperAt } from './src/main/ets/ink/TaperProfile';
 export type { TaperOptionsInput } from './src/main/ets/ink/TaperProfile';
-export { InkStroke, Rect } from './src/main/ets/ink/InkStroke';
+export { InkStroke, Rect, SelectionFrameState, strokeBounds, setTaperAndWidths } from './src/main/ets/ink/InkStroke';
 export { InkDocument } from './src/main/ets/ink/InkDocument';
 export {
   buildSegmentOutline,

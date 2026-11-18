@@ -7,7 +7,7 @@ import { ThemeTokens, themeTokens } from './ThemeTokens';
 export struct FloatingBar {
   @Prop dark: boolean = false;
   @Prop showLabels: boolean = false;
-  @Prop scale: number = 1;
+  @Prop uiScale: number = 1;
   @Prop selectedId: string = 'pen';
   @Prop folded: boolean = false;
   @Prop pptActive: boolean = false;
@@ -19,7 +19,7 @@ export struct FloatingBar {
     void dx;
     void dy;
   };
-  onDragEnd: () => void = () => {
+  onDragFinished: () => void = () => {
   };
 
   private tokens(): ThemeTokens {
@@ -31,7 +31,7 @@ export struct FloatingBar {
   }
 
   build() {
-    Row({ space: 2.778 * this.scale }) {
+    Row({ space: 2.778 * this.uiScale }) {
       this.DragHandleCard()
       if (!this.folded) {
         this.PrimaryCard()
@@ -42,10 +42,10 @@ export struct FloatingBar {
       }
     }
     .padding({
-      left: this.tokens().barPadding[0] * this.scale,
-      top: this.tokens().barPadding[1] * this.scale,
-      right: this.tokens().barPadding[2] * this.scale,
-      bottom: this.tokens().barPadding[3] * this.scale
+      left: this.tokens().barPadding[0] * this.uiScale,
+      top: this.tokens().barPadding[1] * this.uiScale,
+      right: this.tokens().barPadding[2] * this.uiScale,
+      bottom: this.tokens().barPadding[3] * this.uiScale
     })
     .backgroundColor(this.tokens().floatBarBackground)
     .borderRadius(this.tokens().barCorner)
@@ -56,7 +56,7 @@ export struct FloatingBar {
           this.onDrag(event.offsetX, event.offsetY);
         })
         .onActionEnd(() => {
-          this.onDragEnd();
+          this.onDragFinished();
         })
     )
   }
@@ -65,11 +65,11 @@ export struct FloatingBar {
   DragHandleCard() {
     Column() {
       Text('☺')
-        .fontSize(Math.max(16, 27.778 * this.scale))
+        .fontSize(Math.max(16, 27.778 * this.uiScale))
         .fontColor(this.tokens().textPrimary)
     }
-    .width(50 * this.scale)
-    .height(50 * this.scale)
+    .width(50 * this.uiScale)
+    .height(50 * this.uiScale)
     .justifyContent(FlexAlign.Center)
     .borderRadius(this.tokens().buttonRadius)
     .backgroundColor(this.tokens().surfaceAlt)
@@ -96,17 +96,17 @@ export struct FloatingBar {
   ButtonCell(button: FloatingBarButton) {
     Column() {
       Text(this.iconText(button))
-        .fontSize(button.Id === 'gesture' ? 20 * this.scale : 16 * this.scale)
+        .fontSize(button.Id === 'gesture' ? 20 * this.uiScale : 16 * this.uiScale)
         .fontColor(this.tokens().textPrimary)
       if (this.showLabels) {
         Text(button.Label)
-          .fontSize(this.tokens().labelSize * this.scale)
+          .fontSize(this.tokens().labelSize * this.uiScale)
           .fontColor(this.tokens().textPrimary)
-          .margin({ top: -1.389 * this.scale })
+          .margin({ top: -1.389 * this.uiScale })
       }
     }
-    .width(Math.max(44, this.tokens().buttonWidth * this.scale))
-    .height(Math.max(44, this.tokens().buttonHeight * this.scale))
+    .width(Math.max(44, this.tokens().buttonWidth * this.uiScale))
+    .height(Math.max(44, this.tokens().buttonHeight * this.uiScale))
     .justifyContent(FlexAlign.Center)
     .borderRadius(this.selectedId === button.Id ? this.tokens().selectedRadius : this.tokens().buttonRadius)
     .backgroundColor(this.selectedId === button.Id ? this.tokens().floatBarSelected : Color.Transparent)
@@ -122,16 +122,16 @@ export struct FloatingBar {
   GestureCard() {
     Column() {
       Text(this.textIconFallback ? '手' : '')
-        .fontSize(20 * this.scale)
+        .fontSize(20 * this.uiScale)
         .fontColor(this.tokens().textPrimary)
       if (this.showLabels) {
         Text('手势')
-          .fontSize(this.tokens().labelSize * this.scale)
+          .fontSize(this.tokens().labelSize * this.uiScale)
           .fontColor(this.tokens().textPrimary)
       }
     }
-    .width(Math.max(44, 47.222 * this.scale))
-    .height(Math.max(44, 47.222 * this.scale))
+    .width(Math.max(44, 47.222 * this.uiScale))
+    .height(Math.max(44, 47.222 * this.uiScale))
     .justifyContent(FlexAlign.Center)
     .borderRadius(this.tokens().buttonRadius)
     .backgroundColor(this.tokens().surfaceAlt)
@@ -144,11 +144,11 @@ export struct FloatingBar {
   PptExitCard() {
     Column() {
       Text('退出')
-        .fontSize(11 * this.scale)
+        .fontSize(11 * this.uiScale)
         .fontColor(this.tokens().textPrimary)
     }
-    .width(Math.max(44, 41.667 * this.scale))
-    .height(Math.max(44, 27.778 * this.scale))
+    .width(Math.max(44, 41.667 * this.uiScale))
+    .height(Math.max(44, 27.778 * this.uiScale))
     .justifyContent(FlexAlign.Center)
     .borderRadius(this.tokens().buttonRadius)
     .backgroundColor(this.tokens().badgeBackground)

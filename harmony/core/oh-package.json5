@@ -2,7 +2,7 @@
   "name": "@inkcanvas/core",
   "version": "3.4.0",
   "description": "Ink Canvas HarmonyOS core module",
-  "main": "Index.ets",
+  "main": "Index.ts",
   "author": "",
   "license": "GPL-3.0",
   "dependencies": {}

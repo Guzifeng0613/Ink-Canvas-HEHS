@@ -27,7 +27,7 @@ export struct PenPalette {
   @Prop alpha: number = HIGHLIGHTER_ALPHA_DEFAULT;
   @Prop taperIndex: number = 0;
   @Prop currentPacked: number = 0xFF000000;
-  @Prop scale: number = 1;
+  @Prop uiScale: number = 1;
   onColor: (packed: number) => void = (packed: number) => {
     void packed;
   };
@@ -64,7 +64,7 @@ export struct PenPalette {
   build() {
     Column() {
       this.TitleBand()
-      Column({ space: 10 * this.scale }) {
+      Column({ space: 10 * this.uiScale }) {
         if (!this.highlighter) {
           this.TaperRow()
           this.WidthRow()
@@ -74,55 +74,55 @@ export struct PenPalette {
           this.ColorGrid()
           this.WidthRow()
           Text('原菜单范围 20–240，步长 20。')
-            .fontSize(12 * this.scale)
+            .fontSize(12 * this.uiScale)
             .fontColor(this.tokens().textSecondary)
             .width('100%')
         }
       }
-      .padding(12 * this.scale)
+      .padding(12 * this.uiScale)
     }
-    .width((this.highlighter ? 208 : 248) * this.scale)
+    .width((this.highlighter ? 208 : 248) * this.uiScale)
     .backgroundColor(this.tokens().floatBarBackground)
     .border({ width: 1, color: this.tokens().floatBarBorder })
-    .borderRadius(5 * this.scale)
+    .borderRadius(5 * this.uiScale)
   }
 
   @Builder
   TitleBand() {
     Row() {
       Text(this.highlighter ? '荧光笔' : '墨迹选项')
-        .fontSize(12 * this.scale)
+        .fontSize(12 * this.uiScale)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.tokens().textPrimary)
         .layoutWeight(1)
       Text('×')
-        .fontSize(14 * this.scale)
+        .fontSize(14 * this.uiScale)
         .fontColor(this.tokens().textSecondary)
         .onClick(() => {
           this.onClose();
         })
     }
     .width('100%')
-    .padding({ left: 15 * this.scale, right: 15 * this.scale, top: 5 * this.scale, bottom: 5 * this.scale })
+    .padding({ left: 15 * this.uiScale, right: 15 * this.uiScale, top: 5 * this.uiScale, bottom: 5 * this.uiScale })
     .backgroundColor(this.tokens().surfaceAlt)
-    .borderRadius({ topLeft: 5 * this.scale, topRight: 5 * this.scale })
+    .borderRadius({ topLeft: 5 * this.uiScale, topRight: 5 * this.uiScale })
   }
 
   @Builder
   TaperRow() {
     Row() {
       Text('笔锋')
-        .fontSize(14 * this.scale)
+        .fontSize(14 * this.uiScale)
         .fontColor(this.tokens().textPrimary)
-        .margin({ right: 10 * this.scale })
-      Row({ space: 6 * this.scale }) {
+        .margin({ right: 10 * this.uiScale })
+      Row({ space: 6 * this.uiScale }) {
         ForEach(['点集', '速率', '关闭'], (label: string, index: number) => {
           Text(label)
-            .fontSize(13 * this.scale)
+            .fontSize(13 * this.uiScale)
             .fontColor(this.taperIndex === index ? Color.White : this.tokens().textPrimary)
             .backgroundColor(this.taperIndex === index ? this.tokens().accent : Color.Transparent)
-            .borderRadius(4 * this.scale)
-            .padding({ left: 8 * this.scale, right: 8 * this.scale, top: 4 * this.scale, bottom: 4 * this.scale })
+            .borderRadius(4 * this.uiScale)
+            .padding({ left: 8 * this.uiScale, right: 8 * this.uiScale, top: 4 * this.uiScale, bottom: 4 * this.uiScale })
             .onClick(() => {
               this.onTaper(taperKindForIndex(index));
             })
@@ -132,16 +132,16 @@ export struct PenPalette {
       .justifyContent(FlexAlign.End)
     }
     .width('100%')
-    .height(32 * this.scale)
+    .height(32 * this.uiScale)
   }
 
   @Builder
   WidthRow() {
     Row() {
       Text('粗细')
-        .fontSize(14 * this.scale)
+        .fontSize(14 * this.uiScale)
         .fontColor(this.tokens().textPrimary)
-        .margin({ right: 10 * this.scale })
+        .margin({ right: 10 * this.uiScale })
       Slider({
         value: this.widthMenu,
         min: PEN_WIDTH_MIN,
@@ -154,22 +154,22 @@ export struct PenPalette {
           this.onWidth(toStoredPenWidth(snapped));
         })
       Text(Math.round(this.widthMenu).toString())
-        .fontSize(14 * this.scale)
+        .fontSize(14 * this.uiScale)
         .fontColor(this.tokens().textPrimary)
-        .width(32 * this.scale)
+        .width(32 * this.uiScale)
         .textAlign(TextAlign.End)
     }
     .width('100%')
-    .height(32 * this.scale)
+    .height(32 * this.uiScale)
   }
 
   @Builder
   AlphaRow() {
     Row() {
       Text('透明度')
-        .fontSize(14 * this.scale)
+        .fontSize(14 * this.uiScale)
         .fontColor(this.tokens().textPrimary)
-        .margin({ right: 10 * this.scale })
+        .margin({ right: 10 * this.uiScale })
       Slider({
         value: this.alpha,
         min: HIGHLIGHTER_ALPHA_MIN,
@@ -181,13 +181,13 @@ export struct PenPalette {
           this.onAlpha(snap(value, HIGHLIGHTER_ALPHA_MIN, HIGHLIGHTER_ALPHA_STEP));
         })
       Text(Math.round(this.alpha).toString())
-        .fontSize(14 * this.scale)
+        .fontSize(14 * this.uiScale)
         .fontColor(this.tokens().textPrimary)
-        .width(32 * this.scale)
+        .width(32 * this.uiScale)
         .textAlign(TextAlign.End)
     }
     .width('100%')
-    .height(32 * this.scale)
+    .height(32 * this.uiScale)
   }
 
   @Builder
@@ -196,18 +196,18 @@ export struct PenPalette {
       if (!this.highlighter) {
         Column() {
           Text(this.lightColorScheme ? '暗' : '亮')
-            .fontSize(14 * this.scale)
+            .fontSize(14 * this.uiScale)
             .fontColor(this.tokens().textPrimary)
           Text(this.lightColorScheme ? '暗系' : '亮系')
-            .fontSize(9 * this.scale)
+            .fontSize(9 * this.uiScale)
             .fontColor(this.tokens().textSecondary)
         }
-        .width(40 * this.scale)
-        .height(40 * this.scale)
-        .margin(2 * this.scale)
+        .width(40 * this.uiScale)
+        .height(40 * this.uiScale)
+        .margin(2 * this.uiScale)
         .justifyContent(FlexAlign.Center)
         .border({ width: 1.5, color: this.tokens().floatBarBorder })
-        .borderRadius(20 * this.scale)
+        .borderRadius(20 * this.uiScale)
         .onClick(() => {
           this.onToggleScheme();
         })
@@ -215,19 +215,19 @@ export struct PenPalette {
       ForEach(this.swatches(), (swatch: Swatch) => {
         Stack() {
           Column()
-            .width(40 * this.scale)
-            .height(40 * this.scale)
+            .width(40 * this.uiScale)
+            .height(40 * this.uiScale)
             .backgroundColor(CanvasInkRendererStyle(swatch))
             .border({ width: 1, color: this.tokens().floatBarBorder })
-            .borderRadius(20 * this.scale)
+            .borderRadius(20 * this.uiScale)
           if (this.isSelected(swatch)) {
             Text('✓')
-              .fontSize(16 * this.scale)
+              .fontSize(16 * this.uiScale)
               .fontColor(swatch.Name === '白色' ? Color.Black : Color.White)
           }
         }
-        .width(44 * this.scale)
-        .height(44 * this.scale)
+        .width(44 * this.uiScale)
+        .height(44 * this.uiScale)
         .onClick(() => {
           this.onColor(packedSwatch(swatch));
         })
