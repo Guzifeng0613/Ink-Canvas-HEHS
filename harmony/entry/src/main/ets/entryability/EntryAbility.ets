@@ -1,3 +1,4 @@
+// @parity src/InkCanvas.App/App.xaml.cs
 import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { window } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';

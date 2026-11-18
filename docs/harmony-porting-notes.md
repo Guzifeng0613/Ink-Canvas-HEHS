@@ -8,10 +8,10 @@
 
 | 层 | 手段 | 当前结果 |
 |---|---|---|
-| L1 逻辑互认 | C# 生成黄金向量 + Node 运行 ArkTS | **当前：407 用例 / 39 个向量文件全部通过（Phase A–E1）** |
+| L1 逻辑互认 | C# 生成黄金向量 + Node 运行 ArkTS | **当前：422 用例 / 42 个向量文件全部通过（Phase A–G）** |
 | L2 编译 | `hvigorw assembleHap`（26.0.1 Beta1 SDK） | 通过（未签名 debug HAP，73 tasks） |
 | L3 运行/UI | 真机 | **未实机验证**（本机无设备；模拟器不可靠） |
-| L4 基线回归 | `dotnet test`（向量子集） | 30/30 通过；完整 WinUI3 套件未在本轮重跑 |
+| L4 基线回归 | `dotnet test`（向量子集） | 30/30 通过；codelinter 0 错误 / 6 警告（性能建议）；完整 WinUI3 套件未在本轮重跑 |
 
 ### Phase A 已交付（纯逻辑核心）
 
@@ -37,7 +37,10 @@
 
 - 已完成：platform compat/输入归一化/双层 Canvas 渲染、controls token/浮条/调色盘/图形菜单、entry 主页面壳。
 - 已完成：InkController 状态机/手势/选区（B2/B3）并接入 entry 触摸输入；画板分页/元素变换/保存语义（E1）。
-- 待完成：课件(PDF)/计时/抽奖/回放界面、设置/指南、入口模式机与多形态、manifest 其余单元、api-matrix 全量、模拟器/真机验证。
+- 已完成：课件(PDF)/计时/抽奖/回放、设置面板/指南/是否窗、画板模式（分页/背景/插图/视频/保存打开）、应用内快捷键/沉浸式/Desmos/更新提示、manifest 56 项收口（98.21%）、api-matrix 补全。
+- 覆盖率：**55/56 = 98.21%**（32 ported + 23 adapted + 1 not-ported=开机自启）。
+- 仍为部分/待补（已在 manifest notes 标注）：弹簧动效与 ConnectedAnimation、更新日志窗口、画板图片变换手势、视频进度保持、系统材质/blur、设置页全量字段、Symbol 图标映射（当前文字兜底）、多断点精细布局。
+- 模拟器/真机验证：本机 Hyper-V 不可用，待具备虚拟化的宿主或真机执行。
 
 ## 与 WinUI3 基线的已知差异（设计决定）
 

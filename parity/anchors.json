@@ -146,12 +146,32 @@
       "csharp": "src/InkCanvas.Core/Versioning/AppVersion.cs"
     },
     {
+      "arkts": "harmony/entry/src/main/ets/entryability/EntryAbility.ets",
+      "csharp": "src/InkCanvas.App/App.xaml.cs"
+    },
+    {
+      "arkts": "harmony/entry/src/main/ets/pages/Index.ets",
+      "csharp": "src/InkCanvas.App/Services/ShellController.cs"
+    },
+    {
       "arkts": "harmony/features/src/main/ets/board/BoardDocument.ts",
       "csharp": "src/InkCanvas.Features/Board/BoardService.cs"
     },
     {
       "arkts": "harmony/features/src/main/ets/board/BoardElementMath.ts",
       "csharp": "src/InkCanvas.Features/Board/BoardService.cs"
+    },
+    {
+      "arkts": "harmony/features/src/main/ets/courseware/CoursewareSession.ts",
+      "csharp": "src/InkCanvas.Features/Ppt/PptInkSession.cs"
+    },
+    {
+      "arkts": "harmony/features/src/main/ets/tools/CountdownEngine.ts",
+      "csharp": "src/InkCanvas.App/Views/CountdownWindow.cs"
+    },
+    {
+      "arkts": "harmony/features/src/main/ets/tools/LotteryEngine.ts",
+      "csharp": "src/InkCanvas.Features/Tools/Tools.cs"
     },
     {
       "arkts": "harmony/ink/src/main/ets/ControllerTypes.ts",
@@ -194,12 +214,28 @@
       "csharp": "src/InkCanvas.App/Services/WindowChrome.cs"
     },
     {
+      "arkts": "harmony/platform/src/main/ets/pdf/PdfPageSource.ets",
+      "csharp": "src/InkCanvas.Features/Ppt/PptInteropService.cs"
+    },
+    {
+      "arkts": "harmony/platform/src/main/ets/persistence/AutoSaveService.ts",
+      "csharp": "src/InkCanvas.Features/Persistence/Stores.cs"
+    },
+    {
+      "arkts": "harmony/platform/src/main/ets/persistence/SnapshotService.ets",
+      "csharp": "src/InkCanvas.Features/Tools/Tools.cs"
+    },
+    {
       "arkts": "harmony/platform/src/main/ets/rendering/CanvasInkRenderer.ets",
       "csharp": "src/InkCanvas.Ink/Rendering/InkSceneRenderer.cs"
     },
     {
       "arkts": "harmony/platform/src/main/ets/storage/StorageService.ts",
       "csharp": "src/InkCanvas.Features/Persistence/Stores.cs"
+    },
+    {
+      "arkts": "harmony/platform/src/main/ets/system/SystemServices.ets",
+      "csharp": "src/InkCanvas.Platform/System/SoftwareLauncher.cs"
     }
   ]
 }

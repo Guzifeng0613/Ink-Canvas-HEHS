@@ -12,6 +12,21 @@
 | `SystemCapability.Stylus.Handwrite` | SDK d.ts | Pen Kit HandwriteComponent / StylusFrameBoost |
 | `SystemCapability.Stylus.StylusService` | SDK d.ts | 笔身传感器/捏笔/双击 |
 | `SystemCapability.MultimodalInput.Input.Pointer` | SDK d.ts | 鼠标光标样式 |
+| `SystemCapability.OfficeService.PDFService.Core` | SDK d.ts（@hms.officeservice.pdfservice） | PDF Kit 课件渲染 |
+
+## 已核实 API（B–G 实测/d.ts 核对）
+
+| 能力 | API | 备注 |
+|---|---|---|
+| PDF 打开/页数/取页 | `pdfService.PdfDocument.loadDocument/getPageCount/getPage` | ParseResult.PARSE_SUCCESS；重复 load 前须 releaseDocument |
+| PDF 页渲染 | `PdfPage.getPagePixelMap()/getWidth()/getHeight()` | 另有 getCustomPagePixelMap/getAreaPixelMap（矩阵/区域） |
+| 组件快照 | `componentSnapshot.get(id): Promise<PixelMap>` | 仅本应用组件；无跨应用截图 |
+| 文件选择/保存 | `picker.DocumentViewPicker.select/save`、`picker.PhotoViewPicker.select` | MIME 枚举为 `PhotoViewMIMETypes`；URI 需导入沙箱 |
+| 键盘修饰键 | `KeyEvent.getModifierKeyState?(keys)` | 可选方法；`metaKey` 仅 Meta 键；需焦点 |
+| 沉浸式 | `window.setWindowLayoutFullScreen(true)`、`setWindowSystemBarEnable([])` | 系统手势仍由系统管理 |
+| Base64/图像 | `util.Base64Helper.encodeSync/decodeSync`、`image.createImageSource/createPixelMapSync`、`ImagePacker.packing` | 画板图片/视频 base64 与格式互认 |
+| 视频 | `Video({ src })` | 沙箱路径；进度保持待补 |
+| 启动模式 | `Want.parameters['mode']` + AppStorage | 替代 CLI 启动参数 |
 
 ## 差异表（Phase A 种子）
 
@@ -40,5 +55,6 @@
 | 跨应用悬浮窗 `TYPE_FLOAT` | 需 `SYSTEM_FLOAT_WINDOW`（system_basic） | 相同 | 三方不可用 → 应用内方案 |
 | 全局输入监听/注入 | 无 | `inputEventClient` 需 `CONTROL_DEVICE`（system_basic） | 三方不可用 |
 | 全局热键 | 无 | 无 | 应用内快捷键 |
-| 深色模式/减少动效读取 | 需查 SDK（Phase C） | 同 | 能力探测 |
+| 深色模式/减少动效读取 | 应用内主题开关已接；系统跟随待接 | 同 | 能力探测 |
+| 系统材质/blur | 未接（半透色卡片替代） | systemMaterial 可用 | 能力层待补 |
 | 断点（窗口宽度 vp） | onSizeChange 可用（API 12+） | ContainerReader 可选 | 首版统一 onSizeChange |

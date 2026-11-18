@@ -54,7 +54,7 @@ export function validateManifest(manifest, root, opts, errors) {
     const inScope = !scopePhase || f.phase === scopePhase;
     if (final && inScope) {
       if (f.status === 'planned') errors.push(where + ': --final 不允许 planned');
-      if ((f.arkts || []).length === 0) errors.push(where + ': --final 要求至少一个 arkts 文件');
+      if (f.status !== 'not-ported' && (f.arkts || []).length === 0) errors.push(where + ': --final 要求至少一个 arkts 文件');
     }
   }
 }

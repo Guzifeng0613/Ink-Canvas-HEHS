@@ -1,3 +1,4 @@
+// @parity src/InkCanvas.App/Services/ShellController.cs
 import { InkCanvasSurface, CanvasInkRenderer, pointerKind, PdfPageSource, StorageService, AutoSaveService, captureComponentToPng, openExternalUrl } from '@inkcanvas/platform';
 import { FloatingBar, PenPalette, ShapePicker } from '@inkcanvas/controls';
 import {
@@ -82,6 +83,7 @@ struct Index {
   private boardGridSettings: RenderingContextSettings = new RenderingContextSettings(true);
   private boardGridContext: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.boardGridSettings);
   private pendingYesNo: string = '';
+  private mediaPaths: Map<string, string> = new Map<string, string>();
 
   aboutToDisappear(): void {
     this.stopCountdownTimer();
@@ -152,6 +154,9 @@ struct Index {
       if (this.boardOpen) {
         ForEach(this.board.Current.Images, (asset: BoardAsset) => {
           this.BoardImage(asset)
+        }, (asset: BoardAsset) => asset.Id + ':' + this.boardImagesVersion)
+        ForEach(this.board.Current.Media, (asset: BoardAsset) => {
+          this.BoardVideo(asset)
         }, (asset: BoardAsset) => asset.Id + ':' + this.boardImagesVersion)
       }
 
@@ -598,6 +603,18 @@ struct Index {
   }
 
   @Builder
+  BoardVideo(asset: BoardAsset) {
+    if (this.boardMediaPath(asset) !== '') {
+      Video({ src: this.boardMediaPath(asset) })
+        .controls(true)
+        .objectFit(ImageFit.Fill)
+        .position({ x: asset.Left, y: asset.Top })
+        .width(asset.Width)
+        .height(asset.Height)
+    }
+  }
+
+  @Builder
   BoardImage(asset: BoardAsset) {
     if (this.decodeBoardAsset(asset) !== null) {
       Image(this.decodeBoardAsset(asset))
@@ -647,6 +664,29 @@ struct Index {
     } else if (alt && code === KeyCode.KEYCODE_Q) {
       this.handleAction('mouse');
     }
+  }
+
+  private boardMediaPath(asset: BoardAsset): string {
+    const cached = this.mediaPaths.get(asset.Id);
+    if (cached !== undefined) {
+      return cached;
+    }
+    if (this.storage === null) {
+      return '';
+    }
+    try {
+      const helper = new util.Base64Helper();
+      const bytes = helper.decodeSync(asset.Data);
+      const relative = 'board-media-' + asset.Id + '.mp4';
+      if (this.storage.writeBytes(relative, bytes.buffer as ArrayBuffer)) {
+        const path = this.storage.fullPathPublic(relative);
+        this.mediaPaths.set(asset.Id, path);
+        return path;
+      }
+    } catch (e) {
+      return '';
+    }
+    return '';
   }
 
   private decodeBoardAsset(asset: BoardAsset): image.PixelMap | null {
