@@ -6,7 +6,8 @@ export {
   appendTransform,
   sameTransform,
   transformedBounds,
-  renderMatrix
+  renderMatrix,
+  renderMatrix4Values
 } from './src/main/ets/board/BoardElementMath';
 export {
   BoardBackground,

@@ -10,6 +10,18 @@
       "csharp": "src/InkCanvas.Controls/Controls/FloatingBar.cs"
     },
     {
+      "arkts": "harmony/controls/src/main/ets/IconGlyph.ets",
+      "csharp": "src/InkCanvas.Controls/Controls/Glyphs.cs"
+    },
+    {
+      "arkts": "harmony/controls/src/main/ets/Motion.ets",
+      "csharp": "src/InkCanvas.Controls/Animation/Motion.cs"
+    },
+    {
+      "arkts": "harmony/controls/src/main/ets/PanelStyle.ets",
+      "csharp": "src/InkCanvas.Controls/Theming/PopupBrushes.cs"
+    },
+    {
       "arkts": "harmony/controls/src/main/ets/PenPalette.ets",
       "csharp": "src/InkCanvas.Controls/Controls/PenPalette.cs"
     },

@@ -28,6 +28,7 @@ export struct PenPalette {
   @Prop taperIndex: number = 0;
   @Prop currentPacked: number = 0xFF000000;
   @Prop uiScale: number = 1;
+  @Prop materialBlur: boolean = false;
   onColor: (packed: number) => void = (packed: number) => {
     void packed;
   };
@@ -83,6 +84,7 @@ export struct PenPalette {
     }
     .width((this.highlighter ? 208 : 248) * this.uiScale)
     .backgroundColor(this.tokens().floatBarBackground)
+    .backgroundBlurStyle(this.materialBlur ? BlurStyle.Thin : BlurStyle.NONE)
     .border({ width: 1, color: this.tokens().floatBarBorder })
     .borderRadius(5 * this.uiScale)
   }

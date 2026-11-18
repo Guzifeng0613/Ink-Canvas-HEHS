@@ -8,14 +8,17 @@ export {
   sdkApiVersion,
   isApi26,
   hasSysCap,
-  supportsStylusBoost
+  supportsStylusBoost,
+  supportsSystemMaterial,
+  supportsSymbolGlyph,
+  systemMotionReduced
 } from './src/main/ets/compat/Capabilities';
 export type { CapabilityMatrix } from './src/main/ets/compat/CapabilityMatrix';
 export { breakpointForWidth, isFullLayout } from './src/main/ets/device/Breakpoints';
 export type { Breakpoint } from './src/main/ets/device/Breakpoints';
 export { deviceType, is2in1, isTablet, isPhone, isFullDevice } from './src/main/ets/device/DeviceService';
 export { StorageService, describeError } from './src/main/ets/storage/StorageService';
-export { logInfo, logWarn, logError } from './src/main/ets/diagnostics/LogService';
+export { logInfo, logWarn, logError, setLogEnabled } from './src/main/ets/diagnostics/LogService';
 export { PointerKind, normalizePointer, pointerKind, isMouseEvent } from './src/main/ets/input/InputAdapter';
 export type { RawTouchEvent, NormalizedPointer } from './src/main/ets/input/InputAdapter';
 export { floatingBarPosition, clampToWindow, cornerPanelPosition } from './src/main/ets/layout/WindowLayout';

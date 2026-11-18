@@ -1,6 +1,31 @@
 // @parity src/InkCanvas.App/Services/ShellController.cs
-import { InkCanvasSurface, CanvasInkRenderer, pointerKind, PdfPageSource, StorageService, AutoSaveService, captureComponentToPng, openExternalUrl } from '@inkcanvas/platform';
-import { FloatingBar, PenPalette, ShapePicker } from '@inkcanvas/controls';
+import {
+  InkCanvasSurface,
+  CanvasInkRenderer,
+  pointerKind,
+  PdfPageSource,
+  StorageService,
+  AutoSaveService,
+  captureComponentToPng,
+  openExternalUrl,
+  supportsSystemMaterial,
+  supportsSymbolGlyph,
+  systemMotionReduced,
+  setLogEnabled
+} from '@inkcanvas/platform';
+import {
+  FloatingBar,
+  PenPalette,
+  ShapePicker,
+  IconGlyph,
+  symbolForTool,
+  overlayTransition,
+  panelTransition,
+  animateMotion,
+  MOTION_STANDARD,
+  panelBackground,
+  panelBlurStyle
+} from '@inkcanvas/controls';
 import {
   InkController,
   PointerSample,
@@ -12,16 +37,71 @@ import {
 import type { SceneStrokeInput, SceneSelectionInput } from '@inkcanvas/ink';
 import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings, matrixToArray, transformPointByMatrix } from '@inkcanvas/core';
 import type { ShapeKind, StrokePointInput, AppSettings, AdvancedTouchInput, Matrix3x2 } from '@inkcanvas/core';
-import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground } from '@inkcanvas/features';
+import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground, renderMatrix4Values } from '@inkcanvas/features';
 import type { CoursewarePageFile } from '@inkcanvas/features';
 import type { BoardAsset } from '@inkcanvas/features';
 import { ReplayClock, InkReplaySession } from '@inkcanvas/core';
 import { picker, fileIo } from '@kit.CoreFileKit';
 import { KeyCode } from '@kit.InputKit';
-import { promptAction } from '@kit.ArkUI';
-import { common } from '@kit.AbilityKit';
+import { promptAction, matrix4 } from '@kit.ArkUI';
+import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
 import { image } from '@kit.ImageKit';
+
+// 应用内 UI 偏好（减少动效开关）。独立于 Settings.json，避免分叉跨端设置格式。
+interface UiPrefs {
+  reduceMotion: boolean;
+}
+
+// 更新日志静态条目（摘要自 CHANGELOG.md；HarmonyOS 移植版随 HAP 分发，不读外部文件）。
+interface ChangelogEntry {
+  version: string;
+  title: string;
+  items: string[];
+}
+
+const CHANGELOG_ENTRIES: ChangelogEntry[] = [
+  {
+    version: '3.4.0',
+    title: 'WPF 1:1 还原轮 + 平台级缺陷修复',
+    items: [
+      '浮动栏四卡布局（笑脸/主栏/手势/PPT 退出牌），按钮顺序与选中态逐一对上游。',
+      '笔/荧光笔独立菜单，图形菜单 24 项所见即所得预览；形状绘制语义 1:1（中心圆/两步长方体/克隆拖拽等）。',
+      '440DIP 设置面板分组还原；计时/抽奖/指南/更新日志/是否窗按上游重建。',
+      '画板三浮条 + 图片/视频元素手势（旋转/翻转/双指，单撤销单元）。',
+      '平台级修复：辅助窗口 Z 序、窗口拖动、非 100% DPI 裁切、亚克力回退。',
+      'HarmonyOS 移植：ArkTS 同构分层，API 26 主基线 + API 24 兼容，逻辑黄金向量互认。'
+    ]
+  },
+  {
+    version: '3.3.0',
+    title: 'WPF 菜单、白板与 PPT 适配补齐',
+    items: [
+      '画笔/荧光笔/图形选择改为独立窗口，避免 Flyout 裁切。',
+      '鼠标模式使用独立鼠标指针图标；菜单选笔后回到标注模式。',
+      'Segoe Fluent Icons 字体随应用打包（HarmonyOS 侧改为 sys.symbol 映射）。'
+    ]
+  },
+  {
+    version: '3.1.0',
+    title: '选区变换、回放与自动更新',
+    items: [
+      '选区拖动/缩放/旋转，整段拖动记为一次撤销；双指手势可只作用于选区。',
+      '墨迹回放：按绘制顺序重放，0.5–4 倍速与进度拖动。',
+      '自动更新与静默时间窗策略；操作指南与更新日志窗口。',
+      '透明覆盖层 GPU 回读优化；因果笔锋修复抬笔闪烁。'
+    ]
+  },
+  {
+    version: '3.0.0',
+    title: 'WinUI 3 迁移',
+    items: [
+      '从 WPF / .NET Framework 4.7.2 迁移到 WinUI 3（Windows App SDK）。',
+      '墨迹引擎以 Win2D 重写；图形识别改为托管几何拟合。',
+      'PPT / WPS 改用 COM 后期绑定；界面按 Fluent 重做，适配触摸与动画。'
+    ]
+  }
+];
 
 @Entry
 @Component
@@ -65,10 +145,16 @@ struct Index {
   @State yesNoOpen: boolean = false;
   @State yesNoMessage: string = '';
   @State updateOpen: boolean = false;
+  @State changelogOpen: boolean = false;
+  @State settingsVersion: number = 0;
+  @State reduceMotion: boolean = false;
   @State barDragX: number = 0;
   @State barDragY: number = 0;
   @State windowWidth: number = 0;
   @State windowHeight: number = 0;
+  private systemReduceMotion: boolean = false;
+  private blurEnabled: boolean = false;
+  private symbolIcons: boolean = true;
   private renderer: CanvasInkRenderer | null = null;
   private controller: InkController = new InkController();
   private annotateDocument: InkDocument = new InkDocument();
@@ -90,6 +176,10 @@ struct Index {
   private mediaPaths: Map<string, string> = new Map<string, string>();
   private boardPixelMaps: Map<string, image.PixelMap> = new Map<string, image.PixelMap>();
   private lotteryLoadedNames: string = '\u0000';
+  // 视频进度保持：切页/退出时记录 currentTime，回到该页 onPrepared 恢复。
+  private videoControllers: Map<string, VideoController> = new Map<string, VideoController>();
+  private videoPositions: Map<string, number> = new Map<string, number>();
+  private videoPlaying: Map<string, boolean> = new Map<string, boolean>();
 
   aboutToDisappear(): void {
     this.stopCountdownTimer();
@@ -102,20 +192,73 @@ struct Index {
     this.controller.Invalidated = () => {
       this.refreshScene();
     };
+    this.controller.ToolChanged = () => {
+      this.refreshScene();
+    };
     this.controller.CurrentAttributes.BaseWidth = 2.5;
     const settingsText = this.storage.readText('Settings.json');
     if (settingsText !== null) {
       this.settings = parseSettings(settingsText);
     }
+    // 能力探测：系统材质 / Symbol 图标 / 系统减少动效（失败均回退保守值）。
+    try {
+      this.blurEnabled = supportsSystemMaterial();
+    } catch (e) {
+      this.blurEnabled = false;
+    }
+    try {
+      this.symbolIcons = supportsSymbolGlyph();
+    } catch (e) {
+      this.symbolIcons = false;
+    }
+    try {
+      this.systemReduceMotion = systemMotionReduced(getContext(this) as common.UIAbilityContext);
+    } catch (e) {
+      this.systemReduceMotion = false;
+    }
+    this.loadUiPrefs();
     this.applySettings();
+    if (this.settings.startup.isFoldAtStartup) {
+      this.collapsed = true;
+    }
+    this.lottery.PeopleCount = this.settings.randSettings.peopleCount;
+    this.lotteryNoRepeat = this.settings.randSettings.isNotRepeatName;
     const launchMode = AppStorage.get<string>('launchMode');
     if (launchMode === 'board') { this.openBoard(); }
     this.rebuildAutoSave();
     this.controller.SlideFlipRequested = (next: boolean) => {
-      if (this.mode === 'courseware') {
+      if (this.mode === 'courseware' && this.settings.behavior.isEnableFingerGestureSlideShowControl) {
         this.showCoursewarePage(this.coursewareIndex + (next ? 1 : -1));
       }
     };
+  }
+
+  private loadUiPrefs(): void {
+    if (this.storage === null) {
+      return;
+    }
+    const text = this.storage.readText('UiPrefs.json');
+    if (text === null) {
+      return;
+    }
+    try {
+      const prefs = JSON.parse(text) as UiPrefs;
+      this.reduceMotion = prefs.reduceMotion === true;
+    } catch (e) {
+      void e;
+    }
+  }
+
+  private persistUiPrefs(): void {
+    if (this.storage === null) {
+      return;
+    }
+    const prefs: UiPrefs = { reduceMotion: this.reduceMotion };
+    this.storage.writeTextAtomic('UiPrefs.json', JSON.stringify(prefs));
+  }
+
+  private isMotionReduced(): boolean {
+    return this.reduceMotion || this.systemReduceMotion;
   }
 
   private rebuildAutoSave(): void {
@@ -131,7 +274,7 @@ struct Index {
   }
 
   private applySettings(): void {
-    this.dark = this.settings.appearance.theme === 2;
+    this.dark = this.resolveDark();
     this.widthMenu = this.settings.canvas.inkWidth * 2;
     this.alpha = this.settings.canvas.inkAlpha;
     this.taperIndex = this.settings.canvas.inkStyle;
@@ -156,13 +299,61 @@ struct Index {
     this.controller.Palm.Advanced = advanced;
     this.controller.Palm.NibMode = this.settings.startup.isEnableNibMode;
     this.controller.CurrentAttributes.Nib = this.settings.canvas.penNib;
+    // 画布/识别/日志/抽奖接线（C# AppServices.ApplySettings 对应项）。
+    this.controller.EraserRadius = this.eraserRadiusForSize(this.settings.canvas.eraserSize);
+    this.controller.RecognizeShapes = this.settings.inkToShape.isInkToShapeEnabled;
+    setLogEnabled(this.settings.advanced.isLogEnabled);
+    this.lottery.PeopleCount = this.settings.randSettings.peopleCount;
+    this.lotteryNoRepeat = this.settings.randSettings.isNotRepeatName;
+    if (this.controller.Tool === InkTool.Eraser) {
+      this.applyEraserType();
+    }
+  }
+
+  // C# OriginalMenuCatalog.ToEraserRadius：45 * {0.5, 0.8, 1, 1.25, 1.8}[clamp(size,0,4)]。
+  private eraserRadiusForSize(size: number): number {
+    const factors: number[] = [0.5, 0.8, 1, 1.25, 1.8];
+    const index = Math.min(Math.max(Math.round(size), 0), factors.length - 1);
+    return 45 * factors[index];
+  }
+
+  // eraserType：0=图标切换（保持当前模式），1=面积擦，2=线条擦。
+  private applyEraserType(): void {
+    if (this.settings.canvas.eraserType === 1) {
+      this.controller.EraserMode = InkEraserMode.Area;
+    } else if (this.settings.canvas.eraserType === 2) {
+      this.controller.EraserMode = InkEraserMode.WholeStroke;
+    }
+  }
+
+  // theme：0=跟随系统，1=浅色，2=深色（与 C# WindowChrome.ApplyTheme 一致）。
+  private resolveDark(): boolean {
+    const theme = this.settings.appearance.theme;
+    if (theme === 1) {
+      return false;
+    }
+    if (theme === 2) {
+      return true;
+    }
+    try {
+      const context = getContext(this) as common.UIAbilityContext;
+      const mode = context.config.colorMode;
+      return mode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // 设置变更统一入口：持久化 + 版本号驱动面板重渲染（settings 为私有对象，非 @State）。
+  private touchSettings(): void {
+    this.settingsVersion++;
+    this.persistSettings();
   }
 
   private persistSettings(): void {
     if (this.storage === null) {
       return;
     }
-    this.settings.appearance.theme = this.dark ? 2 : 1;
     this.settings.canvas.inkWidth = this.widthMenu / 2;
     this.settings.canvas.inkAlpha = this.alpha;
     this.settings.canvas.inkStyle = this.taperIndex;
@@ -173,8 +364,21 @@ struct Index {
     if (this.storage === null) {
       return;
     }
-    const path = this.storage.fullPathPublic('screenshots/shot-' + Date.now() + '.png');
+    const stamp = 'shot-' + Date.now() + '.png';
+    let relative = 'screenshots/' + stamp;
+    if (this.settings.automation.isSaveScreenshotsInDateFolders) {
+      const now = new Date();
+      const pad = (n: number): string => n < 10 ? '0' + n : '' + n;
+      relative = 'screenshots/' + now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + '/' + stamp;
+    }
+    const path = this.storage.fullPathPublic(relative);
     const ok = await captureComponentToPng('inkRoot', path);
+    if (ok && this.settings.automation.isAutoSaveStrokesAtScreenshot && this.autoSave !== null) {
+      const strokes = this.controller.Document.Strokes;
+      if (strokes.length >= this.settings.automation.minimumAutomationStrokeNumber) {
+        this.autoSave.saveSnapshot(strokes, 'screenshot');
+      }
+    }
     promptAction.showToast({ message: ok ? '截图已保存' : '截图失败', duration: 2000 });
   }
 
@@ -223,7 +427,7 @@ struct Index {
         this.handleTouch(event);
       })
 
-      if (this.mode === 'courseware') {
+      if (this.mode === 'courseware' && this.settings.behavior.isShowBottomPPTNavigationPanel) {
         Stack({ alignContent: Alignment.Bottom }) {
           Row({ space: 12 }) {
             Text('上一页')
@@ -235,12 +439,14 @@ struct Index {
               .onClick(() => {
                 this.showCoursewarePage(this.coursewareIndex - 1);
               })
-            Text((this.coursewareIndex + 1) + ' / ' + this.coursewareCount)
-              .fontSize(14)
-              .fontColor(Color.White)
-              .padding(8)
-              .backgroundColor('#99000000')
-              .borderRadius(6)
+            if (this.settings.behavior.isShowPPTNavigationBottom) {
+              Text((this.coursewareIndex + 1) + ' / ' + this.coursewareCount)
+                .fontSize(14)
+                .fontColor(Color.White)
+                .padding(8)
+                .backgroundColor('#99000000')
+                .borderRadius(6)
+            }
             Text('下一页')
               .fontSize(14)
               .fontColor(Color.White)
@@ -268,6 +474,8 @@ struct Index {
             alpha: this.alpha,
             taperIndex: this.taperIndex,
             currentPacked: this.currentPacked,
+            uiScale: this.settings.appearance.enableViewboxFloatingBarScaleTransform / 100,
+            materialBlur: this.blurEnabled,
             onColor: (packed: number) => {
               this.currentPacked = packed;
               this.controller.CurrentAttributes.Color = InkColor.fromPackedArgb(packed);
@@ -290,11 +498,15 @@ struct Index {
             },
             onToggleScheme: () => {
               this.dark = !this.dark;
+              this.settings.appearance.theme = this.dark ? 2 : 1;
+              this.persistSettings();
             },
             onClose: () => {
               this.paletteOpen = false;
             }
-          }).margin({ bottom: 170 })
+          })
+            .margin({ bottom: 170 })
+            .transition(overlayTransition(this.isMotionReduced()))
         }
         .width('100%')
         .height('100%')
@@ -306,6 +518,8 @@ struct Index {
           ShapePicker({
             dark: this.dark,
             selectedKind: this.selectedShape,
+            uiScale: this.settings.appearance.enableViewboxFloatingBarScaleTransform / 100,
+            materialBlur: this.blurEnabled,
             onSelect: (kind: number, longPress: boolean) => {
               this.selectedShape = kind;
               this.controller.SelectShape(kind as ShapeKind, longPress);
@@ -314,7 +528,9 @@ struct Index {
                 this.selectedId = 'shapes';
               }
             }
-          }).margin({ bottom: 170 })
+          })
+            .margin({ bottom: 170 })
+            .transition(overlayTransition(this.isMotionReduced()))
         }
         .width('100%')
         .height('100%')
@@ -354,8 +570,10 @@ struct Index {
               .onClick(() => { this.countdownOpen = false; this.stopCountdownTimer(); })
           }
           .padding(24)
-          .backgroundColor(this.dark ? '#F21F1F1F' : '#F2F0F3F9')
+          .backgroundColor(panelBackground(this.dark, this.blurEnabled))
+          .backgroundBlurStyle(panelBlurStyle(this.blurEnabled))
           .borderRadius(12)
+          .transition(panelTransition(this.isMotionReduced()))
         }
         .width('100%').height('100%')
         .hitTestBehavior(HitTestMode.Transparent)
@@ -371,7 +589,11 @@ struct Index {
             Row({ space: 8 }) {
               Text(this.lotteryNoRepeat ? '不重复：开' : '不重复：关')
                 .fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
-                .onClick(() => { this.lotteryNoRepeat = !this.lotteryNoRepeat; })
+                .onClick(() => {
+                  this.lotteryNoRepeat = !this.lotteryNoRepeat;
+                  this.settings.randSettings.isNotRepeatName = this.lotteryNoRepeat;
+                  this.persistSettings();
+                })
               Text('抽选').fontSize(16).fontColor(Color.White).padding(10)
                 .backgroundColor('#FF0067C0').borderRadius(6)
                 .onClick(() => {
@@ -389,8 +611,10 @@ struct Index {
               .onClick(() => { this.lotteryOpen = false; })
           }
           .padding(24)
-          .backgroundColor(this.dark ? '#F21F1F1F' : '#F2F0F3F9')
+          .backgroundColor(panelBackground(this.dark, this.blurEnabled))
+          .backgroundBlurStyle(panelBlurStyle(this.blurEnabled))
           .borderRadius(12)
+          .transition(panelTransition(this.isMotionReduced()))
         }
         .width('100%').height('100%')
         .hitTestBehavior(HitTestMode.Transparent)
@@ -419,6 +643,7 @@ struct Index {
           .backgroundColor('#99000000')
           .borderRadius(8)
           .margin({ bottom: 170 })
+          .transition(overlayTransition(this.isMotionReduced()))
         }
         .width('100%').height('100%')
         .hitTestBehavior(HitTestMode.Transparent)
@@ -437,8 +662,10 @@ struct Index {
               .onClick(() => { this.guideOpen = false; })
           }
           .padding(24)
-          .backgroundColor(this.dark ? '#F21F1F1F' : '#F2F0F3F9')
+          .backgroundColor(panelBackground(this.dark, this.blurEnabled))
+          .backgroundBlurStyle(panelBlurStyle(this.blurEnabled))
           .borderRadius(12)
+          .transition(panelTransition(this.isMotionReduced()))
         }
         .width('100%').height('100%')
         .hitTestBehavior(HitTestMode.Transparent)
@@ -449,66 +676,33 @@ struct Index {
           Scroll() {
             Column({ space: 10 }) {
               Text('设置').fontSize(20).fontColor(this.dark ? Color.White : Color.Black)
-              Text('外观').fontSize(15).fontColor('#FF0067C0')
-              Row() {
-                Text('深色主题').fontSize(14).fontColor(this.dark ? Color.White : Color.Black).layoutWeight(1)
-                Toggle({ type: ToggleType.Switch, isOn: this.dark })
-                  .onChange((isOn: boolean) => { this.dark = isOn; this.persistSettings(); })
-              }.width(300)
-              Row() {
-                Text('浮条文字').fontSize(14).fontColor(this.dark ? Color.White : Color.Black).layoutWeight(1)
-                Toggle({ type: ToggleType.Switch, isOn: this.settings.appearance.isEnableDisPlayFloatBarText })
-                  .onChange((isOn: boolean) => { this.settings.appearance.isEnableDisPlayFloatBarText = isOn; this.persistSettings(); })
-              }.width(300)
-              Text('画布').fontSize(15).fontColor('#FF0067C0')
-              Row() {
-                Text('笔宽 ' + this.widthMenu).fontSize(14).fontColor(this.dark ? Color.White : Color.Black).width(90)
-                Slider({ value: this.widthMenu, min: 1, max: 30, step: 1 })
-                  .layoutWeight(1)
-                  .onChange((value: number) => { this.widthMenu = value; this.controller.CurrentAttributes.BaseWidth = value / 2; this.persistSettings(); })
-              }.width(300)
-              Row() {
-                Text('荧光透明度 ' + this.alpha).fontSize(14).fontColor(this.dark ? Color.White : Color.Black).width(110)
-                Slider({ value: this.alpha, min: 20, max: 240, step: 20 })
-                  .layoutWeight(1)
-                  .onChange((value: number) => { this.alpha = value; this.controller.CurrentAttributes.HighlighterAlpha = value; this.persistSettings(); })
-              }.width(300)
-              Text('手势').fontSize(15).fontColor('#FF0067C0')
-              Row() {
-                Text('双指缩放').fontSize(14).fontColor(this.dark ? Color.White : Color.Black).layoutWeight(1)
-                Toggle({ type: ToggleType.Switch, isOn: this.settings.gesture.isEnableTwoFingerZoom })
-                  .onChange((isOn: boolean) => { this.settings.gesture.isEnableTwoFingerZoom = isOn; this.applyGestures(); this.persistSettings(); })
-              }.width(300)
-              Row() {
-                Text('双指平移').fontSize(14).fontColor(this.dark ? Color.White : Color.Black).layoutWeight(1)
-                Toggle({ type: ToggleType.Switch, isOn: this.settings.gesture.isEnableTwoFingerTranslate })
-                  .onChange((isOn: boolean) => { this.settings.gesture.isEnableTwoFingerTranslate = isOn; this.applyGestures(); this.persistSettings(); })
-              }.width(300)
-              Row() {
-                Text('双指旋转').fontSize(14).fontColor(this.dark ? Color.White : Color.Black).layoutWeight(1)
-                Toggle({ type: ToggleType.Switch, isOn: this.settings.gesture.isEnableTwoFingerRotation })
-                  .onChange((isOn: boolean) => { this.settings.gesture.isEnableTwoFingerRotation = isOn; this.applyGestures(); this.persistSettings(); })
-              }.width(300)
-              Text('自动保存').fontSize(15).fontColor('#FF0067C0')
-              Row() {
-                Text('清空时自动保存').fontSize(14).fontColor(this.dark ? Color.White : Color.Black).layoutWeight(1)
-                Toggle({ type: ToggleType.Switch, isOn: this.settings.automation.isAutoSaveStrokesAtClear })
-                  .onChange((isOn: boolean) => { this.settings.automation.isAutoSaveStrokesAtClear = isOn; this.persistSettings(); this.rebuildAutoSave(); })
-              }.width(300)
-              Row() {
-                Text('定期清理').fontSize(14).fontColor(this.dark ? Color.White : Color.Black).layoutWeight(1)
-                Toggle({ type: ToggleType.Switch, isOn: this.settings.automation.autoDelSavedFiles })
-                  .onChange((isOn: boolean) => { this.settings.automation.autoDelSavedFiles = isOn; this.persistSettings(); this.rebuildAutoSave(); })
-              }.width(300)
+              this.SettingsStartup()
+              this.SettingsCanvas()
+              this.SettingsGesture()
+              this.SettingsInkToShape()
+              this.SettingsAppearance()
+              this.SettingsBehavior()
+              this.SettingsAdvanced()
+              this.SettingsAutomation()
+              this.SettingsRand()
+              this.SettingsAbout()
               Text('关闭').fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
                 .onClick(() => { this.settingsOpen = false; })
             }
             .padding(20)
+            .alignItems(HorizontalAlign.Start)
           }
-          .width(360)
-          .height(480)
-          .backgroundColor(this.dark ? '#F21F1F1F' : '#F2F0F3F9')
+          .width('92%')
+          .constraintSize({ maxWidth: 440 })
+          .height('82%')
+          .constraintSize({ maxHeight: 620 })
+          .backgroundColor(panelBackground(this.dark, this.blurEnabled))
+          .backgroundBlurStyle(panelBlurStyle(this.blurEnabled))
           .borderRadius(12)
+          // settings 为私有对象（非 @State）：读取版本号建立渲染依赖，
+          // touchSettings() 递增后整面板以最新设置值重渲染。
+          .opacity(this.settingsVersion >= 0 ? 1 : 0)
+          .transition(panelTransition(this.isMotionReduced()))
         }
         .width('100%').height('100%')
         .hitTestBehavior(HitTestMode.Transparent)
@@ -570,8 +764,10 @@ struct Index {
             }
           }
           .padding(24)
-          .backgroundColor(this.dark ? '#F21F1F1F' : '#F2F0F3F9')
+          .backgroundColor(panelBackground(this.dark, this.blurEnabled))
+          .backgroundBlurStyle(panelBlurStyle(this.blurEnabled))
           .borderRadius(12)
+          .transition(panelTransition(this.isMotionReduced()))
         }
         .width('100%').height('100%')
         .hitTestBehavior(HitTestMode.Transparent)
@@ -587,8 +783,52 @@ struct Index {
               .onClick(() => { this.updateOpen = false; })
           }
           .padding(24)
-          .backgroundColor(this.dark ? '#F21F1F1F' : '#F2F0F3F9')
+          .backgroundColor(panelBackground(this.dark, this.blurEnabled))
+          .backgroundBlurStyle(panelBlurStyle(this.blurEnabled))
           .borderRadius(12)
+          .transition(panelTransition(this.isMotionReduced()))
+        }
+        .width('100%').height('100%')
+        .hitTestBehavior(HitTestMode.Transparent)
+      }
+
+      if (this.changelogOpen) {
+        Stack({ alignContent: Alignment.Center }) {
+          Scroll() {
+            Column({ space: 12 }) {
+              Text('更新日志').fontSize(20).fontColor(this.dark ? Color.White : Color.Black)
+              Text('Ink Canvas Artistry · HarmonyOS 移植（摘要自 CHANGELOG.md）')
+                .fontSize(12).fontColor(this.dark ? '#A8FFFFFF' : '#9E000000')
+              ForEach(CHANGELOG_ENTRIES, (entry: ChangelogEntry) => {
+                Column({ space: 6 }) {
+                  Text(entry.version + ' — ' + entry.title)
+                    .fontSize(15)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor('#FF0067C0')
+                  ForEach(entry.items, (item: string) => {
+                    Text('• ' + item)
+                      .fontSize(13)
+                      .fontColor(this.dark ? Color.White : Color.Black)
+                      .width('100%')
+                  }, (item: string) => item)
+                }
+                .alignItems(HorizontalAlign.Start)
+                .width('100%')
+              }, (entry: ChangelogEntry) => entry.version)
+              Text('关闭').fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
+                .onClick(() => { this.changelogOpen = false; })
+            }
+            .padding(20)
+            .alignItems(HorizontalAlign.Start)
+          }
+          .width('92%')
+          .constraintSize({ maxWidth: 440 })
+          .height('76%')
+          .constraintSize({ maxHeight: 560 })
+          .backgroundColor(panelBackground(this.dark, this.blurEnabled))
+          .backgroundBlurStyle(panelBlurStyle(this.blurEnabled))
+          .borderRadius(12)
+          .transition(panelTransition(this.isMotionReduced()))
         }
         .width('100%').height('100%')
         .hitTestBehavior(HitTestMode.Transparent)
@@ -604,14 +844,17 @@ struct Index {
             this.ToolEntry('计时器', 'countdown')
             this.ToolEntry('抽奖', 'lottery')
             this.ToolEntry('回放', 'replay')
+            this.ToolEntry('更新日志', 'changelog')
             this.ToolEntry('设置', 'settings')
             this.ToolEntry('指南', 'guide')
             this.ToolEntry('关闭', 'closeTools')
           }
           .padding(12)
-          .backgroundColor(this.dark ? '#F21F1F1F' : '#F2F0F3F9')
+          .backgroundColor(panelBackground(this.dark, this.blurEnabled))
+          .backgroundBlurStyle(panelBlurStyle(this.blurEnabled))
           .borderRadius(8)
           .margin({ bottom: 170 })
+          .transition(overlayTransition(this.isMotionReduced()))
         }
         .width('100%')
         .height('100%')
@@ -622,9 +865,18 @@ struct Index {
         FloatingBar({
           dark: this.dark,
           showLabels: this.settings.appearance.isEnableDisPlayFloatBarText,
+          uiScale: this.settings.appearance.enableViewboxFloatingBarScaleTransform / 100,
           selectedId: this.selectedId,
           folded: this.collapsed,
           pptActive: this.pptActive,
+          materialBlur: this.blurEnabled,
+          symbolIcons: this.symbolIcons,
+          reduceMotion: this.isMotionReduced(),
+          showEraserButton: this.settings.appearance.isShowEraserButton,
+          showHideControlButton: this.settings.appearance.isShowHideControlButton,
+          showLRSwitchButton: this.settings.appearance.isShowLRSwitchButton,
+          colorfulBackground: this.settings.appearance.isColorfulViewboxFloatingBar,
+          transparentButtons: this.settings.appearance.isTransparentButtonBackground,
           onAction: (id: string) => {
             this.handleAction(id);
           },
@@ -635,7 +887,7 @@ struct Index {
           onDragFinished: () => {
           }
         })
-          .margin({ bottom: 100 })
+          .margin({ bottom: this.settings.appearance.floatingBarBottomMargin })
           .translate({ x: this.barDragX, y: this.barDragY })
       }
       .width('100%')
@@ -669,14 +921,28 @@ struct Index {
   @Builder
   BoardVideo(asset: BoardAsset) {
     if (this.boardMediaPath(asset) !== '') {
-      Video({ src: this.boardMediaPath(asset) })
+      Video({ src: this.boardMediaPath(asset), controller: this.videoControllerFor(asset) })
         .controls(true)
         .objectFit(ImageFit.Fill)
         .position({ x: asset.Left, y: asset.Top })
         .width(asset.Width)
         .height(asset.Height)
-        .rotate({ centerX: '50%', centerY: '50%', angle: this.boardAssetAngle(asset) })
-        .scale({ x: this.boardAssetScaleX(asset), y: this.boardAssetScaleY(asset) })
+        .transform(this.boardAssetMatrix(asset))
+        .onPrepared(() => {
+          this.restoreVideoPosition(asset);
+        })
+        .onUpdate((info: PlaybackInfo) => {
+          this.videoPositions.set(asset.Id, info.time);
+        })
+        .onStart(() => {
+          this.videoPlaying.set(asset.Id, true);
+        })
+        .onPause(() => {
+          this.videoPlaying.set(asset.Id, false);
+        })
+        .onFinish(() => {
+          this.videoPlaying.set(asset.Id, false);
+        })
     }
   }
 
@@ -688,22 +954,508 @@ struct Index {
         .position({ x: asset.Left, y: asset.Top })
         .width(asset.Width)
         .height(asset.Height)
-        .rotate({ centerX: '50%', centerY: '50%', angle: this.boardAssetAngle(asset) })
-        .scale({ x: this.boardAssetScaleX(asset), y: this.boardAssetScaleY(asset) })
+        .transform(this.boardAssetMatrix(asset))
     }
   }
 
   @Builder
   ToolEntry(label: string, id: string) {
-    Text(label)
-      .fontSize(14)
-      .fontColor(this.dark ? Color.White : Color.Black)
-      .width(160)
-      .padding(8)
-      .textAlign(TextAlign.Center)
-      .onClick(() => {
-        this.handleAction(id);
+    Row({ space: 8 }) {
+      IconGlyph({
+        symbol: symbolForTool(id),
+        fallback: label.substring(0, 1),
+        size: 16,
+        color: this.dark ? Color.White : Color.Black,
+        enabled: this.symbolIcons
       })
+      Text(label)
+        .fontSize(14)
+        .fontColor(this.dark ? Color.White : Color.Black)
+        .layoutWeight(1)
+        .textAlign(TextAlign.Center)
+    }
+    .width(160)
+    .padding(8)
+    .onClick(() => {
+      this.handleAction(id);
+    })
+  }
+
+  // ---- 设置面板：通用行构建器 ------------------------------------------
+
+  @Builder
+  SettingSection(title: string) {
+    Text(title)
+      .fontSize(15)
+      .fontColor('#FF0067C0')
+      .margin({ top: 6 })
+  }
+
+  @Builder
+  SettingToggle(label: string, isOn: boolean, onChanged: (value: boolean) => void) {
+    Row() {
+      Text(label)
+        .fontSize(14)
+        .fontColor(this.dark ? Color.White : Color.Black)
+        .layoutWeight(1)
+      Toggle({ type: ToggleType.Switch, isOn: isOn })
+        .onChange((value: boolean) => {
+          onChanged(value);
+        })
+    }
+    .width('100%')
+    .constraintSize({ minHeight: 40 })
+  }
+
+  @Builder
+  SettingSlider(label: string, value: number, min: number, max: number, step: number,
+    onChanged: (value: number) => void) {
+    Column({ space: 2 }) {
+      Text(label + '：' + (step < 1 ? value.toFixed(2) : Math.round(value).toString()))
+        .fontSize(13)
+        .fontColor(this.dark ? Color.White : Color.Black)
+      Slider({ value: value, min: min, max: max, step: step })
+        .width('100%')
+        .onChange((v: number) => {
+          onChanged(v);
+        })
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  SettingOptions(label: string, options: string[], selected: number, onPick: (index: number) => void) {
+    Column({ space: 4 }) {
+      Text(label)
+        .fontSize(14)
+        .fontColor(this.dark ? Color.White : Color.Black)
+      Flex({ wrap: FlexWrap.Wrap }) {
+        ForEach(options, (option: string, index: number) => {
+          Text(option)
+            .fontSize(12)
+            .fontColor(selected === index ? Color.White : (this.dark ? Color.White : Color.Black))
+            .backgroundColor(selected === index ? '#FF0067C0' : (this.dark ? '#33FFFFFF' : '#1A000000'))
+            .borderRadius(4)
+            .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+            .constraintSize({ minHeight: 40 })
+            .margin({ right: 6, bottom: 4 })
+            .onClick(() => {
+              onPick(index);
+            })
+        }, (option: string, index: number) => index.toString() + option)
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  // 不可用项：显示说明而非假开关（值仍保留在 Settings.json 供跨端互读）。
+  @Builder
+  SettingDeferred(label: string, note: string) {
+    Column({ space: 2 }) {
+      Text(label + '（不可用）')
+        .fontSize(13)
+        .fontColor(this.dark ? '#A8FFFFFF' : '#9E000000')
+      Text(note)
+        .fontSize(11)
+        .fontColor(this.dark ? '#66FFFFFF' : '#66000000')
+        .width('100%')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  SettingInfo(note: string) {
+    Text(note)
+      .fontSize(11)
+      .fontColor(this.dark ? '#A8FFFFFF' : '#9E000000')
+      .width('100%')
+  }
+
+  // ---- 设置面板：分组（名称与顺序对 C# SettingsWindow.BuildSections） ----
+
+  @Builder
+  SettingsStartup() {
+    this.SettingSection('启动选项')
+    this.SettingInfo('HarmonyOS 无三方自更新/自启动通道：更新经应用市场；开机自启为唯一 not-ported 功能。')
+    this.SettingDeferred('自动检查更新', '无 HAP 自更新 API，请经应用市场更新。')
+    this.SettingDeferred('静默更新', '自更新不可用；静默时间窗策略仅保留配置值。')
+    this.SettingDeferred('静默更新起始/终止时间',
+      '当前值：' + this.settings.startup.isAutoUpdateWithSilenceStartTime + ' – ' +
+      this.settings.startup.isAutoUpdateWithSilenceEndTime + '（仅保留配置）。')
+    this.SettingDeferred('开机时运行', '无三方自启 API；替代路径：桌面快捷方式/服务卡片。')
+    this.SettingToggle('开机运行后收纳到侧边栏', this.settings.startup.isFoldAtStartup, (v: boolean) => {
+      this.settings.startup.isFoldAtStartup = v;
+      this.touchSettings();
+    })
+    this.SettingToggle('启用笔尖模式', this.settings.startup.isEnableNibMode, (v: boolean) => {
+      this.settings.startup.isEnableNibMode = v;
+      this.controller.Palm.NibMode = v;
+      this.touchSettings();
+    })
+  }
+
+  @Builder
+  SettingsCanvas() {
+    this.SettingSection('画板选项')
+    this.SettingDeferred('上传图片压缩至 1080P', '图片压缩尚未接入。')
+    this.SettingDeferred('显示画笔光标', '画笔光标行为尚未接入（与基线一致）。')
+    this.SettingOptions('橡皮大小', ['小', '较小', '中（默认）', '较大', '大'],
+      this.settings.canvas.eraserSize, (i: number) => {
+        this.settings.canvas.eraserSize = i;
+        this.controller.EraserRadius = this.eraserRadiusForSize(i);
+        this.touchSettings();
+      })
+    this.SettingToggle('退出画板模式后隐藏墨迹', this.settings.canvas.hideStrokeWhenSelecting, (v: boolean) => {
+      this.settings.canvas.hideStrokeWhenSelecting = v;
+      this.touchSettings();
+      this.refreshScene();
+    })
+    this.SettingOptions('笔迹风格', ['点集笔锋', '速率笔锋', '关闭笔锋'],
+      this.settings.canvas.inkStyle, (i: number) => {
+        this.settings.canvas.inkStyle = i;
+        this.taperIndex = i;
+        this.controller.CurrentAttributes.TaperKind = i === 1 ? 2 : (i === 2 ? 0 : 1);
+        this.touchSettings();
+      })
+    this.SettingOptions('笔尖', ['圆形', '椭圆 · 右斜 45°'],
+      this.settings.canvas.penNib, (i: number) => {
+        this.settings.canvas.penNib = i;
+        this.controller.CurrentAttributes.Nib = i;
+        this.touchSettings();
+      })
+    this.SettingSlider('画笔粗细（菜单 1–30，存储为半值）', this.widthMenu, 1, 30, 1, (v: number) => {
+      this.widthMenu = v;
+      this.controller.CurrentAttributes.BaseWidth = v / 2;
+      this.touchSettings();
+    })
+    this.SettingOptions('橡皮模式', ['图标切换', '面积擦', '线条擦'],
+      this.settings.canvas.eraserType, (i: number) => {
+        this.settings.canvas.eraserType = i;
+        if (this.controller.Tool === InkTool.Eraser) {
+          this.applyEraserType();
+        }
+        this.touchSettings();
+      })
+    this.SettingToggle('白板背景配色', this.settings.canvas.usingWhiteboard, (v: boolean) => {
+      this.settings.canvas.usingWhiteboard = v;
+      this.board.Background = v ? BoardBackground.White : BoardBackground.Black;
+      if (this.boardOpen) {
+        this.boardBackground = this.board.Background;
+      }
+      this.touchSettings();
+    })
+    this.SettingSlider('荧光笔透明度', this.alpha, 20, 240, 20, (v: number) => {
+      this.alpha = v;
+      this.controller.CurrentAttributes.HighlighterAlpha = v;
+      this.touchSettings();
+    })
+  }
+
+  @Builder
+  SettingsGesture() {
+    this.SettingSection('手势选项')
+    this.SettingOptions('缩放/旋转变换中心点', ['画布中心点（默认）', '全部内容的中心点', '手势操作的中心点'],
+      this.settings.gesture.matrixTransformCenterPoint, (i: number) => {
+        this.settings.gesture.matrixTransformCenterPoint = i;
+        this.controller.TransformCenterOption = i;
+        this.touchSettings();
+      })
+    this.SettingDeferred('自动开关两指缩放功能', '离开/进入画板时自动切换手势尚未接入（与基线一致）。')
+    this.SettingToggle('允许双指旋转选中的墨迹', this.settings.gesture.isEnableTwoFingerRotationOnSelection, (v: boolean) => {
+      this.settings.gesture.isEnableTwoFingerRotationOnSelection = v;
+      this.controller.GesturesTargetSelection = v;
+      this.touchSettings();
+    })
+    this.SettingToggle('启用多点触控模式', this.settings.gesture.isEnableMultiTouchMode, (v: boolean) => {
+      this.settings.gesture.isEnableMultiTouchMode = v;
+      this.controller.MultiTouchEnabled = v;
+      this.touchSettings();
+    })
+    this.SettingInfo('true = 多指书写（禁手势）；false = 第二指触发手势（Settings.json 互读语义）。')
+    this.SettingToggle('双指缩放', this.settings.gesture.isEnableTwoFingerZoom, (v: boolean) => {
+      this.settings.gesture.isEnableTwoFingerZoom = v;
+      this.applyGestures();
+      this.touchSettings();
+    })
+    this.SettingToggle('双指平移', this.settings.gesture.isEnableTwoFingerTranslate, (v: boolean) => {
+      this.settings.gesture.isEnableTwoFingerTranslate = v;
+      this.applyGestures();
+      this.touchSettings();
+    })
+    this.SettingToggle('双指旋转', this.settings.gesture.isEnableTwoFingerRotation, (v: boolean) => {
+      this.settings.gesture.isEnableTwoFingerRotation = v;
+      this.applyGestures();
+      this.touchSettings();
+    })
+  }
+
+  @Builder
+  SettingsInkToShape() {
+    this.SettingSection('墨迹识别选项')
+    this.SettingToggle('启用墨迹识别', this.settings.inkToShape.isInkToShapeEnabled, (v: boolean) => {
+      this.settings.inkToShape.isInkToShapeEnabled = v;
+      this.controller.RecognizeShapes = v;
+      this.touchSettings();
+    })
+  }
+
+  @Builder
+  SettingsAppearance() {
+    this.SettingSection('外观选项')
+    this.SettingOptions('颜色主题', ['浅色主题', '深色主题', '跟随系统'],
+      this.settings.appearance.theme === 1 ? 0 : (this.settings.appearance.theme === 2 ? 1 : 2),
+      (i: number) => {
+        const values: number[] = [1, 2, 0];
+        this.settings.appearance.theme = values[i];
+        this.dark = this.resolveDark();
+        this.touchSettings();
+      })
+    this.SettingToggle('浮动工具栏显示文字注释', this.settings.appearance.isEnableDisPlayFloatBarText, (v: boolean) => {
+      this.settings.appearance.isEnableDisPlayFloatBarText = v;
+      this.touchSettings();
+    })
+    this.SettingToggle('浮动工具栏背景色（彩色渐变）', this.settings.appearance.isColorfulViewboxFloatingBar, (v: boolean) => {
+      this.settings.appearance.isColorfulViewboxFloatingBar = v;
+      this.touchSettings();
+    })
+    this.SettingSlider('浮动工具栏底部边距', this.settings.appearance.floatingBarBottomMargin, 0, 200, 1, (v: number) => {
+      this.settings.appearance.floatingBarBottomMargin = v;
+      this.touchSettings();
+    })
+    this.SettingSlider('浮动工具栏 UI 缩放 (%)', this.settings.appearance.enableViewboxFloatingBarScaleTransform, 50, 150, 1, (v: number) => {
+      this.settings.appearance.enableViewboxFloatingBarScaleTransform = v;
+      this.touchSettings();
+    })
+    this.SettingDeferred('画板 UI 缩放 (%)',
+      '当前值：' + Math.round(this.settings.appearance.enableViewboxBlackBoardScaleTransform) + '%；画板 UI 缩放尚未接入。')
+    this.SettingToggle('按钮背景透明', this.settings.appearance.isTransparentButtonBackground, (v: boolean) => {
+      this.settings.appearance.isTransparentButtonBackground = v;
+      this.touchSettings();
+    })
+    this.SettingDeferred('显示退出按钮', '退出按钮尚未加入浮条（应用内无退出流程）。')
+    this.SettingToggle('显示橡皮按钮', this.settings.appearance.isShowEraserButton, (v: boolean) => {
+      this.settings.appearance.isShowEraserButton = v;
+      this.touchSettings();
+    })
+    this.SettingToggle('显示隐藏控制按钮', this.settings.appearance.isShowHideControlButton, (v: boolean) => {
+      this.settings.appearance.isShowHideControlButton = v;
+      this.touchSettings();
+    })
+    this.SettingToggle('显示左右切换按钮', this.settings.appearance.isShowLRSwitchButton, (v: boolean) => {
+      this.settings.appearance.isShowLRSwitchButton = v;
+      this.touchSettings();
+    })
+    this.SettingDeferred('显示手指模式切换按钮', '手指模式切换按钮尚未加入浮条。')
+    this.SettingDeferred('调色盘显示笔尖模式切换', '笔尖模式切换控件尚未在调色盘中实现（与基线一致）。')
+    this.SettingToggle('减少动效（应用内）', this.reduceMotion, (v: boolean) => {
+      this.reduceMotion = v;
+      this.persistUiPrefs();
+    })
+    this.SettingInfo(this.systemReduceMotion
+      ? '系统动效缩放为 0，已自动减少动效。'
+      : '系统动效缩放未读取到减少信号；可手动开启（探测需真机核对）。')
+  }
+
+  @Builder
+  SettingsBehavior() {
+    this.SettingSection('PPT 选项（课件模式）')
+    this.SettingInfo('PPT/WPS COM 互操作不可用；课件模式为 PDF。PPT 专属项仅保留 Settings.json 值。')
+    this.SettingToggle('显示底部翻页面板', this.settings.behavior.isShowBottomPPTNavigationPanel, (v: boolean) => {
+      this.settings.behavior.isShowBottomPPTNavigationPanel = v;
+      this.touchSettings();
+    })
+    this.SettingToggle('显示底部页码', this.settings.behavior.isShowPPTNavigationBottom, (v: boolean) => {
+      this.settings.behavior.isShowPPTNavigationBottom = v;
+      this.touchSettings();
+    })
+    this.SettingDeferred('侧边翻页面板 / 侧边页码', '侧边导航面板尚未实现。')
+    this.SettingDeferred('Microsoft PowerPoint 支持 / WPS 支持', 'COM 互操作不可用；课件请导出 PDF。')
+    this.SettingDeferred('进入放映时自动批注', '无放映状态检测。')
+    this.SettingDeferred('放映模式双指手势', '放映专属手势门控尚未移植（与基线一致）。')
+    this.SettingToggle('允许手指手势翻页', this.settings.behavior.isEnableFingerGestureSlideShowControl, (v: boolean) => {
+      this.settings.behavior.isEnableFingerGestureSlideShowControl = v;
+      this.touchSettings();
+    })
+    this.SettingDeferred('自动幻灯片截屏', '无自动放映截屏。')
+    this.SettingToggle('自动保存课件墨迹', this.settings.behavior.isAutoSaveStrokesInPowerPoint, (v: boolean) => {
+      this.settings.behavior.isAutoSaveStrokesInPowerPoint = v;
+      this.touchSettings();
+    })
+    this.SettingDeferred('记忆上次播放位置 / 提示隐藏幻灯片 / 提示自动播放', '无 PPT 状态通知。')
+    this.SettingDeferred('选择时不清除墨迹', '墨迹隐藏/显示控件尚未移植（与基线一致）。')
+    this.SettingToggle('鼠标模式时显示课件墨迹', this.settings.behavior.isShowStrokeOnSelectInPowerPoint, (v: boolean) => {
+      this.settings.behavior.isShowStrokeOnSelectInPowerPoint = v;
+      this.touchSettings();
+      this.refreshScene();
+    })
+  }
+
+  @Builder
+  SettingsAdvanced() {
+    this.SettingSection('高级选项')
+    this.SettingInfo('# 特殊屏幕模式调节触控屏触摸大小倍数；倍数为 0 即禁用手势橡皮。')
+    this.SettingToggle('特殊屏幕模式', this.settings.advanced.isSpecialScreen, (v: boolean) => {
+      this.settings.advanced.isSpecialScreen = v;
+      this.applySettings();
+      this.touchSettings();
+    })
+    this.SettingSlider('特殊屏幕触摸大小倍数', this.settings.advanced.touchMultiplier, 0, 5, 0.01, (v: number) => {
+      this.settings.advanced.touchMultiplier = v;
+      this.applySettings();
+      this.touchSettings();
+    })
+    this.SettingDeferred('触摸大小倍数校准', '原校准垫尚未移植（与基线一致）。')
+    this.SettingSlider('笔尖模式 BoundsWidth', this.settings.advanced.nibModeBoundsWidth, 1, 50, 1, (v: number) => {
+      this.settings.advanced.nibModeBoundsWidth = v;
+      this.applySettings();
+      this.touchSettings();
+    })
+    this.SettingSlider('手指模式 BoundsWidth', this.settings.advanced.fingerModeBoundsWidth, 1, 50, 1, (v: number) => {
+      this.settings.advanced.fingerModeBoundsWidth = v;
+      this.applySettings();
+      this.touchSettings();
+    })
+    this.SettingSlider('笔尖模式 ThresholdValue', this.settings.advanced.nibModeBoundsWidthThresholdValue, 0, 10, 0.01, (v: number) => {
+      this.settings.advanced.nibModeBoundsWidthThresholdValue = v;
+      this.applySettings();
+      this.touchSettings();
+    })
+    this.SettingSlider('手指模式 ThresholdValue', this.settings.advanced.fingerModeBoundsWidthThresholdValue, 0, 10, 0.01, (v: number) => {
+      this.settings.advanced.fingerModeBoundsWidthThresholdValue = v;
+      this.applySettings();
+      this.touchSettings();
+    })
+    this.SettingSlider('笔尖模式 EraserSize', this.settings.advanced.nibModeBoundsWidthEraserSize, 0.01, 10, 0.01, (v: number) => {
+      this.settings.advanced.nibModeBoundsWidthEraserSize = v;
+      this.applySettings();
+      this.touchSettings();
+    })
+    this.SettingSlider('手指模式 EraserSize', this.settings.advanced.fingerModeBoundsWidthEraserSize, 0.01, 10, 0.01, (v: number) => {
+      this.settings.advanced.fingerModeBoundsWidthEraserSize = v;
+      this.applySettings();
+      this.touchSettings();
+    })
+    this.SettingToggle('四边红外模式', this.settings.advanced.isQuadIR, (v: boolean) => {
+      this.settings.advanced.isQuadIR = v;
+      this.applySettings();
+      this.touchSettings();
+    })
+    this.SettingToggle('记录日志', this.settings.advanced.isLogEnabled, (v: boolean) => {
+      this.settings.advanced.isLogEnabled = v;
+      setLogEnabled(v);
+      this.touchSettings();
+    })
+    this.SettingDeferred('关闭软件时二次弹窗确认', '退出确认流程尚未接入（与基线一致）。')
+    this.SettingDeferred('阻止系统边缘手势', '无边缘手势抑制 API；沉浸式全屏下系统手势由系统决定。')
+    this.SettingInfo('特殊屏幕与触摸参数按原 WPF 算法移植；请在实际触控屏与压感笔上复核（需真机验证）。')
+  }
+
+  @Builder
+  SettingsAutomation() {
+    this.SettingSection('自动选项')
+    this.SettingInfo('无法获取其他应用前台状态：自动收纳/进程查杀类设置仅保留值。')
+    this.SettingDeferred('进入“希沃白板”时自动收纳', '前台应用识别不可用。')
+    this.SettingDeferred('自动收纳忽略桌面 EN 批注窗口', '窗口识别排除规则不可用。')
+    this.SettingDeferred('进入“希沃视频展台”时自动收纳', '前台应用识别不可用。')
+    this.SettingDeferred('进入“希沃轻白板”时自动收纳', '前台应用识别不可用。')
+    this.SettingDeferred('进入“希沃品课”时自动收纳', '前台应用识别不可用。')
+    this.SettingDeferred('进入“鸿合白板”时自动收纳', '前台应用识别不可用。')
+    this.SettingDeferred('进入“鸿合视频展台”时自动收纳', '前台应用识别不可用。')
+    this.SettingDeferred('进入“文香白板”时自动收纳', '前台应用识别不可用。')
+    this.SettingDeferred('进入“中原旧白板”时自动收纳', '前台应用识别不可用。')
+    this.SettingDeferred('进入“微软 Whiteboard”时自动收纳', '前台应用识别不可用。')
+    this.SettingDeferred('进入 PPT 放映时自动收纳', '无放映状态检测；手动收纳可用（Alt+V）。')
+    this.SettingDeferred('自动查杀希沃“PPT 小工具”', '无进程查杀能力。')
+    this.SettingDeferred('自动查杀希沃白板 5', '无进程查杀能力。')
+    this.SettingToggle('清屏时自动保存墨迹', this.settings.automation.isAutoSaveStrokesAtClear, (v: boolean) => {
+      this.settings.automation.isAutoSaveStrokesAtClear = v;
+      this.touchSettings();
+      this.rebuildAutoSave();
+    })
+    this.SettingToggle('截图分日期文件夹保存', this.settings.automation.isSaveScreenshotsInDateFolders, (v: boolean) => {
+      this.settings.automation.isSaveScreenshotsInDateFolders = v;
+      this.touchSettings();
+    })
+    this.SettingToggle('截图时自动保存墨迹', this.settings.automation.isAutoSaveStrokesAtScreenshot, (v: boolean) => {
+      this.settings.automation.isAutoSaveStrokesAtScreenshot = v;
+      this.touchSettings();
+    })
+    this.SettingDeferred('切换到鼠标模式后自动清屏', '退出书写模式自动清屏尚未接入（与基线一致）。')
+    this.SettingSlider('自动保存所需最少墨迹数（0 不限制）', this.settings.automation.minimumAutomationStrokeNumber, 0, 10, 1, (v: number) => {
+      this.settings.automation.minimumAutomationStrokeNumber = Math.round(v);
+      this.touchSettings();
+    })
+    Column({ space: 4 }) {
+      Text('墨迹、截图自动保存位置')
+        .fontSize(14)
+        .fontColor(this.dark ? Color.White : Color.Black)
+      TextInput({ text: this.settings.automation.autoSavedStrokesLocation })
+        .width('100%')
+        .onChange((v: string) => {
+          this.settings.automation.autoSavedStrokesLocation = v;
+          this.touchSettings();
+        })
+      Text('HarmonyOS 版实际保存于应用沙箱（Auto Saved - Strokes）；此值用于跨端设置互读。')
+        .fontSize(11)
+        .fontColor(this.dark ? '#66FFFFFF' : '#66000000')
+        .width('100%')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    this.SettingToggle('定期自动删除过期文件', this.settings.automation.autoDelSavedFiles, (v: boolean) => {
+      this.settings.automation.autoDelSavedFiles = v;
+      this.touchSettings();
+      this.rebuildAutoSave();
+    })
+    this.SettingOptions('保存时间设置（天）：当前 ' + this.settings.automation.autoDelSavedFilesDaysThreshold,
+      ['1', '3', '5', '7', '15', '30', '60', '100', '365'],
+      [1, 3, 5, 7, 15, 30, 60, 100, 365].indexOf(this.settings.automation.autoDelSavedFilesDaysThreshold),
+      (i: number) => {
+        const days: number[] = [1, 3, 5, 7, 15, 30, 60, 100, 365];
+        this.settings.automation.autoDelSavedFilesDaysThreshold = days[i];
+        this.touchSettings();
+        this.rebuildAutoSave();
+      })
+  }
+
+  @Builder
+  SettingsRand() {
+    this.SettingSection('抽奖（移植附加）')
+    this.SettingSlider('抽取人数', this.settings.randSettings.peopleCount, 1, 200, 1, (v: number) => {
+      this.settings.randSettings.peopleCount = Math.round(v);
+      this.lottery.PeopleCount = Math.round(v);
+      this.touchSettings();
+    })
+    this.SettingToggle('不重复抽取', this.settings.randSettings.isNotRepeatName, (v: boolean) => {
+      this.settings.randSettings.isNotRepeatName = v;
+      this.lotteryNoRepeat = v;
+      this.touchSettings();
+    })
+  }
+
+  @Builder
+  SettingsAbout() {
+    this.SettingSection('关于 Ink Canvas Artistry')
+    this.SettingInfo('当前版本：3.4.0（HarmonyOS 移植）· 开源协议 GPL-3.0')
+    this.SettingInfo('上游：InkCanvas/Ink-Canvas-Artistry ← WXRIW/Ink-Canvas。')
+    Row({ space: 8 }) {
+      Text('检查更新')
+        .fontSize(13).fontColor(Color.White).padding(10)
+        .backgroundColor('#FF0067C0').borderRadius(6)
+        .onClick(() => { this.settingsOpen = false; this.updateOpen = true; })
+      Text('操作指南')
+        .fontSize(13).fontColor(Color.White).padding(10)
+        .backgroundColor('#FF0067C0').borderRadius(6)
+        .onClick(() => { this.settingsOpen = false; this.guideOpen = true; })
+      Text('更新日志')
+        .fontSize(13).fontColor(Color.White).padding(10)
+        .backgroundColor('#FF0067C0').borderRadius(6)
+        .onClick(() => { this.settingsOpen = false; this.changelogOpen = true; })
+    }
   }
 
   private saveCoursewareBundle(): void {
@@ -822,25 +1574,45 @@ struct Index {
     this.boardPixelMaps.clear();
   }
 
-  private boardAssetAngle(asset: BoardAsset): number {
-    if (asset.Transform === null || asset.Transform.length !== 6) {
-      return 0;
-    }
-    return Math.atan2(asset.Transform[1], asset.Transform[0]) * 180 / Math.PI;
+  // BoardAsset.Transform（行向量 3x2）→ Matrix4：经 renderMatrix4Values 共轭到
+  // ArkUI .transform() 的组件中心锚点，精确复刻 C# RenderTransformOrigin(0,0)。
+  private boardAssetMatrix(asset: BoardAsset): matrix4.Matrix4Transit {
+    const v = renderMatrix4Values(asset.Left, asset.Top, asset.Width, asset.Height, asset.Transform);
+    return matrix4.init([
+      v[0], v[1], v[2], v[3],
+      v[4], v[5], v[6], v[7],
+      v[8], v[9], v[10], v[11],
+      v[12], v[13], v[14], v[15]
+    ]);
   }
 
-  private boardAssetScaleX(asset: BoardAsset): number {
-    if (asset.Transform === null || asset.Transform.length !== 6) {
-      return 1;
+  private videoControllerFor(asset: BoardAsset): VideoController {
+    const cached = this.videoControllers.get(asset.Id);
+    if (cached !== undefined) {
+      return cached;
     }
-    return Math.sqrt(asset.Transform[0] * asset.Transform[0] + asset.Transform[1] * asset.Transform[1]);
+    const controller = new VideoController();
+    this.videoControllers.set(asset.Id, controller);
+    return controller;
   }
 
-  private boardAssetScaleY(asset: BoardAsset): number {
-    if (asset.Transform === null || asset.Transform.length !== 6) {
-      return 1;
+  // 回到该页时恢复播放位置；离开前正在播放则继续播放（需真机核对首帧/seek 行为）。
+  private restoreVideoPosition(asset: BoardAsset): void {
+    const controller = this.videoControllers.get(asset.Id);
+    if (controller === undefined) {
+      return;
     }
-    return Math.sqrt(asset.Transform[2] * asset.Transform[2] + asset.Transform[3] * asset.Transform[3]);
+    try {
+      const position = this.videoPositions.get(asset.Id);
+      if (position !== undefined && position > 0) {
+        controller.setCurrentTime(position);
+      }
+      if (this.videoPlaying.get(asset.Id) === true) {
+        controller.start();
+      }
+    } catch (e) {
+      void e;
+    }
   }
 
   private async insertBoardImage(): Promise<void> {
@@ -1148,6 +1920,16 @@ struct Index {
     if (this.replayOpen && this.replaySession !== null && this.replayClock !== null) {
       strokes = this.replaySession.visibleAt(this.replayClock.ElapsedMs);
     }
+    // 鼠标模式墨迹可见性（C# ShellController.ToggleClickThrough 语义）：
+    // 课件内看 behavior.isShowStrokeOnSelectInPowerPoint，否则看 canvas.hideStrokeWhenSelecting。
+    if (this.controller.Tool === InkTool.Pan && !this.replayOpen) {
+      const inkVisible = this.mode === 'courseware'
+        ? this.settings.behavior.isShowStrokeOnSelectInPowerPoint
+        : !this.settings.canvas.hideStrokeWhenSelecting;
+      if (!inkVisible) {
+        strokes = [];
+      }
+    }
     const previewActive = this.controller.PreviewStrokes !== null;
     const previewMatrix = this.controller.SelectionPreviewTransform;
     for (let i = 0; i < strokes.length; i++) {
@@ -1214,7 +1996,9 @@ struct Index {
   }
 
   private exitCourseware(): void {
-    this.saveCoursewareBundle();
+    if (this.settings.behavior.isAutoSaveStrokesInPowerPoint) {
+      this.saveCoursewareBundle();
+    }
     this.mode = 'annotate';
     this.pptActive = false;
     if (this.coursewarePage !== null) {
@@ -1244,12 +2028,16 @@ struct Index {
     } else if (id === 'eraserCircle') {
       this.controller.Tool = InkTool.Eraser;
       this.controller.EraserMode = InkEraserMode.Area;
+      this.settings.canvas.eraserType = 1;
+      this.persistSettings();
       this.selectedId = id;
       this.paletteOpen = false;
       this.shapeOpen = false;
     } else if (id === 'eraserStroke') {
       this.controller.Tool = InkTool.Eraser;
       this.controller.EraserMode = InkEraserMode.WholeStroke;
+      this.settings.canvas.eraserType = 2;
+      this.persistSettings();
       this.selectedId = id;
       this.paletteOpen = false;
       this.shapeOpen = false;
@@ -1271,7 +2059,8 @@ struct Index {
         return;
       }
       this.pendingYesNo = '';
-      if (this.autoSave !== null) {
+      if (this.autoSave !== null &&
+        this.controller.Document.Strokes.length >= this.settings.automation.minimumAutomationStrokeNumber) {
         this.autoSave.saveSnapshot(this.controller.Document.Strokes, 'clear');
       }
       this.controller.ClearSelection();
@@ -1287,9 +2076,13 @@ struct Index {
     } else if (id === 'redo') {
       this.controller.Redo();
     } else if (id === 'toggleCollapse') {
-      this.collapsed = !this.collapsed;
+      animateMotion(this.getUIContext(), this.isMotionReduced(), MOTION_STANDARD, () => {
+        this.collapsed = !this.collapsed;
+      });
     } else if (id === 'fold') {
-      this.collapsed = true;
+      animateMotion(this.getUIContext(), this.isMotionReduced(), MOTION_STANDARD, () => {
+        this.collapsed = true;
+      });
     } else if (id === 'gesture') {
       this.selectedId = 'gesture';
     } else if (id === 'tools') {
@@ -1323,6 +2116,9 @@ struct Index {
     } else if (id === 'guide') {
       this.toolsOpen = false;
       this.guideOpen = true;
+    } else if (id === 'changelog') {
+      this.toolsOpen = false;
+      this.changelogOpen = true;
     } else if (id === 'courseware') {
       this.openCourseware();
     } else if (id === 'pptExit') {

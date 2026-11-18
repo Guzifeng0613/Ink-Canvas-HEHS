@@ -28,3 +28,22 @@ export { PenPalette } from './src/main/ets/PenPalette';
 export { SHAPE_MENU_ROWS, shapeCatalogSummary } from './src/main/ets/ShapePickerCatalog';
 export type { ShapeMenuEntry, ShapeCatalogSummary } from './src/main/ets/ShapePickerCatalog';
 export { ShapePicker, ShapePreviewCell } from './src/main/ets/ShapePicker';
+export {
+  MOTION_FAST,
+  MOTION_STANDARD,
+  MOTION_SLOW,
+  motionDuration,
+  overlayTransition,
+  panelTransition,
+  barCollapseTransition,
+  animateMotion
+} from './src/main/ets/Motion';
+export { panelBackground, panelBlurStyle } from './src/main/ets/PanelStyle';
+export {
+  GLYPH_SYMBOLS,
+  symbolForCodepoint,
+  symbolForButton,
+  symbolForTool,
+  IconGlyph
+} from './src/main/ets/IconGlyph';
+export type { GlyphSymbolEntry, IconGlyphOptions } from './src/main/ets/IconGlyph';

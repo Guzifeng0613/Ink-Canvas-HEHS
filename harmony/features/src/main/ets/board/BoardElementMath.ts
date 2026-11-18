@@ -75,3 +75,27 @@ export function renderMatrix(left: number, top: number, transform: number[] | nu
   const t = transformPointByMatrix(m, left, top);
   return [m.M11, m.M12, m.M21, m.M22, t.X - left, t.Y - top];
 }
+
+// ArkUI .transform() 默认以组件中心 (50%,50%) 为锚点；C# BoardImageLayer 的
+// RenderTransformOrigin 为左上角 (0,0)。把左上原点的 renderMatrix 共轭到中心锚点：
+// 平移分量 = m6 * center - center，线性部分不变。输出列主序 4x4（matrix4.init 入参）。
+export function renderMatrix4Values(
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  transform: number[] | null
+): number[] {
+  const m6 = renderMatrix(left, top, transform);
+  const cx = left + width / 2;
+  const cy = top + height / 2;
+  const tc = transformPointByMatrix(matrixFromArray(m6), cx, cy);
+  const dx = tc.X - cx;
+  const dy = tc.Y - cy;
+  return [
+    m6[0], m6[1], 0, 0,
+    m6[2], m6[3], 0, 0,
+    0, 0, 1, 0,
+    dx, dy, 0, 1
+  ];
+}

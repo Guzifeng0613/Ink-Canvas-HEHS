@@ -96,6 +96,7 @@ export struct ShapePicker {
   @Prop dark: boolean = true;
   @Prop selectedKind: number = -1;
   @Prop uiScale: number = 1;
+  @Prop materialBlur: boolean = false;
   onSelect: (kind: number, longPress: boolean) => void = (kind: number, longPress: boolean) => {
     void kind;
     void longPress;
@@ -129,6 +130,7 @@ export struct ShapePicker {
     }
     .padding(8 * this.uiScale)
     .backgroundColor(themeTokens(this.dark).floatBarBackground)
+    .backgroundBlurStyle(this.materialBlur ? BlurStyle.Thin : BlurStyle.NONE)
     .border({ width: 1, color: themeTokens(this.dark).floatBarBorder })
     .borderRadius(5 * this.uiScale)
   }
