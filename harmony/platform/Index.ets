@@ -25,3 +25,4 @@ export { InkCanvasSurface } from './src/main/ets/rendering/InkCanvasSurface';
 export { PdfPageSource } from './src/main/ets/pdf/PdfPageSource';
 export { AutoSaveService } from './src/main/ets/persistence/AutoSaveService';
 export { captureComponentToPng } from './src/main/ets/persistence/SnapshotService';
+export { openExternalUrl } from './src/main/ets/system/SystemServices';

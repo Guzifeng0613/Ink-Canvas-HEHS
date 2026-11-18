@@ -1,4 +1,4 @@
-import { InkCanvasSurface, CanvasInkRenderer, pointerKind, PdfPageSource, StorageService, AutoSaveService, captureComponentToPng } from '@inkcanvas/platform';
+import { InkCanvasSurface, CanvasInkRenderer, pointerKind, PdfPageSource, StorageService, AutoSaveService, captureComponentToPng, openExternalUrl } from '@inkcanvas/platform';
 import { FloatingBar, PenPalette, ShapePicker } from '@inkcanvas/controls';
 import {
   InkController,
@@ -12,8 +12,12 @@ import type { SceneStrokeInput, SceneSelectionInput } from '@inkcanvas/ink';
 import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings } from '@inkcanvas/core';
 import type { ShapeKind, StrokePointInput, AppSettings } from '@inkcanvas/core';
 import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground } from '@inkcanvas/features';
+import type { BoardAsset } from '@inkcanvas/features';
 import { ReplayClock, InkReplaySession } from '@inkcanvas/core';
 import { picker, fileIo } from '@kit.CoreFileKit';
+import { KeyCode } from '@kit.InputKit';
+import { common } from '@kit.AbilityKit';
+import { util } from '@kit.ArkTS';
 import { image } from '@kit.ImageKit';
 
 @Entry
@@ -54,6 +58,10 @@ struct Index {
   @State boardIndex: number = 0;
   @State boardPageCount: number = 1;
   @State boardBackground: number = 0;
+  @State boardImagesVersion: number = 0;
+  @State yesNoOpen: boolean = false;
+  @State yesNoMessage: string = '';
+  @State updateOpen: boolean = false;
   @State windowWidth: number = 0;
   @State windowHeight: number = 0;
   private renderer: CanvasInkRenderer | null = null;
@@ -73,6 +81,7 @@ struct Index {
   private board: BoardDocument = new BoardDocument();
   private boardGridSettings: RenderingContextSettings = new RenderingContextSettings(true);
   private boardGridContext: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.boardGridSettings);
+  private pendingYesNo: string = '';
 
   aboutToDisappear(): void {
     this.stopCountdownTimer();
@@ -91,6 +100,8 @@ struct Index {
       this.settings = parseSettings(settingsText);
     }
     this.applySettings();
+    const launchMode = AppStorage.get<string>('launchMode');
+    if (launchMode === 'board') { this.openBoard(); }
     this.autoSave = new AutoSaveService(this.storage, 'Auto Saved - Strokes', true, this.settings.automation.autoDelSavedFilesDaysThreshold);
   }
 
@@ -136,6 +147,12 @@ struct Index {
           .width('100%')
           .height('100%')
           .onReady(() => { this.drawBoardGrid(); })
+      }
+
+      if (this.boardOpen) {
+        ForEach(this.board.Current.Images, (asset: BoardAsset) => {
+          this.BoardImage(asset)
+        }, (asset: BoardAsset) => asset.Id + ':' + this.boardImagesVersion)
       }
 
       if (this.mode === 'courseware' && this.coursewarePage !== null) {
@@ -466,6 +483,8 @@ struct Index {
                 .onClick(() => { this.board.Background = BoardBackground.Lined; this.boardBackground = 3; this.drawBoardGrid(); })
             }
             Row({ space: 6 }) {
+              Text('插图').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+                .onClick(() => { this.insertBoardImage(); })
               Text('保存').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
                 .onClick(() => { this.saveBoard(); })
               Text('打开').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
@@ -481,11 +500,51 @@ struct Index {
         .hitTestBehavior(HitTestMode.Transparent)
       }
 
+      if (this.yesNoOpen) {
+        Stack({ alignContent: Alignment.Center }) {
+          Column({ space: 12 }) {
+            Text(this.yesNoMessage).fontSize(16).fontColor(this.dark ? Color.White : Color.Black)
+            Row({ space: 12 }) {
+              Text('是').fontSize(14).fontColor(Color.White).padding(10)
+                .backgroundColor('#FF0067C0').borderRadius(6)
+                .onClick(() => { this.yesNoOpen = false; this.handleAction(this.pendingYesNo); })
+              Text('否').fontSize(14).fontColor(Color.White).padding(10)
+                .backgroundColor('#666666').borderRadius(6)
+                .onClick(() => { this.yesNoOpen = false; })
+            }
+          }
+          .padding(24)
+          .backgroundColor(this.dark ? '#F21F1F1F' : '#F2F0F3F9')
+          .borderRadius(12)
+        }
+        .width('100%').height('100%')
+        .hitTestBehavior(HitTestMode.Transparent)
+      }
+
+      if (this.updateOpen) {
+        Stack({ alignContent: Alignment.Center }) {
+          Column({ space: 10 }) {
+            Text('检查更新').fontSize(18).fontColor(this.dark ? Color.White : Color.Black)
+            Text('当前版本 3.4.0（HarmonyOS 移植）').fontSize(13).fontColor(this.dark ? Color.White : Color.Black)
+            Text('HarmonyOS 应用经应用市场更新；自更新通道不可用。').fontSize(12).fontColor(this.dark ? '#A8FFFFFF' : '#9E000000')
+            Text('关闭').fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
+              .onClick(() => { this.updateOpen = false; })
+          }
+          .padding(24)
+          .backgroundColor(this.dark ? '#F21F1F1F' : '#F2F0F3F9')
+          .borderRadius(12)
+        }
+        .width('100%').height('100%')
+        .hitTestBehavior(HitTestMode.Transparent)
+      }
+
       if (this.toolsOpen) {
         Stack({ alignContent: Alignment.Bottom }) {
           Column({ space: 6 }) {
             this.ToolEntry('课件（PDF）', 'courseware')
             this.ToolEntry('截图', 'screenshot')
+            this.ToolEntry('Desmos', 'desmos')
+            this.ToolEntry('检查更新', 'update')
             this.ToolEntry('计时器', 'countdown')
             this.ToolEntry('抽奖', 'lottery')
             this.ToolEntry('回放', 'replay')
@@ -520,8 +579,12 @@ struct Index {
       .hitTestBehavior(HitTestMode.Transparent)
     }
     .id('inkRoot')
+    .focusable(true)
     .width('100%')
     .height('100%')
+    .onKeyEvent((event: KeyEvent) => {
+      this.handleKey(event);
+    })
     .onAreaChange((oldValue: Area, newValue: Area) => {
       this.windowWidth = Number(newValue.width);
       this.windowHeight = Number(newValue.height);
@@ -535,6 +598,17 @@ struct Index {
   }
 
   @Builder
+  BoardImage(asset: BoardAsset) {
+    if (this.decodeBoardAsset(asset) !== null) {
+      Image(this.decodeBoardAsset(asset))
+        .objectFit(ImageFit.Fill)
+        .position({ x: asset.Left, y: asset.Top })
+        .width(asset.Width)
+        .height(asset.Height)
+    }
+  }
+
+  @Builder
   ToolEntry(label: string, id: string) {
     Text(label)
       .fontSize(14)
@@ -545,6 +619,86 @@ struct Index {
       .onClick(() => {
         this.handleAction(id);
       })
+  }
+
+  private handleKey(event: KeyEvent): void {
+    if (event.type !== KeyType.Down) {
+      return;
+    }
+    const alt = event.getModifierKeyState !== undefined && event.getModifierKeyState(['alt']);
+    const ctrl = event.getModifierKeyState !== undefined && event.getModifierKeyState(['ctrl']);
+    const code = event.keyCode;
+    if (ctrl && code === KeyCode.KEYCODE_Z) {
+      this.controller.Undo();
+    } else if (ctrl && code === KeyCode.KEYCODE_Y) {
+      this.controller.Redo();
+    } else if (ctrl && code === KeyCode.KEYCODE_E) {
+      this.handleAction('clear');
+    } else if (alt && code === KeyCode.KEYCODE_D) {
+      this.handleAction('pen');
+    } else if (alt && code === KeyCode.KEYCODE_E) {
+      this.handleAction('eraserCircle');
+    } else if (alt && code === KeyCode.KEYCODE_S) {
+      this.handleAction('select');
+    } else if (alt && code === KeyCode.KEYCODE_B) {
+      this.handleAction('board');
+    } else if (alt && code === KeyCode.KEYCODE_V) {
+      this.handleAction('fold');
+    } else if (alt && code === KeyCode.KEYCODE_Q) {
+      this.handleAction('mouse');
+    }
+  }
+
+  private decodeBoardAsset(asset: BoardAsset): image.PixelMap | null {
+    try {
+      const helper = new util.Base64Helper();
+      const bytes = helper.decodeSync(asset.Data);
+      const source = image.createImageSource(bytes.buffer as ArrayBuffer);
+      const pixelMap = source.createPixelMapSync();
+      source.release();
+      return pixelMap;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  private async insertBoardImage(): Promise<void> {
+    if (this.storage === null) {
+      return;
+    }
+    const photoPicker = new picker.PhotoViewPicker();
+    const result = await photoPicker.select({ MIMEType: picker.PhotoViewMIMETypes.IMAGE_TYPE, maxSelectNumber: 1 });
+    if (result.photoUris.length === 0) {
+      return;
+    }
+    const id = 'img-' + Date.now();
+    const path = this.storage.importUriToSandbox(result.photoUris[0], id + '.png');
+    if (path === null) {
+      return;
+    }
+    const file = fileIo.openSync(path, fileIo.OpenMode.READ_ONLY);
+    const stat = fileIo.statSync(file.fd);
+    const buffer = new ArrayBuffer(stat.size);
+    fileIo.readSync(file.fd, buffer);
+    fileIo.closeSync(file);
+    const helper = new util.Base64Helper();
+    const encoded = helper.encodeSync(new Uint8Array(buffer));
+    let data = '';
+    for (let i = 0; i < encoded.length; i++) {
+      data += String.fromCharCode(encoded[i]);
+    }
+    this.board.Current.Images.push({
+      Id: id,
+      Name: id + '.png',
+      Data: data,
+      ContentType: 'image/png',
+      Left: Math.max(0, (this.windowWidth - 320) / 2),
+      Top: Math.max(0, (this.windowHeight - 240) / 2),
+      Width: 320,
+      Height: 240,
+      Transform: null
+    });
+    this.boardImagesVersion++;
   }
 
   private applyGestures(): void {
@@ -891,6 +1045,13 @@ struct Index {
       this.paletteOpen = false;
       this.shapeOpen = false;
     } else if (id === 'clear' || id === 'clearAndMouse') {
+      if (this.controller.Document.Count > 0 && this.pendingYesNo !== id) {
+        this.yesNoMessage = '清空当前墨迹？';
+        this.pendingYesNo = id;
+        this.yesNoOpen = true;
+        return;
+      }
+      this.pendingYesNo = '';
       if (this.autoSave !== null) {
         this.autoSave.saveSnapshot(this.controller.Document.Strokes, 'clear');
       }
@@ -919,6 +1080,12 @@ struct Index {
       this.selectedId = 'tools';
     } else if (id === 'closeTools') {
       this.toolsOpen = false;
+    } else if (id === 'desmos') {
+      this.toolsOpen = false;
+      openExternalUrl(getContext(this) as common.UIAbilityContext, 'https://www.desmos.com/calculator');
+    } else if (id === 'update') {
+      this.toolsOpen = false;
+      this.updateOpen = true;
     } else if (id === 'screenshot') {
       this.toolsOpen = false;
       this.takeScreenshot();
