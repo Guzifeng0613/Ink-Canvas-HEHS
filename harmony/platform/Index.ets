@@ -22,3 +22,4 @@ export { floatingBarPosition, clampToWindow, cornerPanelPosition } from './src/m
 export type { PointResult } from './src/main/ets/layout/WindowLayout';
 export { CanvasInkRenderer } from './src/main/ets/rendering/CanvasInkRenderer';
 export { InkCanvasSurface } from './src/main/ets/rendering/InkCanvasSurface';
+export { PdfPageSource } from './src/main/ets/pdf/PdfPageSource';

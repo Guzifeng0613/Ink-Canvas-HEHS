@@ -1,4 +1,4 @@
-import { InkCanvasSurface, CanvasInkRenderer, pointerKind } from '@inkcanvas/platform';
+import { InkCanvasSurface, CanvasInkRenderer, pointerKind, PdfPageSource, StorageService } from '@inkcanvas/platform';
 import { FloatingBar, PenPalette, ShapePicker } from '@inkcanvas/controls';
 import {
   InkController,
@@ -9,8 +9,11 @@ import {
   Invalidation
 } from '@inkcanvas/ink';
 import type { SceneStrokeInput, SceneSelectionInput } from '@inkcanvas/ink';
-import { InkStroke, InkColor } from '@inkcanvas/core';
+import { InkStroke, InkColor, InkDocument } from '@inkcanvas/core';
 import type { ShapeKind, StrokePointInput } from '@inkcanvas/core';
+import { CoursewareSession } from '@inkcanvas/features';
+import { picker } from '@kit.CoreFileKit';
+import { image } from '@kit.ImageKit';
 
 @Entry
 @Component
@@ -19,6 +22,7 @@ struct Index {
   @State paletteOpen: boolean = false;
   @State paletteHighlighter: boolean = false;
   @State shapeOpen: boolean = false;
+  @State toolsOpen: boolean = false;
   @State selectedId: string = 'pen';
   @State widthMenu: number = 5;
   @State alpha: number = 140;
@@ -27,12 +31,22 @@ struct Index {
   @State selectedShape: number = -1;
   @State collapsed: boolean = false;
   @State pptActive: boolean = false;
+  @State mode: string = 'annotate';
+  @State coursewarePage: image.PixelMap | null = null;
+  @State coursewareIndex: number = 0;
+  @State coursewareCount: number = 0;
   @State windowWidth: number = 0;
   @State windowHeight: number = 0;
   private renderer: CanvasInkRenderer | null = null;
   private controller: InkController = new InkController();
+  private annotateDocument: InkDocument = new InkDocument();
+  private pdfSource: PdfPageSource = new PdfPageSource();
+  private courseware: CoursewareSession = new CoursewareSession();
+  private storage: StorageService | null = null;
 
   aboutToAppear(): void {
+    this.storage = new StorageService(getContext(this).filesDir);
+    this.controller.Document = this.annotateDocument;
     this.controller.Invalidated = () => {
       this.refreshScene();
     };
@@ -46,6 +60,13 @@ struct Index {
         .height('100%')
         .backgroundColor(this.dark ? '#FF1B1B1B' : '#FFFAFAFA')
 
+      if (this.mode === 'courseware' && this.coursewarePage !== null) {
+        Image(this.coursewarePage)
+          .objectFit(ImageFit.Contain)
+          .width('100%')
+          .height('100%')
+      }
+
       InkCanvasSurface({
         onRendererReady: (renderer: CanvasInkRenderer) => {
           this.renderer = renderer;
@@ -53,6 +74,41 @@ struct Index {
           this.refreshScene();
         }
       })
+
+      if (this.mode === 'courseware') {
+        Stack({ alignContent: Alignment.Bottom }) {
+          Row({ space: 12 }) {
+            Text('上一页')
+              .fontSize(14)
+              .fontColor(Color.White)
+              .padding(8)
+              .backgroundColor('#99000000')
+              .borderRadius(6)
+              .onClick(() => {
+                this.showCoursewarePage(this.coursewareIndex - 1);
+              })
+            Text((this.coursewareIndex + 1) + ' / ' + this.coursewareCount)
+              .fontSize(14)
+              .fontColor(Color.White)
+              .padding(8)
+              .backgroundColor('#99000000')
+              .borderRadius(6)
+            Text('下一页')
+              .fontSize(14)
+              .fontColor(Color.White)
+              .padding(8)
+              .backgroundColor('#99000000')
+              .borderRadius(6)
+              .onClick(() => {
+                this.showCoursewarePage(this.coursewareIndex + 1);
+              })
+          }
+          .margin({ bottom: 170 })
+        }
+        .width('100%')
+        .height('100%')
+        .hitTestBehavior(HitTestMode.Transparent)
+      }
 
       if (this.paletteOpen) {
         Stack({ alignContent: Alignment.Bottom }) {
@@ -114,6 +170,27 @@ struct Index {
         .hitTestBehavior(HitTestMode.Transparent)
       }
 
+      if (this.toolsOpen) {
+        Stack({ alignContent: Alignment.Bottom }) {
+          Column({ space: 6 }) {
+            this.ToolEntry('课件（PDF）', 'courseware')
+            this.ToolEntry('计时器', 'countdown')
+            this.ToolEntry('抽奖', 'lottery')
+            this.ToolEntry('回放', 'replay')
+            this.ToolEntry('设置', 'settings')
+            this.ToolEntry('指南', 'guide')
+            this.ToolEntry('关闭', 'closeTools')
+          }
+          .padding(12)
+          .backgroundColor(this.dark ? '#F21F1F1F' : '#F2F0F3F9')
+          .borderRadius(8)
+          .margin({ bottom: 170 })
+        }
+        .width('100%')
+        .height('100%')
+        .hitTestBehavior(HitTestMode.Transparent)
+      }
+
       Stack({ alignContent: Alignment.Bottom }) {
         FloatingBar({
           dark: this.dark,
@@ -142,6 +219,19 @@ struct Index {
     .onTouch((event: TouchEvent) => {
       this.handleTouch(event);
     })
+  }
+
+  @Builder
+  ToolEntry(label: string, id: string) {
+    Text(label)
+      .fontSize(14)
+      .fontColor(this.dark ? Color.White : Color.Black)
+      .width(160)
+      .padding(8)
+      .textAlign(TextAlign.Center)
+      .onClick(() => {
+        this.handleAction(id);
+      })
   }
 
   private handleTouch(event: TouchEvent): void {
@@ -214,6 +304,49 @@ struct Index {
     this.renderer.render(buildScene(committed, active, selection), Invalidation.full());
   }
 
+  private async openCourseware(): Promise<void> {
+    if (this.storage === null) {
+      return;
+    }
+    const docPicker = new picker.DocumentViewPicker();
+    const uris = await docPicker.select({ maxSelectNumber: 1, fileSuffixFilters: ['.pdf'] });
+    if (uris.length === 0) {
+      return;
+    }
+    const path = this.storage.importUriToSandbox(uris[0], 'courseware.pdf');
+    if (path === null || !this.pdfSource.open(path)) {
+      return;
+    }
+    this.annotateDocument = this.controller.Document;
+    this.courseware.open(this.pdfSource.PageCount);
+    this.mode = 'courseware';
+    this.pptActive = true;
+    this.toolsOpen = false;
+    this.showCoursewarePage(0);
+  }
+
+  private showCoursewarePage(index: number): void {
+    if (!this.courseware.goto(index)) {
+      return;
+    }
+    this.coursewareIndex = index;
+    this.coursewareCount = this.courseware.PageCount;
+    this.coursewarePage = this.pdfSource.renderPage(index);
+    this.controller.Document = this.courseware.Current;
+    this.controller.ClearSelection();
+    this.refreshScene();
+  }
+
+  private exitCourseware(): void {
+    this.mode = 'annotate';
+    this.pptActive = false;
+    this.coursewarePage = null;
+    this.pdfSource.close();
+    this.controller.Document = this.annotateDocument;
+    this.controller.ClearSelection();
+    this.refreshScene();
+  }
+
   private handleAction(id: string): void {
     if (id === 'pen') {
       this.controller.Tool = InkTool.Pen;
@@ -273,7 +406,14 @@ struct Index {
     } else if (id === 'tools') {
       this.paletteOpen = false;
       this.shapeOpen = false;
+      this.toolsOpen = !this.toolsOpen;
       this.selectedId = 'tools';
+    } else if (id === 'closeTools') {
+      this.toolsOpen = false;
+    } else if (id === 'courseware') {
+      this.openCourseware();
+    } else if (id === 'pptExit') {
+      this.exitCourseware();
     } else if (id === 'board') {
       this.selectedId = id;
       this.paletteOpen = false;

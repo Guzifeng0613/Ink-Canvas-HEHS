@@ -76,6 +76,24 @@ export class StorageService {
     }
   }
 
+  importUriToSandbox(uri: string, name: string): string | null {
+    try {
+      const src = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+      const stat = fileIo.statSync(src.fd);
+      const buffer = new ArrayBuffer(stat.size);
+      fileIo.readSync(src.fd, buffer);
+      fileIo.closeSync(src);
+      const destPath = this.fullPath(name);
+      const dest = fileIo.openSync(destPath, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.TRUNC);
+      fileIo.writeSync(dest.fd, buffer);
+      fileIo.closeSync(dest);
+      return destPath;
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'importUri failed: %{public}s', String(e));
+      return null;
+    }
+  }
+
   list(relativeDir: string): string[] {
     try {
       const dir = this.fullPath(relativeDir);

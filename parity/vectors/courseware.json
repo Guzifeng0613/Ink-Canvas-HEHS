@@ -1,0 +1,71 @@
+{
+  "id": "courseware",
+  "entry": "harmony/features/src/main/ets/courseware/CoursewareSession.ts",
+  "cases": [
+    {
+      "id": "nav-clamp",
+      "fn": "coursewareNavigate",
+      "input": [
+        3,
+        [
+          1,
+          1,
+          1,
+          -1
+        ]
+      ],
+      "expected": {
+        "PageCount": 3,
+        "Current": 1,
+        "InkPages": 0
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "nav-goto",
+      "fn": "coursewareNavigate",
+      "input": [
+        3,
+        [
+          2
+        ]
+      ],
+      "expected": {
+        "PageCount": 3,
+        "Current": 2,
+        "InkPages": 0
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "manifest-ink-pages",
+      "fn": "coursewareManifestSummary",
+      "input": [
+        3,
+        1,
+        [
+          0,
+          2
+        ]
+      ],
+      "expected": {
+        "Version": 1,
+        "LastSlideIndex": 2,
+        "LastShowPosition": null,
+        "Slides": [
+          {
+            "SlideId": 1,
+            "SlideIndex": 1,
+            "File": "slide-1.icink"
+          },
+          {
+            "SlideId": 3,
+            "SlideIndex": 3,
+            "File": "slide-3.icink"
+          }
+        ]
+      },
+      "tolerance": 0
+    }
+  ]
+}
