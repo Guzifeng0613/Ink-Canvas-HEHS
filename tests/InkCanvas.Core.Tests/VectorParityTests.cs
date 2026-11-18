@@ -11,6 +11,7 @@ using InkCanvas.Core.Shapes;
 using InkCanvas.Core.Theming;
 using InkCanvas.Core.Update;
 using InkCanvas.Core.Versioning;
+using InkCanvas.Ink;
 using InkCanvas.Ink.Manipulation;
 using InkCanvas.Platform.Input;
 using InkCanvas.Platform.Windows;
@@ -889,6 +890,17 @@ public sealed class VectorParityTests
         }
     }
 
+    [Fact]
+    public void ControllerVectorsMatch()
+    {
+        using var doc = Load("controller.json");
+        foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var actual = ControllerVectorRunner.Run(c.GetProperty("input")[0]);
+            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
+        }
+    }
+
     private static InkStroke BuildStrokeFromPoints(JsonElement points, float baseWidth)
     {
         var attributes = new StrokeAttributes { BaseWidth = baseWidth };
@@ -1056,4 +1068,300 @@ public sealed class VectorParityTests
             Assert.NotNull(id);
         }
     }
+}
+
+/// <summary>
+/// Replays controller.json scenarios with the real C# controller.
+/// Kept in the test assembly so the vector expected values are independently re-driven.
+/// </summary>
+internal static class ControllerVectorRunner
+{
+    private sealed class Counters
+    {
+        public int Inv;
+        public int SelCh;
+        public int ToolCh;
+        public readonly List<bool> Slides = new();
+    }
+
+    public static object Run(JsonElement scenario)
+    {
+        using var controller = new InkController();
+        var counters = new Counters();
+        controller.Invalidated += () => counters.Inv++;
+        controller.SelectionChanged += () => counters.SelCh++;
+        controller.ToolChanged += () => counters.ToolCh++;
+        controller.SlideFlipRequested += next => counters.Slides.Add(next);
+
+        ApplyInitial(controller, scenario.GetProperty("Initial"));
+        var trace = new List<object>();
+        foreach (var op in scenario.GetProperty("Ops").EnumerateArray())
+        {
+            ApplyOp(controller, op);
+            trace.Add(Snapshot(controller, counters));
+        }
+        return new { Trace = trace, Final = FinalSnapshot(controller), SlideFlips = counters.Slides };
+    }
+
+    private static void ApplyInitial(InkController controller, JsonElement initial)
+    {
+        if (initial.TryGetProperty("Tool", out var tool)) controller.Tool = (InkTool)tool.GetInt32();
+        if (initial.TryGetProperty("ShapeKind", out var shapeKind)) controller.ShapeKind = (ShapeKind)shapeKind.GetInt32();
+        if (initial.TryGetProperty("EraserMode", out var eraserMode)) controller.EraserMode = (InkEraserMode)eraserMode.GetInt32();
+        if (initial.TryGetProperty("EraserRadius", out var eraserRadius)) controller.EraserRadius = eraserRadius.GetSingle();
+        if (initial.TryGetProperty("ViewTransform", out var view))
+        {
+            controller.ViewTransform = new Matrix3x2(
+                view[0].GetSingle(), view[1].GetSingle(), view[2].GetSingle(),
+                view[3].GetSingle(), view[4].GetSingle(), view[5].GetSingle());
+        }
+        if (initial.TryGetProperty("ViewCenter", out var center))
+            controller.ViewCenter = new Vector2(center[0].GetSingle(), center[1].GetSingle());
+        if (initial.TryGetProperty("MultiTouchEnabled", out var multiTouch)) controller.MultiTouchEnabled = multiTouch.GetBoolean();
+        if (initial.TryGetProperty("PalmErases", out var palmErases)) controller.PalmErases = palmErases.GetBoolean();
+        if (initial.TryGetProperty("RecognizeShapes", out var recognize)) controller.RecognizeShapes = recognize.GetBoolean();
+        if (initial.TryGetProperty("GesturesTargetSelection", out var gesturesSelection))
+            controller.GesturesTargetSelection = gesturesSelection.GetBoolean();
+        if (initial.TryGetProperty("CloneMode", out var clone)) controller.CloneMode = clone.GetBoolean();
+        if (initial.TryGetProperty("StickyShape", out var sticky)) controller.StickyShape = sticky.GetBoolean();
+        if (initial.TryGetProperty("HyperbolaAsymptoteOption", out var hyperbola))
+            controller.HyperbolaAsymptoteOption = (OptionalOperation)hyperbola.GetInt32();
+        if (initial.TryGetProperty("AskRemoveAsymptotes", out var ask))
+        {
+            if (ask.ValueKind == JsonValueKind.Null) controller.AskRemoveAsymptotes = null;
+            else
+            {
+                var answer = ask.GetBoolean();
+                controller.AskRemoveAsymptotes = () => Task.FromResult(answer);
+            }
+        }
+        if (initial.TryGetProperty("TransformCenterOption", out var pivot))
+            controller.TransformCenterOption = (MatrixTransformCenterPointOptions)pivot.GetInt32();
+
+        var zoom = !initial.TryGetProperty("AllowZoom", out var zoomValue) || zoomValue.GetBoolean();
+        var translate = !initial.TryGetProperty("AllowTranslate", out var translateValue) || translateValue.GetBoolean();
+        var rotate = initial.TryGetProperty("AllowRotation", out var rotateValue) && rotateValue.GetBoolean();
+        controller.ConfigureGestures(zoom, translate, rotate);
+
+        if (initial.TryGetProperty("CurrentAttributes", out var attributes))
+        {
+            controller.CurrentAttributes.Color = InkColor.FromPackedArgb(attributes.GetProperty("ColorPacked").GetUInt32());
+            controller.CurrentAttributes.BaseWidth = attributes.GetProperty("BaseWidth").GetSingle();
+            controller.CurrentAttributes.IsHighlighter = attributes.GetProperty("IsHighlighter").GetBoolean();
+            controller.CurrentAttributes.HighlighterAlpha = attributes.GetProperty("HighlighterAlpha").GetByte();
+            controller.CurrentAttributes.TaperKind = (TaperKind)attributes.GetProperty("TaperKind").GetInt32();
+        }
+
+        if (initial.TryGetProperty("Palm", out var palm))
+        {
+            if (palm.TryGetProperty("Advanced", out var advanced))
+            {
+                if (advanced.ValueKind == JsonValueKind.Null) controller.Palm.Advanced = null;
+                else
+                {
+                    controller.Palm.Advanced = new AdvancedSettings
+                    {
+                        IsSpecialScreen = advanced.GetProperty("isSpecialScreen").GetBoolean(),
+                        IsQuadIR = advanced.GetProperty("isQuadIR").GetBoolean(),
+                        TouchMultiplier = advanced.GetProperty("touchMultiplier").GetDouble(),
+                        NibModeBoundsWidth = advanced.GetProperty("nibModeBoundsWidth").GetInt32(),
+                        FingerModeBoundsWidth = advanced.GetProperty("fingerModeBoundsWidth").GetInt32(),
+                        NibModeBoundsWidthThresholdValue = advanced.GetProperty("nibModeBoundsWidthThresholdValue").GetDouble(),
+                        FingerModeBoundsWidthThresholdValue = advanced.GetProperty("fingerModeBoundsWidthThresholdValue").GetDouble(),
+                        NibModeBoundsWidthEraserSize = advanced.GetProperty("nibModeBoundsWidthEraserSize").GetDouble(),
+                        FingerModeBoundsWidthEraserSize = advanced.GetProperty("fingerModeBoundsWidthEraserSize").GetDouble()
+                    };
+                }
+            }
+            if (palm.TryGetProperty("NibMode", out var nibMode)) controller.Palm.NibMode = nibMode.GetBoolean();
+            if (palm.TryGetProperty("ForceEraser", out var forceEraser)) controller.Palm.ForceEraser = forceEraser.GetBoolean();
+            if (palm.TryGetProperty("ForcePointEraser", out var forcePointEraser))
+                controller.Palm.ForcePointEraser = forcePointEraser.GetBoolean();
+            if (palm.TryGetProperty("PptGestureEligible", out var ppt))
+                controller.Palm.PptGestureEligible = ppt.GetBoolean();
+            if (palm.TryGetProperty("PalmContactThreshold", out var threshold))
+                controller.Palm.PalmContactThreshold = threshold.GetSingle();
+            if (palm.TryGetProperty("PenHasPriority", out var priority))
+                controller.Palm.PenHasPriority = priority.GetBoolean();
+        }
+    }
+
+    private static void ApplyOp(InkController controller, JsonElement op)
+    {
+        var name = op.GetProperty("Op").GetString();
+        switch (name)
+        {
+            case "down":
+                controller.OnPointerDown(MakePointer(op.GetProperty("Pointer")));
+                break;
+            case "move":
+                controller.OnPointerMove(MakePointer(op.GetProperty("Pointer")));
+                break;
+            case "up":
+                controller.OnPointerUp(MakePointer(op.GetProperty("Pointer")));
+                break;
+            case "cancel":
+                controller.OnPointerCanceled(MakePointer(op.GetProperty("Pointer")));
+                break;
+            case "seed":
+                controller.Document.Add(MakeSeed(op.GetProperty("Stroke")));
+                break;
+            case "undo":
+                controller.Undo();
+                break;
+            case "redo":
+                controller.Redo();
+                break;
+            case "clear":
+                controller.Clear();
+                break;
+            case "deleteSelection":
+                controller.DeleteSelection();
+                break;
+            case "clearSelection":
+                controller.ClearSelection();
+                break;
+            case "selectAll":
+                controller.SelectAll();
+                break;
+            case "selectIndex":
+                controller.Selection.Add(controller.Document.Strokes[op.GetProperty("Value").GetInt32()]);
+                break;
+            case "setTool":
+                controller.Tool = (InkTool)op.GetProperty("Value").GetInt32();
+                break;
+            case "setEraserMode":
+                controller.EraserMode = (InkEraserMode)op.GetProperty("Value").GetInt32();
+                break;
+            case "setShapeKind":
+                controller.ShapeKind = (ShapeKind)op.GetProperty("Value").GetInt32();
+                break;
+            case "selectShape":
+                controller.SelectShape(
+                    (ShapeKind)op.GetProperty("Value").GetInt32(),
+                    op.TryGetProperty("Flag", out var sticky) && sticky.GetBoolean());
+                break;
+            case "setCloneMode":
+                controller.CloneMode = op.GetProperty("Flag").GetBoolean();
+                break;
+            case "configureGestures":
+                controller.ConfigureGestures(
+                    op.TryGetProperty("Zoom", out var zoom) && zoom.GetBoolean(),
+                    op.TryGetProperty("Translate", out var translate) && translate.GetBoolean(),
+                    op.TryGetProperty("Rotate", out var rotate) && rotate.GetBoolean());
+                break;
+            default:
+                throw new InvalidOperationException("controller scenario: unknown op " + name);
+        }
+    }
+
+    private static OverlayPointer MakePointer(JsonElement pointer) => new(
+        (uint)pointer.GetProperty("Id").GetInt32(),
+        pointer.GetProperty("X").GetSingle(),
+        pointer.GetProperty("Y").GetSingle(),
+        pointer.TryGetProperty("Pressure", out var pressure) ? pressure.GetSingle() : 0.5f,
+        pointer.TryGetProperty("ContactWidth", out var contactWidth) ? contactWidth.GetSingle() : 0f,
+        pointer.TryGetProperty("ContactHeight", out var contactHeight) ? contactHeight.GetSingle() : 0f,
+        (OverlayPointerKind)pointer.GetProperty("Kind").GetInt32(),
+        (uint)(pointer.TryGetProperty("TimeMs", out var timeMs) ? timeMs.GetInt32() : 0),
+        pointer.TryGetProperty("Shift", out var shift) && shift.GetBoolean(),
+        pointer.TryGetProperty("Control", out var control) && control.GetBoolean());
+
+    private static InkStroke MakeSeed(JsonElement seed)
+    {
+        var attributesJson = seed.GetProperty("Attributes");
+        var attributes = new StrokeAttributes
+        {
+            Color = InkColor.FromPackedArgb(attributesJson.GetProperty("ColorPacked").GetUInt32()),
+            BaseWidth = attributesJson.GetProperty("BaseWidth").GetSingle(),
+            IsHighlighter = attributesJson.GetProperty("IsHighlighter").GetBoolean(),
+            HighlighterAlpha = attributesJson.GetProperty("HighlighterAlpha").GetByte(),
+            TaperKind = (TaperKind)attributesJson.GetProperty("TaperKind").GetInt32()
+        };
+        var stroke = new InkStroke(attributes);
+        var points = seed.GetProperty("Points").EnumerateArray().Select(p => new InkPoint(
+            p.GetProperty("X").GetSingle(),
+            p.GetProperty("Y").GetSingle(),
+            p.TryGetProperty("Pressure", out var pressure) ? pressure.GetSingle() : 0.5f,
+            p.TryGetProperty("Width", out var width) ? width.GetSingle() : 0f,
+            p.TryGetProperty("TimeMs", out var timeMs) ? timeMs.GetSingle() : 0f)).ToArray();
+        stroke.RestorePoints(points);
+        if (seed.TryGetProperty("IsCompleted", out var completed) && completed.GetBoolean()) stroke.Complete();
+        return stroke;
+    }
+
+    private static object Snapshot(InkController controller, Counters counters)
+    {
+        var strokes = controller.Document.Strokes;
+        var doc = strokes.Select(s => s.Count).ToArray();
+        var docFirst = strokes
+            .Select(s => s.Count == 0 ? Array.Empty<double>() : new double[] { s.Points[0].X, s.Points[0].Y })
+            .ToArray();
+        return new
+        {
+            Doc = doc,
+            DocFirst = docFirst,
+            Live = controller.LiveStrokes.Count,
+            Preview = controller.ShapePreview.Count,
+            Sel = SelectionIndices(controller),
+            Undo = controller.History.UndoCount,
+            Redo = controller.History.RedoCount,
+            Tool = (int)controller.Tool,
+            View = Arr(controller.ViewTransform),
+            Inv = counters.Inv,
+            SelCh = counters.SelCh,
+            ToolCh = counters.ToolCh,
+            Slides = counters.Slides.Count
+        };
+    }
+
+    private static object FinalSnapshot(InkController controller)
+    {
+        var strokes = controller.Document.Strokes.ToArray();
+        var frame = controller.SelectionFrame;
+        var bounds = controller.SelectionBounds;
+        return new
+        {
+            Strokes = strokes.Select(s => new
+            {
+                Points = s.Points.Select(p => new double[]
+                {
+                    p.X, p.Y, p.Pressure, p.Width, p.TimeMs
+                }).ToArray(),
+                BaseWidth = (double)s.Attributes.BaseWidth,
+                ColorPacked = s.Attributes.Color.PackedArgb,
+                IsHighlighter = s.Attributes.IsHighlighter,
+                HighlighterAlpha = (int)s.Attributes.HighlighterAlpha,
+                TaperKind = (int)s.Attributes.TaperKind,
+                IsRecognizedShape = s.IsRecognizedShape,
+                IsCompleted = s.IsCompleted
+            }).ToArray(),
+            Sel = SelectionIndices(controller),
+            Tool = (int)controller.Tool,
+            EraserMode = (int)controller.EraserMode,
+            CloneMode = controller.CloneMode,
+            View = Arr(controller.ViewTransform),
+            ViewCenter = new double[] { controller.ViewCenter.X, controller.ViewCenter.Y },
+            Undo = controller.History.UndoCount,
+            Redo = controller.History.RedoCount,
+            SelectionBounds = new double[] { bounds.Left, bounds.Top, bounds.Right, bounds.Bottom },
+            SelectionFrame = new
+            {
+                Bounds = new double[]
+                {
+                    frame.Bounds.Left, frame.Bounds.Top, frame.Bounds.Right, frame.Bounds.Bottom
+                },
+                Transform = Arr(frame.Transform)
+            }
+        };
+    }
+
+    private static int[] SelectionIndices(InkController controller)
+    {
+        var strokes = controller.Document.Strokes.ToList();
+        return controller.Selection.Select(s => strokes.IndexOf(s)).ToArray();
+    }
+
+    private static double[] Arr(Matrix3x2 m) =>
+        new double[] { m.M11, m.M12, m.M21, m.M22, m.M31, m.M32 };
 }

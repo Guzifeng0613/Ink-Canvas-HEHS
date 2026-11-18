@@ -66,7 +66,7 @@ function normalize(p) {
 export function readAnchors(file) {
   const text = readFileSync(file, 'utf8');
   const result = [];
-  const re = /@parity\s+(\S+)/g;
+  const re = /@parity\s+([^\s（(]+)/g;
   let m;
   while ((m = re.exec(text)) !== null) result.push(m[1]);
   return result;

@@ -1,0 +1,8029 @@
+{
+  "id": "controller",
+  "entry": "harmony/ink/src/main/ets/InkController.ts",
+  "note": "C# InkController 驱动序列生成：落笔/移动/抬笔、高亮、面积擦、整笔擦、手掌擦、图形（单步/两步体/双曲线询问）、选区拖拽/克隆/删除、双指缩放钳制、双指选区每 move 一撤销单元、多指书写、翻页阈值、平移工具、墨迹转形状。期望由工作树 C# 实际驱动产生，ArkTS 由 runControllerScenario 复现同一操作序列。Lasso 擦/选区元素/TransformSelectionUndoable 未移植，不在向量内。",
+  "cases": [
+    {
+      "id": "pen-drag",
+      "fn": "runControllerScenario",
+      "input": [
+        {
+          "Initial": {
+            "Tool": 0,
+            "ShapeKind": 0,
+            "EraserMode": 0,
+            "EraserRadius": 16,
+            "ViewTransform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "ViewCenter": [
+              960,
+              540
+            ],
+            "MultiTouchEnabled": true,
+            "PalmErases": true,
+            "RecognizeShapes": true,
+            "GesturesTargetSelection": false,
+            "CloneMode": false,
+            "StickyShape": false,
+            "HyperbolaAsymptoteOption": 2,
+            "AskRemoveAsymptotes": null,
+            "TransformCenterOption": 0,
+            "AllowZoom": true,
+            "AllowTranslate": true,
+            "AllowRotation": false,
+            "CurrentAttributes": {
+              "ColorPacked": 4278190080,
+              "BaseWidth": 2.5,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1
+            },
+            "Palm": {
+              "Advanced": null,
+              "NibMode": false,
+              "ForceEraser": false,
+              "ForcePointEraser": true,
+              "PptGestureEligible": false,
+              "PalmContactThreshold": 30,
+              "PenHasPriority": true
+            }
+          },
+          "Ops": [
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 1,
+                "X": 100,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 0,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 1,
+                "X": 120,
+                "Y": 110,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 10,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 1,
+                "X": 150,
+                "Y": 130,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 20,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 1,
+                "X": 190,
+                "Y": 160,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 30,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 1,
+                "X": 190,
+                "Y": 160,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 40,
+                "Shift": false,
+                "Control": false
+              }
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "Trace": [
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 1,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 2,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 3,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 4,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              4
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 1,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 6,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          }
+        ],
+        "Final": {
+          "Strokes": [
+            {
+              "Points": [
+                [
+                  100,
+                  100,
+                  0.5,
+                  1.1666667461395264,
+                  0
+                ],
+                [
+                  120,
+                  110,
+                  0.5,
+                  1.3000000715255737,
+                  10
+                ],
+                [
+                  150,
+                  130,
+                  0.5,
+                  1.7000000476837158,
+                  20
+                ],
+                [
+                  190,
+                  160,
+                  0.5,
+                  2.1000001430511475,
+                  30
+                ]
+              ],
+              "BaseWidth": 2.5,
+              "ColorPacked": 4278190080,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1,
+              "IsRecognizedShape": false,
+              "IsCompleted": true
+            }
+          ],
+          "Sel": [],
+          "Tool": 0,
+          "EraserMode": 0,
+          "CloneMode": false,
+          "View": [
+            1,
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "ViewCenter": [
+            960,
+            540
+          ],
+          "Undo": 1,
+          "Redo": 0,
+          "SelectionBounds": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "SelectionFrame": {
+            "Bounds": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "Transform": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "SlideFlips": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "highlighter-tap",
+      "fn": "runControllerScenario",
+      "input": [
+        {
+          "Initial": {
+            "Tool": 1,
+            "ShapeKind": 0,
+            "EraserMode": 0,
+            "EraserRadius": 16,
+            "ViewTransform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "ViewCenter": [
+              960,
+              540
+            ],
+            "MultiTouchEnabled": true,
+            "PalmErases": true,
+            "RecognizeShapes": true,
+            "GesturesTargetSelection": false,
+            "CloneMode": false,
+            "StickyShape": false,
+            "HyperbolaAsymptoteOption": 2,
+            "AskRemoveAsymptotes": null,
+            "TransformCenterOption": 0,
+            "AllowZoom": true,
+            "AllowTranslate": true,
+            "AllowRotation": false,
+            "CurrentAttributes": {
+              "ColorPacked": 4278190080,
+              "BaseWidth": 20,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1
+            },
+            "Palm": {
+              "Advanced": null,
+              "NibMode": false,
+              "ForceEraser": false,
+              "ForcePointEraser": true,
+              "PptGestureEligible": false,
+              "PalmContactThreshold": 30,
+              "PenHasPriority": true
+            }
+          },
+          "Ops": [
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 2,
+                "X": 50,
+                "Y": 50,
+                "Pressure": 0.7,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 0,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 2,
+                "X": 50,
+                "Y": 50,
+                "Pressure": 0.7,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 10,
+                "Shift": false,
+                "Control": false
+              }
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "Trace": [
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 1,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 1,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              1
+            ],
+            "DocFirst": [
+              [
+                50,
+                50
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 1,
+            "Redo": 0,
+            "Tool": 1,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 3,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          }
+        ],
+        "Final": {
+          "Strokes": [
+            {
+              "Points": [
+                [
+                  50,
+                  50,
+                  0.699999988079071,
+                  20,
+                  0
+                ]
+              ],
+              "BaseWidth": 20,
+              "ColorPacked": 4278190080,
+              "IsHighlighter": true,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1,
+              "IsRecognizedShape": false,
+              "IsCompleted": true
+            }
+          ],
+          "Sel": [],
+          "Tool": 1,
+          "EraserMode": 0,
+          "CloneMode": false,
+          "View": [
+            1,
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "ViewCenter": [
+            960,
+            540
+          ],
+          "Undo": 1,
+          "Redo": 0,
+          "SelectionBounds": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "SelectionFrame": {
+            "Bounds": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "Transform": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "SlideFlips": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "mouse-draw",
+      "fn": "runControllerScenario",
+      "input": [
+        {
+          "Initial": {
+            "Tool": 0,
+            "ShapeKind": 0,
+            "EraserMode": 0,
+            "EraserRadius": 16,
+            "ViewTransform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "ViewCenter": [
+              960,
+              540
+            ],
+            "MultiTouchEnabled": true,
+            "PalmErases": true,
+            "RecognizeShapes": true,
+            "GesturesTargetSelection": false,
+            "CloneMode": false,
+            "StickyShape": false,
+            "HyperbolaAsymptoteOption": 2,
+            "AskRemoveAsymptotes": null,
+            "TransformCenterOption": 0,
+            "AllowZoom": true,
+            "AllowTranslate": true,
+            "AllowRotation": false,
+            "CurrentAttributes": {
+              "ColorPacked": 4278190080,
+              "BaseWidth": 2.5,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1
+            },
+            "Palm": {
+              "Advanced": null,
+              "NibMode": false,
+              "ForceEraser": false,
+              "ForcePointEraser": true,
+              "PptGestureEligible": false,
+              "PalmContactThreshold": 30,
+              "PenHasPriority": true
+            }
+          },
+          "Ops": [
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 3,
+                "X": 10,
+                "Y": 10,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 2,
+                "TimeMs": 0,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 3,
+                "X": 40,
+                "Y": 40,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 2,
+                "TimeMs": 10,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 3,
+                "X": 40,
+                "Y": 40,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 2,
+                "TimeMs": 20,
+                "Shift": false,
+                "Control": false
+              }
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "Trace": [
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 1,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 2,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2
+            ],
+            "DocFirst": [
+              [
+                10,
+                10
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 1,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 4,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          }
+        ],
+        "Final": {
+          "Strokes": [
+            {
+              "Points": [
+                [
+                  10,
+                  10,
+                  0.5,
+                  0.9000000357627869,
+                  0
+                ],
+                [
+                  40,
+                  40,
+                  0.5,
+                  1.3000000715255737,
+                  10
+                ]
+              ],
+              "BaseWidth": 2.5,
+              "ColorPacked": 4278190080,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1,
+              "IsRecognizedShape": false,
+              "IsCompleted": true
+            }
+          ],
+          "Sel": [],
+          "Tool": 0,
+          "EraserMode": 0,
+          "CloneMode": false,
+          "View": [
+            1,
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "ViewCenter": [
+            960,
+            540
+          ],
+          "Undo": 1,
+          "Redo": 0,
+          "SelectionBounds": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "SelectionFrame": {
+            "Bounds": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "Transform": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "SlideFlips": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "area-erase",
+      "fn": "runControllerScenario",
+      "input": [
+        {
+          "Initial": {
+            "Tool": 2,
+            "ShapeKind": 0,
+            "EraserMode": 0,
+            "EraserRadius": 10,
+            "ViewTransform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "ViewCenter": [
+              960,
+              540
+            ],
+            "MultiTouchEnabled": true,
+            "PalmErases": true,
+            "RecognizeShapes": true,
+            "GesturesTargetSelection": false,
+            "CloneMode": false,
+            "StickyShape": false,
+            "HyperbolaAsymptoteOption": 2,
+            "AskRemoveAsymptotes": null,
+            "TransformCenterOption": 0,
+            "AllowZoom": true,
+            "AllowTranslate": true,
+            "AllowRotation": false,
+            "CurrentAttributes": {
+              "ColorPacked": 4278190080,
+              "BaseWidth": 2.5,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1
+            },
+            "Palm": {
+              "Advanced": null,
+              "NibMode": false,
+              "ForceEraser": false,
+              "ForcePointEraser": true,
+              "PptGestureEligible": false,
+              "PalmContactThreshold": 30,
+              "PenHasPriority": true
+            }
+          },
+          "Ops": [
+            {
+              "Op": "seed",
+              "Stroke": {
+                "Attributes": {
+                  "ColorPacked": 4278190080,
+                  "BaseWidth": 4,
+                  "IsHighlighter": false,
+                  "HighlighterAlpha": 96,
+                  "TaperKind": 0
+                },
+                "Points": [
+                  {
+                    "X": 0,
+                    "Y": 50,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 200,
+                    "Y": 50,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  }
+                ],
+                "IsCompleted": true
+              }
+            },
+            {
+              "Op": "seed",
+              "Stroke": {
+                "Attributes": {
+                  "ColorPacked": 4278190080,
+                  "BaseWidth": 4,
+                  "IsHighlighter": false,
+                  "HighlighterAlpha": 96,
+                  "TaperKind": 0
+                },
+                "Points": [
+                  {
+                    "X": 0,
+                    "Y": 100,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 200,
+                    "Y": 100,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  }
+                ],
+                "IsCompleted": true
+              }
+            },
+            {
+              "Op": "seed",
+              "Stroke": {
+                "Attributes": {
+                  "ColorPacked": 4278190080,
+                  "BaseWidth": 4,
+                  "IsHighlighter": false,
+                  "HighlighterAlpha": 96,
+                  "TaperKind": 0
+                },
+                "Points": [
+                  {
+                    "X": 0,
+                    "Y": 150,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 200,
+                    "Y": 150,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  }
+                ],
+                "IsCompleted": true
+              }
+            },
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 4,
+                "X": 100,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 0,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 4,
+                "X": 120,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 10,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 4,
+                "X": 120,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 20,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "undo"
+            },
+            {
+              "Op": "redo"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "Trace": [
+          {
+            "Doc": [
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                50
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 2,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2,
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                50
+              ],
+              [
+                0,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 2,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2,
+              2,
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                50
+              ],
+              [
+                0,
+                100
+              ],
+              [
+                0,
+                150
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 2,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2,
+              2,
+              2,
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                50
+              ],
+              [
+                0,
+                100
+              ],
+              [
+                112,
+                100
+              ],
+              [
+                0,
+                150
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 2,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 1,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2,
+              2,
+              2,
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                50
+              ],
+              [
+                0,
+                100
+              ],
+              [
+                132,
+                100
+              ],
+              [
+                0,
+                150
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 2,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 2,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2,
+              2,
+              2,
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                50
+              ],
+              [
+                0,
+                100
+              ],
+              [
+                132,
+                100
+              ],
+              [
+                0,
+                150
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 1,
+            "Redo": 0,
+            "Tool": 2,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 3,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2,
+              2,
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                50
+              ],
+              [
+                0,
+                100
+              ],
+              [
+                0,
+                150
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 1,
+            "Tool": 2,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 5,
+            "SelCh": 1,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2,
+              2,
+              2,
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                50
+              ],
+              [
+                0,
+                100
+              ],
+              [
+                132,
+                100
+              ],
+              [
+                0,
+                150
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 1,
+            "Redo": 0,
+            "Tool": 2,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 7,
+            "SelCh": 2,
+            "ToolCh": 1,
+            "Slides": 0
+          }
+        ],
+        "Final": {
+          "Strokes": [
+            {
+              "Points": [
+                [
+                  0,
+                  50,
+                  0.5,
+                  4,
+                  0
+                ],
+                [
+                  200,
+                  50,
+                  0.5,
+                  4,
+                  0
+                ]
+              ],
+              "BaseWidth": 4,
+              "ColorPacked": 4278190080,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 0,
+              "IsRecognizedShape": false,
+              "IsCompleted": true
+            },
+            {
+              "Points": [
+                [
+                  0,
+                  100,
+                  0.5,
+                  4,
+                  0
+                ],
+                [
+                  88,
+                  100,
+                  0.5,
+                  4,
+                  0
+                ]
+              ],
+              "BaseWidth": 4,
+              "ColorPacked": 4278190080,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 0,
+              "IsRecognizedShape": false,
+              "IsCompleted": true
+            },
+            {
+              "Points": [
+                [
+                  132,
+                  100,
+                  0.5,
+                  4,
+                  0
+                ],
+                [
+                  200,
+                  100,
+                  0.5,
+                  4,
+                  0
+                ]
+              ],
+              "BaseWidth": 4,
+              "ColorPacked": 4278190080,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 0,
+              "IsRecognizedShape": false,
+              "IsCompleted": true
+            },
+            {
+              "Points": [
+                [
+                  0,
+                  150,
+                  0.5,
+                  4,
+                  0
+                ],
+                [
+                  200,
+                  150,
+                  0.5,
+                  4,
+                  0
+                ]
+              ],
+              "BaseWidth": 4,
+              "ColorPacked": 4278190080,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 0,
+              "IsRecognizedShape": false,
+              "IsCompleted": true
+            }
+          ],
+          "Sel": [],
+          "Tool": 2,
+          "EraserMode": 0,
+          "CloneMode": false,
+          "View": [
+            1,
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "ViewCenter": [
+            960,
+            540
+          ],
+          "Undo": 1,
+          "Redo": 0,
+          "SelectionBounds": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "SelectionFrame": {
+            "Bounds": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "Transform": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "SlideFlips": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "whole-stroke-erase",
+      "fn": "runControllerScenario",
+      "input": [
+        {
+          "Initial": {
+            "Tool": 2,
+            "ShapeKind": 0,
+            "EraserMode": 1,
+            "EraserRadius": 5,
+            "ViewTransform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "ViewCenter": [
+              960,
+              540
+            ],
+            "MultiTouchEnabled": true,
+            "PalmErases": true,
+            "RecognizeShapes": true,
+            "GesturesTargetSelection": false,
+            "CloneMode": false,
+            "StickyShape": false,
+            "HyperbolaAsymptoteOption": 2,
+            "AskRemoveAsymptotes": null,
+            "TransformCenterOption": 0,
+            "AllowZoom": true,
+            "AllowTranslate": true,
+            "AllowRotation": false,
+            "CurrentAttributes": {
+              "ColorPacked": 4278190080,
+              "BaseWidth": 2.5,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1
+            },
+            "Palm": {
+              "Advanced": null,
+              "NibMode": false,
+              "ForceEraser": false,
+              "ForcePointEraser": true,
+              "PptGestureEligible": false,
+              "PalmContactThreshold": 30,
+              "PenHasPriority": true
+            }
+          },
+          "Ops": [
+            {
+              "Op": "seed",
+              "Stroke": {
+                "Attributes": {
+                  "ColorPacked": 4278190080,
+                  "BaseWidth": 4,
+                  "IsHighlighter": false,
+                  "HighlighterAlpha": 96,
+                  "TaperKind": 0
+                },
+                "Points": [
+                  {
+                    "X": 0,
+                    "Y": 50,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 200,
+                    "Y": 50,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  }
+                ],
+                "IsCompleted": true
+              }
+            },
+            {
+              "Op": "seed",
+              "Stroke": {
+                "Attributes": {
+                  "ColorPacked": 4278190080,
+                  "BaseWidth": 4,
+                  "IsHighlighter": false,
+                  "HighlighterAlpha": 96,
+                  "TaperKind": 0
+                },
+                "Points": [
+                  {
+                    "X": 0,
+                    "Y": 100,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 200,
+                    "Y": 100,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  }
+                ],
+                "IsCompleted": true
+              }
+            },
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 5,
+                "X": 100,
+                "Y": 50,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 0,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 5,
+                "X": 120,
+                "Y": 50,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 10,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 5,
+                "X": 120,
+                "Y": 50,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 20,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "undo"
+            },
+            {
+              "Op": "redo"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "Trace": [
+          {
+            "Doc": [
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                50
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 2,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 2,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2,
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                50
+              ],
+              [
+                0,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 2,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 2,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 2,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 1,
+            "SelCh": 0,
+            "ToolCh": 2,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 2,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 1,
+            "SelCh": 0,
+            "ToolCh": 2,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 1,
+            "Redo": 0,
+            "Tool": 2,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 2,
+            "SelCh": 0,
+            "ToolCh": 2,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2,
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                100
+              ],
+              [
+                0,
+                50
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 1,
+            "Tool": 2,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 3,
+            "SelCh": 0,
+            "ToolCh": 2,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 1,
+            "Redo": 0,
+            "Tool": 2,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 4,
+            "SelCh": 0,
+            "ToolCh": 2,
+            "Slides": 0
+          }
+        ],
+        "Final": {
+          "Strokes": [
+            {
+              "Points": [
+                [
+                  0,
+                  100,
+                  0.5,
+                  4,
+                  0
+                ],
+                [
+                  200,
+                  100,
+                  0.5,
+                  4,
+                  0
+                ]
+              ],
+              "BaseWidth": 4,
+              "ColorPacked": 4278190080,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 0,
+              "IsRecognizedShape": false,
+              "IsCompleted": true
+            }
+          ],
+          "Sel": [],
+          "Tool": 2,
+          "EraserMode": 1,
+          "CloneMode": false,
+          "View": [
+            1,
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "ViewCenter": [
+            960,
+            540
+          ],
+          "Undo": 1,
+          "Redo": 0,
+          "SelectionBounds": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "SelectionFrame": {
+            "Bounds": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "Transform": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "SlideFlips": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "palm-area-erase",
+      "fn": "runControllerScenario",
+      "input": [
+        {
+          "Initial": {
+            "Tool": 0,
+            "ShapeKind": 0,
+            "EraserMode": 0,
+            "EraserRadius": 10,
+            "ViewTransform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "ViewCenter": [
+              960,
+              540
+            ],
+            "MultiTouchEnabled": true,
+            "PalmErases": true,
+            "RecognizeShapes": true,
+            "GesturesTargetSelection": false,
+            "CloneMode": false,
+            "StickyShape": false,
+            "HyperbolaAsymptoteOption": 2,
+            "AskRemoveAsymptotes": null,
+            "TransformCenterOption": 0,
+            "AllowZoom": true,
+            "AllowTranslate": true,
+            "AllowRotation": false,
+            "CurrentAttributes": {
+              "ColorPacked": 4278190080,
+              "BaseWidth": 2.5,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1
+            },
+            "Palm": {
+              "Advanced": null,
+              "NibMode": false,
+              "ForceEraser": false,
+              "ForcePointEraser": true,
+              "PptGestureEligible": false,
+              "PalmContactThreshold": 30,
+              "PenHasPriority": true
+            }
+          },
+          "Ops": [
+            {
+              "Op": "seed",
+              "Stroke": {
+                "Attributes": {
+                  "ColorPacked": 4278190080,
+                  "BaseWidth": 4,
+                  "IsHighlighter": false,
+                  "HighlighterAlpha": 96,
+                  "TaperKind": 0
+                },
+                "Points": [
+                  {
+                    "X": 0,
+                    "Y": 50,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 200,
+                    "Y": 50,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  }
+                ],
+                "IsCompleted": true
+              }
+            },
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 6,
+                "X": 100,
+                "Y": 50,
+                "Pressure": 0.5,
+                "ContactWidth": 40,
+                "ContactHeight": 40,
+                "Kind": 1,
+                "TimeMs": 0,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 6,
+                "X": 120,
+                "Y": 50,
+                "Pressure": 0.5,
+                "ContactWidth": 40,
+                "ContactHeight": 40,
+                "Kind": 1,
+                "TimeMs": 10,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 6,
+                "X": 120,
+                "Y": 50,
+                "Pressure": 0.5,
+                "ContactWidth": 40,
+                "ContactHeight": 40,
+                "Kind": 1,
+                "TimeMs": 20,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "undo"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "Trace": [
+          {
+            "Doc": [
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                50
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2,
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                50
+              ],
+              [
+                112,
+                50
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 1,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2,
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                50
+              ],
+              [
+                132,
+                50
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 2,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2,
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                50
+              ],
+              [
+                132,
+                50
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 1,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 3,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2
+            ],
+            "DocFirst": [
+              [
+                0,
+                50
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 1,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 5,
+            "SelCh": 1,
+            "ToolCh": 0,
+            "Slides": 0
+          }
+        ],
+        "Final": {
+          "Strokes": [
+            {
+              "Points": [
+                [
+                  0,
+                  50,
+                  0.5,
+                  4,
+                  0
+                ],
+                [
+                  200,
+                  50,
+                  0.5,
+                  4,
+                  0
+                ]
+              ],
+              "BaseWidth": 4,
+              "ColorPacked": 4278190080,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 0,
+              "IsRecognizedShape": false,
+              "IsCompleted": true
+            }
+          ],
+          "Sel": [],
+          "Tool": 0,
+          "EraserMode": 0,
+          "CloneMode": false,
+          "View": [
+            1,
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "ViewCenter": [
+            960,
+            540
+          ],
+          "Undo": 0,
+          "Redo": 1,
+          "SelectionBounds": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "SelectionFrame": {
+            "Bounds": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "Transform": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "SlideFlips": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "shape-line",
+      "fn": "runControllerScenario",
+      "input": [
+        {
+          "Initial": {
+            "Tool": 4,
+            "ShapeKind": 0,
+            "EraserMode": 0,
+            "EraserRadius": 16,
+            "ViewTransform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "ViewCenter": [
+              960,
+              540
+            ],
+            "MultiTouchEnabled": true,
+            "PalmErases": true,
+            "RecognizeShapes": true,
+            "GesturesTargetSelection": false,
+            "CloneMode": false,
+            "StickyShape": false,
+            "HyperbolaAsymptoteOption": 2,
+            "AskRemoveAsymptotes": null,
+            "TransformCenterOption": 0,
+            "AllowZoom": true,
+            "AllowTranslate": true,
+            "AllowRotation": false,
+            "CurrentAttributes": {
+              "ColorPacked": 4278190080,
+              "BaseWidth": 3,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1
+            },
+            "Palm": {
+              "Advanced": null,
+              "NibMode": false,
+              "ForceEraser": false,
+              "ForcePointEraser": true,
+              "PptGestureEligible": false,
+              "PalmContactThreshold": 30,
+              "PenHasPriority": true
+            }
+          },
+          "Ops": [
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 7,
+                "X": 100,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 0,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 7,
+                "X": 200,
+                "Y": 150,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 10,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 7,
+                "X": 200,
+                "Y": 150,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 20,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "undo"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "Trace": [
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 4,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 1,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 4,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 1,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 1,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 3,
+            "SelCh": 0,
+            "ToolCh": 2,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 1,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 4,
+            "SelCh": 0,
+            "ToolCh": 2,
+            "Slides": 0
+          }
+        ],
+        "Final": {
+          "Strokes": [],
+          "Sel": [],
+          "Tool": 0,
+          "EraserMode": 0,
+          "CloneMode": false,
+          "View": [
+            1,
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "ViewCenter": [
+            960,
+            540
+          ],
+          "Undo": 0,
+          "Redo": 1,
+          "SelectionBounds": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "SelectionFrame": {
+            "Bounds": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "Transform": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "SlideFlips": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "shape-cuboid-two-step",
+      "fn": "runControllerScenario",
+      "input": [
+        {
+          "Initial": {
+            "Tool": 4,
+            "ShapeKind": 24,
+            "EraserMode": 0,
+            "EraserRadius": 16,
+            "ViewTransform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "ViewCenter": [
+              960,
+              540
+            ],
+            "MultiTouchEnabled": true,
+            "PalmErases": true,
+            "RecognizeShapes": true,
+            "GesturesTargetSelection": false,
+            "CloneMode": false,
+            "StickyShape": false,
+            "HyperbolaAsymptoteOption": 2,
+            "AskRemoveAsymptotes": null,
+            "TransformCenterOption": 0,
+            "AllowZoom": true,
+            "AllowTranslate": true,
+            "AllowRotation": false,
+            "CurrentAttributes": {
+              "ColorPacked": 4278190080,
+              "BaseWidth": 3,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1
+            },
+            "Palm": {
+              "Advanced": null,
+              "NibMode": false,
+              "ForceEraser": false,
+              "ForcePointEraser": true,
+              "PptGestureEligible": false,
+              "PalmContactThreshold": 30,
+              "PenHasPriority": true
+            }
+          },
+          "Ops": [
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 8,
+                "X": 100,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 0,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 8,
+                "X": 200,
+                "Y": 180,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 10,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 8,
+                "X": 200,
+                "Y": 180,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 20,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 8,
+                "X": 150,
+                "Y": 120,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 30,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 8,
+                "X": 150,
+                "Y": 220,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 40,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 8,
+                "X": 150,
+                "Y": 220,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 50,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "undo"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "Trace": [
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 4,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 4,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 4,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 1,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 4,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 4,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 2,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 4,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 4,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 2,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 36,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 4,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 3,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ],
+              [
+                100,
+                180
+              ],
+              [
+                200,
+                180
+              ],
+              [
+                100,
+                100
+              ],
+              [
+                220,
+                -20
+              ],
+              [
+                220,
+                60
+              ],
+              [
+                233.8000030517578,
+                60
+              ],
+              [
+                247.60000610351562,
+                60
+              ],
+              [
+                261.3999938964844,
+                60
+              ],
+              [
+                275.20001220703125,
+                60
+              ],
+              [
+                289,
+                60
+              ],
+              [
+                302.79998779296875,
+                60
+              ],
+              [
+                316.6000061035156,
+                60
+              ],
+              [
+                100,
+                100
+              ],
+              [
+                200,
+                100
+              ],
+              [
+                100,
+                180
+              ],
+              [
+                109.75807189941406,
+                170.24192810058594
+              ],
+              [
+                119.51614379882812,
+                160.48385620117188
+              ],
+              [
+                129.2742156982422,
+                150.7257843017578
+              ],
+              [
+                139.03228759765625,
+                140.96771240234375
+              ],
+              [
+                148.79037475585938,
+                131.20962524414062
+              ],
+              [
+                158.54844665527344,
+                121.45155334472656
+              ],
+              [
+                168.3065185546875,
+                111.6934814453125
+              ],
+              [
+                178.06459045410156,
+                101.93540954589844
+              ],
+              [
+                187.82266235351562,
+                92.17733001708984
+              ],
+              [
+                197.58074951171875,
+                82.41925811767578
+              ],
+              [
+                207.3388214111328,
+                72.66117858886719
+              ],
+              [
+                217.09689331054688,
+                62.903106689453125
+              ],
+              [
+                200,
+                180
+              ],
+              [
+                220,
+                -20
+              ],
+              [
+                220,
+                -6.199999809265137
+              ],
+              [
+                220,
+                7.599998474121094
+              ],
+              [
+                220,
+                21.39999771118164
+              ],
+              [
+                220,
+                35.19999694824219
+              ],
+              [
+                220,
+                49
+              ],
+              [
+                320,
+                -20
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 1,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 4,
+            "SelCh": 0,
+            "ToolCh": 2,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 1,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 5,
+            "SelCh": 0,
+            "ToolCh": 2,
+            "Slides": 0
+          }
+        ],
+        "Final": {
+          "Strokes": [],
+          "Sel": [],
+          "Tool": 0,
+          "EraserMode": 0,
+          "CloneMode": false,
+          "View": [
+            1,
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "ViewCenter": [
+            960,
+            540
+          ],
+          "Undo": 0,
+          "Redo": 1,
+          "SelectionBounds": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "SelectionFrame": {
+            "Bounds": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "Transform": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "SlideFlips": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "shape-hyperbola-ask-remove",
+      "fn": "runControllerScenario",
+      "input": [
+        {
+          "Initial": {
+            "Tool": 4,
+            "ShapeKind": 18,
+            "EraserMode": 0,
+            "EraserRadius": 16,
+            "ViewTransform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "ViewCenter": [
+              960,
+              540
+            ],
+            "MultiTouchEnabled": true,
+            "PalmErases": true,
+            "RecognizeShapes": true,
+            "GesturesTargetSelection": false,
+            "CloneMode": false,
+            "StickyShape": false,
+            "HyperbolaAsymptoteOption": 2,
+            "AskRemoveAsymptotes": true,
+            "TransformCenterOption": 0,
+            "AllowZoom": true,
+            "AllowTranslate": true,
+            "AllowRotation": false,
+            "CurrentAttributes": {
+              "ColorPacked": 4278190080,
+              "BaseWidth": 2.5,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1
+            },
+            "Palm": {
+              "Advanced": null,
+              "NibMode": false,
+              "ForceEraser": false,
+              "ForcePointEraser": true,
+              "PptGestureEligible": false,
+              "PalmContactThreshold": 30,
+              "PenHasPriority": true
+            }
+          },
+          "Ops": [
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 9,
+                "X": 100,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 0,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 9,
+                "X": 200,
+                "Y": 150,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 10,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 9,
+                "X": 200,
+                "Y": 150,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 20,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 9,
+                "X": 150,
+                "Y": 120,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 30,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 9,
+                "X": 180,
+                "Y": 160,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 40,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 9,
+                "X": 180,
+                "Y": 160,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 50,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "undo"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "Trace": [
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 4,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 34,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 4,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 1,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 34,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 4,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 2,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 34,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 4,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 2,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 40,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 4,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 3,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              31,
+              31,
+              31,
+              31,
+              1,
+              1
+            ],
+            "DocFirst": [
+              [
+                100,
+                144.7213592529297
+              ],
+              [
+                100,
+                144.7213592529297
+              ],
+              [
+                100,
+                55.27864074707031
+              ],
+              [
+                100,
+                55.27864074707031
+              ],
+              [
+                100,
+                200
+              ],
+              [
+                100,
+                0
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 1,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 6,
+            "SelCh": 0,
+            "ToolCh": 2,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 1,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 7,
+            "SelCh": 0,
+            "ToolCh": 2,
+            "Slides": 0
+          }
+        ],
+        "Final": {
+          "Strokes": [],
+          "Sel": [],
+          "Tool": 0,
+          "EraserMode": 0,
+          "CloneMode": false,
+          "View": [
+            1,
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "ViewCenter": [
+            960,
+            540
+          ],
+          "Undo": 0,
+          "Redo": 1,
+          "SelectionBounds": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "SelectionFrame": {
+            "Bounds": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "Transform": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "SlideFlips": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "selection-drag",
+      "fn": "runControllerScenario",
+      "input": [
+        {
+          "Initial": {
+            "Tool": 3,
+            "ShapeKind": 0,
+            "EraserMode": 0,
+            "EraserRadius": 16,
+            "ViewTransform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "ViewCenter": [
+              960,
+              540
+            ],
+            "MultiTouchEnabled": true,
+            "PalmErases": true,
+            "RecognizeShapes": true,
+            "GesturesTargetSelection": false,
+            "CloneMode": false,
+            "StickyShape": false,
+            "HyperbolaAsymptoteOption": 2,
+            "AskRemoveAsymptotes": null,
+            "TransformCenterOption": 0,
+            "AllowZoom": true,
+            "AllowTranslate": true,
+            "AllowRotation": false,
+            "CurrentAttributes": {
+              "ColorPacked": 4278190080,
+              "BaseWidth": 2.5,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1
+            },
+            "Palm": {
+              "Advanced": null,
+              "NibMode": false,
+              "ForceEraser": false,
+              "ForcePointEraser": true,
+              "PptGestureEligible": false,
+              "PalmContactThreshold": 30,
+              "PenHasPriority": true
+            }
+          },
+          "Ops": [
+            {
+              "Op": "seed",
+              "Stroke": {
+                "Attributes": {
+                  "ColorPacked": 4278190080,
+                  "BaseWidth": 4,
+                  "IsHighlighter": false,
+                  "HighlighterAlpha": 96,
+                  "TaperKind": 0
+                },
+                "Points": [
+                  {
+                    "X": 100,
+                    "Y": 100,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 200,
+                    "Y": 100,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 200,
+                    "Y": 160,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 100,
+                    "Y": 160,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 100,
+                    "Y": 100,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  }
+                ],
+                "IsCompleted": true
+              }
+            },
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 10,
+                "X": 150,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 2,
+                "TimeMs": 0,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 10,
+                "X": 150,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 2,
+                "TimeMs": 10,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 10,
+                "X": 125,
+                "Y": 130,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 2,
+                "TimeMs": 20,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 10,
+                "X": 145,
+                "Y": 150,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 2,
+                "TimeMs": 30,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 10,
+                "X": 145,
+                "Y": 150,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 2,
+                "TimeMs": 40,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "undo"
+            },
+            {
+              "Op": "redo"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "Trace": [
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 1,
+            "SelCh": 1,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 2,
+            "SelCh": 2,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 3,
+            "SelCh": 2,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                120,
+                120
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 4,
+            "SelCh": 2,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                120,
+                120
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 1,
+            "Redo": 0,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 6,
+            "SelCh": 3,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 0,
+            "Redo": 1,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 8,
+            "SelCh": 4,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                120,
+                120
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 1,
+            "Redo": 0,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 10,
+            "SelCh": 5,
+            "ToolCh": 1,
+            "Slides": 0
+          }
+        ],
+        "Final": {
+          "Strokes": [
+            {
+              "Points": [
+                [
+                  120,
+                  120,
+                  0.5,
+                  4,
+                  0
+                ],
+                [
+                  220,
+                  120,
+                  0.5,
+                  4,
+                  0
+                ],
+                [
+                  220,
+                  180,
+                  0.5,
+                  4,
+                  0
+                ],
+                [
+                  120,
+                  180,
+                  0.5,
+                  4,
+                  0
+                ],
+                [
+                  120,
+                  120,
+                  0.5,
+                  4,
+                  0
+                ]
+              ],
+              "BaseWidth": 4,
+              "ColorPacked": 4278190080,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 0,
+              "IsRecognizedShape": false,
+              "IsCompleted": true
+            }
+          ],
+          "Sel": [
+            0
+          ],
+          "Tool": 3,
+          "EraserMode": 0,
+          "CloneMode": false,
+          "View": [
+            1,
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "ViewCenter": [
+            960,
+            540
+          ],
+          "Undo": 1,
+          "Redo": 0,
+          "SelectionBounds": [
+            118,
+            118,
+            222,
+            182
+          ],
+          "SelectionFrame": {
+            "Bounds": [
+              98,
+              98,
+              202,
+              162
+            ],
+            "Transform": [
+              1,
+              0,
+              0,
+              1,
+              20,
+              20
+            ]
+          }
+        },
+        "SlideFlips": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "selection-clone",
+      "fn": "runControllerScenario",
+      "input": [
+        {
+          "Initial": {
+            "Tool": 3,
+            "ShapeKind": 0,
+            "EraserMode": 0,
+            "EraserRadius": 16,
+            "ViewTransform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "ViewCenter": [
+              960,
+              540
+            ],
+            "MultiTouchEnabled": true,
+            "PalmErases": true,
+            "RecognizeShapes": true,
+            "GesturesTargetSelection": false,
+            "CloneMode": true,
+            "StickyShape": false,
+            "HyperbolaAsymptoteOption": 2,
+            "AskRemoveAsymptotes": null,
+            "TransformCenterOption": 0,
+            "AllowZoom": true,
+            "AllowTranslate": true,
+            "AllowRotation": false,
+            "CurrentAttributes": {
+              "ColorPacked": 4278190080,
+              "BaseWidth": 2.5,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1
+            },
+            "Palm": {
+              "Advanced": null,
+              "NibMode": false,
+              "ForceEraser": false,
+              "ForcePointEraser": true,
+              "PptGestureEligible": false,
+              "PalmContactThreshold": 30,
+              "PenHasPriority": true
+            }
+          },
+          "Ops": [
+            {
+              "Op": "seed",
+              "Stroke": {
+                "Attributes": {
+                  "ColorPacked": 4278190080,
+                  "BaseWidth": 4,
+                  "IsHighlighter": false,
+                  "HighlighterAlpha": 96,
+                  "TaperKind": 0
+                },
+                "Points": [
+                  {
+                    "X": 100,
+                    "Y": 100,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 200,
+                    "Y": 100,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 200,
+                    "Y": 160,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 100,
+                    "Y": 160,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 100,
+                    "Y": 100,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  }
+                ],
+                "IsCompleted": true
+              }
+            },
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 11,
+                "X": 150,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 2,
+                "TimeMs": 0,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 11,
+                "X": 150,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 2,
+                "TimeMs": 10,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 11,
+                "X": 125,
+                "Y": 130,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 2,
+                "TimeMs": 20,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 11,
+                "X": 145,
+                "Y": 150,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 2,
+                "TimeMs": 30,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 11,
+                "X": 145,
+                "Y": 150,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 2,
+                "TimeMs": 40,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "undo"
+            },
+            {
+              "Op": "redo"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "Trace": [
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 1,
+            "SelCh": 1,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 2,
+            "SelCh": 2,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 3,
+            "SelCh": 3,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 4,
+            "SelCh": 3,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5,
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ],
+              [
+                120,
+                120
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 5,
+            "SelCh": 3,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5,
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ],
+              [
+                120,
+                120
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 1,
+            "Redo": 0,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 7,
+            "SelCh": 4,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 0,
+            "Redo": 1,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 9,
+            "SelCh": 4,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5,
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ],
+              [
+                120,
+                120
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 1,
+            "Redo": 0,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 11,
+            "SelCh": 4,
+            "ToolCh": 1,
+            "Slides": 0
+          }
+        ],
+        "Final": {
+          "Strokes": [
+            {
+              "Points": [
+                [
+                  100,
+                  100,
+                  0.5,
+                  4,
+                  0
+                ],
+                [
+                  200,
+                  100,
+                  0.5,
+                  4,
+                  0
+                ],
+                [
+                  200,
+                  160,
+                  0.5,
+                  4,
+                  0
+                ],
+                [
+                  100,
+                  160,
+                  0.5,
+                  4,
+                  0
+                ],
+                [
+                  100,
+                  100,
+                  0.5,
+                  4,
+                  0
+                ]
+              ],
+              "BaseWidth": 4,
+              "ColorPacked": 4278190080,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 0,
+              "IsRecognizedShape": false,
+              "IsCompleted": true
+            },
+            {
+              "Points": [
+                [
+                  120,
+                  120,
+                  0.5,
+                  4,
+                  0
+                ],
+                [
+                  220,
+                  120,
+                  0.5,
+                  4,
+                  0
+                ],
+                [
+                  220,
+                  180,
+                  0.5,
+                  4,
+                  0
+                ],
+                [
+                  120,
+                  180,
+                  0.5,
+                  4,
+                  0
+                ],
+                [
+                  120,
+                  120,
+                  0.5,
+                  4,
+                  0
+                ]
+              ],
+              "BaseWidth": 4,
+              "ColorPacked": 4278190080,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 0,
+              "IsRecognizedShape": false,
+              "IsCompleted": true
+            }
+          ],
+          "Sel": [
+            0
+          ],
+          "Tool": 3,
+          "EraserMode": 0,
+          "CloneMode": true,
+          "View": [
+            1,
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "ViewCenter": [
+            960,
+            540
+          ],
+          "Undo": 1,
+          "Redo": 0,
+          "SelectionBounds": [
+            98,
+            98,
+            202,
+            162
+          ],
+          "SelectionFrame": {
+            "Bounds": [
+              98,
+              98,
+              202,
+              162
+            ],
+            "Transform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ]
+          }
+        },
+        "SlideFlips": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "selection-delete",
+      "fn": "runControllerScenario",
+      "input": [
+        {
+          "Initial": {
+            "Tool": 3,
+            "ShapeKind": 0,
+            "EraserMode": 0,
+            "EraserRadius": 16,
+            "ViewTransform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "ViewCenter": [
+              960,
+              540
+            ],
+            "MultiTouchEnabled": true,
+            "PalmErases": true,
+            "RecognizeShapes": true,
+            "GesturesTargetSelection": false,
+            "CloneMode": false,
+            "StickyShape": false,
+            "HyperbolaAsymptoteOption": 2,
+            "AskRemoveAsymptotes": null,
+            "TransformCenterOption": 0,
+            "AllowZoom": true,
+            "AllowTranslate": true,
+            "AllowRotation": false,
+            "CurrentAttributes": {
+              "ColorPacked": 4278190080,
+              "BaseWidth": 2.5,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1
+            },
+            "Palm": {
+              "Advanced": null,
+              "NibMode": false,
+              "ForceEraser": false,
+              "ForcePointEraser": true,
+              "PptGestureEligible": false,
+              "PalmContactThreshold": 30,
+              "PenHasPriority": true
+            }
+          },
+          "Ops": [
+            {
+              "Op": "seed",
+              "Stroke": {
+                "Attributes": {
+                  "ColorPacked": 4278190080,
+                  "BaseWidth": 4,
+                  "IsHighlighter": false,
+                  "HighlighterAlpha": 96,
+                  "TaperKind": 0
+                },
+                "Points": [
+                  {
+                    "X": 100,
+                    "Y": 100,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 200,
+                    "Y": 100,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 200,
+                    "Y": 160,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 100,
+                    "Y": 160,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 100,
+                    "Y": 100,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  }
+                ],
+                "IsCompleted": true
+              }
+            },
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 12,
+                "X": 150,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 2,
+                "TimeMs": 0,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 12,
+                "X": 150,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 2,
+                "TimeMs": 10,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "deleteSelection"
+            },
+            {
+              "Op": "undo"
+            },
+            {
+              "Op": "redo"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "Trace": [
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 1,
+            "SelCh": 1,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 2,
+            "SelCh": 2,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 1,
+            "Redo": 0,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 3,
+            "SelCh": 3,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 1,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 4,
+            "SelCh": 3,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 1,
+            "Redo": 0,
+            "Tool": 3,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 5,
+            "SelCh": 3,
+            "ToolCh": 1,
+            "Slides": 0
+          }
+        ],
+        "Final": {
+          "Strokes": [],
+          "Sel": [],
+          "Tool": 3,
+          "EraserMode": 0,
+          "CloneMode": false,
+          "View": [
+            1,
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "ViewCenter": [
+            960,
+            540
+          ],
+          "Undo": 1,
+          "Redo": 0,
+          "SelectionBounds": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "SelectionFrame": {
+            "Bounds": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "Transform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ]
+          }
+        },
+        "SlideFlips": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "two-finger-zoom-clamp",
+      "fn": "runControllerScenario",
+      "input": [
+        {
+          "Initial": {
+            "Tool": 0,
+            "ShapeKind": 0,
+            "EraserMode": 0,
+            "EraserRadius": 16,
+            "ViewTransform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "ViewCenter": [
+              0,
+              0
+            ],
+            "MultiTouchEnabled": false,
+            "PalmErases": true,
+            "RecognizeShapes": true,
+            "GesturesTargetSelection": false,
+            "CloneMode": false,
+            "StickyShape": false,
+            "HyperbolaAsymptoteOption": 2,
+            "AskRemoveAsymptotes": null,
+            "TransformCenterOption": 0,
+            "AllowZoom": true,
+            "AllowTranslate": false,
+            "AllowRotation": false,
+            "CurrentAttributes": {
+              "ColorPacked": 4278190080,
+              "BaseWidth": 2.5,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1
+            },
+            "Palm": {
+              "Advanced": null,
+              "NibMode": false,
+              "ForceEraser": false,
+              "ForcePointEraser": true,
+              "PptGestureEligible": false,
+              "PalmContactThreshold": 30,
+              "PenHasPriority": true
+            }
+          },
+          "Ops": [
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 20,
+                "X": 100,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 0,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 21,
+                "X": 200,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 10,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 20,
+                "X": 80,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 20,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 21,
+                "X": 220,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 30,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 20,
+                "X": 30,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 40,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 21,
+                "X": 270,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 50,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 20,
+                "X": -850,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 60,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 21,
+                "X": 850,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 70,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 20,
+                "X": 99,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 80,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 21,
+                "X": 101,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 90,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 20,
+                "X": 99,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 100,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 21,
+                "X": 101,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 110,
+                "Shift": false,
+                "Control": false
+              }
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "Trace": [
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 1,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 2,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1.2000000476837158,
+              0,
+              0,
+              1.2000000476837158,
+              0,
+              0
+            ],
+            "Inv": 3,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1.1666667461395264,
+              0,
+              0,
+              1.1666667461395264,
+              0,
+              0
+            ],
+            "Inv": 4,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1.6285713911056519,
+              0,
+              0,
+              1.6285713911056519,
+              0,
+              0
+            ],
+            "Inv": 5,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1.473684310913086,
+              0,
+              0,
+              1.473684310913086,
+              0,
+              0
+            ],
+            "Inv": 6,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              7.59999942779541,
+              0,
+              0,
+              7.59999942779541,
+              0,
+              0
+            ],
+            "Inv": 7,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              2.236842393875122,
+              0,
+              0,
+              2.236842393875122,
+              0,
+              0
+            ],
+            "Inv": 8,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              3.3574113845825195,
+              0,
+              0,
+              3.3574113845825195,
+              0,
+              0
+            ],
+            "Inv": 9,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              3.3574113845825195,
+              0,
+              0,
+              3.3574113845825195,
+              0,
+              0
+            ],
+            "Inv": 9,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              3.3574113845825195,
+              0,
+              0,
+              3.3574113845825195,
+              0,
+              0
+            ],
+            "Inv": 9,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              3.3574113845825195,
+              0,
+              0,
+              3.3574113845825195,
+              0,
+              0
+            ],
+            "Inv": 9,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          }
+        ],
+        "Final": {
+          "Strokes": [],
+          "Sel": [],
+          "Tool": 0,
+          "EraserMode": 0,
+          "CloneMode": false,
+          "View": [
+            3.3574113845825195,
+            0,
+            0,
+            3.3574113845825195,
+            0,
+            0
+          ],
+          "ViewCenter": [
+            0,
+            0
+          ],
+          "Undo": 0,
+          "Redo": 0,
+          "SelectionBounds": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "SelectionFrame": {
+            "Bounds": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "Transform": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "SlideFlips": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "two-finger-selection-permove",
+      "fn": "runControllerScenario",
+      "input": [
+        {
+          "Initial": {
+            "Tool": 0,
+            "ShapeKind": 0,
+            "EraserMode": 0,
+            "EraserRadius": 16,
+            "ViewTransform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "ViewCenter": [
+              0,
+              0
+            ],
+            "MultiTouchEnabled": false,
+            "PalmErases": true,
+            "RecognizeShapes": true,
+            "GesturesTargetSelection": true,
+            "CloneMode": false,
+            "StickyShape": false,
+            "HyperbolaAsymptoteOption": 2,
+            "AskRemoveAsymptotes": null,
+            "TransformCenterOption": 0,
+            "AllowZoom": true,
+            "AllowTranslate": false,
+            "AllowRotation": false,
+            "CurrentAttributes": {
+              "ColorPacked": 4278190080,
+              "BaseWidth": 2.5,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1
+            },
+            "Palm": {
+              "Advanced": null,
+              "NibMode": false,
+              "ForceEraser": false,
+              "ForcePointEraser": true,
+              "PptGestureEligible": false,
+              "PalmContactThreshold": 30,
+              "PenHasPriority": true
+            }
+          },
+          "Ops": [
+            {
+              "Op": "seed",
+              "Stroke": {
+                "Attributes": {
+                  "ColorPacked": 4278190080,
+                  "BaseWidth": 4,
+                  "IsHighlighter": false,
+                  "HighlighterAlpha": 96,
+                  "TaperKind": 0
+                },
+                "Points": [
+                  {
+                    "X": 100,
+                    "Y": 100,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 200,
+                    "Y": 100,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 200,
+                    "Y": 160,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 100,
+                    "Y": 160,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  },
+                  {
+                    "X": 100,
+                    "Y": 100,
+                    "Pressure": 0.5,
+                    "Width": 4,
+                    "TimeMs": 0
+                  }
+                ],
+                "IsCompleted": true
+              }
+            },
+            {
+              "Op": "selectIndex",
+              "Value": 0
+            },
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 30,
+                "X": 125,
+                "Y": 130,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 0,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 31,
+                "X": 180,
+                "Y": 130,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 10,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 30,
+                "X": 105,
+                "Y": 130,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 20,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 31,
+                "X": 200,
+                "Y": 130,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 30,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 30,
+                "X": 105,
+                "Y": 130,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 40,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 31,
+                "X": 200,
+                "Y": 130,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 50,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "undo"
+            },
+            {
+              "Op": "undo"
+            },
+            {
+              "Op": "redo"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "Trace": [
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 1,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 2,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                136.36363220214844,
+                136.36363220214844
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 1,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 3,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                172.72726440429688,
+                172.72726440429688
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 2,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 4,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                172.72726440429688,
+                172.72726440429688
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 2,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 4,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                172.72726440429688,
+                172.72726440429688
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 2,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 4,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                136.36363220214844,
+                136.36363220214844
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 1,
+            "Redo": 1,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 6,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                100,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 0,
+            "Redo": 2,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 8,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              5
+            ],
+            "DocFirst": [
+              [
+                136.36363220214844,
+                136.36363220214844
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [
+              0
+            ],
+            "Undo": 1,
+            "Redo": 1,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 10,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          }
+        ],
+        "Final": {
+          "Strokes": [
+            {
+              "Points": [
+                [
+                  136.36363220214844,
+                  136.36363220214844,
+                  0.5,
+                  5.454545497894287,
+                  0
+                ],
+                [
+                  272.7272644042969,
+                  136.36363220214844,
+                  0.5,
+                  5.454545497894287,
+                  0
+                ],
+                [
+                  272.7272644042969,
+                  218.18182373046875,
+                  0.5,
+                  5.454545497894287,
+                  0
+                ],
+                [
+                  136.36363220214844,
+                  218.18182373046875,
+                  0.5,
+                  5.454545497894287,
+                  0
+                ],
+                [
+                  136.36363220214844,
+                  136.36363220214844,
+                  0.5,
+                  5.454545497894287,
+                  0
+                ]
+              ],
+              "BaseWidth": 5.454545497894287,
+              "ColorPacked": 4278190080,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 0,
+              "IsRecognizedShape": false,
+              "IsCompleted": true
+            }
+          ],
+          "Sel": [
+            0
+          ],
+          "Tool": 0,
+          "EraserMode": 0,
+          "CloneMode": false,
+          "View": [
+            1,
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "ViewCenter": [
+            0,
+            0
+          ],
+          "Undo": 1,
+          "Redo": 1,
+          "SelectionBounds": [
+            133.6363525390625,
+            133.6363525390625,
+            275.45452880859375,
+            220.9091033935547
+          ],
+          "SelectionFrame": {
+            "Bounds": [
+              98,
+              98,
+              202,
+              162
+            ],
+            "Transform": [
+              1.3636363744735718,
+              0,
+              0,
+              1.3636363744735718,
+              0,
+              0
+            ]
+          }
+        },
+        "SlideFlips": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "two-finger-writing",
+      "fn": "runControllerScenario",
+      "input": [
+        {
+          "Initial": {
+            "Tool": 0,
+            "ShapeKind": 0,
+            "EraserMode": 0,
+            "EraserRadius": 16,
+            "ViewTransform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "ViewCenter": [
+              960,
+              540
+            ],
+            "MultiTouchEnabled": true,
+            "PalmErases": true,
+            "RecognizeShapes": true,
+            "GesturesTargetSelection": false,
+            "CloneMode": false,
+            "StickyShape": false,
+            "HyperbolaAsymptoteOption": 2,
+            "AskRemoveAsymptotes": null,
+            "TransformCenterOption": 0,
+            "AllowZoom": true,
+            "AllowTranslate": true,
+            "AllowRotation": false,
+            "CurrentAttributes": {
+              "ColorPacked": 4278190080,
+              "BaseWidth": 2.5,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1
+            },
+            "Palm": {
+              "Advanced": null,
+              "NibMode": false,
+              "ForceEraser": false,
+              "ForcePointEraser": true,
+              "PptGestureEligible": false,
+              "PalmContactThreshold": 30,
+              "PenHasPriority": true
+            }
+          },
+          "Ops": [
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 40,
+                "X": 10,
+                "Y": 10,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 0,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 41,
+                "X": 20,
+                "Y": 20,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 5,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 40,
+                "X": 30,
+                "Y": 10,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 10,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 41,
+                "X": 40,
+                "Y": 20,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 15,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 40,
+                "X": 30,
+                "Y": 10,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 20,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 41,
+                "X": 40,
+                "Y": 20,
+                "Pressure": 0.5,
+                "ContactWidth": 1,
+                "ContactHeight": 1,
+                "Kind": 1,
+                "TimeMs": 25,
+                "Shift": false,
+                "Control": false
+              }
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "Trace": [
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 1,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 2,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 2,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 2,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 3,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 2,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 4,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2
+            ],
+            "DocFirst": [
+              [
+                10,
+                10
+              ]
+            ],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 1,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 6,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              2,
+              2
+            ],
+            "DocFirst": [
+              [
+                10,
+                10
+              ],
+              [
+                20,
+                20
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 2,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 8,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          }
+        ],
+        "Final": {
+          "Strokes": [
+            {
+              "Points": [
+                [
+                  10,
+                  10,
+                  0.5,
+                  0.9000000357627869,
+                  0
+                ],
+                [
+                  30,
+                  10,
+                  0.5,
+                  1.3000000715255737,
+                  10
+                ]
+              ],
+              "BaseWidth": 2.5,
+              "ColorPacked": 4278190080,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1,
+              "IsRecognizedShape": false,
+              "IsCompleted": true
+            },
+            {
+              "Points": [
+                [
+                  20,
+                  20,
+                  0.5,
+                  0.9000000357627869,
+                  5
+                ],
+                [
+                  40,
+                  20,
+                  0.5,
+                  1.3000000715255737,
+                  15
+                ]
+              ],
+              "BaseWidth": 2.5,
+              "ColorPacked": 4278190080,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1,
+              "IsRecognizedShape": false,
+              "IsCompleted": true
+            }
+          ],
+          "Sel": [],
+          "Tool": 0,
+          "EraserMode": 0,
+          "CloneMode": false,
+          "View": [
+            1,
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "ViewCenter": [
+            960,
+            540
+          ],
+          "Undo": 2,
+          "Redo": 0,
+          "SelectionBounds": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "SelectionFrame": {
+            "Bounds": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "Transform": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "SlideFlips": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "slide-flip-threshold",
+      "fn": "runControllerScenario",
+      "input": [
+        {
+          "Initial": {
+            "Tool": 0,
+            "ShapeKind": 0,
+            "EraserMode": 0,
+            "EraserRadius": 16,
+            "ViewTransform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "ViewCenter": [
+              960,
+              540
+            ],
+            "MultiTouchEnabled": true,
+            "PalmErases": false,
+            "RecognizeShapes": true,
+            "GesturesTargetSelection": false,
+            "CloneMode": false,
+            "StickyShape": false,
+            "HyperbolaAsymptoteOption": 2,
+            "AskRemoveAsymptotes": null,
+            "TransformCenterOption": 0,
+            "AllowZoom": true,
+            "AllowTranslate": true,
+            "AllowRotation": false,
+            "CurrentAttributes": {
+              "ColorPacked": 4278190080,
+              "BaseWidth": 2.5,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1
+            },
+            "Palm": {
+              "Advanced": {
+                "isSpecialScreen": false,
+                "isQuadIR": false,
+                "touchMultiplier": 0.25,
+                "nibModeBoundsWidth": 10,
+                "fingerModeBoundsWidth": 30,
+                "nibModeBoundsWidthThresholdValue": 2.5,
+                "fingerModeBoundsWidthThresholdValue": 2.5,
+                "nibModeBoundsWidthEraserSize": 0.8,
+                "fingerModeBoundsWidthEraserSize": 0.8
+              },
+              "NibMode": false,
+              "ForceEraser": false,
+              "ForcePointEraser": true,
+              "PptGestureEligible": true,
+              "PalmContactThreshold": 30,
+              "PenHasPriority": true
+            }
+          },
+          "Ops": [
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 50,
+                "X": 100,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 40,
+                "ContactHeight": 40,
+                "Kind": 1,
+                "TimeMs": 0,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 50,
+                "X": 39,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 40,
+                "ContactHeight": 40,
+                "Kind": 1,
+                "TimeMs": 10,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 50,
+                "X": 100,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 40,
+                "ContactHeight": 40,
+                "Kind": 1,
+                "TimeMs": 20,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 50,
+                "X": 161,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 40,
+                "ContactHeight": 40,
+                "Kind": 1,
+                "TimeMs": 30,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 50,
+                "X": 100,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 40,
+                "ContactHeight": 40,
+                "Kind": 1,
+                "TimeMs": 40,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 50,
+                "X": 40,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 40,
+                "ContactHeight": 40,
+                "Kind": 1,
+                "TimeMs": 50,
+                "Shift": false,
+                "Control": false
+              }
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "Trace": [
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 1
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 1
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 2
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 2
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 2
+          }
+        ],
+        "Final": {
+          "Strokes": [],
+          "Sel": [],
+          "Tool": 0,
+          "EraserMode": 0,
+          "CloneMode": false,
+          "View": [
+            1,
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "ViewCenter": [
+            960,
+            540
+          ],
+          "Undo": 0,
+          "Redo": 0,
+          "SelectionBounds": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "SelectionFrame": {
+            "Bounds": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "Transform": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "SlideFlips": [
+          true,
+          false
+        ]
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "pan-tool",
+      "fn": "runControllerScenario",
+      "input": [
+        {
+          "Initial": {
+            "Tool": 5,
+            "ShapeKind": 0,
+            "EraserMode": 0,
+            "EraserRadius": 16,
+            "ViewTransform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "ViewCenter": [
+              960,
+              540
+            ],
+            "MultiTouchEnabled": true,
+            "PalmErases": true,
+            "RecognizeShapes": true,
+            "GesturesTargetSelection": false,
+            "CloneMode": false,
+            "StickyShape": false,
+            "HyperbolaAsymptoteOption": 2,
+            "AskRemoveAsymptotes": null,
+            "TransformCenterOption": 0,
+            "AllowZoom": true,
+            "AllowTranslate": true,
+            "AllowRotation": false,
+            "CurrentAttributes": {
+              "ColorPacked": 4278190080,
+              "BaseWidth": 2.5,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1
+            },
+            "Palm": {
+              "Advanced": null,
+              "NibMode": false,
+              "ForceEraser": false,
+              "ForcePointEraser": true,
+              "PptGestureEligible": false,
+              "PalmContactThreshold": 30,
+              "PenHasPriority": true
+            }
+          },
+          "Ops": [
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 60,
+                "X": 100,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 2,
+                "TimeMs": 0,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 60,
+                "X": 130,
+                "Y": 150,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 2,
+                "TimeMs": 10,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 60,
+                "X": 130,
+                "Y": 150,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 2,
+                "TimeMs": 20,
+                "Shift": false,
+                "Control": false
+              }
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "Trace": [
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 5,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 0,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 5,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              30,
+              50
+            ],
+            "Inv": 1,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 5,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              30,
+              50
+            ],
+            "Inv": 2,
+            "SelCh": 0,
+            "ToolCh": 1,
+            "Slides": 0
+          }
+        ],
+        "Final": {
+          "Strokes": [],
+          "Sel": [],
+          "Tool": 5,
+          "EraserMode": 0,
+          "CloneMode": false,
+          "View": [
+            1,
+            0,
+            0,
+            1,
+            30,
+            50
+          ],
+          "ViewCenter": [
+            960,
+            540
+          ],
+          "Undo": 0,
+          "Redo": 0,
+          "SelectionBounds": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "SelectionFrame": {
+            "Bounds": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "Transform": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "SlideFlips": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "recognize-circle",
+      "fn": "runControllerScenario",
+      "input": [
+        {
+          "Initial": {
+            "Tool": 0,
+            "ShapeKind": 0,
+            "EraserMode": 0,
+            "EraserRadius": 16,
+            "ViewTransform": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "ViewCenter": [
+              960,
+              540
+            ],
+            "MultiTouchEnabled": true,
+            "PalmErases": true,
+            "RecognizeShapes": true,
+            "GesturesTargetSelection": false,
+            "CloneMode": false,
+            "StickyShape": false,
+            "HyperbolaAsymptoteOption": 2,
+            "AskRemoveAsymptotes": null,
+            "TransformCenterOption": 0,
+            "AllowZoom": true,
+            "AllowTranslate": true,
+            "AllowRotation": false,
+            "CurrentAttributes": {
+              "ColorPacked": 4278190080,
+              "BaseWidth": 2.5,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1
+            },
+            "Palm": {
+              "Advanced": null,
+              "NibMode": false,
+              "ForceEraser": false,
+              "ForcePointEraser": true,
+              "PptGestureEligible": false,
+              "PalmContactThreshold": 30,
+              "PenHasPriority": true
+            }
+          },
+          "Ops": [
+            {
+              "Op": "down",
+              "Pointer": {
+                "Id": 70,
+                "X": 160,
+                "Y": 100,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 0,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 70,
+                "X": 155.4327719506772,
+                "Y": 122.96100594190538,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 10,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 70,
+                "X": 142.42640687119285,
+                "Y": 142.42640687119285,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 20,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 70,
+                "X": 122.9610059419054,
+                "Y": 155.4327719506772,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 30,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 70,
+                "X": 100,
+                "Y": 160,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 40,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 70,
+                "X": 77.03899405809462,
+                "Y": 155.4327719506772,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 50,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 70,
+                "X": 57.573593128807154,
+                "Y": 142.42640687119285,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 60,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 70,
+                "X": 44.56722804932279,
+                "Y": 122.9610059419054,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 70,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 70,
+                "X": 40,
+                "Y": 100.00000000000001,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 80,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 70,
+                "X": 44.567228049322786,
+                "Y": 77.03899405809462,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 90,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 70,
+                "X": 57.57359312880714,
+                "Y": 57.573593128807154,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 100,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 70,
+                "X": 77.03899405809457,
+                "Y": 44.56722804932281,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 110,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 70,
+                "X": 99.99999999999999,
+                "Y": 40,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 120,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 70,
+                "X": 122.9610059419054,
+                "Y": 44.5672280493228,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 130,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 70,
+                "X": 142.42640687119285,
+                "Y": 57.57359312880714,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 140,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "move",
+              "Pointer": {
+                "Id": 70,
+                "X": 155.4327719506772,
+                "Y": 77.03899405809457,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 150,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "up",
+              "Pointer": {
+                "Id": 70,
+                "X": 155.4327719506772,
+                "Y": 77.03899405809457,
+                "Pressure": 0.5,
+                "ContactWidth": 0,
+                "ContactHeight": 0,
+                "Kind": 0,
+                "TimeMs": 160,
+                "Shift": false,
+                "Control": false
+              }
+            },
+            {
+              "Op": "undo"
+            },
+            {
+              "Op": "undo"
+            },
+            {
+              "Op": "redo"
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "Trace": [
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 1,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 2,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 3,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 4,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 5,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 6,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 7,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 8,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 9,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 10,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 11,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 12,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 13,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 14,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 15,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 1,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 16,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              73
+            ],
+            "DocFirst": [
+              [
+                160,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 2,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 18,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              16
+            ],
+            "DocFirst": [
+              [
+                160,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 1,
+            "Redo": 1,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 19,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 2,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 20,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [
+              16
+            ],
+            "DocFirst": [
+              [
+                160,
+                100
+              ]
+            ],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 1,
+            "Redo": 1,
+            "Tool": 0,
+            "View": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ],
+            "Inv": 21,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          }
+        ],
+        "Final": {
+          "Strokes": [
+            {
+              "Points": [
+                [
+                  160,
+                  100,
+                  0.5,
+                  2.5,
+                  0
+                ],
+                [
+                  155.43276977539062,
+                  122.96100616455078,
+                  0.5,
+                  2.5,
+                  10
+                ],
+                [
+                  142.42640686035156,
+                  142.42640686035156,
+                  0.5,
+                  2.5,
+                  20
+                ],
+                [
+                  122.96100616455078,
+                  155.43276977539062,
+                  0.5,
+                  2.5,
+                  30
+                ],
+                [
+                  100,
+                  160,
+                  0.5,
+                  2.5,
+                  40
+                ],
+                [
+                  77.03899383544922,
+                  155.43276977539062,
+                  0.5,
+                  2.5,
+                  50
+                ],
+                [
+                  57.57359313964844,
+                  142.42640686035156,
+                  0.5,
+                  2.5,
+                  60
+                ],
+                [
+                  44.56722640991211,
+                  122.96100616455078,
+                  0.5,
+                  2.277777671813965,
+                  70
+                ],
+                [
+                  40,
+                  100,
+                  0.5,
+                  2.055555582046509,
+                  80
+                ],
+                [
+                  44.56722640991211,
+                  77.03899383544922,
+                  0.5,
+                  1.8333333730697632,
+                  90
+                ],
+                [
+                  57.57359313964844,
+                  57.57359313964844,
+                  0.5,
+                  1.6111111640930176,
+                  100
+                ],
+                [
+                  77.03899383544922,
+                  44.56722640991211,
+                  0.5,
+                  1.388888955116272,
+                  110
+                ],
+                [
+                  100,
+                  40,
+                  0.5,
+                  1.1666667461395264,
+                  120
+                ],
+                [
+                  122.96100616455078,
+                  44.56722640991211,
+                  0.5,
+                  0.944444477558136,
+                  130
+                ],
+                [
+                  142.42640686035156,
+                  57.57359313964844,
+                  0.5,
+                  0.7222222685813904,
+                  140
+                ],
+                [
+                  155.43276977539062,
+                  77.03899383544922,
+                  0.5,
+                  0.5,
+                  150
+                ]
+              ],
+              "BaseWidth": 2.5,
+              "ColorPacked": 4278190080,
+              "IsHighlighter": false,
+              "HighlighterAlpha": 96,
+              "TaperKind": 1,
+              "IsRecognizedShape": false,
+              "IsCompleted": true
+            }
+          ],
+          "Sel": [],
+          "Tool": 0,
+          "EraserMode": 0,
+          "CloneMode": false,
+          "View": [
+            1,
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          "ViewCenter": [
+            960,
+            540
+          ],
+          "Undo": 1,
+          "Redo": 1,
+          "SelectionBounds": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "SelectionFrame": {
+            "Bounds": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "Transform": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        },
+        "SlideFlips": []
+      },
+      "tolerance": 0.0001
+    }
+  ]
+}

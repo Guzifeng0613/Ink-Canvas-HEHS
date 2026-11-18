@@ -2,6 +2,34 @@
   "note": "ArkTS→C# 锚点登记；C# 反向锚点延后（见 notes）。",
   "pairs": [
     {
+      "arkts": "harmony/controls/src/main/ets/FloatingBar.ets",
+      "csharp": "src/InkCanvas.Controls/Controls/FloatingBar.cs"
+    },
+    {
+      "arkts": "harmony/controls/src/main/ets/FloatingBarCatalog.ts",
+      "csharp": "src/InkCanvas.Controls/Controls/FloatingBar.cs"
+    },
+    {
+      "arkts": "harmony/controls/src/main/ets/PenPalette.ets",
+      "csharp": "src/InkCanvas.Controls/Controls/PenPalette.cs"
+    },
+    {
+      "arkts": "harmony/controls/src/main/ets/PenPaletteCatalog.ts",
+      "csharp": "src/InkCanvas.Core/Settings/OriginalMenuCatalog.cs"
+    },
+    {
+      "arkts": "harmony/controls/src/main/ets/ShapePicker.ets",
+      "csharp": "src/InkCanvas.Controls/Controls/ShapePreview.cs"
+    },
+    {
+      "arkts": "harmony/controls/src/main/ets/ShapePickerCatalog.ts",
+      "csharp": "src/InkCanvas.Controls/Controls/ShapePreview.cs"
+    },
+    {
+      "arkts": "harmony/controls/src/main/ets/ThemeTokens.ts",
+      "csharp": "src/InkCanvas.Controls/Themes/Tokens.xaml"
+    },
+    {
       "arkts": "harmony/core/src/main/ets/history/UndoStack.ts",
       "csharp": "src/InkCanvas.Core/History/UndoStack.cs"
     },
@@ -116,6 +144,54 @@
     {
       "arkts": "harmony/core/src/main/ets/versioning/AppVersion.ts",
       "csharp": "src/InkCanvas.Core/Versioning/AppVersion.cs"
+    },
+    {
+      "arkts": "harmony/ink/src/main/ets/ControllerTypes.ts",
+      "csharp": "src/InkCanvas.Platform/Windows/LayeredInkWindow.cs"
+    },
+    {
+      "arkts": "harmony/ink/src/main/ets/InkController.ts",
+      "csharp": "src/InkCanvas.Ink/InkController.cs"
+    },
+    {
+      "arkts": "harmony/ink/src/main/ets/Renderer.ts",
+      "csharp": "src/InkCanvas.Ink/Rendering/InkSceneRenderer.cs"
+    },
+    {
+      "arkts": "harmony/ink/src/main/ets/SceneBuilder.ts",
+      "csharp": "src/InkCanvas.Ink/Rendering/InkSceneRenderer.cs"
+    },
+    {
+      "arkts": "harmony/platform/src/main/ets/compat/Capabilities.ts",
+      "csharp": "src/InkCanvas.Platform/System/SystemServices.cs"
+    },
+    {
+      "arkts": "harmony/platform/src/main/ets/device/Breakpoints.ts",
+      "csharp": "src/InkCanvas.App/Services/WindowChrome.cs"
+    },
+    {
+      "arkts": "harmony/platform/src/main/ets/device/DeviceService.ts",
+      "csharp": "src/InkCanvas.Platform/System/SystemServices.cs"
+    },
+    {
+      "arkts": "harmony/platform/src/main/ets/diagnostics/LogService.ts",
+      "csharp": "src/InkCanvas.Core/Diagnostics/FileLog.cs"
+    },
+    {
+      "arkts": "harmony/platform/src/main/ets/input/InputAdapter.ts",
+      "csharp": "src/InkCanvas.Platform/Windows/LayeredInkWindow.cs"
+    },
+    {
+      "arkts": "harmony/platform/src/main/ets/layout/WindowLayout.ts",
+      "csharp": "src/InkCanvas.App/Services/WindowChrome.cs"
+    },
+    {
+      "arkts": "harmony/platform/src/main/ets/rendering/CanvasInkRenderer.ets",
+      "csharp": "src/InkCanvas.Ink/Rendering/InkSceneRenderer.cs"
+    },
+    {
+      "arkts": "harmony/platform/src/main/ets/storage/StorageService.ts",
+      "csharp": "src/InkCanvas.Features/Persistence/Stores.cs"
     }
   ]
 }
