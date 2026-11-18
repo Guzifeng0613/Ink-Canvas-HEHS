@@ -11,9 +11,9 @@ import {
 import type { SceneStrokeInput, SceneSelectionInput } from '@inkcanvas/ink';
 import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings } from '@inkcanvas/core';
 import type { ShapeKind, StrokePointInput, AppSettings } from '@inkcanvas/core';
-import { CoursewareSession, CountdownEngine, LotteryEngine } from '@inkcanvas/features';
+import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground } from '@inkcanvas/features';
 import { ReplayClock, InkReplaySession } from '@inkcanvas/core';
-import { picker } from '@kit.CoreFileKit';
+import { picker, fileIo } from '@kit.CoreFileKit';
 import { image } from '@kit.ImageKit';
 
 @Entry
@@ -50,6 +50,10 @@ struct Index {
   @State replayProgress: number = 0;
   @State guideOpen: boolean = false;
   @State settingsOpen: boolean = false;
+  @State boardOpen: boolean = false;
+  @State boardIndex: number = 0;
+  @State boardPageCount: number = 1;
+  @State boardBackground: number = 0;
   @State windowWidth: number = 0;
   @State windowHeight: number = 0;
   private renderer: CanvasInkRenderer | null = null;
@@ -66,6 +70,9 @@ struct Index {
   private replaySession: InkReplaySession | null = null;
   private settings: AppSettings = createDefaultSettings();
   private autoSave: AutoSaveService | null = null;
+  private board: BoardDocument = new BoardDocument();
+  private boardGridSettings: RenderingContextSettings = new RenderingContextSettings(true);
+  private boardGridContext: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.boardGridSettings);
 
   aboutToDisappear(): void {
     this.stopCountdownTimer();
@@ -95,6 +102,7 @@ struct Index {
     this.controller.CurrentAttributes.BaseWidth = this.settings.canvas.inkWidth;
     this.controller.CurrentAttributes.HighlighterAlpha = this.settings.canvas.inkAlpha;
     this.controller.CurrentAttributes.TaperKind = this.settings.canvas.inkStyle === 1 ? 2 : (this.settings.canvas.inkStyle === 2 ? 0 : 1);
+    this.applyGestures();
   }
 
   private persistSettings(): void {
@@ -121,7 +129,14 @@ struct Index {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor(this.dark ? '#FF1B1B1B' : '#FFFAFAFA')
+        .backgroundColor(this.boardOpen ? this.boardBackgroundColor() : (this.dark ? '#FF1B1B1B' : '#FFFAFAFA'))
+
+      if (this.boardOpen && (this.boardBackground === 2 || this.boardBackground === 3)) {
+        Canvas(this.boardGridContext)
+          .width('100%')
+          .height('100%')
+          .onReady(() => { this.drawBoardGrid(); })
+      }
 
       if (this.mode === 'courseware' && this.coursewarePage !== null) {
         Image(this.coursewarePage)
@@ -358,18 +373,109 @@ struct Index {
 
       if (this.settingsOpen) {
         Stack({ alignContent: Alignment.Center }) {
-          Column({ space: 10 }) {
-            Text('设置').fontSize(20).fontColor(this.dark ? Color.White : Color.Black)
-            Text(this.dark ? '主题：深色（点击切换）' : '主题：浅色（点击切换）')
-              .fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
-              .onClick(() => { this.dark = !this.dark; this.persistSettings(); })
-            Text('完整设置页将在后续版本接入 Settings.json').fontSize(12).fontColor(this.dark ? '#A8FFFFFF' : '#9E000000')
-            Text('关闭').fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
-              .onClick(() => { this.settingsOpen = false; })
+          Scroll() {
+            Column({ space: 10 }) {
+              Text('设置').fontSize(20).fontColor(this.dark ? Color.White : Color.Black)
+              Text('外观').fontSize(15).fontColor('#FF0067C0')
+              Row() {
+                Text('深色主题').fontSize(14).fontColor(this.dark ? Color.White : Color.Black).layoutWeight(1)
+                Toggle({ type: ToggleType.Switch, isOn: this.dark })
+                  .onChange((isOn: boolean) => { this.dark = isOn; this.persistSettings(); })
+              }.width(300)
+              Row() {
+                Text('浮条文字').fontSize(14).fontColor(this.dark ? Color.White : Color.Black).layoutWeight(1)
+                Toggle({ type: ToggleType.Switch, isOn: this.settings.appearance.isEnableDisPlayFloatBarText })
+                  .onChange((isOn: boolean) => { this.settings.appearance.isEnableDisPlayFloatBarText = isOn; this.persistSettings(); })
+              }.width(300)
+              Text('画布').fontSize(15).fontColor('#FF0067C0')
+              Row() {
+                Text('笔宽 ' + this.widthMenu).fontSize(14).fontColor(this.dark ? Color.White : Color.Black).width(90)
+                Slider({ value: this.widthMenu, min: 1, max: 30, step: 1 })
+                  .layoutWeight(1)
+                  .onChange((value: number) => { this.widthMenu = value; this.controller.CurrentAttributes.BaseWidth = value / 2; this.persistSettings(); })
+              }.width(300)
+              Row() {
+                Text('荧光透明度 ' + this.alpha).fontSize(14).fontColor(this.dark ? Color.White : Color.Black).width(110)
+                Slider({ value: this.alpha, min: 20, max: 240, step: 20 })
+                  .layoutWeight(1)
+                  .onChange((value: number) => { this.alpha = value; this.controller.CurrentAttributes.HighlighterAlpha = value; this.persistSettings(); })
+              }.width(300)
+              Text('手势').fontSize(15).fontColor('#FF0067C0')
+              Row() {
+                Text('双指缩放').fontSize(14).fontColor(this.dark ? Color.White : Color.Black).layoutWeight(1)
+                Toggle({ type: ToggleType.Switch, isOn: this.settings.gesture.isEnableTwoFingerZoom })
+                  .onChange((isOn: boolean) => { this.settings.gesture.isEnableTwoFingerZoom = isOn; this.applyGestures(); this.persistSettings(); })
+              }.width(300)
+              Row() {
+                Text('双指平移').fontSize(14).fontColor(this.dark ? Color.White : Color.Black).layoutWeight(1)
+                Toggle({ type: ToggleType.Switch, isOn: this.settings.gesture.isEnableTwoFingerTranslate })
+                  .onChange((isOn: boolean) => { this.settings.gesture.isEnableTwoFingerTranslate = isOn; this.applyGestures(); this.persistSettings(); })
+              }.width(300)
+              Row() {
+                Text('双指旋转').fontSize(14).fontColor(this.dark ? Color.White : Color.Black).layoutWeight(1)
+                Toggle({ type: ToggleType.Switch, isOn: this.settings.gesture.isEnableTwoFingerRotation })
+                  .onChange((isOn: boolean) => { this.settings.gesture.isEnableTwoFingerRotation = isOn; this.applyGestures(); this.persistSettings(); })
+              }.width(300)
+              Text('自动保存').fontSize(15).fontColor('#FF0067C0')
+              Row() {
+                Text('清空时自动保存').fontSize(14).fontColor(this.dark ? Color.White : Color.Black).layoutWeight(1)
+                Toggle({ type: ToggleType.Switch, isOn: this.settings.automation.isAutoSaveStrokesAtClear })
+                  .onChange((isOn: boolean) => { this.settings.automation.isAutoSaveStrokesAtClear = isOn; this.persistSettings(); })
+              }.width(300)
+              Row() {
+                Text('定期清理').fontSize(14).fontColor(this.dark ? Color.White : Color.Black).layoutWeight(1)
+                Toggle({ type: ToggleType.Switch, isOn: this.settings.automation.autoDelSavedFiles })
+                  .onChange((isOn: boolean) => { this.settings.automation.autoDelSavedFiles = isOn; this.persistSettings(); })
+              }.width(300)
+              Text('关闭').fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
+                .onClick(() => { this.settingsOpen = false; })
+            }
+            .padding(20)
           }
-          .padding(24)
+          .width(360)
+          .height(480)
           .backgroundColor(this.dark ? '#F21F1F1F' : '#F2F0F3F9')
           .borderRadius(12)
+        }
+        .width('100%').height('100%')
+        .hitTestBehavior(HitTestMode.Transparent)
+      }
+
+      if (this.boardOpen) {
+        Stack({ alignContent: Alignment.TopStart }) {
+          Column({ space: 6 }) {
+            Text('画板 ' + (this.boardIndex + 1) + '/' + this.boardPageCount).fontSize(14).fontColor(Color.White)
+            Row({ space: 6 }) {
+              Text('上一页').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+                .onClick(() => { this.boardNavigate(-1); })
+              Text('下一页').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+                .onClick(() => { this.boardNavigate(1); })
+              Text('新增').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+                .onClick(() => { this.board.addPage(); this.syncBoard(); })
+              Text('删除').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+                .onClick(() => { this.board.removePage(this.boardIndex); this.syncBoard(); })
+            }
+            Row({ space: 6 }) {
+              Text('黑').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+                .onClick(() => { this.board.Background = BoardBackground.Black; this.boardBackground = 0; })
+              Text('白').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+                .onClick(() => { this.board.Background = BoardBackground.White; this.boardBackground = 1; })
+              Text('网格').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+                .onClick(() => { this.board.Background = BoardBackground.Grid; this.boardBackground = 2; this.drawBoardGrid(); })
+              Text('横线').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+                .onClick(() => { this.board.Background = BoardBackground.Lined; this.boardBackground = 3; this.drawBoardGrid(); })
+            }
+            Row({ space: 6 }) {
+              Text('保存').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+                .onClick(() => { this.saveBoard(); })
+              Text('打开').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+                .onClick(() => { this.loadBoard(); })
+              Text('退出画板').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+                .onClick(() => { this.exitBoard(); })
+            }
+          }
+          .padding(10)
+          .margin({ left: 12, top: 12 })
         }
         .width('100%').height('100%')
         .hitTestBehavior(HitTestMode.Transparent)
@@ -439,6 +545,110 @@ struct Index {
       .onClick(() => {
         this.handleAction(id);
       })
+  }
+
+  private applyGestures(): void {
+    this.controller.ConfigureGestures(
+      this.settings.gesture.isEnableTwoFingerZoom,
+      this.settings.gesture.isEnableTwoFingerTranslate,
+      this.settings.gesture.isEnableTwoFingerRotation
+    );
+  }
+
+  private boardBackgroundColor(): string {
+    if (this.boardBackground === 1) {
+      return '#FFFAFAFA';
+    }
+    return '#FF1F3B2C';
+  }
+
+  private drawBoardGrid(): void {
+    const spacing = this.board.GridSpacing;
+    const width = this.windowWidth;
+    const height = this.windowHeight;
+    this.boardGridContext.clearRect(0, 0, width, height);
+    this.boardGridContext.strokeStyle = this.boardBackground === 3 ? '#33000000' : '#22FFFFFF';
+    this.boardGridContext.lineWidth = 1;
+    if (this.boardBackground === 2) {
+      for (let x = spacing; x < width; x += spacing) {
+        this.boardGridContext.beginPath();
+        this.boardGridContext.moveTo(x, 0);
+        this.boardGridContext.lineTo(x, height);
+        this.boardGridContext.stroke();
+      }
+    }
+    for (let y = spacing; y < height; y += spacing) {
+      this.boardGridContext.beginPath();
+      this.boardGridContext.moveTo(0, y);
+      this.boardGridContext.lineTo(width, y);
+      this.boardGridContext.stroke();
+    }
+  }
+
+  private openBoard(): void {
+    this.annotateDocument = this.controller.Document;
+    this.controller.Document = this.board.Current.Document;
+    this.controller.ClearSelection();
+    this.boardOpen = true;
+    this.mode = 'board';
+    this.syncBoard();
+    this.refreshScene();
+  }
+
+  private exitBoard(): void {
+    this.boardOpen = false;
+    this.mode = 'annotate';
+    this.controller.Document = this.annotateDocument;
+    this.controller.ClearSelection();
+    this.refreshScene();
+  }
+
+  private syncBoard(): void {
+    this.boardIndex = this.board.CurrentIndex;
+    this.boardPageCount = this.board.PageCount;
+    this.boardBackground = this.board.Background;
+    this.controller.Document = this.board.Current.Document;
+    this.controller.ClearSelection();
+    this.refreshScene();
+  }
+
+  private boardNavigate(delta: number): void {
+    this.board.navigate(delta);
+    this.syncBoard();
+  }
+
+  private async saveBoard(): Promise<void> {
+    if (this.storage === null) {
+      return;
+    }
+    const docPicker = new picker.DocumentViewPicker();
+    const uris = await docPicker.save({ newFileNames: ['board.icink'] });
+    if (uris.length === 0) {
+      return;
+    }
+    const file = fileIo.openSync(uris[0], fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.TRUNC);
+    fileIo.writeSync(file.fd, this.board.saveBoardJson());
+    fileIo.closeSync(file);
+  }
+
+  private async loadBoard(): Promise<void> {
+    if (this.storage === null) {
+      return;
+    }
+    const docPicker = new picker.DocumentViewPicker();
+    const uris = await docPicker.select({ maxSelectNumber: 1, fileSuffixFilters: ['.icink'] });
+    if (uris.length === 0) {
+      return;
+    }
+    const path = this.storage.importUriToSandbox(uris[0], 'board-load.icink');
+    if (path === null) {
+      return;
+    }
+    const text = this.storage.readText('board-load.icink');
+    if (text !== null) {
+      this.board.loadJson(text);
+      this.syncBoard();
+    }
   }
 
   private formatCountdown(totalSeconds: number): string {
@@ -735,6 +945,7 @@ struct Index {
       this.selectedId = id;
       this.paletteOpen = false;
       this.shapeOpen = false;
+      if (this.boardOpen) { this.exitBoard(); } else { this.openBoard(); }
     }
   }
 }
