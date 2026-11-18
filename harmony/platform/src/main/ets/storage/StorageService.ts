@@ -98,6 +98,18 @@ export class StorageService {
     }
   }
 
+  writeBytes(relative: string, buffer: ArrayBuffer): boolean {
+    const path = this.fullPath(relative);
+    try {
+      const file = fileIo.openSync(path, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.TRUNC);
+      fileIo.writeSync(file.fd, buffer);
+      fileIo.closeSync(file);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   list(relativeDir: string): string[] {
     try {
       const dir = this.fullPath(relativeDir);
