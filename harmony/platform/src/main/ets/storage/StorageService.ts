@@ -101,6 +101,10 @@ export class StorageService {
   writeBytes(relative: string, buffer: ArrayBuffer): boolean {
     const path = this.fullPath(relative);
     try {
+      const dir = path.substring(0, path.lastIndexOf('/'));
+      if (dir.length > 0 && !fileIo.accessSync(dir)) {
+        fileIo.mkdirSync(dir, true);
+      }
       const file = fileIo.openSync(path, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.TRUNC);
       fileIo.writeSync(file.fd, buffer);
       fileIo.closeSync(file);

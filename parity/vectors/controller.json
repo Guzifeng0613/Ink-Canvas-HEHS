@@ -31,8 +31,6 @@
             "GesturesTargetSelection": false,
             "CloneMode": false,
             "StickyShape": false,
-            "HyperbolaAsymptoteOption": 2,
-            "AskRemoveAsymptotes": null,
             "TransformCenterOption": 0,
             "AllowZoom": true,
             "AllowTranslate": true,
@@ -368,8 +366,6 @@
             "GesturesTargetSelection": false,
             "CloneMode": false,
             "StickyShape": false,
-            "HyperbolaAsymptoteOption": 2,
-            "AskRemoveAsymptotes": null,
             "TransformCenterOption": 0,
             "AllowZoom": true,
             "AllowTranslate": true,
@@ -573,8 +569,6 @@
             "GesturesTargetSelection": false,
             "CloneMode": false,
             "StickyShape": false,
-            "HyperbolaAsymptoteOption": 2,
-            "AskRemoveAsymptotes": null,
             "TransformCenterOption": 0,
             "AllowZoom": true,
             "AllowTranslate": true,
@@ -822,8 +816,6 @@
             "GesturesTargetSelection": false,
             "CloneMode": false,
             "StickyShape": false,
-            "HyperbolaAsymptoteOption": 2,
-            "AskRemoveAsymptotes": null,
             "TransformCenterOption": 0,
             "AllowZoom": true,
             "AllowTranslate": true,
@@ -1483,8 +1475,6 @@
             "GesturesTargetSelection": false,
             "CloneMode": false,
             "StickyShape": false,
-            "HyperbolaAsymptoteOption": 2,
-            "AskRemoveAsymptotes": null,
             "TransformCenterOption": 0,
             "AllowZoom": true,
             "AllowTranslate": true,
@@ -1936,8 +1926,6 @@
             "GesturesTargetSelection": false,
             "CloneMode": false,
             "StickyShape": false,
-            "HyperbolaAsymptoteOption": 2,
-            "AskRemoveAsymptotes": null,
             "TransformCenterOption": 0,
             "AllowZoom": true,
             "AllowTranslate": true,
@@ -2304,8 +2292,6 @@
             "GesturesTargetSelection": false,
             "CloneMode": false,
             "StickyShape": false,
-            "HyperbolaAsymptoteOption": 2,
-            "AskRemoveAsymptotes": null,
             "TransformCenterOption": 0,
             "AllowZoom": true,
             "AllowTranslate": true,
@@ -2552,8 +2538,6 @@
             "GesturesTargetSelection": false,
             "CloneMode": false,
             "StickyShape": false,
-            "HyperbolaAsymptoteOption": 2,
-            "AskRemoveAsymptotes": null,
             "TransformCenterOption": 0,
             "AllowZoom": true,
             "AllowTranslate": true,
@@ -2766,7 +2750,7 @@
             "Doc": [],
             "DocFirst": [],
             "Live": 0,
-            "Preview": 36,
+            "Preview": 31,
             "Sel": [],
             "Undo": 0,
             "Redo": 0,
@@ -2816,11 +2800,6 @@
               2,
               2,
               2,
-              2,
-              2,
-              2,
-              2,
-              2,
               2
             ],
             "DocFirst": [
@@ -2829,52 +2808,80 @@
                 100
               ],
               [
-                100,
-                180
+                200,
+                100
+              ],
+              [
+                200,
+                113.80000305175781
+              ],
+              [
+                200,
+                127.5999984741211
+              ],
+              [
+                200,
+                141.39999389648438
+              ],
+              [
+                200,
+                155.1999969482422
+              ],
+              [
+                200,
+                169
               ],
               [
                 200,
                 180
               ],
               [
+                186.1999969482422,
+                180
+              ],
+              [
+                172.39999389648438,
+                180
+              ],
+              [
+                158.60000610351562,
+                180
+              ],
+              [
+                144.8000030517578,
+                180
+              ],
+              [
+                131,
+                180
+              ],
+              [
+                117.19999694824219,
+                180
+              ],
+              [
+                103.39999389648438,
+                180
+              ],
+              [
                 100,
-                100
+                180
               ],
               [
-                220,
-                -20
+                100,
+                200
               ],
               [
-                220,
-                60
+                200,
+                200
               ],
               [
-                233.8000030517578,
-                60
+                200,
+                280
               ],
               [
-                247.60000610351562,
-                60
-              ],
-              [
-                261.3999938964844,
-                60
-              ],
-              [
-                275.20001220703125,
-                60
-              ],
-              [
-                289,
-                60
-              ],
-              [
-                302.79998779296875,
-                60
-              ],
-              [
-                316.6000061035156,
-                60
+                100,
+                280
               ],
               [
                 100,
@@ -2885,88 +2892,40 @@
                 100
               ],
               [
-                100,
-                180
-              ],
-              [
-                109.75807189941406,
-                170.24192810058594
-              ],
-              [
-                119.51614379882812,
-                160.48385620117188
-              ],
-              [
-                129.2742156982422,
-                150.7257843017578
-              ],
-              [
-                139.03228759765625,
-                140.96771240234375
-              ],
-              [
-                148.79037475585938,
-                131.20962524414062
-              ],
-              [
-                158.54844665527344,
-                121.45155334472656
-              ],
-              [
-                168.3065185546875,
-                111.6934814453125
-              ],
-              [
-                178.06459045410156,
-                101.93540954589844
-              ],
-              [
-                187.82266235351562,
-                92.17733001708984
-              ],
-              [
-                197.58074951171875,
-                82.41925811767578
-              ],
-              [
-                207.3388214111328,
-                72.66117858886719
-              ],
-              [
-                217.09689331054688,
-                62.903106689453125
-              ],
-              [
                 200,
                 180
               ],
               [
-                220,
-                -20
+                200,
+                193.8000030517578
               ],
               [
-                220,
-                -6.199999809265137
+                200,
+                207.60000610351562
               ],
               [
-                220,
-                7.599998474121094
+                200,
+                221.39999389648438
               ],
               [
-                220,
-                21.39999771118164
+                200,
+                235.1999969482422
               ],
               [
-                220,
-                35.19999694824219
+                200,
+                249
               ],
               [
-                220,
-                49
+                200,
+                262.79998779296875
               ],
               [
-                320,
-                -20
+                200,
+                276.6000061035156
+              ],
+              [
+                100,
+                180
               ]
             ],
             "Live": 0,
@@ -3059,7 +3018,7 @@
       "tolerance": 0.0001
     },
     {
-      "id": "shape-hyperbola-ask-remove",
+      "id": "shape-hyperbola-without-asymptotes",
       "fn": "runControllerScenario",
       "input": [
         {
@@ -3086,8 +3045,6 @@
             "GesturesTargetSelection": false,
             "CloneMode": false,
             "StickyShape": false,
-            "HyperbolaAsymptoteOption": 2,
-            "AskRemoveAsymptotes": true,
             "TransformCenterOption": 0,
             "AllowZoom": true,
             "AllowTranslate": true,
@@ -3367,7 +3324,7 @@
               0,
               0
             ],
-            "Inv": 6,
+            "Inv": 4,
             "SelCh": 0,
             "ToolCh": 2,
             "Slides": 0
@@ -3389,7 +3346,7 @@
               0,
               0
             ],
-            "Inv": 7,
+            "Inv": 5,
             "SelCh": 0,
             "ToolCh": 2,
             "Slides": 0
@@ -3470,8 +3427,6 @@
             "GesturesTargetSelection": false,
             "CloneMode": false,
             "StickyShape": false,
-            "HyperbolaAsymptoteOption": 2,
-            "AskRemoveAsymptotes": null,
             "TransformCenterOption": 0,
             "AllowZoom": true,
             "AllowTranslate": true,
@@ -3758,8 +3713,8 @@
             ],
             "DocFirst": [
               [
-                120,
-                120
+                100,
+                100
               ]
             ],
             "Live": 0,
@@ -4001,8 +3956,6 @@
             "GesturesTargetSelection": false,
             "CloneMode": true,
             "StickyShape": false,
-            "HyperbolaAsymptoteOption": 2,
-            "AskRemoveAsymptotes": null,
             "TransformCenterOption": 0,
             "AllowZoom": true,
             "AllowTranslate": true,
@@ -4294,8 +4247,8 @@
                 100
               ],
               [
-                120,
-                120
+                100,
+                100
               ]
             ],
             "Live": 0,
@@ -4593,8 +4546,6 @@
             "GesturesTargetSelection": false,
             "CloneMode": false,
             "StickyShape": false,
-            "HyperbolaAsymptoteOption": 2,
-            "AskRemoveAsymptotes": null,
             "TransformCenterOption": 0,
             "AllowZoom": true,
             "AllowTranslate": true,
@@ -4951,8 +4902,6 @@
             "GesturesTargetSelection": false,
             "CloneMode": false,
             "StickyShape": false,
-            "HyperbolaAsymptoteOption": 2,
-            "AskRemoveAsymptotes": null,
             "TransformCenterOption": 0,
             "AllowZoom": true,
             "AllowTranslate": false,
@@ -5236,10 +5185,10 @@
             "Redo": 0,
             "Tool": 0,
             "View": [
-              1.1666667461395264,
+              1.399999976158142,
               0,
               0,
-              1.1666667461395264,
+              1.399999976158142,
               0,
               0
             ],
@@ -5258,10 +5207,10 @@
             "Redo": 0,
             "Tool": 0,
             "View": [
-              1.6285713911056519,
+              1.8999998569488525,
               0,
               0,
-              1.6285713911056519,
+              1.8999998569488525,
               0,
               0
             ],
@@ -5280,10 +5229,10 @@
             "Redo": 0,
             "Tool": 0,
             "View": [
-              1.473684310913086,
+              2.3999996185302734,
               0,
               0,
-              1.473684310913086,
+              2.3999996185302734,
               0,
               0
             ],
@@ -5302,10 +5251,10 @@
             "Redo": 0,
             "Tool": 0,
             "View": [
-              7.59999942779541,
+              8,
               0,
               0,
-              7.59999942779541,
+              8,
               0,
               0
             ],
@@ -5324,10 +5273,32 @@
             "Redo": 0,
             "Tool": 0,
             "View": [
-              2.236842393875122,
+              8,
               0,
               0,
-              2.236842393875122,
+              8,
+              0,
+              0
+            ],
+            "Inv": 7,
+            "SelCh": 0,
+            "ToolCh": 0,
+            "Slides": 0
+          },
+          {
+            "Doc": [],
+            "DocFirst": [],
+            "Live": 0,
+            "Preview": 0,
+            "Sel": [],
+            "Undo": 0,
+            "Redo": 0,
+            "Tool": 0,
+            "View": [
+              3.5341176986694336,
+              0,
+              0,
+              3.5341176986694336,
               0,
               0
             ],
@@ -5346,32 +5317,10 @@
             "Redo": 0,
             "Tool": 0,
             "View": [
-              3.3574113845825195,
+              0.20000000298023224,
               0,
               0,
-              3.3574113845825195,
-              0,
-              0
-            ],
-            "Inv": 9,
-            "SelCh": 0,
-            "ToolCh": 0,
-            "Slides": 0
-          },
-          {
-            "Doc": [],
-            "DocFirst": [],
-            "Live": 0,
-            "Preview": 0,
-            "Sel": [],
-            "Undo": 0,
-            "Redo": 0,
-            "Tool": 0,
-            "View": [
-              3.3574113845825195,
-              0,
-              0,
-              3.3574113845825195,
+              0.20000000298023224,
               0,
               0
             ],
@@ -5390,14 +5339,14 @@
             "Redo": 0,
             "Tool": 0,
             "View": [
-              3.3574113845825195,
+              0.20000000298023224,
               0,
               0,
-              3.3574113845825195,
+              0.20000000298023224,
               0,
               0
             ],
-            "Inv": 9,
+            "Inv": 10,
             "SelCh": 0,
             "ToolCh": 0,
             "Slides": 0
@@ -5412,14 +5361,14 @@
             "Redo": 0,
             "Tool": 0,
             "View": [
-              3.3574113845825195,
+              0.20000000298023224,
               0,
               0,
-              3.3574113845825195,
+              0.20000000298023224,
               0,
               0
             ],
-            "Inv": 9,
+            "Inv": 10,
             "SelCh": 0,
             "ToolCh": 0,
             "Slides": 0
@@ -5432,10 +5381,10 @@
           "EraserMode": 0,
           "CloneMode": false,
           "View": [
-            3.3574113845825195,
+            0.20000000298023224,
             0,
             0,
-            3.3574113845825195,
+            0.20000000298023224,
             0,
             0
           ],
@@ -5500,8 +5449,6 @@
             "GesturesTargetSelection": true,
             "CloneMode": false,
             "StickyShape": false,
-            "HyperbolaAsymptoteOption": 2,
-            "AskRemoveAsymptotes": null,
             "TransformCenterOption": 0,
             "AllowZoom": true,
             "AllowTranslate": false,
@@ -5892,7 +5839,7 @@
               0,
               0
             ],
-            "Inv": 4,
+            "Inv": 5,
             "SelCh": 0,
             "ToolCh": 0,
             "Slides": 0
@@ -5923,7 +5870,7 @@
               0,
               0
             ],
-            "Inv": 4,
+            "Inv": 5,
             "SelCh": 0,
             "ToolCh": 0,
             "Slides": 0
@@ -5954,7 +5901,7 @@
               0,
               0
             ],
-            "Inv": 6,
+            "Inv": 7,
             "SelCh": 0,
             "ToolCh": 0,
             "Slides": 0
@@ -5985,7 +5932,7 @@
               0,
               0
             ],
-            "Inv": 8,
+            "Inv": 9,
             "SelCh": 0,
             "ToolCh": 0,
             "Slides": 0
@@ -6016,7 +5963,7 @@
               0,
               0
             ],
-            "Inv": 10,
+            "Inv": 11,
             "SelCh": 0,
             "ToolCh": 0,
             "Slides": 0
@@ -6146,8 +6093,6 @@
             "GesturesTargetSelection": false,
             "CloneMode": false,
             "StickyShape": false,
-            "HyperbolaAsymptoteOption": 2,
-            "AskRemoveAsymptotes": null,
             "TransformCenterOption": 0,
             "AllowZoom": true,
             "AllowTranslate": true,
@@ -6543,8 +6488,6 @@
             "GesturesTargetSelection": false,
             "CloneMode": false,
             "StickyShape": false,
-            "HyperbolaAsymptoteOption": 2,
-            "AskRemoveAsymptotes": null,
             "TransformCenterOption": 0,
             "AllowZoom": true,
             "AllowTranslate": true,
@@ -6883,8 +6826,6 @@
             "GesturesTargetSelection": false,
             "CloneMode": false,
             "StickyShape": false,
-            "HyperbolaAsymptoteOption": 2,
-            "AskRemoveAsymptotes": null,
             "TransformCenterOption": 0,
             "AllowZoom": true,
             "AllowTranslate": true,
@@ -7018,7 +6959,7 @@
               30,
               50
             ],
-            "Inv": 2,
+            "Inv": 3,
             "SelCh": 0,
             "ToolCh": 1,
             "Slides": 0
@@ -7099,8 +7040,6 @@
             "GesturesTargetSelection": false,
             "CloneMode": false,
             "StickyShape": false,
-            "HyperbolaAsymptoteOption": 2,
-            "AskRemoveAsymptotes": null,
             "TransformCenterOption": 0,
             "AllowZoom": true,
             "AllowTranslate": true,

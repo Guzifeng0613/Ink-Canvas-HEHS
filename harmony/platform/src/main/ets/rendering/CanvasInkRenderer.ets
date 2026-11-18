@@ -23,11 +23,16 @@ export class CanvasInkRenderer implements InkRenderer {
   }
 
   render(scene: InkScene, invalidation: Invalidation): void {
-    this.drawCommands(this.committed, scene.Committed);
+    const v = scene.View;
+    this.committed.setTransform(1, 0, 0, 1, 0, 0);
+    this.committed.clearRect(0, 0, this.widthVp, this.heightVp);
+    this.committed.setTransform(v[0], v[1], v[2], v[3], v[4], v[5]);
+    this.drawCommands(this.committed, scene.Committed, false);
+    this.active.setTransform(1, 0, 0, 1, 0, 0);
+    this.active.clearRect(0, 0, this.widthVp, this.heightVp);
+    this.active.setTransform(v[0], v[1], v[2], v[3], v[4], v[5]);
     if (scene.Active !== null) {
-      this.drawCommands(this.active, [scene.Active]);
-    } else {
-      this.active.clearRect(0, 0, this.widthVp, this.heightVp);
+      this.drawCommands(this.active, [scene.Active], false);
     }
     if (scene.Selection !== null) {
       this.drawSelection(scene);
@@ -35,8 +40,10 @@ export class CanvasInkRenderer implements InkRenderer {
     void invalidation;
   }
 
-  private drawCommands(context: CanvasRenderingContext2D, commands: DrawCommand[]): void {
-    context.clearRect(0, 0, this.widthVp, this.heightVp);
+  private drawCommands(context: CanvasRenderingContext2D, commands: DrawCommand[], clear: boolean = true): void {
+    if (clear) {
+      context.clearRect(0, 0, this.widthVp, this.heightVp);
+    }
     for (let i = 0; i < commands.length; i++) {
       const command = commands[i];
       context.fillStyle = CanvasInkRenderer.cssColor(command.Color);

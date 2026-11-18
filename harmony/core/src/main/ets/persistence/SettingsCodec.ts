@@ -124,7 +124,7 @@ const DEF_CANVAS = new SectionDef('canvas', [
   new FieldDef('eraserType', INT),
   new FieldDef('hideStrokeWhenSelecting', BOOL),
   new FieldDef('usingWhiteboard', BOOL),
-  new FieldDef('hyperbolaAsymptoteOption', INT)
+  new FieldDef('penNib', INT)
 ]);
 
 const DEF_GESTURE = new SectionDef('gesture', [

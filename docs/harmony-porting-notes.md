@@ -8,7 +8,7 @@
 
 | 层 | 手段 | 当前结果 |
 |---|---|---|
-| L1 逻辑互认 | C# 生成黄金向量 + Node 运行 ArkTS | **当前：422 用例 / 42 个向量文件全部通过（Phase A–G）** |
+| L1 逻辑互认 | C# 生成黄金向量 + Node 运行 ArkTS | **当前：422 用例 / 42 个向量文件全部通过（Phase A–G + 评审修复 + C# 演进同步）** |
 | L2 编译 | `hvigorw assembleHap`（26.0.1 Beta1 SDK） | 通过（未签名 debug HAP，73 tasks） |
 | L3 运行/UI | 真机 | **未实机验证**（本机无设备；模拟器不可靠） |
 | L4 基线回归 | `dotnet test`（向量子集） | 30/30 通过；codelinter 0 错误 / 6 警告（性能建议）；完整 WinUI3 套件未在本轮重跑 |
@@ -41,6 +41,15 @@
 - 覆盖率：**55/56 = 98.21%**（32 ported + 23 adapted + 1 not-ported=开机自启）。
 - 仍为部分/待补（已在 manifest notes 标注）：弹簧动效与 ConnectedAnimation、更新日志窗口、画板图片变换手势、视频进度保持、系统材质/blur、设置页全量字段、Symbol 图标映射（当前文字兜底）、多断点精细布局。
 - 模拟器/真机验证：本机 Hyper-V 不可用，待具备虚拟化的宿主或真机执行。
+
+## C# 基线演进同步（2026-11-18 评审修复轮）
+
+会话期间用户 C# 工作树演进，黄金向量暴露并已同步：
+- 图形：Circle/DashedCircle 改包围盒语义、EllipseWithFoci 改中点半径、Cone/Cylinder 重构、新增 ShapeKind 25–37（中心圆/虚线圆、含渐近线双曲线、正方形/三角形/直角三角形/菱形/平行四边形/梯形/四面体等），菜单 8 行 38 项。
+- 笔尖：StrokeAttributes 新增 PenNib/NibRotation/NibTransform；bounds 采用最小 0.5 宽 + 笔尖椭圆半径；渲染轮廓应用 NibTransform。
+- 设置：canvas 移除 hyperbolaAsymptoteOption、新增 penNib。
+- 控制器：两步长方体改 GenerateCuboid（带符号深度）、双曲线渐近线按 kind 决定、识别圆改 CircleFromCenter、选区拖拽/克隆与双指钳制对齐当前 C#。
+- 评审修复：跨文档撤销隔离（BindDocument）、课件墨迹持久化与 PDF/PixelMap 释放、手势/Pan/视图矩阵/翻页接线、触摸下移到画布层、修饰键大小写与焦点、是否窗 pending、截图建目录与提示、picker/IO 错误处理、画板加载坏文件不清空、画板资产缓存/释放/Transform、抽奖不重复修复、自动保存开关/prune 接线、浮条拖动与文字开关、resize 重绘。
 
 ## 与 WinUI3 基线的已知差异（设计决定）
 

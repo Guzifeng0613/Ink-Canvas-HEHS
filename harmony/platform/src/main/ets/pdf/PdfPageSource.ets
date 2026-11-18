@@ -35,7 +35,11 @@ export class PdfPageSource {
       return null;
     }
     const page = this.doc.getPage(index);
-    return page.getPagePixelMap();
+    try {
+      return page.getPagePixelMap();
+    } finally {
+      page.release();
+    }
   }
 
   close(): void {

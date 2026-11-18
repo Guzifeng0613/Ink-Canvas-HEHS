@@ -57,6 +57,7 @@ export class InkScene {
   Active: DrawCommand | null = null;
   Selection: SelectionOverlay | null = null;
   DocumentVersion: number = 0;
+  View: number[] = [1, 0, 0, 1, 0, 0];
 }
 
 export interface InkRenderer {

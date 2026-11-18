@@ -61,7 +61,13 @@ export class TwoFingerManipulator {
     this.hasPrevious = false;
   }
 
-  update(ax: number, ay: number, bx: number, by: number, transform: Matrix3x2, centerX: number, centerY: number): TwoFingerUpdate {
+  /**
+   * 与 C# Update(a, b, ref transform, center, screenSpace = false) 对齐：
+   * screenSpace=true 时 delta 右乘（transform * delta，视图手势用屏幕坐标），
+   * 否则左乘（delta * transform，世界坐标）。钳制按当前累计缩放
+   * sqrt(|det|) 归一：scale ∈ [MinScale/currentScale, MaxScale/currentScale]。
+   */
+  update(ax: number, ay: number, bx: number, by: number, transform: Matrix3x2, centerX: number, centerY: number, screenSpace: boolean = false): TwoFingerUpdate {
     if (!this.hasPrevious) {
       this.begin(ax, ay, bx, by);
       return { changed: false, transform };
@@ -120,7 +126,10 @@ export class TwoFingerManipulator {
     if (matrixEquals(delta, identityMatrix())) {
       return { changed: false, transform };
     }
-    return { changed: true, transform: multiplyMatrix(delta, transform) };
+    return {
+      changed: true,
+      transform: screenSpace ? multiplyMatrix(transform, delta) : multiplyMatrix(delta, transform)
+    };
   }
 }
 

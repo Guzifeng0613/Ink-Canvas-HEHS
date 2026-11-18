@@ -1,7 +1,7 @@
 export const MODULE: string = 'core';
 export { InkPoint } from './src/main/ets/ink/InkPoint';
 export { InkColor, packArgb, unpackArgb, withAlphaArgb } from './src/main/ets/ink/InkColor';
-export { StrokeAttributes, TaperKind, strokeAttributesEffective } from './src/main/ets/ink/StrokeAttributes';
+export { StrokeAttributes, TaperKind, PenNib, strokeAttributesEffective } from './src/main/ets/ink/StrokeAttributes';
 export type { StrokeAttributesInput } from './src/main/ets/ink/StrokeAttributes';
 export { effectiveWidths, applyTaperAt } from './src/main/ets/ink/TaperProfile';
 export type { TaperOptionsInput } from './src/main/ets/ink/TaperProfile';
@@ -112,6 +112,10 @@ export {
   generate,
   generateCuboidDepth,
   generateHyperbolaBranches,
+  generateCuboid,
+  isHyperbola,
+  hasHyperbolaFoci,
+  hasHyperbolaAsymptotes,
   snapParallelEnd,
   parallelLines,
   stroke,

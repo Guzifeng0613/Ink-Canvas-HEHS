@@ -24,7 +24,7 @@ internal static class ControllerVectors
         Add(cases, "palm-area-erase", PalmAreaErase());
         Add(cases, "shape-line", ShapeLine());
         Add(cases, "shape-cuboid-two-step", ShapeCuboidTwoStep());
-        Add(cases, "shape-hyperbola-ask-remove", ShapeHyperbolaAskRemove());
+        Add(cases, "shape-hyperbola-without-asymptotes", ShapeHyperbolaWithoutAsymptotes());
         Add(cases, "selection-drag", SelectionDrag());
         Add(cases, "selection-clone", SelectionClone());
         Add(cases, "selection-delete", SelectionDelete());
@@ -76,8 +76,6 @@ internal static class ControllerVectors
         bool gesturesSelection = false,
         bool clone = false,
         bool sticky = false,
-        int hyperbolaOption = 2,
-        bool? ask = null,
         int pivot = 0,
         bool allowZoom = true,
         bool allowTranslate = true,
@@ -97,8 +95,6 @@ internal static class ControllerVectors
         GesturesTargetSelection = gesturesSelection,
         CloneMode = clone,
         StickyShape = sticky,
-        HyperbolaAsymptoteOption = hyperbolaOption,
-        AskRemoveAsymptotes = ask,
         TransformCenterOption = pivot,
         AllowZoom = allowZoom,
         AllowTranslate = allowTranslate,
@@ -307,8 +303,8 @@ internal static class ControllerVectors
             Simple("undo")
         });
 
-    private static object ShapeHyperbolaAskRemove() => Scenario(
-        Initial(tool: 4, shapeKind: 18, hyperbolaOption: 2, ask: true, attributes: Attrs(width: 2.5, taper: 1)),
+    private static object ShapeHyperbolaWithoutAsymptotes() => Scenario(
+        Initial(tool: 4, shapeKind: 18, attributes: Attrs(width: 2.5, taper: 1)),
         new object[]
         {
             Down(Pointer(9, 100, 100, timeMs: 0)),
@@ -508,17 +504,6 @@ internal static class ControllerScenarioRunner
             controller.GesturesTargetSelection = gesturesSelection.GetBoolean();
         if (initial.TryGetProperty("CloneMode", out var clone)) controller.CloneMode = clone.GetBoolean();
         if (initial.TryGetProperty("StickyShape", out var sticky)) controller.StickyShape = sticky.GetBoolean();
-        if (initial.TryGetProperty("HyperbolaAsymptoteOption", out var hyperbola))
-            controller.HyperbolaAsymptoteOption = (OptionalOperation)hyperbola.GetInt32();
-        if (initial.TryGetProperty("AskRemoveAsymptotes", out var ask))
-        {
-            if (ask.ValueKind == JsonValueKind.Null) controller.AskRemoveAsymptotes = null;
-            else
-            {
-                var answer = ask.GetBoolean();
-                controller.AskRemoveAsymptotes = () => Task.FromResult(answer);
-            }
-        }
         if (initial.TryGetProperty("TransformCenterOption", out var pivot))
             controller.TransformCenterOption = (MatrixTransformCenterPointOptions)pivot.GetInt32();
 

@@ -6,7 +6,7 @@
       "id": "icink-roundtrip",
       "fn": "icinkRoundtrip",
       "input": [
-        "{\"Version\":1,\"Strokes\":[{\"Color\":4279312947,\"Width\":2.5,\"Highlighter\":true,\"HighlighterAlpha\":140,\"Taper\":0,\"Shape\":true,\"ObjectFrame\":[5,6,25,26,0.87758255,0.47942555,-0.47942555,0.87758255,0,0],\"Points\":[[10,20,0.5,2.5,0],[30,40,0.7,2.5,16]]},{\"Color\":2164195328,\"Width\":7.5,\"Highlighter\":false,\"HighlighterAlpha\":96,\"Taper\":2,\"Shape\":false,\"ObjectFrame\":null,\"Points\":[[0,0,0.5,7.5,0],[5,2,0.5,7.5,10],[10,4,0.5,6.605563,20],[15,6,0.5,6.605563,30],[20,8,0.5,6.605563,40]]}]}"
+        "{\"Version\":1,\"Strokes\":[{\"Color\":4279312947,\"Width\":2.5,\"Highlighter\":true,\"HighlighterAlpha\":140,\"Taper\":0,\"Nib\":0,\"NibRotation\":0,\"Shape\":true,\"ObjectFrame\":[5,6,25,26,0.87758255,0.47942555,-0.47942555,0.87758255,0,0],\"Points\":[[10,20,0.5,2.5,0],[30,40,0.7,2.5,16]]},{\"Color\":2164195328,\"Width\":7.5,\"Highlighter\":false,\"HighlighterAlpha\":96,\"Taper\":2,\"Nib\":0,\"NibRotation\":0,\"Shape\":false,\"ObjectFrame\":null,\"Points\":[[0,0,0.5,7.5,0],[5,2,0.5,7.5,10],[10,4,0.5,6.605563,20],[15,6,0.5,6.605563,30],[20,8,0.5,6.605563,40]]}]}"
       ],
       "expected": [
         {

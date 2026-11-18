@@ -364,7 +364,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "放映手指翻页（>60px）（Phase B）"
+      "notes": "SlideFlipRequested 已接课件翻页；阈值与 C# 一致。"
     },
     {
       "id": "platform-desktop-acrylic",
@@ -433,7 +433,7 @@
       "id": "system-filelog",
       "name": "文件日志（Log.txt）",
       "phase": "C",
-      "status": "ported",
+      "status": "adapted",
       "csharp": [
         "src/InkCanvas.Core/Diagnostics/FileLog.cs"
       ],
@@ -442,7 +442,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "文件日志（Log.txt）（Phase C）"
+      "notes": "hilog 系统日志替代 Log.txt 文件日志。"
     },
     {
       "id": "system-foreground-autofold",
@@ -507,7 +507,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "无跨应用截图 API；改为应用内快照（adapted）。"
+      "notes": "componentSnapshot 应用内截图；自动建目录、失败提示、资源释放。无跨应用截图。"
     },
     {
       "id": "ui-hotkeys",
@@ -610,7 +610,7 @@
       "id": "tool-countdown",
       "name": "倒计时窗口（圆环/编辑/紧凑/全屏/铃声）",
       "phase": "D",
-      "status": "ported",
+      "status": "adapted",
       "csharp": [
         "src/InkCanvas.App/Views/CountdownWindow.cs",
         "src/InkCanvas.App/Services/ShellController.cs"
@@ -621,13 +621,13 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "倒计时窗口（圆环/编辑/紧凑/全屏/铃声）（Phase D）"
+      "notes": "引擎/数字/开始暂停重置已接；圆环/结束音/紧凑/全屏待补。"
     },
     {
       "id": "tool-lottery",
       "name": "抽奖（名单/替换/滚动/单次模式）",
       "phase": "D",
-      "status": "ported",
+      "status": "adapted",
       "csharp": [
         "src/InkCanvas.Features/Tools/Tools.cs",
         "src/InkCanvas.App/Views/LotteryWindow.cs",
@@ -639,7 +639,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "抽奖（名单/替换/滚动/单次模式）（Phase D）"
+      "notes": "名单/不重复/抽号已接（不重复修复）；滚动动画/替换名单/单次模式待补。"
     },
     {
       "id": "tool-replay-ui",
@@ -673,7 +673,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "WPF 1:1 浮动工具栏/折叠/拖动/弹窗（Phase D）"
+      "notes": "19 按钮/折叠/拖动已接；图标暂用文字兜底（Symbol 映射待补）。"
     },
     {
       "id": "ui-guide-changelog",
@@ -705,7 +705,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "系统默认过渡替代；弹簧/ConnectedAnimation 待补。"
+      "notes": "系统默认过渡；弹簧/ConnectedAnimation 待补。"
     },
     {
       "id": "ui-pen-palette",
@@ -740,7 +740,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "440DIP 设置面板与推荐重置（Phase D）"
+      "notes": "设置面板绑定 Settings.json 并持久化；全量字段分组待补。"
     },
     {
       "id": "ui-shape-picker",
@@ -822,7 +822,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "插入/渲染已接；图片变换手势待补。"
+      "notes": "插入/渲染/缓存已接；Transform 以 rotate+scale 近似，精确矩阵待补。"
     },
     {
       "id": "board-persistence",
@@ -906,7 +906,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "Video 组件播放已接；进度保持/切换优化待补。"
+      "notes": "Video 播放已接；进度保持/切换优化待补。"
     },
     {
       "id": "ppt-file-store",
@@ -923,7 +923,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "每演示文稿逐页墨迹存档（Phase E）"
+      "notes": "课件 manifest + 逐页 .icink 保存/加载已接线（退出/重开自动保存）。"
     },
     {
       "id": "ppt-ink-session",
@@ -986,13 +986,13 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "自动快照与过期清理（Phase E）"
+      "notes": "清空自动保存开关与定期清理已接线；启动时 prune。"
     }
   ],
   "coverage": {
     "total": 56,
-    "ported": 32,
-    "adapted": 23,
+    "ported": 29,
+    "adapted": 26,
     "not-ported": 1,
     "percent": 98.21
   }

@@ -10,13 +10,15 @@ import {
   Invalidation
 } from '@inkcanvas/ink';
 import type { SceneStrokeInput, SceneSelectionInput } from '@inkcanvas/ink';
-import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings } from '@inkcanvas/core';
-import type { ShapeKind, StrokePointInput, AppSettings } from '@inkcanvas/core';
+import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings, matrixToArray, transformPointByMatrix } from '@inkcanvas/core';
+import type { ShapeKind, StrokePointInput, AppSettings, AdvancedTouchInput, Matrix3x2 } from '@inkcanvas/core';
 import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground } from '@inkcanvas/features';
+import type { CoursewarePageFile } from '@inkcanvas/features';
 import type { BoardAsset } from '@inkcanvas/features';
 import { ReplayClock, InkReplaySession } from '@inkcanvas/core';
 import { picker, fileIo } from '@kit.CoreFileKit';
 import { KeyCode } from '@kit.InputKit';
+import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
 import { image } from '@kit.ImageKit';
@@ -63,6 +65,8 @@ struct Index {
   @State yesNoOpen: boolean = false;
   @State yesNoMessage: string = '';
   @State updateOpen: boolean = false;
+  @State barDragX: number = 0;
+  @State barDragY: number = 0;
   @State windowWidth: number = 0;
   @State windowHeight: number = 0;
   private renderer: CanvasInkRenderer | null = null;
@@ -84,6 +88,8 @@ struct Index {
   private boardGridContext: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.boardGridSettings);
   private pendingYesNo: string = '';
   private mediaPaths: Map<string, string> = new Map<string, string>();
+  private boardPixelMaps: Map<string, image.PixelMap> = new Map<string, image.PixelMap>();
+  private lotteryLoadedNames: string = '\u0000';
 
   aboutToDisappear(): void {
     this.stopCountdownTimer();
@@ -104,7 +110,24 @@ struct Index {
     this.applySettings();
     const launchMode = AppStorage.get<string>('launchMode');
     if (launchMode === 'board') { this.openBoard(); }
-    this.autoSave = new AutoSaveService(this.storage, 'Auto Saved - Strokes', true, this.settings.automation.autoDelSavedFilesDaysThreshold);
+    this.rebuildAutoSave();
+    this.controller.SlideFlipRequested = (next: boolean) => {
+      if (this.mode === 'courseware') {
+        this.showCoursewarePage(this.coursewareIndex + (next ? 1 : -1));
+      }
+    };
+  }
+
+  private rebuildAutoSave(): void {
+    if (this.storage === null) {
+      return;
+    }
+    this.autoSave = new AutoSaveService(this.storage, 'Auto Saved - Strokes',
+      this.settings.automation.isAutoSaveStrokesAtClear,
+      this.settings.automation.autoDelSavedFilesDaysThreshold);
+    if (this.settings.automation.autoDelSavedFiles) {
+      this.autoSave.prune();
+    }
   }
 
   private applySettings(): void {
@@ -116,6 +139,23 @@ struct Index {
     this.controller.CurrentAttributes.HighlighterAlpha = this.settings.canvas.inkAlpha;
     this.controller.CurrentAttributes.TaperKind = this.settings.canvas.inkStyle === 1 ? 2 : (this.settings.canvas.inkStyle === 2 ? 0 : 1);
     this.applyGestures();
+    this.controller.MultiTouchEnabled = this.settings.gesture.isEnableMultiTouchMode;
+    this.controller.GesturesTargetSelection = this.settings.gesture.isEnableTwoFingerRotationOnSelection;
+    this.controller.TransformCenterOption = this.settings.gesture.matrixTransformCenterPoint;
+    const advanced: AdvancedTouchInput = {
+      isSpecialScreen: this.settings.advanced.isSpecialScreen,
+      isQuadIR: this.settings.advanced.isQuadIR,
+      touchMultiplier: this.settings.advanced.touchMultiplier,
+      nibModeBoundsWidth: this.settings.advanced.nibModeBoundsWidth,
+      fingerModeBoundsWidth: this.settings.advanced.fingerModeBoundsWidth,
+      nibModeBoundsWidthThresholdValue: this.settings.advanced.nibModeBoundsWidthThresholdValue,
+      fingerModeBoundsWidthThresholdValue: this.settings.advanced.fingerModeBoundsWidthThresholdValue,
+      nibModeBoundsWidthEraserSize: this.settings.advanced.nibModeBoundsWidthEraserSize,
+      fingerModeBoundsWidthEraserSize: this.settings.advanced.fingerModeBoundsWidthEraserSize
+    };
+    this.controller.Palm.Advanced = advanced;
+    this.controller.Palm.NibMode = this.settings.startup.isEnableNibMode;
+    this.controller.CurrentAttributes.Nib = this.settings.canvas.penNib;
   }
 
   private persistSettings(): void {
@@ -134,7 +174,8 @@ struct Index {
       return;
     }
     const path = this.storage.fullPathPublic('screenshots/shot-' + Date.now() + '.png');
-    await captureComponentToPng('inkRoot', path);
+    const ok = await captureComponentToPng('inkRoot', path);
+    promptAction.showToast({ message: ok ? '截图已保存' : '截图失败', duration: 2000 });
   }
 
   build() {
@@ -167,12 +208,19 @@ struct Index {
           .height('100%')
       }
 
-      InkCanvasSurface({
-        onRendererReady: (renderer: CanvasInkRenderer) => {
-          this.renderer = renderer;
-          this.renderer.resize(this.windowWidth, this.windowHeight);
-          this.refreshScene();
-        }
+      Stack() {
+        InkCanvasSurface({
+          onRendererReady: (renderer: CanvasInkRenderer) => {
+            this.renderer = renderer;
+            this.renderer.resize(this.windowWidth, this.windowHeight);
+            this.refreshScene();
+          }
+        })
+      }
+      .width('100%')
+      .height('100%')
+      .onTouch((event: TouchEvent) => {
+        this.handleTouch(event);
       })
 
       if (this.mode === 'courseware') {
@@ -327,7 +375,10 @@ struct Index {
               Text('抽选').fontSize(16).fontColor(Color.White).padding(10)
                 .backgroundColor('#FF0067C0').borderRadius(6)
                 .onClick(() => {
-                  this.lottery.loadNames(this.lotteryNames);
+                  if (this.lotteryLoadedNames !== this.lotteryNames) {
+                    this.lottery.loadNames(this.lotteryNames);
+                    this.lotteryLoadedNames = this.lotteryNames;
+                  }
                   this.lottery.NoRepeat = this.lotteryNoRepeat;
                   const picked = this.lottery.pick();
                   this.lotteryResult = picked === null ? '已抽完' : picked;
@@ -442,12 +493,12 @@ struct Index {
               Row() {
                 Text('清空时自动保存').fontSize(14).fontColor(this.dark ? Color.White : Color.Black).layoutWeight(1)
                 Toggle({ type: ToggleType.Switch, isOn: this.settings.automation.isAutoSaveStrokesAtClear })
-                  .onChange((isOn: boolean) => { this.settings.automation.isAutoSaveStrokesAtClear = isOn; this.persistSettings(); })
+                  .onChange((isOn: boolean) => { this.settings.automation.isAutoSaveStrokesAtClear = isOn; this.persistSettings(); this.rebuildAutoSave(); })
               }.width(300)
               Row() {
                 Text('定期清理').fontSize(14).fontColor(this.dark ? Color.White : Color.Black).layoutWeight(1)
                 Toggle({ type: ToggleType.Switch, isOn: this.settings.automation.autoDelSavedFiles })
-                  .onChange((isOn: boolean) => { this.settings.automation.autoDelSavedFiles = isOn; this.persistSettings(); })
+                  .onChange((isOn: boolean) => { this.settings.automation.autoDelSavedFiles = isOn; this.persistSettings(); this.rebuildAutoSave(); })
               }.width(300)
               Text('关闭').fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
                 .onClick(() => { this.settingsOpen = false; })
@@ -515,7 +566,7 @@ struct Index {
                 .onClick(() => { this.yesNoOpen = false; this.handleAction(this.pendingYesNo); })
               Text('否').fontSize(14).fontColor(Color.White).padding(10)
                 .backgroundColor('#666666').borderRadius(6)
-                .onClick(() => { this.yesNoOpen = false; })
+                .onClick(() => { this.yesNoOpen = false; this.pendingYesNo = ''; })
             }
           }
           .padding(24)
@@ -570,14 +621,22 @@ struct Index {
       Stack({ alignContent: Alignment.Bottom }) {
         FloatingBar({
           dark: this.dark,
-          showLabels: false,
+          showLabels: this.settings.appearance.isEnableDisPlayFloatBarText,
           selectedId: this.selectedId,
           folded: this.collapsed,
           pptActive: this.pptActive,
           onAction: (id: string) => {
             this.handleAction(id);
+          },
+          onDrag: (dx: number, dy: number) => {
+            this.barDragX = dx;
+            this.barDragY = dy;
+          },
+          onDragFinished: () => {
           }
-        }).margin({ bottom: 100 })
+        })
+          .margin({ bottom: 100 })
+          .translate({ x: this.barDragX, y: this.barDragY })
       }
       .width('100%')
       .height('100%')
@@ -585,6 +644,7 @@ struct Index {
     }
     .id('inkRoot')
     .focusable(true)
+    .defaultFocus(true)
     .width('100%')
     .height('100%')
     .onKeyEvent((event: KeyEvent) => {
@@ -595,6 +655,10 @@ struct Index {
       this.windowHeight = Number(newValue.height);
       if (this.renderer !== null) {
         this.renderer.resize(this.windowWidth, this.windowHeight);
+        this.refreshScene();
+      }
+      if (this.boardOpen && (this.boardBackground === 2 || this.boardBackground === 3)) {
+        this.drawBoardGrid();
       }
     })
     .onTouch((event: TouchEvent) => {
@@ -611,6 +675,8 @@ struct Index {
         .position({ x: asset.Left, y: asset.Top })
         .width(asset.Width)
         .height(asset.Height)
+        .rotate({ centerX: '50%', centerY: '50%', angle: this.boardAssetAngle(asset) })
+        .scale({ x: this.boardAssetScaleX(asset), y: this.boardAssetScaleY(asset) })
     }
   }
 
@@ -622,6 +688,8 @@ struct Index {
         .position({ x: asset.Left, y: asset.Top })
         .width(asset.Width)
         .height(asset.Height)
+        .rotate({ centerX: '50%', centerY: '50%', angle: this.boardAssetAngle(asset) })
+        .scale({ x: this.boardAssetScaleX(asset), y: this.boardAssetScaleY(asset) })
     }
   }
 
@@ -638,12 +706,52 @@ struct Index {
       })
   }
 
+  private saveCoursewareBundle(): void {
+    if (this.storage === null || this.courseware.PageCount === 0) {
+      return;
+    }
+    const bundle = this.courseware.saveBundle();
+    this.storage.writeTextAtomic('courseware/manifest.json', bundle.Manifest);
+    for (let i = 0; i < bundle.Pages.length; i++) {
+      this.storage.writeTextAtomic('courseware/' + bundle.Pages[i].File, bundle.Pages[i].Content);
+    }
+  }
+
+  private loadCoursewareBundle(): void {
+    if (this.storage === null) {
+      return;
+    }
+    const manifest = this.storage.readText('courseware/manifest.json');
+    if (manifest === null) {
+      return;
+    }
+    const files = this.storage.list('courseware');
+    const pages: CoursewarePageFile[] = [];
+    for (let i = 0; i < files.length; i++) {
+      if (files[i].endsWith('.icink')) {
+        const content = this.storage.readText('courseware/' + files[i]);
+        if (content !== null) {
+          pages.push({ File: files[i], Content: content });
+        }
+      }
+    }
+    this.courseware.loadBundle({ Manifest: manifest, Pages: pages }, this.courseware.PageCount);
+  }
+
   private handleKey(event: KeyEvent): void {
     if (event.type !== KeyType.Down) {
       return;
     }
-    const alt = event.getModifierKeyState !== undefined && event.getModifierKeyState(['alt']);
-    const ctrl = event.getModifierKeyState !== undefined && event.getModifierKeyState(['ctrl']);
+    let alt = false;
+    let ctrl = false;
+    try {
+      if (event.getModifierKeyState !== undefined) {
+        alt = event.getModifierKeyState(['Alt']);
+        ctrl = event.getModifierKeyState(['Ctrl']);
+      }
+    } catch (e) {
+      return;
+    }
     const code = event.keyCode;
     if (ctrl && code === KeyCode.KEYCODE_Z) {
       this.controller.Undo();
@@ -690,24 +798,62 @@ struct Index {
   }
 
   private decodeBoardAsset(asset: BoardAsset): image.PixelMap | null {
+    const cached = this.boardPixelMaps.get(asset.Id);
+    if (cached !== undefined) {
+      return cached;
+    }
     try {
       const helper = new util.Base64Helper();
       const bytes = helper.decodeSync(asset.Data);
       const source = image.createImageSource(bytes.buffer as ArrayBuffer);
       const pixelMap = source.createPixelMapSync();
       source.release();
+      this.boardPixelMaps.set(asset.Id, pixelMap);
       return pixelMap;
     } catch (e) {
       return null;
     }
   }
 
+  private releaseBoardPixelMaps(): void {
+    this.boardPixelMaps.forEach((pixelMap: image.PixelMap) => {
+      try { pixelMap.release(); } catch (e) { void e; }
+    });
+    this.boardPixelMaps.clear();
+  }
+
+  private boardAssetAngle(asset: BoardAsset): number {
+    if (asset.Transform === null || asset.Transform.length !== 6) {
+      return 0;
+    }
+    return Math.atan2(asset.Transform[1], asset.Transform[0]) * 180 / Math.PI;
+  }
+
+  private boardAssetScaleX(asset: BoardAsset): number {
+    if (asset.Transform === null || asset.Transform.length !== 6) {
+      return 1;
+    }
+    return Math.sqrt(asset.Transform[0] * asset.Transform[0] + asset.Transform[1] * asset.Transform[1]);
+  }
+
+  private boardAssetScaleY(asset: BoardAsset): number {
+    if (asset.Transform === null || asset.Transform.length !== 6) {
+      return 1;
+    }
+    return Math.sqrt(asset.Transform[2] * asset.Transform[2] + asset.Transform[3] * asset.Transform[3]);
+  }
+
   private async insertBoardImage(): Promise<void> {
     if (this.storage === null) {
       return;
     }
-    const photoPicker = new picker.PhotoViewPicker();
-    const result = await photoPicker.select({ MIMEType: picker.PhotoViewMIMETypes.IMAGE_TYPE, maxSelectNumber: 1 });
+    let result: picker.PhotoSelectResult;
+    try {
+      const photoPicker = new picker.PhotoViewPicker();
+      result = await photoPicker.select({ MIMEType: picker.PhotoViewMIMETypes.IMAGE_TYPE, maxSelectNumber: 1 });
+    } catch (e) {
+      return;
+    }
     if (result.photoUris.length === 0) {
       return;
     }
@@ -781,8 +927,7 @@ struct Index {
 
   private openBoard(): void {
     this.annotateDocument = this.controller.Document;
-    this.controller.Document = this.board.Current.Document;
-    this.controller.ClearSelection();
+    this.controller.BindDocument(this.board.Current.Document);
     this.boardOpen = true;
     this.mode = 'board';
     this.syncBoard();
@@ -790,19 +935,20 @@ struct Index {
   }
 
   private exitBoard(): void {
+    this.releaseBoardPixelMaps();
     this.boardOpen = false;
     this.mode = 'annotate';
-    this.controller.Document = this.annotateDocument;
-    this.controller.ClearSelection();
+    this.controller.BindDocument(this.annotateDocument);
     this.refreshScene();
   }
 
   private syncBoard(): void {
+    this.releaseBoardPixelMaps();
+    this.boardImagesVersion++;
     this.boardIndex = this.board.CurrentIndex;
     this.boardPageCount = this.board.PageCount;
     this.boardBackground = this.board.Background;
-    this.controller.Document = this.board.Current.Document;
-    this.controller.ClearSelection();
+    this.controller.BindDocument(this.board.Current.Document);
     this.refreshScene();
   }
 
@@ -815,33 +961,44 @@ struct Index {
     if (this.storage === null) {
       return;
     }
-    const docPicker = new picker.DocumentViewPicker();
-    const uris = await docPicker.save({ newFileNames: ['board.icink'] });
-    if (uris.length === 0) {
-      return;
+    try {
+      const docPicker = new picker.DocumentViewPicker();
+      const uris = await docPicker.save({ newFileNames: ['board.icink'] });
+      if (uris.length === 0) {
+        return;
+      }
+      const file = fileIo.openSync(uris[0], fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.TRUNC);
+      fileIo.writeSync(file.fd, this.board.saveBoardJson());
+      fileIo.closeSync(file);
+      promptAction.showToast({ message: '画板已保存', duration: 2000 });
+    } catch (e) {
+      promptAction.showToast({ message: '保存失败', duration: 2000 });
     }
-    const file = fileIo.openSync(uris[0], fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.TRUNC);
-    fileIo.writeSync(file.fd, this.board.saveBoardJson());
-    fileIo.closeSync(file);
   }
 
   private async loadBoard(): Promise<void> {
     if (this.storage === null) {
       return;
     }
-    const docPicker = new picker.DocumentViewPicker();
-    const uris = await docPicker.select({ maxSelectNumber: 1, fileSuffixFilters: ['.icink'] });
-    if (uris.length === 0) {
-      return;
-    }
-    const path = this.storage.importUriToSandbox(uris[0], 'board-load.icink');
-    if (path === null) {
-      return;
-    }
-    const text = this.storage.readText('board-load.icink');
-    if (text !== null) {
-      this.board.loadJson(text);
-      this.syncBoard();
+    try {
+      const docPicker = new picker.DocumentViewPicker();
+      const uris = await docPicker.select({ maxSelectNumber: 1, fileSuffixFilters: ['.icink'] });
+      if (uris.length === 0) {
+        return;
+      }
+      const path = this.storage.importUriToSandbox(uris[0], 'board-load.icink');
+      if (path === null) {
+        return;
+      }
+      const text = this.storage.readText('board-load.icink');
+      if (text !== null) {
+        this.board.loadJson(text);
+        this.releaseBoardPixelMaps();
+        this.boardImagesVersion++;
+        this.syncBoard();
+      }
+    } catch (e) {
+      promptAction.showToast({ message: '画板文件无效或打开失败', duration: 2000 });
     }
   }
 
@@ -961,11 +1118,16 @@ struct Index {
     }
   }
 
-  private toSceneStroke(stroke: InkStroke): SceneStrokeInput {
+  private toSceneStroke(stroke: InkStroke, preview: Matrix3x2 | null = null): SceneStrokeInput {
     const points: StrokePointInput[] = [];
     for (let i = 0; i < stroke.Count; i++) {
       const point = stroke.Points[i];
-      points.push({ X: point.X, Y: point.Y, Width: point.Width });
+      if (preview !== null) {
+        const transformed = transformPointByMatrix(preview, point.X, point.Y);
+        points.push({ X: transformed.X, Y: transformed.Y, Width: point.Width });
+      } else {
+        points.push({ X: point.X, Y: point.Y, Width: point.Width });
+      }
     }
     return {
       BaseWidth: stroke.Attributes.BaseWidth,
@@ -986,8 +1148,11 @@ struct Index {
     if (this.replayOpen && this.replaySession !== null && this.replayClock !== null) {
       strokes = this.replaySession.visibleAt(this.replayClock.ElapsedMs);
     }
+    const previewActive = this.controller.PreviewStrokes !== null;
+    const previewMatrix = this.controller.SelectionPreviewTransform;
     for (let i = 0; i < strokes.length; i++) {
-      committed.push(this.toSceneStroke(strokes[i]));
+      const usePreview = previewActive && this.controller.IsPreviewStroke(strokes[i]);
+      committed.push(this.toSceneStroke(strokes[i], usePreview ? previewMatrix : null));
     }
     const activeStroke = this.controller.ActiveStroke;
     const active = activeStroke === null ? null : this.toSceneStroke(activeStroke);
@@ -1001,28 +1166,37 @@ struct Index {
         RotationRadians: Math.atan2(m[1], m[0])
       };
     }
-    this.renderer.render(buildScene(committed, active, selection), Invalidation.full());
+    this.renderer.render(buildScene(committed, active, selection, matrixToArray(this.controller.ViewTransform)), Invalidation.full());
   }
 
   private async openCourseware(): Promise<void> {
     if (this.storage === null) {
       return;
     }
-    const docPicker = new picker.DocumentViewPicker();
-    const uris = await docPicker.select({ maxSelectNumber: 1, fileSuffixFilters: ['.pdf'] });
+    let uris: string[] = [];
+    try {
+      const docPicker = new picker.DocumentViewPicker();
+      uris = await docPicker.select({ maxSelectNumber: 1, fileSuffixFilters: ['.pdf'] });
+    } catch (e) {
+      return;
+    }
     if (uris.length === 0) {
       return;
     }
     const path = this.storage.importUriToSandbox(uris[0], 'courseware.pdf');
     if (path === null || !this.pdfSource.open(path)) {
+      promptAction.showToast({ message: 'PDF 打开失败', duration: 2000 });
       return;
     }
-    this.annotateDocument = this.controller.Document;
+    if (this.mode !== 'courseware') {
+      this.annotateDocument = this.controller.Document;
+    }
     this.courseware.open(this.pdfSource.PageCount);
+    this.loadCoursewareBundle();
     this.mode = 'courseware';
     this.pptActive = true;
     this.toolsOpen = false;
-    this.showCoursewarePage(0);
+    this.showCoursewarePage(this.courseware.CurrentIndex);
   }
 
   private showCoursewarePage(index: number): void {
@@ -1031,19 +1205,24 @@ struct Index {
     }
     this.coursewareIndex = index;
     this.coursewareCount = this.courseware.PageCount;
+    if (this.coursewarePage !== null) {
+      this.coursewarePage.release();
+    }
     this.coursewarePage = this.pdfSource.renderPage(index);
-    this.controller.Document = this.courseware.Current;
-    this.controller.ClearSelection();
+    this.controller.BindDocument(this.courseware.Current);
     this.refreshScene();
   }
 
   private exitCourseware(): void {
+    this.saveCoursewareBundle();
     this.mode = 'annotate';
     this.pptActive = false;
-    this.coursewarePage = null;
+    if (this.coursewarePage !== null) {
+      this.coursewarePage.release();
+      this.coursewarePage = null;
+    }
     this.pdfSource.close();
-    this.controller.Document = this.annotateDocument;
-    this.controller.ClearSelection();
+    this.controller.BindDocument(this.annotateDocument);
     this.refreshScene();
   }
 

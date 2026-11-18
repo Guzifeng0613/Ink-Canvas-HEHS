@@ -198,6 +198,18 @@ export class BoardDocument {
     try {
       pack = parseBoardPack(text);
     } catch (e) {
+      // 仅当确实不是画板包（缺少 Format 字段）时才回退到单表面 .icink；
+      // 画板包版本/页数/损坏错误向上抛出，避免静默清空当前画板。
+      let hasFormat = false;
+      try {
+        const probe = JSON.parse(text) as Record<string, Object>;
+        hasFormat = probe !== null && typeof probe === 'object' && probe['Format'] !== undefined;
+      } catch (probeError) {
+        hasFormat = false;
+      }
+      if (hasFormat) {
+        throw e;
+      }
       const strokes = parseIcink(text);
       const page = new BoardPage();
       page.Document.addRange(strokes);

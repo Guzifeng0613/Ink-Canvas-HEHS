@@ -1172,17 +1172,6 @@ internal static class ControllerVectorRunner
             controller.GesturesTargetSelection = gesturesSelection.GetBoolean();
         if (initial.TryGetProperty("CloneMode", out var clone)) controller.CloneMode = clone.GetBoolean();
         if (initial.TryGetProperty("StickyShape", out var sticky)) controller.StickyShape = sticky.GetBoolean();
-        if (initial.TryGetProperty("HyperbolaAsymptoteOption", out var hyperbola))
-            controller.HyperbolaAsymptoteOption = (OptionalOperation)hyperbola.GetInt32();
-        if (initial.TryGetProperty("AskRemoveAsymptotes", out var ask))
-        {
-            if (ask.ValueKind == JsonValueKind.Null) controller.AskRemoveAsymptotes = null;
-            else
-            {
-                var answer = ask.GetBoolean();
-                controller.AskRemoveAsymptotes = () => Task.FromResult(answer);
-            }
-        }
         if (initial.TryGetProperty("TransformCenterOption", out var pivot))
             controller.TransformCenterOption = (MatrixTransformCenterPointOptions)pivot.GetInt32();
 

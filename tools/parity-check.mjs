@@ -224,6 +224,26 @@ function main() {
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     validateManifest(manifest, ROOT, { final, phase }, errors);
   }
+  if (existsSync(manifestPath)) {
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    const counts = { ported: 0, adapted: 0, 'not-ported': 0, planned: 0 };
+    for (const f of manifest.features || []) {
+      counts[f.status] = (counts[f.status] || 0) + 1;
+    }
+    const total = (manifest.features || []).length;
+    if (manifest.denominator !== undefined && manifest.denominator !== total) {
+      errors.push('denominator 与 features 数量不一致: ' + manifest.denominator + ' vs ' + total);
+    }
+    const covered = counts.ported + counts.adapted;
+    const percent = total > 0 ? Math.round(covered * 10000 / total) / 100 : 0;
+    if (manifest.coverage !== undefined) {
+      if (manifest.coverage.total !== total || manifest.coverage.ported !== counts.ported ||
+          manifest.coverage.adapted !== counts.adapted || manifest.coverage['not-ported'] !== counts['not-ported'] ||
+          manifest.coverage.percent !== percent) {
+        errors.push('coverage 与 status 重算不一致（应为 ' + covered + '/' + total + '=' + percent + '%）');
+      }
+    }
+  }
   const scanned = scanAnchors(ROOT, errors);
   checkAnchorsRegistry(ROOT, scanned.pairs, errors);
   checkGeneratedSnapshots(ROOT, errors);

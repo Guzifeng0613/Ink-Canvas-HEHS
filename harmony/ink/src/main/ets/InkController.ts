@@ -6,7 +6,11 @@
 // - 不 import ArkUI/@kit；只依赖 @inkcanvas/core 与本模块 ControllerTypes。
 // - 宿主通过 ControllerOptions 注入文档、重绘回调、时间源与手掌决策器（core PalmRejector）。
 // - 未移植（Phase B2/B3 范围外，见报告）：Lasso 擦、SelectedElements/SelectionFrame 元素、
-//   TransformSelectionUndoable、异步 AskRemoveAsymptotes（改为同步宿主回调）。
+//   TransformSelectionUndoable。双曲线渐近线去留与 C# 一致由 kind 决定
+//   （hasHyperbolaAsymptotes）；HyperbolaAsymptoteOption/AskRemoveAsymptotes 仅保留为
+//   兼容宿主的旧 API 字段，提交路径不再读取。
+// - 选区 Move/Rotate 拖拽与选区双指手势延迟写点：期间以 SelectionPreviewTransform
+//   表达预览（PreviewStrokes/IsPreviewStroke 供渲染层消费），抬指一次性落点。
 //
 // 已知基线缺陷（按工作树 1:1 保留，勿“顺手修”）：
 // - 选区双指手势路径（TransformSelectionByGesture）每个 move 压入一个撤销单元；
@@ -26,8 +30,11 @@ import {
   eraseDisc,
   EraseOutcome,
   generate,
-  generateCuboidDepth,
+  generateCuboid,
   generateHyperbolaBranches,
+  isHyperbola,
+  hasHyperbolaFoci,
+  hasHyperbolaAsymptotes,
   stroke as shapeStroke,
   recognizeStrokes,
   ShapeKind,
@@ -91,6 +98,17 @@ function cloneMatrix(value: Matrix3x2): Matrix3x2 {
 
 function determinant(m: Matrix3x2): number {
   return m.M11 * m.M22 - m.M12 * m.M21;
+}
+
+/** C# Rendering.CommittedInkLayer.TransformBounds：中心 + 绝对值展幅的 AABB。 */
+function transformBounds(bounds: Rect, m: Matrix3x2): Rect {
+  if (bounds.isEmpty()) {
+    return bounds;
+  }
+  const center = transformPointByMatrix(m, bounds.centerX(), bounds.centerY());
+  const x = (Math.abs(m.M11) * bounds.width() + Math.abs(m.M21) * bounds.height()) / 2;
+  const y = (Math.abs(m.M12) * bounds.width() + Math.abs(m.M22) * bounds.height()) / 2;
+  return new Rect(center.X - x, center.Y - y, center.X + x, center.Y + y);
 }
 
 function distanceSquared(ax: number, ay: number, bx: number, by: number): number {
@@ -483,6 +501,9 @@ export class InkController {
   private _dragMoved: boolean = false;
   private _selectionPointerId: number = 0;
   private _dragFrame: OrientedFrame = new OrientedFrame(Rect.empty(), identityMatrix());
+  // 拖拽预览：Move/Rotate 与选区手势延迟写点，期间以绝对矩阵 _selectionPreview 表达位移。
+  private _selectionPreview: Matrix3x2 = identityMatrix();
+  private _previewSet: Set<InkStroke> = new Set<InkStroke>();
   private _isMarqueeSelecting: boolean = false;
   private _marqueeBounds: Rect = Rect.empty();
   private _marqueeInitialStrokes: InkStroke[] = [];
@@ -622,6 +643,22 @@ export class InkController {
     return this._shapePreview;
   }
 
+  /** 切换目标文档（画板页/课件页/批注）：清空历史与活动状态，避免跨文档撤销污染。 */
+  BindDocument(doc: InkDocument): void {
+    this.Document = doc;
+    this.History.clear();
+    this.ClearSelection();
+    this._live.clear();
+    this._liveIds = [];
+    this._recentForRecognition = [];
+    this._shapePreview = [];
+    this._stepPending = [];
+    this._dragSnapshot = null;
+    this._dragTargets = null;
+    this._erasedThisGesture = [];
+    this._touches.clear();
+  }
+
   /** 供渲染层读取当前正在书写的笔画（单指/首指）。 */
   get ActiveStroke(): InkStroke | null {
     let result: InkStroke | null = null;
@@ -637,13 +674,37 @@ export class InkController {
     return this.Selection.length > 0;
   }
 
-  /** 世界坐标选区 AABB；空选区返回 Rect.empty()。 */
+  /** 世界坐标选区 AABB；空选区返回 Rect.empty()。预览笔画按预览矩阵变换后再并集。 */
   get SelectionBounds(): Rect {
     let result = Rect.empty();
     for (let i = 0; i < this.Selection.length; i++) {
-      result = result.union(this.Selection[i].bounds());
+      const stroke = this.Selection[i];
+      const bounds = this.IsPreviewStroke(stroke)
+        ? transformBounds(stroke.bounds(), this._selectionPreview)
+        : stroke.bounds();
+      result = result.union(bounds);
     }
     return result;
+  }
+
+  /** C# DeferSelectionPoints：Move/Rotate 拖拽与选区双指手势把写点推迟到拖拽结束。 */
+  private get DeferSelectionPoints(): boolean {
+    return this._selectionGesture ||
+      this._activeHandle === SelectionHandle.Move ||
+      this._activeHandle === SelectionHandle.Rotate;
+  }
+
+  /** 延迟拖拽期间需按预览矩阵绘制的笔画；不在延迟拖拽中时为 null。 */
+  get PreviewStrokes(): InkStroke[] | null {
+    return this._dragMoved && this.DeferSelectionPoints ? this._dragTargets : null;
+  }
+
+  get SelectionPreviewTransform(): Matrix3x2 {
+    return this._selectionPreview;
+  }
+
+  IsPreviewStroke(stroke: InkStroke): boolean {
+    return this._dragMoved && this.DeferSelectionPoints && this._previewSet.has(stroke);
   }
 
   ConfigureGestures(zoom: boolean, translate: boolean, rotate: boolean): void {
@@ -719,9 +780,8 @@ export class InkController {
         this.cancelTouchInk();
         const pair = this.tryGetTouchPair();
         if (pair !== null) {
-          const a = this.toWorld(pair[0].X, pair[0].Y);
-          const b = this.toWorld(pair[1].X, pair[1].Y);
-          this._manipulator.begin(a.X, a.Y, b.X, b.Y);
+          // C# 视图手势以屏幕坐标 Begin/Update（screenSpace 右乘），不做 ToWorld。
+          this._manipulator.begin(pair[0].X, pair[0].Y, pair[1].X, pair[1].Y);
         }
         this.invalidate();
         return;
@@ -769,8 +829,7 @@ export class InkController {
     }
     if (this._tool === InkTool.Shape) {
       // Hyperbola 第二步把 iniP 锁在中心（upstream MW_ShapeDrawing.cs:1646-1653）。
-      const hyperbolaStep = this._shapeStep === 1 &&
-        (this._shapeKind === ShapeKind.Hyperbola || this._shapeKind === ShapeKind.HyperbolaWithFoci);
+      const hyperbolaStep = this._shapeStep === 1 && isHyperbola(this._shapeKind);
       if (hyperbolaStep) {
         this._shapeDragStart.set(p.Id, new Point2(this._stepAnchor.X, this._stepAnchor.Y));
       } else {
@@ -835,7 +894,7 @@ export class InkController {
         const a = this.toWorld(pair[0].X, pair[0].Y);
         const b = this.toWorld(pair[1].X, pair[1].Y);
         if (this.GesturesTargetSelection && this.Selection.length > 0) {
-          // 手势作用于选区：每次 move 传入单位阵，返回单帧 delta。
+          // 手势作用于选区：世界坐标，每次 move 传入单位阵，返回单帧 delta。
           const pivot = this.resolvePivot((a.X + b.X) * 0.5, (a.Y + b.Y) * 0.5);
           const result = this._manipulator.update(a.X, a.Y, b.X, b.Y, identityMatrix(), pivot.X, pivot.Y);
           if (result.changed) {
@@ -844,8 +903,27 @@ export class InkController {
           }
           return;
         }
-        const pivot = this.resolvePivot((a.X + b.X) * 0.5, (a.Y + b.Y) * 0.5);
-        const result = this._manipulator.update(a.X, a.Y, b.X, b.Y, cloneMatrix(this.ViewTransform), pivot.X, pivot.Y);
+        // 视图手势：屏幕坐标 + screenSpace 右乘（transform * delta）；
+        // pivot 用屏幕空间手势中心与选区中心（C# OnPointerMove 视图分支）。
+        const screenAX = pair[0].X;
+        const screenAY = pair[0].Y;
+        const screenBX = pair[1].X;
+        const screenBY = pair[1].Y;
+        const bounds = this.SelectionBounds;
+        const selectionCenterView = transformPointByMatrix(
+          this.ViewTransform, bounds.centerX(), bounds.centerY()
+        );
+        const viewPivot = resolvePivot(
+          this.TransformCenterOption,
+          this.ViewCenter.X, this.ViewCenter.Y,
+          (screenAX + screenBX) * 0.5, (screenAY + screenBY) * 0.5,
+          selectionCenterView.X, selectionCenterView.Y,
+          true
+        );
+        const result = this._manipulator.update(
+          screenAX, screenAY, screenBX, screenBY,
+          cloneMatrix(this.ViewTransform), viewPivot.X, viewPivot.Y, true
+        );
         if (result.changed) {
           this.ViewTransform = result.transform;
           this.invalidate();
@@ -894,6 +972,7 @@ export class InkController {
       if (this._panPointerId === p.Id) {
         this._panPointerId = null;
       }
+      this.invalidate();
       this.Palm.onUp(p.Id);
       return;
     }
@@ -911,10 +990,18 @@ export class InkController {
       return;
     }
 
+    // C#：视图手势结束的那次抬指先补一个最终 move 样本，再统一失效一次。
+    const viewGestureEnded = this.IsViewManipulating;
+    if (viewGestureEnded) {
+      this.onPointerMove(p);
+    }
     this.Palm.onUp(p.Id);
     this.removeTouchId(p.Id);
     if (this._touches.size < 2) {
       this._manipulator.reset();
+    }
+    if (viewGestureEnded) {
+      this.invalidate();
     }
 
     const world = this.toWorld(p.X, p.Y);
@@ -990,6 +1077,13 @@ export class InkController {
   }
 
   // ---- 视图 --------------------------------------------------------------
+
+  /** C# IsViewManipulating：平移中，或双指视图手势进行中（非选择/橡皮工具）。 */
+  get IsViewManipulating(): boolean {
+    return this._panPointerId !== null ||
+      (!this._selectionGesture && !this.MultiTouchEnabled && this._touches.size >= 2 &&
+        this._tool !== InkTool.Select && this._tool !== InkTool.Eraser);
+  }
 
   toWorld(x: number, y: number): Point2 {
     const inverse = invertMatrix(this.ViewTransform);
@@ -1084,9 +1178,10 @@ export class InkController {
     const input = attributesInput(attributes);
     let replacement: InkStroke[] = [];
     if (result.kind === RecognizedShape.Circle) {
+      // C#：圆生成改为 中心+半径（CircleFromCenter），锚定识别出的圆心。
       const radius = Math.max(result.radiusX, result.radiusY);
       replacement = strokesFromSummaries(generate(
-        ShapeKind.Circle, result.centerX, result.centerY, result.centerX + radius, result.centerY, input
+        ShapeKind.CircleFromCenter, result.centerX, result.centerY, result.centerX + radius, result.centerY, input
       ));
     } else if (result.kind === RecognizedShape.Ellipse) {
       replacement = strokesFromSummaries(generate(
@@ -1139,11 +1234,12 @@ export class InkController {
   // ---- 图形工具 ----------------------------------------------------------
 
   /**
-   * 放弃两步状态。已生成的 step-1 墨迹作为独立 "shape" 撤销单元提交，
-   * 避免切换工具时丢笔（上游会丢；此处为基线刻意修正）。
+   * 放弃两步状态。仅长方体前面或带渐近线双曲线的 step-1 墨迹作为独立 "shape"
+   * 撤销单元提交（C# ResetShapeState），避免切换工具时丢笔。
    */
   private resetShapeState(): void {
-    if (this._stepPending.length > 0) {
+    if (this._stepPending.length > 0 &&
+      (this._shapeKind === ShapeKind.Cuboid || hasHyperbolaAsymptotes(this._shapeKind))) {
       const pending = this._stepPending;
       this._stepPending = [];
       this.commitStrokes(pending, 'shape');
@@ -1166,22 +1262,17 @@ export class InkController {
   private generateShapePreview(start: Point2, end: Point2): InkStroke[] {
     if (this._shapeStep === 1) {
       if (this._shapeKind === ShapeKind.Cuboid) {
-        const depth = Math.abs(this._stepAnchor.Y - end.Y);
-        const preview: InkStroke[] = this._stepPending.slice();
-        const generated = strokesFromSummaries(generateCuboidDepth(
+        // C#：第二次拖拽给出带符号深度向量；预览即完整实体（不再拼接 step-1 pending）。
+        return strokesFromSummaries(generateCuboid(
           this._stepAnchor.X, this._stepAnchor.Y, this._stepSecond.X, this._stepSecond.Y,
-          depth, attributesInput(this.shapeAttributes())
+          end.X - start.X, end.Y - start.Y, attributesInput(this.shapeAttributes())
         ));
-        for (let i = 0; i < generated.length; i++) {
-          preview.push(generated[i]);
-        }
-        return preview;
       }
-      if (this._shapeKind === ShapeKind.Hyperbola || this._shapeKind === ShapeKind.HyperbolaWithFoci) {
+      if (isHyperbola(this._shapeKind)) {
         const preview: InkStroke[] = this._stepPending.slice();
         const generated = strokesFromSummaries(generateHyperbolaBranches(
           this._stepAnchor.X, this._stepAnchor.Y, this._stepK, end.X, end.Y,
-          this._shapeKind === ShapeKind.HyperbolaWithFoci, attributesInput(this.shapeAttributes())
+          hasHyperbolaFoci(this._shapeKind), attributesInput(this.shapeAttributes())
         ));
         for (let i = 0; i < generated.length; i++) {
           preview.push(generated[i]);
@@ -1201,6 +1292,10 @@ export class InkController {
 
     if (kind === ShapeKind.Cuboid) {
       if (this._shapeStep === 0) {
+        // 退化拖拽（宽或高 <1）直接放弃，不进入第二步。
+        if (Math.abs(end.X - start.X) < 1 || Math.abs(end.Y - start.Y) < 1) {
+          return;
+        }
         // 第一步：前面；释放时按 min/max 归一化角点（upstream:1519-1530）。
         this._stepPending = strokesFromSummaries(generate(kind, start.X, start.Y, end.X, end.Y, input));
         this._stepAnchor = new Point2(Math.min(start.X, end.X), Math.min(start.Y, end.Y));
@@ -1210,15 +1305,17 @@ export class InkController {
         this.invalidate();
         return; // 留在图形模式等待深度拖拽
       }
-      // 第二步：45° 深度 d=|Δy|；前面 + 深度作为一个撤销单元（upstream:1541-1547）。
-      const depth = Math.abs(this._stepAnchor.Y - end.Y);
-      const solid: InkStroke[] = this._stepPending.slice();
-      const generated = strokesFromSummaries(generateCuboidDepth(
-        this._stepAnchor.X, this._stepAnchor.Y, this._stepSecond.X, this._stepSecond.Y, depth, input
-      ));
-      for (let i = 0; i < generated.length; i++) {
-        solid.push(generated[i]);
+      // 第二步：带符号深度向量决定对面位置；全部棱一个撤销单元。
+      const offsetX = end.X - start.X;
+      const offsetY = end.Y - start.Y;
+      if (offsetX * offsetX + offsetY * offsetY < 9) {
+        this.invalidate();
+        return;
       }
+      const solid: InkStroke[] = strokesFromSummaries(generateCuboid(
+        this._stepAnchor.X, this._stepAnchor.Y, this._stepSecond.X, this._stepSecond.Y,
+        offsetX, offsetY, input
+      ));
       this._stepPending = [];
       this._shapeStep = 0;
       this._shapePreview = [];
@@ -1227,7 +1324,7 @@ export class InkController {
       return;
     }
 
-    if (kind === ShapeKind.Hyperbola || kind === ShapeKind.HyperbolaWithFoci) {
+    if (isHyperbola(kind)) {
       if (this._shapeStep === 0) {
         // 第一步：虚线渐近线锁定 k（upstream:894-902,1550-1555）。
         const asymptotes = strokesFromSummaries(generate(kind, start.X, start.Y, end.X, end.Y, input));
@@ -1245,13 +1342,28 @@ export class InkController {
       }
       const branches = strokesFromSummaries(generateHyperbolaBranches(
         this._stepAnchor.X, this._stepAnchor.Y, this._stepK, end.X, end.Y,
-        kind === ShapeKind.HyperbolaWithFoci, input
+        hasHyperbolaFoci(kind), input
       ));
+      if (branches.length === 0) {
+        this.invalidate();
+        return;
+      }
       const kept = this._stepPending;
       this._stepPending = [];
       this._shapeStep = 0;
-      this.Tool = InkTool.Pen; // upstream:1579 在决定渐近线之前回笔
-      this.finishHyperbola(kept, branches);
+      this._shapePreview = [];
+      // C#：是否保留第一步渐近线由 kind 决定（HasHyperbolaAsymptotes），不再询问。
+      let hyperbola: InkStroke[] = branches;
+      if (hasHyperbolaAsymptotes(kind)) {
+        hyperbola = kept.slice();
+        for (let i = 0; i < branches.length; i++) {
+          hyperbola.push(branches[i]);
+        }
+      }
+      if (hyperbola.length > 0) {
+        this.commitStrokes(hyperbola, 'shape');
+      }
+      this.Tool = InkTool.Pen;
       return;
     }
 
@@ -1264,45 +1376,6 @@ export class InkController {
     if (!this.StickyShape) {
       this.Tool = InkTool.Pen; // upstream:1502-1518
     }
-  }
-
-  private finishHyperbola(asymptotes: InkStroke[], branches: InkStroke[]): void {
-    const option = this.HyperbolaAsymptoteOption;
-    if (option === OptionalOperation.Ask && this.AskRemoveAsymptotes !== null) {
-      // 询问期间保留两步预览；同步宿主回调返回后一次性提交。
-      const preview: InkStroke[] = asymptotes.slice();
-      for (let i = 0; i < branches.length; i++) {
-        preview.push(branches[i]);
-      }
-      this._shapePreview = preview;
-      this.invalidate();
-      let remove = false;
-      try {
-        remove = this.AskRemoveAsymptotes();
-      } catch (error) {
-        remove = false;
-      }
-      this.commitHyperbola(asymptotes, branches, remove);
-      return;
-    }
-    // Ask 但没有宿主回调：保留渐近线（最不破坏）。
-    this.commitHyperbola(asymptotes, branches, option === OptionalOperation.No);
-  }
-
-  /** 整个双曲线一个撤销单元（修正上游分裂历史 bug）。 */
-  private commitHyperbola(asymptotes: InkStroke[], branches: InkStroke[], removeAsymptotes: boolean): void {
-    let committed: InkStroke[] = branches;
-    if (!removeAsymptotes) {
-      committed = asymptotes.slice();
-      for (let i = 0; i < branches.length; i++) {
-        committed.push(branches[i]);
-      }
-    }
-    this._shapePreview = [];
-    if (committed.length > 0) {
-      this.commitStrokes(committed, 'shape');
-    }
-    this.invalidate();
   }
 
   // ---- 擦除 --------------------------------------------------------------
@@ -1492,6 +1565,8 @@ export class InkController {
     this._dragTargets = this.Selection.slice();
     this._cloneDrag = false;
     this._dragMoved = false;
+    this._selectionPreview = identityMatrix();
+    this._previewSet.clear();
     this._dragSnapshot = this.cloneStrokes(this._dragTargets);
     this.invalidate();
   }
@@ -1521,33 +1596,52 @@ export class InkController {
       this._dragFromViewX, this._dragFromViewY, viewPointX, viewPointY,
       this._viewAtDragStart, constrain
     );
-    applySnapshot(this._dragTargets, this._dragSnapshot);
-    for (let i = 0; i < this._dragTargets.length; i++) {
-      transformStroke(this._dragTargets[i], drag.Delta, true);
-      this.markGeometry(this._dragTargets[i]);
+    // 绝对矩阵（相对拖拽起点快照），长拖拽不累计舍入误差。
+    this._selectionPreview = drag.Delta;
+    if (this._previewSet.size === 0) {
+      this._dragTargets.forEach((stroke: InkStroke) => {
+        this._previewSet.add(stroke);
+      });
     }
-    if (!this._cloneDrag) {
-      this.rememberFrame(new OrientedFrame(
-        cloneRect(this._dragFrame.Bounds),
-        multiplyMatrix(cloneMatrix(this._dragFrame.Transform), drag.Delta)
-      ));
+    if (!this.DeferSelectionPoints) {
+      applySnapshot(this._dragTargets, this._dragSnapshot);
+      for (let i = 0; i < this._dragTargets.length; i++) {
+        transformStroke(this._dragTargets[i], drag.Delta, true);
+        this.markGeometry(this._dragTargets[i]);
+      }
+      this.Document.touch();
     }
-    this.Document.touch();
     this.invalidate();
   }
 
-  private EndSelectionDrag(): void {
+  private EndSelectionDrag(gesture: boolean = false): void {
     const targets = this._dragTargets === null ? this.Selection.slice() : this._dragTargets;
     const before = this._dragSnapshot;
     const cloneDrag = this._cloneDrag;
     const moved = this._dragMoved;
     const beforeFrame = this._dragFrame;
     const afterFrame = this.selectionFrame();
+    const defer = this.DeferSelectionPoints;
+    // 延迟写点的拖拽（Move/Rotate/手势）在结束时一次性应用预览矩阵。
+    if (moved && (defer || gesture)) {
+      for (let i = 0; i < targets.length; i++) {
+        transformStroke(targets[i], this._selectionPreview, true);
+        this.markGeometry(targets[i]);
+      }
+    }
     this._activeHandle = SelectionHandle.None;
     this._dragSnapshot = null;
     this._dragTargets = null;
     this._cloneDrag = false;
     this._dragMoved = false;
+    this._selectionPreview = identityMatrix();
+    this._previewSet.clear();
+    if (moved) {
+      if (!cloneDrag) {
+        this.rememberFrame(afterFrame);
+      }
+      this.Document.touch();
+    }
 
     if (cloneDrag && moved) {
       // 一个撤销单元：撤销移除副本，重做放回落点。
@@ -1569,14 +1663,14 @@ export class InkController {
         'transform selection',
         (): void => {
           this.applySnapshotState(targets, after);
-          this.rememberFrame(afterFrame);
+          this.restoreSelectionFrame(targets, afterFrame);
           this.Document.touch();
           this.notifySelectionChanged();
           this.invalidate();
         },
         (): void => {
           this.applySnapshotState(targets, before);
-          this.rememberFrame(beforeFrame);
+          this.restoreSelectionFrame(targets, beforeFrame);
           this.Document.touch();
           this.notifySelectionChanged();
           this.invalidate();
@@ -1626,6 +1720,8 @@ export class InkController {
     this._dragFrame = this.selectionFrame();
     this._cloneDrag = false;
     this._dragMoved = false;
+    this._selectionPreview = identityMatrix();
+    this._previewSet.clear();
     this._selectionGesture = true;
   }
 
@@ -1643,18 +1739,13 @@ export class InkController {
       this._cloneDrag = true;
     }
     this._dragMoved = true;
-    const frame = this.selectionFrame();
-    for (let i = 0; i < this._dragTargets.length; i++) {
-      transformStroke(this._dragTargets[i], delta, true);
-      this.markGeometry(this._dragTargets[i]);
+    // C#：手势期间只累计预览矩阵（_selectionPreview *= delta），落指结束才写点。
+    this._selectionPreview = multiplyMatrix(this._selectionPreview, delta);
+    if (this._previewSet.size === 0) {
+      this._dragTargets.forEach((stroke: InkStroke) => {
+        this._previewSet.add(stroke);
+      });
     }
-    if (!this._cloneDrag) {
-      this.rememberFrame(new OrientedFrame(
-        cloneRect(frame.Bounds),
-        multiplyMatrix(cloneMatrix(frame.Transform), delta)
-      ));
-    }
-    this.Document.touch();
     this.invalidate();
   }
 
@@ -1664,7 +1755,7 @@ export class InkController {
     }
     this._selectionGesture = false;
     this._selectionManipulator.reset();
-    this.EndSelectionDrag();
+    this.EndSelectionDrag(true);
   }
 
   /** 将手势矩阵应用到选区，并记录一个可撤销步骤（基线：每次 move 一单元）。 */
@@ -1737,6 +1828,13 @@ export class InkController {
   }
 
   private selectionFrame(): OrientedFrame {
+    // C# SelectionFrame：已移动的非克隆拖拽期间，帧 = 拖拽起点帧 * 预览矩阵。
+    if (this._dragMoved && !this._cloneDrag) {
+      return new OrientedFrame(
+        cloneRect(this._dragFrame.Bounds),
+        multiplyMatrix(cloneMatrix(this._dragFrame.Transform), this._selectionPreview)
+      );
+    }
     let valid = this._frameStrokes.length === this.Selection.length;
     for (let i = 0; valid && i < this.Selection.length; i++) {
       if (this._frameStrokes[i] !== this.Selection[i] ||
@@ -1773,6 +1871,22 @@ export class InkController {
     this._frameVersions = [];
     for (let i = 0; i < this.Selection.length; i++) {
       this._frameVersions.push(this.geometryVersion(this.Selection[i]));
+    }
+  }
+
+  /** C# RestoreSelectionFrame：选区成员未变才恢复帧缓存，否则清空缓存。 */
+  private restoreSelectionFrame(strokes: InkStroke[], frame: OrientedFrame): void {
+    let same = this.Selection.length === strokes.length;
+    for (let i = 0; same && i < strokes.length; i++) {
+      if (this.Selection[i] !== strokes[i]) {
+        same = false;
+      }
+    }
+    if (same) {
+      this.rememberFrame(frame);
+    } else {
+      this._frameStrokes = [];
+      this._frameVersions = [];
     }
   }
 

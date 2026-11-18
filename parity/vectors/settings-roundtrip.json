@@ -85,11 +85,11 @@
           "isCompressPicturesUploaded": false,
           "isShowCursor": false,
           "inkStyle": 1,
+          "penNib": 0,
           "eraserSize": 2,
           "eraserType": 0,
           "hideStrokeWhenSelecting": true,
-          "usingWhiteboard": false,
-          "hyperbolaAsymptoteOption": 0
+          "usingWhiteboard": false
         },
         "gesture": {
           "isEnableMultiTouchMode": true,
@@ -201,11 +201,11 @@
           "isCompressPicturesUploaded": false,
           "isShowCursor": false,
           "inkStyle": 0,
+          "penNib": 0,
           "eraserSize": 2,
           "eraserType": 0,
           "hideStrokeWhenSelecting": true,
-          "usingWhiteboard": false,
-          "hyperbolaAsymptoteOption": 2
+          "usingWhiteboard": false
         },
         "gesture": {
           "isEnableMultiTouchMode": true,
@@ -317,11 +317,11 @@
           "isCompressPicturesUploaded": false,
           "isShowCursor": false,
           "inkStyle": 0,
+          "penNib": 0,
           "eraserSize": 2,
           "eraserType": 0,
           "hideStrokeWhenSelecting": true,
-          "usingWhiteboard": false,
-          "hyperbolaAsymptoteOption": 2
+          "usingWhiteboard": false
         },
         "gesture": {
           "isEnableMultiTouchMode": true,
@@ -433,11 +433,11 @@
           "isCompressPicturesUploaded": false,
           "isShowCursor": false,
           "inkStyle": 0,
+          "penNib": 0,
           "eraserSize": 2,
           "eraserType": 0,
           "hideStrokeWhenSelecting": true,
-          "usingWhiteboard": false,
-          "hyperbolaAsymptoteOption": 2
+          "usingWhiteboard": false
         },
         "gesture": {
           "isEnableMultiTouchMode": true,

@@ -36,5 +36,5 @@ export { parseSettings, stringifySettings, settingsRoundtrip } from '../../harmo
 export { parseIcink, stringifyIcink, icinkRoundtrip } from '../../harmony/core/src/main/ets/persistence/IcinkCodec';
 export { parseBoardPack, stringifyBoardPack, boardRoundtrip } from '../../harmony/core/src/main/ets/persistence/BoardPackCodec';
 export { parsePptManifest, stringifyPptManifest, pptManifestRoundtrip } from '../../harmony/core/src/main/ets/persistence/PptManifestCodec';
-export { ShapeKind, generate, generateCuboidDepth, generateHyperbolaBranches, stroke, snapParallelEnd } from '../../harmony/core/src/main/ets/shapes/ShapeGenerator';
+export { ShapeKind, generate, generateCuboidDepth, generateHyperbolaBranches, generateCuboid, isHyperbola, hasHyperbolaFoci, hasHyperbolaAsymptotes, stroke, snapParallelEnd } from '../../harmony/core/src/main/ets/shapes/ShapeGenerator';
 export { RecognizedShape, recognize, recognizeStrokes } from '../../harmony/core/src/main/ets/recognition/ShapeRecognizer';

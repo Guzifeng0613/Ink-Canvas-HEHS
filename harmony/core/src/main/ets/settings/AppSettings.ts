@@ -1,6 +1,6 @@
 // @parity src/InkCanvas.Core/Settings/AppSettings.cs
 // 字段名采用 Settings.json 的 JSON 键名（camelCase/历史大小写原样），便于编解码与互读。
-// 枚举（theme/inkStyle/eraserSize/eraserType/hyperbolaAsymptoteOption/matrixTransformCenterPoint）以数字存储。
+// 枚举（theme/inkStyle/penNib/eraserSize/eraserType/matrixTransformCenterPoint）以数字存储。
 
 export interface AdvancedSettings {
   isSpecialScreen: boolean;
@@ -43,7 +43,7 @@ export interface CanvasSettings {
   eraserType: number;
   hideStrokeWhenSelecting: boolean;
   usingWhiteboard: boolean;
-  hyperbolaAsymptoteOption: number;
+  penNib: number;
 }
 
 export interface GestureSettings {
@@ -211,7 +211,7 @@ export function createDefaultSettings(): AppSettings {
       eraserType: 0,
       hideStrokeWhenSelecting: true,
       usingWhiteboard: false,
-      hyperbolaAsymptoteOption: 2
+      penNib: 0
     },
     gesture: {
       isEnableMultiTouchMode: true,

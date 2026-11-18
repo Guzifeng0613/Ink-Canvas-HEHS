@@ -201,8 +201,11 @@ export class InkStroke {
       maxY = Math.max(maxY, p.Y);
       maxHalf = Math.max(maxHalf, p.Width);
     }
-    maxHalf = Math.max(maxHalf, this.points[0].Width) * 0.5;
-    this.cachedBounds = new Rect(minX - maxHalf, minY - maxHalf, maxX + maxHalf, maxY + maxHalf);
+    maxHalf = Math.max(Math.max(maxHalf, this.points[0].Width), 0.5) * 0.5;
+    const nib = this.Attributes.nibTransform();
+    const rx = maxHalf * Math.sqrt(nib.M11 * nib.M11 + nib.M21 * nib.M21);
+    const ry = maxHalf * Math.sqrt(nib.M12 * nib.M12 + nib.M22 * nib.M22);
+    this.cachedBounds = new Rect(minX - rx, minY - ry, maxX + rx, maxY + ry);
     return this.cachedBounds;
   }
 

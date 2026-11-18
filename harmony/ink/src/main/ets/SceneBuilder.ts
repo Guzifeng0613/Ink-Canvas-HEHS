@@ -5,7 +5,8 @@ import {
   InkPoint,
   InkColor,
   StrokeAttributes,
-  buildUnionContours
+  buildUnionContours,
+  transformPointByMatrix
 } from '@inkcanvas/core';
 import { InkScene } from './Renderer';
 import type { DrawCommand, HandlePoint, SelectionOverlay } from './Renderer';
@@ -51,8 +52,21 @@ function buildStroke(input: SceneStrokeInput): InkStroke {
 }
 
 function commandFor(stroke: InkStroke): DrawCommand {
+  const contours = buildUnionContours(stroke.Points);
+  const nib = stroke.Attributes.nibTransform();
+  const transformed: number[][] = [];
+  for (let i = 0; i < contours.length; i++) {
+    const contour = contours[i];
+    const out: number[] = [];
+    for (let k = 0; k + 1 < contour.length; k += 2) {
+      const point = transformPointByMatrix(nib, contour[k], contour[k + 1]);
+      out.push(point.X);
+      out.push(point.Y);
+    }
+    transformed.push(out);
+  }
   return {
-    Contours: buildUnionContours(stroke.Points),
+    Contours: transformed,
     Color: stroke.Attributes.effectiveColor().packedArgb()
   };
 }
@@ -60,9 +74,13 @@ function commandFor(stroke: InkStroke): DrawCommand {
 export function buildScene(
   committed: SceneStrokeInput[],
   active: SceneStrokeInput | null,
-  selection: SceneSelectionInput | null
+  selection: SceneSelectionInput | null,
+  view?: number[]
 ): InkScene {
   const scene = new InkScene();
+  if (view !== undefined && view.length === 6) {
+    scene.View = view;
+  }
   for (let i = 0; i < committed.length; i++) {
     scene.Committed.push(commandFor(buildStroke(committed[i])));
   }

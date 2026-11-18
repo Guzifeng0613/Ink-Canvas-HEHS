@@ -1,5 +1,11 @@
 // @parity src/InkCanvas.Core/Ink/StrokeAttributes.cs
 import { InkColor } from './InkColor';
+import { Matrix3x2, identityMatrix, multiplyMatrix, createScaleMatrix, createRotationMatrix } from '../math/Matrix3x2';
+
+export enum PenNib {
+  Round = 0,
+  Ellipse45 = 1
+}
 
 export enum TaperKind {
   None = 0,
@@ -13,6 +19,15 @@ export class StrokeAttributes {
   IsHighlighter: boolean = false;
   HighlighterAlpha: number = 96;
   TaperKind: TaperKind = TaperKind.Tail;
+  Nib: PenNib = PenNib.Round;
+  NibRotation: number = 0;
+
+  nibTransform(): Matrix3x2 {
+    if (this.Nib === PenNib.Ellipse45) {
+      return multiplyMatrix(createScaleMatrix(1, 0.5), createRotationMatrix(-Math.PI / 4 + this.NibRotation));
+    }
+    return identityMatrix();
+  }
 
   effectiveTaper(): TaperKind {
     return this.IsHighlighter ? TaperKind.None : this.TaperKind;
@@ -29,6 +44,8 @@ export class StrokeAttributes {
     copy.IsHighlighter = this.IsHighlighter;
     copy.HighlighterAlpha = this.HighlighterAlpha;
     copy.TaperKind = this.TaperKind;
+    copy.Nib = this.Nib;
+    copy.NibRotation = this.NibRotation;
     return copy;
   }
 }
