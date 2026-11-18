@@ -16,6 +16,7 @@ import type {
   BoardAssetSummary,
   BoardStrokeSummary
 } from '@inkcanvas/core';
+import { BoardElementHistory } from './BoardElementHistory';
 
 export enum BoardBackground {
   Black = 0,
@@ -40,6 +41,8 @@ export class BoardPage {
   Document: InkDocument = new InkDocument();
   Images: BoardAsset[] = [];
   Media: BoardAsset[] = [];
+  // 页内元素变换撤销历史（镜像 C# Current.History）；与墨迹撤销协调见 entry 撤销接线。
+  History: BoardElementHistory = new BoardElementHistory();
 }
 
 function assetSummary(asset: BoardAsset): BoardAssetSummary {

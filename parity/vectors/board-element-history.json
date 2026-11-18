@@ -1,0 +1,78 @@
+{
+  "id": "board-element-history",
+  "entry": "harmony/features/src/main/ets/board/BoardElementHistory.ts",
+  "cases": [
+    {
+      "id": "same-geometry-identical",
+      "fn": "sameGeometry",
+      "input": [
+        { "Left": 1, "Top": 2, "Width": 3, "Height": 4, "Transform": [1, 0, 0, 1, 5, 6] },
+        { "Left": 1, "Top": 2, "Width": 3, "Height": 4, "Transform": [1, 0, 0, 1, 5, 6] }
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "same-geometry-null-transform",
+      "fn": "sameGeometry",
+      "input": [
+        { "Left": 1, "Top": 2, "Width": 3, "Height": 4, "Transform": null },
+        { "Left": 1, "Top": 2, "Width": 3, "Height": 4, "Transform": null }
+      ],
+      "expected": true,
+      "tolerance": 0
+    },
+    {
+      "id": "same-geometry-diff-transform",
+      "fn": "sameGeometry",
+      "input": [
+        { "Left": 1, "Top": 2, "Width": 3, "Height": 4, "Transform": null },
+        { "Left": 1, "Top": 2, "Width": 3, "Height": 4, "Transform": [1, 0, 0, 1, 5, 6] }
+      ],
+      "expected": false,
+      "tolerance": 0
+    },
+    {
+      "id": "probe-record-undo-redo",
+      "fn": "elementTransformProbe",
+      "input": [
+        { "Left": 0, "Top": 0, "Width": 10, "Height": 10, "Transform": null },
+        { "Left": 0, "Top": 0, "Width": 10, "Height": 10, "Transform": [1, 0, 0, 1, 20, 30] },
+        ["undo", "redo", "undo"]
+      ],
+      "expected": [
+        { "Left": 0, "Top": 0, "Width": 10, "Height": 10, "Transform": null },
+        { "Left": 0, "Top": 0, "Width": 10, "Height": 10, "Transform": [1, 0, 0, 1, 20, 30] },
+        { "Left": 0, "Top": 0, "Width": 10, "Height": 10, "Transform": null }
+      ],
+      "tolerance": 0
+    },
+    {
+      "id": "probe-noop-when-same",
+      "fn": "elementTransformProbe",
+      "input": [
+        { "Left": 5, "Top": 5, "Width": 10, "Height": 10, "Transform": null },
+        { "Left": 5, "Top": 5, "Width": 10, "Height": 10, "Transform": null },
+        ["undo"]
+      ],
+      "expected": [
+        { "Left": 5, "Top": 5, "Width": 10, "Height": 10, "Transform": null }
+      ],
+      "tolerance": 0
+    },
+    {
+      "id": "probe-new-change-clears-redo",
+      "fn": "elementTransformProbe",
+      "input": [
+        { "Left": 0, "Top": 0, "Width": 10, "Height": 10, "Transform": null },
+        { "Left": 0, "Top": 0, "Width": 10, "Height": 10, "Transform": [1, 0, 0, 1, 9, 9] },
+        ["undo", "redo"]
+      ],
+      "expected": [
+        { "Left": 0, "Top": 0, "Width": 10, "Height": 10, "Transform": null },
+        { "Left": 0, "Top": 0, "Width": 10, "Height": 10, "Transform": [1, 0, 0, 1, 9, 9] }
+      ],
+      "tolerance": 0
+    }
+  ]
+}

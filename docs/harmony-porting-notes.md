@@ -38,9 +38,11 @@
 - 已完成：platform compat/输入归一化/双层 Canvas 渲染、controls token/浮条/调色盘/图形菜单、entry 主页面壳。
 - 已完成：InkController 状态机/手势/选区（B2/B3）并接入 entry 触摸输入；画板分页/元素变换/保存语义（E1）。
 - 已完成：课件(PDF)/计时/抽奖/回放、设置面板/指南/是否窗、画板模式（分页/背景/插图/视频/保存打开）、应用内快捷键/沉浸式/Desmos/更新提示、manifest 56 项收口（98.21%）、api-matrix 补全。
-- 覆盖率：**55/56 = 98.21%**（30 ported + 25 adapted + 1 not-ported=开机自启）。
-- 仍为部分/待补（已在 manifest notes 标注）：倒计时圆环/结束音/紧凑/全屏、抽奖滚动动画/替换名单/单次模式、画板图片拖拽手势、视频切换首帧优化（待真机）、弹簧/ConnectedAnimation 以过渡近似、画板三浮条与 PPT 四导航面板的简化形态、多断点精细布局。
+- 覆盖率：**55/56 = 98.21%**（32 ported + 23 adapted + 1 not-ported=开机自启）。
+- 仍为部分/待补（已在 manifest notes 标注）：画板三浮条与 PPT 四导航面板的简化形态、多断点精细布局、视频切换首帧（待真机）；WPS 响应/PiP 空 surface/市场更新弹框均待真机核对。
 - 已补齐（2026-11-18 缺口轮）：设置全量 88 字段、更新日志窗口、系统材质/blur（API26 门控）、画板图片 matrix4 精确变换、视频进度保持/续播、SymbolGlyph 46 项映射（文字兜底）、浮层/浮条动效。
+- 已补齐（2026-11-18 缺口轮 2）：倒计时圆环进度/紧凑/全屏/结束提示音（TimerDownNotice.wav）、抽奖滚动闪烁/替换名单（old-->new）/单次模式/多人抽选/分组输出（LotteryRoll 向量）、画板图片拖拽手势（Select/Pan 命中接管 + BoardElementHistory 单撤销单元，向量）、动效升级弹簧曲线 curves.springMotion + 共享元素 geometryTransition。弹窗界面按 ArkTS 设计特色差异化（用户授权）。
+- 已补齐（2026-11-18 缺口轮 3，平台对接调研后落地）：PPT 放映→WPS 鸿蒙版（WpsInterop：文件打开 Want + UTD + FLAG_AUTH_READ，手机/Pad 包自适应，16000019 回退引导安装；无公开放映 intent，放映控制待 WPS 开放）；自更新→市场更新（MarketUpdate：updateManager.checkAppUpdate/showUpdateDialog + AppGallery appdetail 详情页）；顶层置顶→倒计时画中画悬浮窗（CountdownPiP：PiPWindow typeNode + customUIController 圆环数字，三方免权限，系统播放/暂停复用为暂停/继续，退桌面自动拉起）。调研依据 docs/superpowers/research/harmony/14/15。
 - 模拟器/真机验证：本机 Hyper-V 不可用，待具备虚拟化的宿主或真机执行。
 
 ## 部署与验证工具（2026-11-18）
@@ -82,6 +84,9 @@
 Canvas `fillRule` 非零环绕与自交并集；双层 Canvas 提交闪烁；`StylusFrameBoost` 延迟与功耗；
 PDF `renderPage` 分辨率/耗时/内存；AVPlayer 首帧；通知/代理提醒 APL；AppGallery 更新 API；
 SymbolGlyph 图标名与起始版本；自由窗口/分屏断点；2in1 鼠标/键盘/焦点；深色与减少动效读取。
+WPS 鸿蒙版包名设备覆盖（`bm dump -n cn.wps.mobileoffice.hap`/`cn.wps.office.hap`）与 viewData Want 打开/另存行为；.ppsx 是否自动放映；卸载 WPS 后 16000019 回退；
+PiP 空 SURFACE + customUI 显示效果/自定义层触摸/后台计时保活与出声；弹簧曲线与 geometryTransition 实际效果；
+AppGallery loadProduct/appdetail/checkAppUpdate 真机表现（需已上架+签名一致+前台+中国境内，模拟器必然失败）。
 
 ## 工具链
 

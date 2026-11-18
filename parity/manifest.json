@@ -396,11 +396,12 @@
       ],
       "arkts": [
         "harmony/platform/src/main/ets/pdf/PdfPageSource.ets",
-        "harmony/features/src/main/ets/courseware/CoursewareSession.ts"
+        "harmony/features/src/main/ets/courseware/CoursewareSession.ts",
+        "harmony/platform/src/main/ets/system/WpsInterop.ts"
       ],
       "vectors": [],
       "tests": [],
-      "notes": "无 COM；PDF Kit 逐页渲染 + 自绘墨迹；PPT 需先导出 PDF。"
+      "notes": "无 COM/无公开放映 intent；课件批注主路径 PDF Kit 逐页渲染+自绘墨迹；原始 PPT 经「PPT（WPS）」工具以文件打开 Want 拉起 WPS 鸿蒙版（手机 cn.wps.mobileoffice.hap / Pad cn.wps.office.hap，UTD+FLAG_AUTH_READ 授权，16000019 回退引导安装）。放映控制待 WPS 官方开放；WPS 响应需真机核对。"
     },
     {
       "id": "system-autostart",
@@ -475,11 +476,12 @@
       "arkts": [
         "harmony/core/src/main/ets/update/ReleaseFeed.ts",
         "harmony/core/src/main/ets/update/UpdatePolicy.ts",
-        "harmony/entry/src/main/ets/pages/Index.ets"
+        "harmony/entry/src/main/ets/pages/Index.ets",
+        "harmony/platform/src/main/ets/system/MarketUpdate.ts"
       ],
       "vectors": [],
       "tests": [],
-      "notes": "ReleaseFeed/UpdatePolicy 逻辑移植；自更新不可用，UI 提示应用市场更新。"
+      "notes": "ReleaseFeed/UpdatePolicy 逻辑移植；自更新→市场更新：updateManager.checkAppUpdate+showUpdateDialog（@kit.AppGalleryKit，API12+）+ AppGallery 详情页（appdetail store://）。无静默自安装；需已上架/真机/前台/中国境内，模拟器不支持。"
     },
     {
       "id": "tool-launchers",
@@ -590,7 +592,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "单主窗 + 应用内浮层 + 沉浸式；无独立置顶窗/DWM。"
+      "notes": "单主窗 + 应用内浮层 + 沉浸式；顶层置顶窗→倒计时画中画悬浮窗（PiPWindow，三方免权限，CountdownPiP）；2in1 自由窗口可用但非跨应用置顶；TYPE_FLOAT 受限不可得。PiP 空 surface/触摸/后台保活需真机核对。"
     },
     {
       "id": "ppt-navigation-ui",
@@ -612,24 +614,26 @@
       "id": "tool-countdown",
       "name": "倒计时窗口（圆环/编辑/紧凑/全屏/铃声）",
       "phase": "D",
-      "status": "adapted",
+      "status": "ported",
       "csharp": [
         "src/InkCanvas.App/Views/CountdownWindow.cs",
         "src/InkCanvas.App/Services/ShellController.cs"
       ],
       "arkts": [
         "harmony/features/src/main/ets/tools/CountdownEngine.ts",
-        "harmony/entry/src/main/ets/pages/Index.ets"
+        "harmony/entry/src/main/ets/pages/Index.ets",
+        "harmony/platform/src/main/ets/media/SoundService.ts",
+        "harmony/platform/src/main/ets/window/CountdownPiP.ets"
       ],
       "vectors": [],
       "tests": [],
-      "notes": "引擎/数字/开始暂停重置已接；圆环/结束音/紧凑/全屏待补。"
+      "notes": "引擎/数字/圆环进度（Progress Ring）/开始暂停重置/分钟调节/紧凑/全屏/结束提示音（rawfile TimerDownNotice.wav）均已接；弹窗按 ArkTS 设计差异化。 顶层置顶→PiP 悬浮窗（圆环+数字 customUI，系统播放/暂停复用为暂停/继续，退桌面自动拉起）。"
     },
     {
       "id": "tool-lottery",
       "name": "抽奖（名单/替换/滚动/单次模式）",
       "phase": "D",
-      "status": "adapted",
+      "status": "ported",
       "csharp": [
         "src/InkCanvas.Features/Tools/Tools.cs",
         "src/InkCanvas.App/Views/LotteryWindow.cs",
@@ -637,11 +641,12 @@
       ],
       "arkts": [
         "harmony/features/src/main/ets/tools/LotteryEngine.ts",
-        "harmony/entry/src/main/ets/pages/Index.ets"
+        "harmony/entry/src/main/ets/pages/Index.ets",
+        "harmony/features/src/main/ets/tools/LotteryRoll.ts"
       ],
       "vectors": [],
       "tests": [],
-      "notes": "名单/不重复/抽号已接（不重复修复）；滚动动画/替换名单/单次模式待补。"
+      "notes": "名单/不重复/抽号/滚动闪烁动画/替换名单（old-->new 整行规则）/单次模式（1.5s 自动关闭）/多人抽选/三分组输出均已接；LotteryRoll 纯逻辑黄金向量互认。"
     },
     {
       "id": "tool-replay-ui",
@@ -710,7 +715,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "浮层/浮条过渡动效（140/240/380ms）+ 减少动效探测与应用内开关；弹簧/ConnectedAnimation 以过渡近似。"
+      "notes": "浮层/浮条过渡 + 弹簧曲线（curves.springMotion）+ 共享元素 geometryTransition（对应 ConnectedAnimation）+ 减少动效探测/开关；曲线效果需真机核对。"
     },
     {
       "id": "ui-pen-palette",
@@ -823,11 +828,12 @@
       ],
       "arkts": [
         "harmony/entry/src/main/ets/pages/Index.ets",
-        "harmony/features/src/main/ets/board/BoardDocument.ts"
+        "harmony/features/src/main/ets/board/BoardDocument.ts",
+        "harmony/features/src/main/ets/board/BoardElementHistory.ts"
       ],
       "vectors": [],
       "tests": [],
-      "notes": "插入/渲染/缓存/释放已接；matrix4 精确变换（中心锚点共轭）；图片拖拽手势待补。"
+      "notes": "插入/渲染/缓存/释放/matrix4 精确变换/拖拽手势（Select/Pan 命中接管，单页内撤销单元 BoardElementHistory）已接；matrix4 渲染需真机核对。"
     },
     {
       "id": "board-persistence",
@@ -911,7 +917,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "Video 播放 + 进度保持/续播已接；切换首帧优化待真机。"
+      "notes": "Video 播放/进度保持/续播/onPrepared seek 已接；切换首帧需真机核对。"
     },
     {
       "id": "ppt-file-store",
@@ -996,8 +1002,8 @@
   ],
   "coverage": {
     "total": 56,
-    "ported": 30,
-    "adapted": 25,
+    "ported": 32,
+    "adapted": 23,
     "not-ported": 1,
     "percent": 98.21
   }

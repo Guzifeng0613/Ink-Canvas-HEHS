@@ -11,7 +11,18 @@ import {
   supportsSystemMaterial,
   supportsSymbolGlyph,
   systemMotionReduced,
-  setLogEnabled
+  setLogEnabled,
+  playCountdownFinish,
+  CountdownPiPService,
+  CountdownPiPParams,
+  openInWps,
+  openAppGalleryDetail,
+  checkForUpdate,
+  ownBundleName,
+  WPS_PAD_BUNDLE,
+  WPS_PHONE_BUNDLE,
+  isTablet,
+  is2in1
 } from '@inkcanvas/platform';
 import {
   FloatingBar,
@@ -23,6 +34,7 @@ import {
   panelTransition,
   animateMotion,
   MOTION_STANDARD,
+  sharedId,
   panelBackground,
   panelBlurStyle
 } from '@inkcanvas/controls';
@@ -37,9 +49,9 @@ import {
 import type { SceneStrokeInput, SceneSelectionInput } from '@inkcanvas/ink';
 import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings, matrixToArray, transformPointByMatrix } from '@inkcanvas/core';
 import type { ShapeKind, StrokePointInput, AppSettings, AdvancedTouchInput, Matrix3x2 } from '@inkcanvas/core';
-import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground, renderMatrix4Values } from '@inkcanvas/features';
+import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground, renderMatrix4Values, applyReplaceRules, lotteryDisplayName, lotteryFlicker, lotteryDrawUnique, lotterySplitGroups, appendTransform, transformedBounds, snapshotGeometry, recordTransform } from '@inkcanvas/features';
 import type { CoursewarePageFile } from '@inkcanvas/features';
-import type { BoardAsset } from '@inkcanvas/features';
+import type { BoardAsset, ElementGeometry } from '@inkcanvas/features';
 import { ReplayClock, InkReplaySession } from '@inkcanvas/core';
 import { picker, fileIo } from '@kit.CoreFileKit';
 import { KeyCode } from '@kit.InputKit';
@@ -127,10 +139,20 @@ struct Index {
   @State countdownDisplay: number = 60;
   @State countdownRing: number = 1;
   @State countdownRunning: boolean = false;
+  @State countdownCompact: boolean = false;
+  @State countdownFullscreen: boolean = false;
+  @State countdownFinished: boolean = false;
+  @State countdownPiPActive: boolean = false;
   @State lotteryOpen: boolean = false;
   @State lotteryNames: string = '';
   @State lotteryResult: string = '';
   @State lotteryNoRepeat: boolean = false;
+  @State lotteryRolling: boolean = false;
+  @State lotteryGroups: string[] = [];
+  @State lotteryCount: number = 1;
+  @State lotterySingle: boolean = false;
+  @State lotteryReplace: string = '';
+  @State lotteryReplaceOpen: boolean = false;
   @State replayOpen: boolean = false;
   @State replayPlaying: boolean = false;
   @State replaySpeed: number = 1;
@@ -162,8 +184,10 @@ struct Index {
   private courseware: CoursewareSession = new CoursewareSession();
   private storage: StorageService | null = null;
   private countdown: CountdownEngine = new CountdownEngine();
+  private countdownPiP: CountdownPiPService = new CountdownPiPService();
   private lottery: LotteryEngine = new LotteryEngine();
   private countdownTimer: number = -1;
+  private lotteryTimer: number = -1;
   private replayTimer: number = -1;
   private replayClock: ReplayClock | null = null;
   private replaySession: InkReplaySession | null = null;
@@ -175,15 +199,22 @@ struct Index {
   private pendingYesNo: string = '';
   private mediaPaths: Map<string, string> = new Map<string, string>();
   private boardPixelMaps: Map<string, image.PixelMap> = new Map<string, image.PixelMap>();
-  private lotteryLoadedNames: string = '\u0000';
   // 视频进度保持：切页/退出时记录 currentTime，回到该页 onPrepared 恢复。
   private videoControllers: Map<string, VideoController> = new Map<string, VideoController>();
   private videoPositions: Map<string, number> = new Map<string, number>();
   private videoPlaying: Map<string, boolean> = new Map<string, boolean>();
+  // 画板图片拖拽（Select/Pan 工具下命中图片时接管触摸；单次拖拽记一个页内撤销单元）。
+  private dragAsset: BoardAsset | null = null;
+  private dragBefore: ElementGeometry | null = null;
+  private dragStartX: number = 0;
+  private dragStartY: number = 0;
+  private dragPointerId: number = -1;
 
   aboutToDisappear(): void {
     this.stopCountdownTimer();
+    this.stopLotteryTimer();
     this.stopReplayTimer();
+    this.countdownPiP.stop();
   }
 
   aboutToAppear(): void {
@@ -539,81 +570,142 @@ struct Index {
 
       if (this.countdownOpen) {
         Stack({ alignContent: Alignment.Center }) {
-          Column({ space: 12 }) {
-            Text(this.formatCountdown(this.countdownDisplay))
-              .fontSize(48)
-              .fontColor(this.dark ? Color.White : Color.Black)
-            Row({ space: 12 }) {
-              Text(this.countdownRunning ? '暂停' : '开始')
-                .fontSize(16).fontColor(Color.White).padding(10)
-                .backgroundColor('#FF0067C0').borderRadius(6)
-                .onClick(() => {
-                  this.countdown.startPause(Date.now());
-                  this.countdownRunning = this.countdown.IsRunning && !this.countdown.IsPaused;
-                  if (this.countdown.IsRunning) { this.startCountdownTimer(); } else { this.stopCountdownTimer(); }
-                })
-              Text('重置')
-                .fontSize(16).fontColor(Color.White).padding(10)
-                .backgroundColor('#666666').borderRadius(6)
-                .onClick(() => {
-                  this.countdown.reset(Date.now());
-                  this.countdownDisplay = this.countdown.Display;
-                  this.countdownRing = this.countdown.Ring;
-                  this.countdownRunning = this.countdown.IsRunning && !this.countdown.IsPaused;
-                })
-              Text('-1分').fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
-                .onClick(() => { this.countdown.configure(0, Math.max(0, Math.floor(this.countdown.ConfigSeconds / 60) - 1), this.countdown.ConfigSeconds % 60); this.countdownDisplay = this.countdown.ConfigSeconds; })
-              Text('+1分').fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
-                .onClick(() => { this.countdown.configure(0, Math.floor(this.countdown.ConfigSeconds / 60) + 1, this.countdown.ConfigSeconds % 60); this.countdownDisplay = this.countdown.ConfigSeconds; })
+          Column({ space: 16 }) {
+            if (this.countdownCompact) {
+              Text(this.formatCountdown(this.countdownDisplay))
+                .fontSize(56)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.countdownFinished ? '#FFE64545' : (this.countdownFullscreen ? Color.White : (this.dark ? Color.White : Color.Black)))
+                .onClick(() => { this.countdownCompact = false; })
+              Text('点击退出紧凑').fontSize(12).fontColor('#999999')
+            } else {
+              Stack({ alignContent: Alignment.Center }) {
+                Progress({ value: this.countdownRing * 100, total: 100, type: ProgressType.Ring })
+                  .width(this.countdownFullscreen ? 280 : 180)
+                  .height(this.countdownFullscreen ? 280 : 180)
+                  .color(this.countdownFinished ? '#FFE64545' : '#FF0067C0')
+                  .backgroundColor('#FFEAEAEA')
+                  .style({ strokeWidth: this.countdownFullscreen ? 18 : 12, enableSmoothEffect: true })
+                Column({ space: 4 }) {
+                  Text(this.formatCountdown(this.countdownDisplay))
+                    .fontSize(this.countdownFullscreen ? 64 : 40)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor(this.countdownFinished ? '#FFE64545' : (this.countdownFullscreen ? Color.White : (this.dark ? Color.White : Color.Black)))
+                  if (this.countdownFinished) {
+                    Text('时间到').fontSize(16).fontColor('#FFE64545')
+                  }
+                }
+              }
             }
-            Text('关闭').fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
-              .onClick(() => { this.countdownOpen = false; this.stopCountdownTimer(); })
+            if (!this.countdownCompact) {
+              Row({ space: 10 }) {
+                Text(this.countdownRunning ? '暂停' : '开始')
+                  .fontSize(16).fontColor(Color.White).padding({ left: 16, right: 16, top: 10, bottom: 10 })
+                  .backgroundColor('#FF0067C0').borderRadius(8)
+                  .onClick(() => { this.toggleCountdownPause(); })
+                Text('重置')
+                  .fontSize(16).fontColor(Color.White).padding({ left: 16, right: 16, top: 10, bottom: 10 })
+                  .backgroundColor('#FF666666').borderRadius(8)
+                  .onClick(() => {
+                    this.countdown.reset(Date.now());
+                    this.countdownDisplay = this.countdown.Display;
+                    this.countdownRing = this.countdown.Ring;
+                    this.countdownRunning = this.countdown.IsRunning && !this.countdown.IsPaused;
+                    this.countdownFinished = false;
+                  })
+                Text('-1分').fontSize(14).fontColor(this.countdownFullscreen ? Color.White : (this.dark ? Color.White : Color.Black))
+                  .onClick(() => { this.countdown.configure(0, Math.max(0, Math.floor(this.countdown.ConfigSeconds / 60) - 1), this.countdown.ConfigSeconds % 60); this.countdownDisplay = this.countdown.ConfigSeconds; this.countdownFinished = false; })
+                Text('+1分').fontSize(14).fontColor(this.countdownFullscreen ? Color.White : (this.dark ? Color.White : Color.Black))
+                  .onClick(() => { this.countdown.configure(0, Math.floor(this.countdown.ConfigSeconds / 60) + 1, this.countdown.ConfigSeconds % 60); this.countdownDisplay = this.countdown.ConfigSeconds; this.countdownFinished = false; })
+              }
+              Row({ space: 10 }) {
+                Text('紧凑').fontSize(13).fontColor(Color.White).padding(8).backgroundColor('#FF888888').borderRadius(6)
+                  .onClick(() => { this.countdownCompact = true; })
+                Text(this.countdownFullscreen ? '退出全屏' : '全屏').fontSize(13).fontColor(Color.White).padding(8).backgroundColor('#FF888888').borderRadius(6)
+                  .onClick(() => { this.countdownFullscreen = !this.countdownFullscreen; })
+                Text(this.countdownPiPActive ? '退出悬浮' : '悬浮窗').fontSize(13).fontColor(Color.White).padding(8).backgroundColor('#FF0067C0').borderRadius(6)
+                  .onClick(() => { this.startCountdownPiP(); })
+                Text('关闭').fontSize(13).fontColor(Color.White).padding(8).backgroundColor('#FF666666').borderRadius(6)
+                  .onClick(() => { this.countdownOpen = false; this.countdownFullscreen = false; this.stopCountdownTimer(); })
+              }
+            }
           }
-          .padding(24)
-          .backgroundColor(panelBackground(this.dark, this.blurEnabled))
-          .backgroundBlurStyle(panelBlurStyle(this.blurEnabled))
-          .borderRadius(12)
+          .padding(28)
+          .backgroundColor(this.countdownFullscreen ? Color.Transparent : panelBackground(this.dark, this.blurEnabled))
+          .backgroundBlurStyle(this.countdownFullscreen ? BlurStyle.NONE : panelBlurStyle(this.blurEnabled))
+          .borderRadius(16)
+          .geometryTransition(sharedId('countdown', this.isMotionReduced()))
           .transition(panelTransition(this.isMotionReduced()))
         }
         .width('100%').height('100%')
-        .hitTestBehavior(HitTestMode.Transparent)
+        .backgroundColor(this.countdownFullscreen ? '#E6000000' : Color.Transparent)
+        .hitTestBehavior(this.countdownFullscreen ? HitTestMode.Default : HitTestMode.Transparent)
       }
 
       if (this.lotteryOpen) {
         Stack({ alignContent: Alignment.Center }) {
-          Column({ space: 10 }) {
-            Text('抽奖').fontSize(20).fontColor(this.dark ? Color.White : Color.Black)
-            TextArea({ text: this.lotteryNames, placeholder: '每行一个名字（留空按人数抽号）' })
-              .width(260).height(120)
-              .onChange((value: string) => { this.lotteryNames = value; })
-            Row({ space: 8 }) {
-              Text(this.lotteryNoRepeat ? '不重复：开' : '不重复：关')
-                .fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
-                .onClick(() => {
-                  this.lotteryNoRepeat = !this.lotteryNoRepeat;
-                  this.settings.randSettings.isNotRepeatName = this.lotteryNoRepeat;
-                  this.persistSettings();
-                })
-              Text('抽选').fontSize(16).fontColor(Color.White).padding(10)
-                .backgroundColor('#FF0067C0').borderRadius(6)
-                .onClick(() => {
-                  if (this.lotteryLoadedNames !== this.lotteryNames) {
-                    this.lottery.loadNames(this.lotteryNames);
-                    this.lotteryLoadedNames = this.lotteryNames;
-                  }
-                  this.lottery.NoRepeat = this.lotteryNoRepeat;
-                  const picked = this.lottery.pick();
-                  this.lotteryResult = picked === null ? '已抽完' : picked;
-                })
+          Column({ space: 12 }) {
+            Text('抽奖').fontSize(20).fontWeight(FontWeight.Medium).fontColor(this.dark ? Color.White : Color.Black)
+            if (this.lotteryGroups.length === 0) {
+              TextArea({ text: this.lotteryNames, placeholder: '每行一个名字（留空按人数抽号）' })
+                .width(280).height(110)
+                .onChange((value: string) => { this.lotteryNames = value; })
+              if (this.lotteryReplaceOpen) {
+                TextArea({ text: this.lotteryReplace, placeholder: '替换规则：每行 旧名-->新名（整行精确匹配）' })
+                  .width(280).height(70)
+                  .onChange((value: string) => { this.lotteryReplace = value; })
+              }
+              Row({ space: 8 }) {
+                Text('人数').fontSize(13).fontColor(this.dark ? Color.White : Color.Black)
+                Text('-').fontSize(16).fontColor(Color.White).padding({ left: 10, right: 10, top: 4, bottom: 4 }).backgroundColor('#FF888888').borderRadius(4)
+                  .onClick(() => { this.lotteryCount = Math.max(1, this.lotteryCount - 1); })
+                Text(this.lotteryCount.toString()).fontSize(15).fontColor(this.dark ? Color.White : Color.Black)
+                Text('+').fontSize(16).fontColor(Color.White).padding({ left: 10, right: 10, top: 4, bottom: 4 }).backgroundColor('#FF888888').borderRadius(4)
+                  .onClick(() => { this.lotteryCount = Math.min(99, this.lotteryCount + 1); })
+              }
+              Row({ space: 8 }) {
+                Text(this.lotteryNoRepeat ? '不重复：开' : '不重复：关').fontSize(13).fontColor(this.dark ? Color.White : Color.Black)
+                  .onClick(() => {
+                    this.lotteryNoRepeat = !this.lotteryNoRepeat;
+                    this.settings.randSettings.isNotRepeatName = this.lotteryNoRepeat;
+                    this.persistSettings();
+                  })
+                Text(this.lotterySingle ? '单次：开' : '单次：关').fontSize(13).fontColor(this.dark ? Color.White : Color.Black)
+                  .onClick(() => { this.lotterySingle = !this.lotterySingle; })
+                Text(this.lotteryReplaceOpen ? '收起替换' : '替换名单').fontSize(13).fontColor(this.dark ? Color.White : Color.Black)
+                  .onClick(() => { this.lotteryReplaceOpen = !this.lotteryReplaceOpen; })
+              }
             }
-            Text(this.lotteryResult).fontSize(32).fontColor('#FF0067C0')
-            Text('关闭').fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
-              .onClick(() => { this.lotteryOpen = false; })
+            if (this.lotteryGroups.length > 0) {
+              Row({ space: 16 }) {
+                ForEach(this.lotteryGroups, (group: string, idx: number) => {
+                  Text(group)
+                    .fontSize(this.lotteryGroups.length > 1 ? 22 : 32)
+                    .fontColor('#FF0067C0')
+                    .textAlign(TextAlign.Center)
+                }, (group: string, idx: number) => idx.toString() + ':' + group)
+              }
+            } else {
+              Text(this.lotteryResult).fontSize(32).fontColor('#FF0067C0')
+            }
+            Row({ space: 10 }) {
+              Text(this.lotteryRolling ? '抽选中…' : '抽选')
+                .fontSize(16).fontColor(Color.White).padding({ left: 20, right: 20, top: 10, bottom: 10 })
+                .backgroundColor(this.lotteryRolling ? '#FF999999' : '#FF0067C0').borderRadius(8)
+                .onClick(() => { this.rollLottery(); })
+              if (this.lotteryGroups.length > 0) {
+                Text('再抽').fontSize(14).fontColor(Color.White).padding(8).backgroundColor('#FF888888').borderRadius(6)
+                  .onClick(() => { this.lotteryGroups = []; this.lotteryResult = ''; })
+              }
+              Text('关闭').fontSize(14).fontColor(Color.White).padding(8).backgroundColor('#FF666666').borderRadius(6)
+                .onClick(() => { this.lotteryOpen = false; this.stopLotteryTimer(); this.lotteryRolling = false; })
+            }
           }
           .padding(24)
           .backgroundColor(panelBackground(this.dark, this.blurEnabled))
           .backgroundBlurStyle(panelBlurStyle(this.blurEnabled))
-          .borderRadius(12)
+          .borderRadius(16)
+          .geometryTransition(sharedId('lottery', this.isMotionReduced()))
           .transition(panelTransition(this.isMotionReduced()))
         }
         .width('100%').height('100%')
@@ -779,6 +871,14 @@ struct Index {
             Text('检查更新').fontSize(18).fontColor(this.dark ? Color.White : Color.Black)
             Text('当前版本 3.4.0（HarmonyOS 移植）').fontSize(13).fontColor(this.dark ? Color.White : Color.Black)
             Text('HarmonyOS 应用经应用市场更新；自更新通道不可用。').fontSize(12).fontColor(this.dark ? '#A8FFFFFF' : '#9E000000')
+            Row({ space: 10 }) {
+              Text('检查更新').fontSize(14).fontColor(Color.White).padding({ left: 16, right: 16, top: 8, bottom: 8 })
+                .backgroundColor('#FF0067C0').borderRadius(6)
+                .onClick(() => { this.doCheckUpdate(); })
+              Text('前往应用市场').fontSize(14).fontColor(Color.White).padding({ left: 16, right: 16, top: 8, bottom: 8 })
+                .backgroundColor('#FF888888').borderRadius(6)
+                .onClick(() => { this.openMarket(); })
+            }
             Text('关闭').fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
               .onClick(() => { this.updateOpen = false; })
           }
@@ -838,6 +938,7 @@ struct Index {
         Stack({ alignContent: Alignment.Bottom }) {
           Column({ space: 6 }) {
             this.ToolEntry('课件（PDF）', 'courseware')
+            this.ToolEntry('PPT（WPS）', 'pptWps')
             this.ToolEntry('截图', 'screenshot')
             this.ToolEntry('Desmos', 'desmos')
             this.ToolEntry('检查更新', 'update')
@@ -1263,7 +1364,7 @@ struct Index {
   @Builder
   SettingsBehavior() {
     this.SettingSection('PPT 选项（课件模式）')
-    this.SettingInfo('PPT/WPS COM 互操作不可用；课件模式为 PDF。PPT 专属项仅保留 Settings.json 值。')
+    this.SettingInfo('课件批注模式为 PDF；原始 PPT 经「PPT（WPS）」工具跳转 WPS 鸿蒙版查看/放映。COM 级控制不可用。')
     this.SettingToggle('显示底部翻页面板', this.settings.behavior.isShowBottomPPTNavigationPanel, (v: boolean) => {
       this.settings.behavior.isShowBottomPPTNavigationPanel = v;
       this.touchSettings();
@@ -1273,7 +1374,7 @@ struct Index {
       this.touchSettings();
     })
     this.SettingDeferred('侧边翻页面板 / 侧边页码', '侧边导航面板尚未实现。')
-    this.SettingDeferred('Microsoft PowerPoint 支持 / WPS 支持', 'COM 互操作不可用；课件请导出 PDF。')
+    this.SettingInfo('WPS 支持：工具面板「PPT（WPS）」拉起 WPS 鸿蒙版（手机/Pad 包自适应）；未安装引导应用市场。放映控制待 WPS 官方开放。')
     this.SettingDeferred('进入放映时自动批注', '无放映状态检测。')
     this.SettingDeferred('放映模式双指手势', '放映专属手势门控尚未移植（与基线一致）。')
     this.SettingToggle('允许手指手势翻页', this.settings.behavior.isEnableFingerGestureSlideShowControl, (v: boolean) => {
@@ -1506,9 +1607,9 @@ struct Index {
     }
     const code = event.keyCode;
     if (ctrl && code === KeyCode.KEYCODE_Z) {
-      this.controller.Undo();
+      this.undoAction();
     } else if (ctrl && code === KeyCode.KEYCODE_Y) {
-      this.controller.Redo();
+      this.redoAction();
     } else if (ctrl && code === KeyCode.KEYCODE_E) {
       this.handleAction('clear');
     } else if (alt && code === KeyCode.KEYCODE_D) {
@@ -1788,9 +1889,13 @@ struct Index {
       this.countdown.tick(Date.now());
       this.countdownDisplay = this.countdown.Display;
       this.countdownRing = this.countdown.Ring;
+      this.pushCountdownPiP();
       if (!this.countdown.IsRunning) {
         this.countdownRunning = false;
+        this.countdownFinished = true;
         this.stopCountdownTimer();
+        this.pushCountdownPiP();
+        playCountdownFinish(getContext(this) as common.UIAbilityContext);
       }
     }, this.countdown.tickIntervalMs());
   }
@@ -1799,6 +1904,128 @@ struct Index {
     if (this.countdownTimer >= 0) {
       clearInterval(this.countdownTimer);
       this.countdownTimer = -1;
+    }
+  }
+
+  // 开始/暂停（应用内按钮与 PiP 系统控制面板共用）。
+  private toggleCountdownPause(): void {
+    this.countdownFinished = false;
+    this.countdown.startPause(Date.now());
+    this.countdownRunning = this.countdown.IsRunning && !this.countdown.IsPaused;
+    if (this.countdown.IsRunning) {
+      this.startCountdownTimer();
+    } else {
+      this.stopCountdownTimer();
+    }
+    this.pushCountdownPiP();
+  }
+
+  private countdownPiPParams(): CountdownPiPParams {
+    const params = new CountdownPiPParams();
+    params.display = this.formatCountdown(this.countdownDisplay);
+    params.ring = this.countdownRing;
+    params.finished = this.countdownFinished;
+    return params;
+  }
+
+  private pushCountdownPiP(): void {
+    if (this.countdownPiP.IsActive) {
+      this.countdownPiP.update(this.countdownPiPParams());
+    }
+  }
+
+  // 顶层置顶 → 画中画悬浮窗（前台启动；退桌面自动拉起）。空 surface/触摸/后台保活需真机核对。
+  private async startCountdownPiP(): Promise<void> {
+    if (this.countdownPiP.IsActive) {
+      await this.countdownPiP.stop();
+      this.countdownPiPActive = false;
+      return;
+    }
+    if (!CountdownPiPService.isSupported()) {
+      promptAction.showToast({ message: '此设备不支持画中画悬浮窗', duration: 2000 });
+      return;
+    }
+    const ok = await this.countdownPiP.start(
+      this.getUIContext(),
+      this.countdownPiPParams(),
+      () => { this.toggleCountdownPause(); },
+      () => { this.countdownPiPActive = false; }
+    );
+    this.countdownPiPActive = ok;
+    if (!ok) {
+      promptAction.showToast({ message: '悬浮窗启动失败', duration: 2000 });
+    }
+  }
+
+  private stopLotteryTimer(): void {
+    if (this.lotteryTimer >= 0) {
+      clearTimeout(this.lotteryTimer);
+      this.lotteryTimer = -1;
+    }
+  }
+
+  // 抽奖滚动：5 次闪烁（150ms）→ 最终抽选 → 分组输出；单次模式 1.5s 后自动关闭。
+  // 镜像 LotteryWindow.RollAsync（flicker 唯一/清空、NoRepeat 持久池 vs 本次唯一、 thirds 分组）。
+  private rollLottery(): void {
+    if (this.lotteryRolling) {
+      return;
+    }
+    const names = applyReplaceRules(this.lotteryNames, this.lotteryReplace);
+    this.lottery.loadNames(names.join('\n'));
+    this.lottery.PeopleCount = names.length > 0 ? names.length : Math.max(1, this.settings.randSettings.peopleCount);
+    this.lottery.NoRepeat = this.lotteryNoRepeat;
+    const pool = names.length > 0 ? names.length : Math.max(1, this.lottery.PeopleCount);
+    const count = Math.min(Math.max(1, this.lotteryCount), pool);
+    this.lotteryRolling = true;
+    this.lotteryGroups = [];
+    this.lotteryResult = '';
+
+    const flickerRandoms: number[] = [];
+    for (let i = 0; i < 64; i++) {
+      flickerRandoms.push(Math.random());
+    }
+    const flicker = lotteryFlicker(pool, flickerRandoms);
+    let step = 0;
+    const flickerStep = (): void => {
+      if (step < flicker.length) {
+        this.lotteryResult = lotteryDisplayName(names, flicker[step]);
+        step++;
+        this.lotteryTimer = setTimeout(flickerStep, 150);
+        return;
+      }
+      this.finishLotteryDraw(names, pool, count);
+    };
+    flickerStep();
+  }
+
+  private finishLotteryDraw(names: string[], pool: number, count: number): void {
+    const outputs: string[] = [];
+    if (this.lotteryNoRepeat) {
+      for (let i = 0; i < count; i++) {
+        const picked = this.lottery.pick();
+        if (picked === null) {
+          break;
+        }
+        outputs.push(picked);
+      }
+    } else {
+      const drawRandoms: number[] = [];
+      for (let i = 0; i < count * 8 + 8; i++) {
+        drawRandoms.push(Math.random());
+      }
+      const numbers = lotteryDrawUnique(pool, count, drawRandoms);
+      for (let i = 0; i < numbers.length; i++) {
+        outputs.push(lotteryDisplayName(names, numbers[i]));
+      }
+    }
+    this.lotteryGroups = lotterySplitGroups(outputs);
+    this.lotteryResult = outputs.length === 0 ? '已抽完' : this.lotteryGroups[0];
+    this.lotteryRolling = false;
+    if (this.lotterySingle) {
+      this.lotteryTimer = setTimeout(() => {
+        this.lotteryOpen = false;
+        this.stopLotteryTimer();
+      }, 1500);
     }
   }
 
@@ -1878,6 +2105,9 @@ struct Index {
         pointerKind(event.source, event.sourceTool),
         timeMs
       );
+      if (this.routeBoardImageDrag(event.type, touch.id, touch.x, touch.y)) {
+        continue;
+      }
       if (event.type === TouchType.Down) {
         this.controller.onPointerDown(sample);
       } else if (event.type === TouchType.Move) {
@@ -1888,6 +2118,84 @@ struct Index {
         this.controller.onPointerCanceled(sample);
       }
     }
+  }
+
+  // 画板元素拖拽路由：Select/Pan 工具下，Down 命中图片则接管该指针；Move 平移；Up/Cancel 记撤销。
+  // 命中检测用 transformedBounds（屏幕空间，与 BoardImage 渲染坐标一致）。返回 true 表示已接管。
+  private routeBoardImageDrag(type: TouchType, id: number, x: number, y: number): boolean {
+    if (!this.boardOpen) {
+      return false;
+    }
+    const tool = this.controller.Tool;
+    if (tool !== InkTool.Select && tool !== InkTool.Pan) {
+      return false;
+    }
+    if (type === TouchType.Down) {
+      if (this.dragAsset !== null) {
+        return false;
+      }
+      const hit = this.hitBoardImage(x, y);
+      if (hit === null) {
+        return false;
+      }
+      this.dragAsset = hit;
+      this.dragBefore = snapshotGeometry(hit);
+      this.dragStartX = x;
+      this.dragStartY = y;
+      this.dragPointerId = id;
+      return true;
+    }
+    if (this.dragAsset === null || id !== this.dragPointerId || this.dragBefore === null) {
+      return false;
+    }
+    if (type === TouchType.Move) {
+      const dx = x - this.dragStartX;
+      const dy = y - this.dragStartY;
+      this.dragAsset.Transform = appendTransform(this.dragBefore.Transform, [1, 0, 0, 1, dx, dy]);
+      this.boardImagesVersion++;
+      return true;
+    }
+    if (type === TouchType.Up || type === TouchType.Cancel) {
+      recordTransform(this.board.Current.History, this.dragAsset, this.dragBefore, snapshotGeometry(this.dragAsset), 'move image');
+      this.boardImagesVersion++;
+      this.dragAsset = null;
+      this.dragBefore = null;
+      this.dragPointerId = -1;
+      return true;
+    }
+    return false;
+  }
+
+  private hitBoardImage(x: number, y: number): BoardAsset | null {
+    const images = this.board.Current.Images;
+    for (let i = images.length - 1; i >= 0; i--) {
+      const asset = images[i];
+      const bounds = transformedBounds(asset.Left, asset.Top, asset.Width, asset.Height, asset.Transform);
+      if (x >= bounds[0] && x <= bounds[2] && y >= bounds[1] && y <= bounds[3]) {
+        return asset;
+      }
+    }
+    return null;
+  }
+
+  // 撤销/重做协调：画板模式下元素变换历史优先（存在时），否则墨迹撤销。
+  // 简化说明：C# 页内 History 与墨迹撤销按时间统一；此处元素历史优先，见 manifest board-images 备注。
+  private undoAction(): void {
+    if (this.boardOpen && this.board.Current.History.CanUndo) {
+      this.board.Current.History.undo();
+      this.boardImagesVersion++;
+      return;
+    }
+    this.controller.Undo();
+  }
+
+  private redoAction(): void {
+    if (this.boardOpen && this.board.Current.History.CanRedo) {
+      this.board.Current.History.redo();
+      this.boardImagesVersion++;
+      return;
+    }
+    this.controller.Redo();
   }
 
   private toSceneStroke(stroke: InkStroke, preview: Matrix3x2 | null = null): SceneStrokeInput {
@@ -1981,6 +2289,53 @@ struct Index {
     this.showCoursewarePage(this.courseware.CurrentIndex);
   }
 
+  // PPT 放映对接 WPS 鸿蒙版：选 .ppt/.pptx/.ppsx → 导入沙箱 → 文件打开 Want 拉起 WPS。
+  // 无公开放映 intent（调研 14），由 WPS 内放映；未安装则引导应用市场。需真机核对 WPS 响应。
+  private async openPptInWps(): Promise<void> {
+    if (this.storage === null) {
+      return;
+    }
+    let uris: string[] = [];
+    try {
+      const docPicker = new picker.DocumentViewPicker();
+      uris = await docPicker.select({ maxSelectNumber: 1, fileSuffixFilters: ['.ppt', '.pptx', '.ppsx'] });
+    } catch (e) {
+      return;
+    }
+    if (uris.length === 0) {
+      return;
+    }
+    const uri = uris[0];
+    const dot = uri.lastIndexOf('.');
+    const ext = dot >= 0 ? uri.substring(dot + 1) : 'pptx';
+    const path = this.storage.importUriToSandbox(uri, 'lesson.' + ext);
+    if (path === null) {
+      promptAction.showToast({ message: '文件导入失败', duration: 2000 });
+      return;
+    }
+    const context = getContext(this) as common.UIAbilityContext;
+    const ok = await openInWps(context, path, ext);
+    if (!ok) {
+      promptAction.showToast({ message: '未检测到 WPS，前往应用市场安装', duration: 2500 });
+      const bundle = (isTablet() || is2in1()) ? WPS_PAD_BUNDLE : WPS_PHONE_BUNDLE;
+      await openAppGalleryDetail(context, bundle);
+    }
+  }
+
+  // 自更新 → 市场更新：前台 checkAppUpdate + showUpdateDialog（需已上架/真机/中国境内）。
+  private async doCheckUpdate(): Promise<void> {
+    const outcome = await checkForUpdate(getContext(this) as common.UIAbilityContext);
+    promptAction.showToast({ message: outcome.message, duration: 2500 });
+  }
+
+  private async openMarket(): Promise<void> {
+    const context = getContext(this) as common.UIAbilityContext;
+    const ok = await openAppGalleryDetail(context, ownBundleName(context));
+    if (!ok) {
+      promptAction.showToast({ message: '无法打开应用市场', duration: 2000 });
+    }
+  }
+
   private showCoursewarePage(index: number): void {
     if (!this.courseware.goto(index)) {
       return;
@@ -2072,9 +2427,9 @@ struct Index {
       this.paletteOpen = false;
       this.shapeOpen = false;
     } else if (id === 'undo') {
-      this.controller.Undo();
+      this.undoAction();
     } else if (id === 'redo') {
-      this.controller.Redo();
+      this.redoAction();
     } else if (id === 'toggleCollapse') {
       animateMotion(this.getUIContext(), this.isMotionReduced(), MOTION_STANDARD, () => {
         this.collapsed = !this.collapsed;
@@ -2121,6 +2476,9 @@ struct Index {
       this.changelogOpen = true;
     } else if (id === 'courseware') {
       this.openCourseware();
+    } else if (id === 'pptWps') {
+      this.toolsOpen = false;
+      this.openPptInWps();
     } else if (id === 'pptExit') {
       this.exitCourseware();
     } else if (id === 'board') {

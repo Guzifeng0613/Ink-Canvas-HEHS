@@ -1,0 +1,118 @@
+{
+  "id": "lottery-roll",
+  "entry": "harmony/features/src/main/ets/tools/LotteryRoll.ts",
+  "cases": [
+    {
+      "id": "replace-basic",
+      "fn": "applyReplaceRules",
+      "input": ["张三\n李四\n王五", "张三-->张三丰\n王五-->王五五"],
+      "expected": ["张三丰", "李四", "王五五"],
+      "tolerance": 0
+    },
+    {
+      "id": "replace-whole-line-only",
+      "fn": "applyReplaceRules",
+      "input": ["张三\n张三丰", "张三-->X"],
+      "expected": ["X", "张三丰"],
+      "tolerance": 0
+    },
+    {
+      "id": "replace-applied-in-order",
+      "fn": "applyReplaceRules",
+      "input": ["A", "A-->B\nB-->C"],
+      "expected": ["C"],
+      "tolerance": 0
+    },
+    {
+      "id": "replace-trim-and-drop-empty",
+      "fn": "applyReplaceRules",
+      "input": [" A \n\n B ", ""],
+      "expected": ["A", "B"],
+      "tolerance": 0
+    },
+    {
+      "id": "replace-rule-without-arrow-ignored",
+      "fn": "applyReplaceRules",
+      "input": ["A", "garbage"],
+      "expected": ["A"],
+      "tolerance": 0
+    },
+    {
+      "id": "display-name-in-range",
+      "fn": "lotteryDisplayName",
+      "input": [["a", "b"], 2],
+      "expected": "b",
+      "tolerance": 0
+    },
+    {
+      "id": "display-name-out-of-range",
+      "fn": "lotteryDisplayName",
+      "input": [["a", "b"], 3],
+      "expected": "3",
+      "tolerance": 0
+    },
+    {
+      "id": "display-name-numeric-mode",
+      "fn": "lotteryDisplayName",
+      "input": [[], 5],
+      "expected": "5",
+      "tolerance": 0
+    },
+    {
+      "id": "flicker-unique-pool5",
+      "fn": "lotteryFlicker",
+      "input": [5, [0, 0.2, 0.4, 0.6, 0.8]],
+      "expected": [1, 2, 3, 4, 5],
+      "tolerance": 0
+    },
+    {
+      "id": "flicker-dup-and-clear-pool2",
+      "fn": "lotteryFlicker",
+      "input": [2, [0, 0, 0.5, 0, 0.5, 0.5]],
+      "expected": [1, 2, 1, 2, 2],
+      "tolerance": 0
+    },
+    {
+      "id": "draw-unique-pool4",
+      "fn": "lotteryDrawUnique",
+      "input": [4, 3, [0, 0.5, 0.9]],
+      "expected": [1, 3, 4],
+      "tolerance": 0
+    },
+    {
+      "id": "draw-unique-dup-pool3",
+      "fn": "lotteryDrawUnique",
+      "input": [3, 2, [0, 0, 0.9]],
+      "expected": [1, 3],
+      "tolerance": 0
+    },
+    {
+      "id": "split-le5",
+      "fn": "lotterySplitGroups",
+      "input": [["a", "b", "c"]],
+      "expected": ["a\nb\nc"],
+      "tolerance": 0
+    },
+    {
+      "id": "split-le10",
+      "fn": "lotterySplitGroups",
+      "input": [["1", "2", "3", "4", "5", "6"]],
+      "expected": ["1\n2\n3", "4\n5\n6"],
+      "tolerance": 0
+    },
+    {
+      "id": "split-gt10",
+      "fn": "lotterySplitGroups",
+      "input": [["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"]],
+      "expected": ["1\n2\n3\n4", "5\n6\n7\n8", "9\n10\n11"],
+      "tolerance": 0
+    },
+    {
+      "id": "split-empty",
+      "fn": "lotterySplitGroups",
+      "input": [[]],
+      "expected": [],
+      "tolerance": 0
+    }
+  ]
+}

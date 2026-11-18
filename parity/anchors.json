@@ -170,6 +170,10 @@
       "csharp": "src/InkCanvas.Features/Board/BoardService.cs"
     },
     {
+      "arkts": "harmony/features/src/main/ets/board/BoardElementHistory.ts",
+      "csharp": "src/InkCanvas.Features/Board/BoardService.cs"
+    },
+    {
       "arkts": "harmony/features/src/main/ets/board/BoardElementMath.ts",
       "csharp": "src/InkCanvas.Features/Board/BoardService.cs"
     },
@@ -184,6 +188,10 @@
     {
       "arkts": "harmony/features/src/main/ets/tools/LotteryEngine.ts",
       "csharp": "src/InkCanvas.Features/Tools/Tools.cs"
+    },
+    {
+      "arkts": "harmony/features/src/main/ets/tools/LotteryRoll.ts",
+      "csharp": "src/InkCanvas.App/Views/LotteryWindow.cs"
     },
     {
       "arkts": "harmony/ink/src/main/ets/ControllerTypes.ts",
@@ -226,6 +234,10 @@
       "csharp": "src/InkCanvas.App/Services/WindowChrome.cs"
     },
     {
+      "arkts": "harmony/platform/src/main/ets/media/SoundService.ts",
+      "csharp": "src/InkCanvas.App/Views/CountdownWindow.cs"
+    },
+    {
       "arkts": "harmony/platform/src/main/ets/pdf/PdfPageSource.ets",
       "csharp": "src/InkCanvas.Features/Ppt/PptInteropService.cs"
     },
@@ -246,8 +258,20 @@
       "csharp": "src/InkCanvas.Features/Persistence/Stores.cs"
     },
     {
+      "arkts": "harmony/platform/src/main/ets/system/MarketUpdate.ts",
+      "csharp": "src/InkCanvas.Core/Update/UpdatePolicy.cs"
+    },
+    {
       "arkts": "harmony/platform/src/main/ets/system/SystemServices.ets",
       "csharp": "src/InkCanvas.Platform/System/SoftwareLauncher.cs"
+    },
+    {
+      "arkts": "harmony/platform/src/main/ets/system/WpsInterop.ts",
+      "csharp": "src/InkCanvas.Features/Ppt/PptInteropService.cs"
+    },
+    {
+      "arkts": "harmony/platform/src/main/ets/window/CountdownPiP.ets",
+      "csharp": "src/InkCanvas.App/Views/CountdownWindow.cs"
     }
   ]
 }

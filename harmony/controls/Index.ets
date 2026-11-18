@@ -33,6 +33,8 @@ export {
   MOTION_STANDARD,
   MOTION_SLOW,
   motionDuration,
+  springCurve,
+  sharedId,
   overlayTransition,
   panelTransition,
   barCollapseTransition,

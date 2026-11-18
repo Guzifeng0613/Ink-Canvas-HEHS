@@ -29,3 +29,15 @@ export { PdfPageSource } from './src/main/ets/pdf/PdfPageSource';
 export { AutoSaveService } from './src/main/ets/persistence/AutoSaveService';
 export { captureComponentToPng } from './src/main/ets/persistence/SnapshotService';
 export { openExternalUrl } from './src/main/ets/system/SystemServices';
+export { playCountdownFinish } from './src/main/ets/media/SoundService';
+export { CountdownPiPService, CountdownPiPParams } from './src/main/ets/window/CountdownPiP';
+export {
+  WPS_PHONE_BUNDLE,
+  WPS_PAD_BUNDLE,
+  presentationUtd,
+  openInOfficeApp,
+  openInWps,
+  openWithChooser
+} from './src/main/ets/system/WpsInterop';
+export { ownBundleName, openAppGalleryDetail, checkForUpdate } from './src/main/ets/system/MarketUpdate';
+export type { UpdateCheckOutcome } from './src/main/ets/system/MarketUpdate';
