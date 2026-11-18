@@ -1,0 +1,97 @@
+{
+  "id": "countdown",
+  "entry": "harmony/features/src/main/ets/tools/CountdownEngine.ts",
+  "cases": [
+    {
+      "id": "interval-10",
+      "fn": "countdownInterval",
+      "input": [
+        10
+      ],
+      "expected": 20,
+      "tolerance": 0
+    },
+    {
+      "id": "interval-11",
+      "fn": "countdownInterval",
+      "input": [
+        11
+      ],
+      "expected": 30,
+      "tolerance": 0
+    },
+    {
+      "id": "interval-60",
+      "fn": "countdownInterval",
+      "input": [
+        60
+      ],
+      "expected": 30,
+      "tolerance": 0
+    },
+    {
+      "id": "interval-61",
+      "fn": "countdownInterval",
+      "input": [
+        61
+      ],
+      "expected": 50,
+      "tolerance": 0
+    },
+    {
+      "id": "interval-120",
+      "fn": "countdownInterval",
+      "input": [
+        120
+      ],
+      "expected": 50,
+      "tolerance": 0
+    },
+    {
+      "id": "interval-121",
+      "fn": "countdownInterval",
+      "input": [
+        121
+      ],
+      "expected": 100,
+      "tolerance": 0
+    },
+    {
+      "id": "display-ceil",
+      "fn": "countdownDisplay",
+      "input": [
+        1.0001
+      ],
+      "expected": 2,
+      "tolerance": 0
+    },
+    {
+      "id": "tick-half",
+      "fn": "countdownTick",
+      "input": [
+        10,
+        5
+      ],
+      "expected": {
+        "Display": 5,
+        "Ring": 0.5,
+        "Finished": false
+      },
+      "tolerance": 1e-06
+    },
+    {
+      "id": "tick-finish",
+      "fn": "countdownTick",
+      "input": [
+        10,
+        10
+      ],
+      "expected": {
+        "Display": 0,
+        "Ring": 0,
+        "Finished": true
+      },
+      "tolerance": 0
+    }
+  ]
+}

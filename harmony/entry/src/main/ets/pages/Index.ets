@@ -11,7 +11,8 @@ import {
 import type { SceneStrokeInput, SceneSelectionInput } from '@inkcanvas/ink';
 import { InkStroke, InkColor, InkDocument } from '@inkcanvas/core';
 import type { ShapeKind, StrokePointInput } from '@inkcanvas/core';
-import { CoursewareSession } from '@inkcanvas/features';
+import { CoursewareSession, CountdownEngine, LotteryEngine } from '@inkcanvas/features';
+import { ReplayClock, InkReplaySession } from '@inkcanvas/core';
 import { picker } from '@kit.CoreFileKit';
 import { image } from '@kit.ImageKit';
 
@@ -35,6 +36,20 @@ struct Index {
   @State coursewarePage: image.PixelMap | null = null;
   @State coursewareIndex: number = 0;
   @State coursewareCount: number = 0;
+  @State countdownOpen: boolean = false;
+  @State countdownDisplay: number = 60;
+  @State countdownRing: number = 1;
+  @State countdownRunning: boolean = false;
+  @State lotteryOpen: boolean = false;
+  @State lotteryNames: string = '';
+  @State lotteryResult: string = '';
+  @State lotteryNoRepeat: boolean = false;
+  @State replayOpen: boolean = false;
+  @State replayPlaying: boolean = false;
+  @State replaySpeed: number = 1;
+  @State replayProgress: number = 0;
+  @State guideOpen: boolean = false;
+  @State settingsOpen: boolean = false;
   @State windowWidth: number = 0;
   @State windowHeight: number = 0;
   private renderer: CanvasInkRenderer | null = null;
@@ -43,6 +58,17 @@ struct Index {
   private pdfSource: PdfPageSource = new PdfPageSource();
   private courseware: CoursewareSession = new CoursewareSession();
   private storage: StorageService | null = null;
+  private countdown: CountdownEngine = new CountdownEngine();
+  private lottery: LotteryEngine = new LotteryEngine();
+  private countdownTimer: number = -1;
+  private replayTimer: number = -1;
+  private replayClock: ReplayClock | null = null;
+  private replaySession: InkReplaySession | null = null;
+
+  aboutToDisappear(): void {
+    this.stopCountdownTimer();
+    this.stopReplayTimer();
+  }
 
   aboutToAppear(): void {
     this.storage = new StorageService(getContext(this).filesDir);
@@ -170,6 +196,145 @@ struct Index {
         .hitTestBehavior(HitTestMode.Transparent)
       }
 
+      if (this.countdownOpen) {
+        Stack({ alignContent: Alignment.Center }) {
+          Column({ space: 12 }) {
+            Text(this.formatCountdown(this.countdownDisplay))
+              .fontSize(48)
+              .fontColor(this.dark ? Color.White : Color.Black)
+            Row({ space: 12 }) {
+              Text(this.countdownRunning ? '暂停' : '开始')
+                .fontSize(16).fontColor(Color.White).padding(10)
+                .backgroundColor('#FF0067C0').borderRadius(6)
+                .onClick(() => {
+                  this.countdown.startPause(Date.now());
+                  this.countdownRunning = this.countdown.IsRunning && !this.countdown.IsPaused;
+                  if (this.countdown.IsRunning) { this.startCountdownTimer(); } else { this.stopCountdownTimer(); }
+                })
+              Text('重置')
+                .fontSize(16).fontColor(Color.White).padding(10)
+                .backgroundColor('#666666').borderRadius(6)
+                .onClick(() => {
+                  this.countdown.reset(Date.now());
+                  this.countdownDisplay = this.countdown.Display;
+                  this.countdownRing = this.countdown.Ring;
+                  this.countdownRunning = this.countdown.IsRunning && !this.countdown.IsPaused;
+                })
+              Text('-1分').fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
+                .onClick(() => { this.countdown.configure(0, Math.max(0, Math.floor(this.countdown.ConfigSeconds / 60) - 1), this.countdown.ConfigSeconds % 60); this.countdownDisplay = this.countdown.ConfigSeconds; })
+              Text('+1分').fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
+                .onClick(() => { this.countdown.configure(0, Math.floor(this.countdown.ConfigSeconds / 60) + 1, this.countdown.ConfigSeconds % 60); this.countdownDisplay = this.countdown.ConfigSeconds; })
+            }
+            Text('关闭').fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
+              .onClick(() => { this.countdownOpen = false; this.stopCountdownTimer(); })
+          }
+          .padding(24)
+          .backgroundColor(this.dark ? '#F21F1F1F' : '#F2F0F3F9')
+          .borderRadius(12)
+        }
+        .width('100%').height('100%')
+        .hitTestBehavior(HitTestMode.Transparent)
+      }
+
+      if (this.lotteryOpen) {
+        Stack({ alignContent: Alignment.Center }) {
+          Column({ space: 10 }) {
+            Text('抽奖').fontSize(20).fontColor(this.dark ? Color.White : Color.Black)
+            TextArea({ text: this.lotteryNames, placeholder: '每行一个名字（留空按人数抽号）' })
+              .width(260).height(120)
+              .onChange((value: string) => { this.lotteryNames = value; })
+            Row({ space: 8 }) {
+              Text(this.lotteryNoRepeat ? '不重复：开' : '不重复：关')
+                .fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
+                .onClick(() => { this.lotteryNoRepeat = !this.lotteryNoRepeat; })
+              Text('抽选').fontSize(16).fontColor(Color.White).padding(10)
+                .backgroundColor('#FF0067C0').borderRadius(6)
+                .onClick(() => {
+                  this.lottery.loadNames(this.lotteryNames);
+                  this.lottery.NoRepeat = this.lotteryNoRepeat;
+                  const picked = this.lottery.pick();
+                  this.lotteryResult = picked === null ? '已抽完' : picked;
+                })
+            }
+            Text(this.lotteryResult).fontSize(32).fontColor('#FF0067C0')
+            Text('关闭').fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
+              .onClick(() => { this.lotteryOpen = false; })
+          }
+          .padding(24)
+          .backgroundColor(this.dark ? '#F21F1F1F' : '#F2F0F3F9')
+          .borderRadius(12)
+        }
+        .width('100%').height('100%')
+        .hitTestBehavior(HitTestMode.Transparent)
+      }
+
+      if (this.replayOpen) {
+        Stack({ alignContent: Alignment.Bottom }) {
+          Row({ space: 10 }) {
+            Text(this.replayPlaying ? '暂停' : '播放')
+              .fontSize(14).fontColor(Color.White).padding(8)
+              .backgroundColor('#FF0067C0').borderRadius(6)
+              .onClick(() => { this.toggleReplay(); })
+            ForEach([0.5, 1, 2, 4], (speed: number) => {
+              Text(speed + 'x')
+                .fontSize(14)
+                .fontColor(this.replaySpeed === speed ? Color.White : (this.dark ? Color.White : Color.Black))
+                .backgroundColor(this.replaySpeed === speed ? '#FF0067C0' : Color.Transparent)
+                .padding(6).borderRadius(4)
+                .onClick(() => { this.replaySpeed = speed; if (this.replayClock !== null) { this.replayClock.Speed = speed; } })
+            }, (speed: number) => speed.toString())
+            Text('关闭').fontSize(14).fontColor(Color.White).padding(8)
+              .backgroundColor('#666666').borderRadius(6)
+              .onClick(() => { this.closeReplay(); })
+          }
+          .padding(10)
+          .backgroundColor('#99000000')
+          .borderRadius(8)
+          .margin({ bottom: 170 })
+        }
+        .width('100%').height('100%')
+        .hitTestBehavior(HitTestMode.Transparent)
+      }
+
+      if (this.guideOpen) {
+        Stack({ alignContent: Alignment.Center }) {
+          Column({ space: 6 }) {
+            Text('操作指南').fontSize(20).fontColor(this.dark ? Color.White : Color.Black)
+            Text('Alt+D 批注 / Alt+E 橡皮 / Alt+S 选择').fontSize(13).fontColor(this.dark ? Color.White : Color.Black)
+            Text('Alt+B 画板 / Alt+V 收纳 / Alt+Q 鼠标').fontSize(13).fontColor(this.dark ? Color.White : Color.Black)
+            Text('Ctrl+Z 撤销 / Ctrl+Y 重做 / Ctrl+E 清空').fontSize(13).fontColor(this.dark ? Color.White : Color.Black)
+            Text('双指：平移/缩放/旋转（手势面板配置）').fontSize(13).fontColor(this.dark ? Color.White : Color.Black)
+            Text('课件：工具 → 课件（PDF），PPT 请先导出 PDF').fontSize(13).fontColor(this.dark ? Color.White : Color.Black)
+            Text('关闭').fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
+              .onClick(() => { this.guideOpen = false; })
+          }
+          .padding(24)
+          .backgroundColor(this.dark ? '#F21F1F1F' : '#F2F0F3F9')
+          .borderRadius(12)
+        }
+        .width('100%').height('100%')
+        .hitTestBehavior(HitTestMode.Transparent)
+      }
+
+      if (this.settingsOpen) {
+        Stack({ alignContent: Alignment.Center }) {
+          Column({ space: 10 }) {
+            Text('设置').fontSize(20).fontColor(this.dark ? Color.White : Color.Black)
+            Text(this.dark ? '主题：深色（点击切换）' : '主题：浅色（点击切换）')
+              .fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
+              .onClick(() => { this.dark = !this.dark; })
+            Text('完整设置页将在后续版本接入 Settings.json').fontSize(12).fontColor(this.dark ? '#A8FFFFFF' : '#9E000000')
+            Text('关闭').fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
+              .onClick(() => { this.settingsOpen = false; })
+          }
+          .padding(24)
+          .backgroundColor(this.dark ? '#F21F1F1F' : '#F2F0F3F9')
+          .borderRadius(12)
+        }
+        .width('100%').height('100%')
+        .hitTestBehavior(HitTestMode.Transparent)
+      }
+
       if (this.toolsOpen) {
         Stack({ alignContent: Alignment.Bottom }) {
           Column({ space: 6 }) {
@@ -234,6 +399,92 @@ struct Index {
       })
   }
 
+  private formatCountdown(totalSeconds: number): string {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const sec = totalSeconds % 60;
+    const pad = (n: number): string => n < 10 ? '0' + n : '' + n;
+    return pad(h) + ':' + pad(m) + ':' + pad(sec);
+  }
+
+  private startCountdownTimer(): void {
+    this.stopCountdownTimer();
+    this.countdownTimer = setInterval(() => {
+      this.countdown.tick(Date.now());
+      this.countdownDisplay = this.countdown.Display;
+      this.countdownRing = this.countdown.Ring;
+      if (!this.countdown.IsRunning) {
+        this.countdownRunning = false;
+        this.stopCountdownTimer();
+      }
+    }, this.countdown.tickIntervalMs());
+  }
+
+  private stopCountdownTimer(): void {
+    if (this.countdownTimer >= 0) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = -1;
+    }
+  }
+
+  private openReplay(): void {
+    const strokes = this.controller.Document.Strokes;
+    if (strokes.length === 0) {
+      return;
+    }
+    this.replaySession = new InkReplaySession(strokes, 12);
+    this.replayClock = new ReplayClock(this.replaySession.DurationMs);
+    this.replayClock.Speed = this.replaySpeed;
+    this.replayOpen = true;
+    this.replayPlaying = false;
+    this.replayProgress = 0;
+    this.refreshScene();
+  }
+
+  private toggleReplay(): void {
+    if (this.replayClock === null) {
+      return;
+    }
+    this.replayClock.toggle();
+    this.replayPlaying = this.replayClock.IsPlaying;
+    if (this.replayPlaying) {
+      this.startReplayTimer();
+    } else {
+      this.stopReplayTimer();
+    }
+  }
+
+  private startReplayTimer(): void {
+    this.stopReplayTimer();
+    this.replayTimer = setInterval(() => {
+      if (this.replayClock === null) {
+        return;
+      }
+      this.replayClock.advance(33);
+      this.replayProgress = this.replayClock.Progress;
+      this.replayPlaying = this.replayClock.IsPlaying;
+      this.refreshScene();
+      if (!this.replayClock.IsPlaying) {
+        this.stopReplayTimer();
+      }
+    }, 33);
+  }
+
+  private stopReplayTimer(): void {
+    if (this.replayTimer >= 0) {
+      clearInterval(this.replayTimer);
+      this.replayTimer = -1;
+    }
+  }
+
+  private closeReplay(): void {
+    this.stopReplayTimer();
+    this.replayOpen = false;
+    this.replaySession = null;
+    this.replayClock = null;
+    this.refreshScene();
+  }
+
   private handleTouch(event: TouchEvent): void {
     const timeMs = event.timestamp / 1000000;
     const touches = event.changedTouches;
@@ -285,7 +536,10 @@ struct Index {
       return;
     }
     const committed: SceneStrokeInput[] = [];
-    const strokes = this.controller.Document.Strokes;
+    let strokes = this.controller.Document.Strokes;
+    if (this.replayOpen && this.replaySession !== null && this.replayClock !== null) {
+      strokes = this.replaySession.visibleAt(this.replayClock.ElapsedMs);
+    }
     for (let i = 0; i < strokes.length; i++) {
       committed.push(this.toSceneStroke(strokes[i]));
     }
@@ -410,6 +664,21 @@ struct Index {
       this.selectedId = 'tools';
     } else if (id === 'closeTools') {
       this.toolsOpen = false;
+    } else if (id === 'countdown') {
+      this.toolsOpen = false;
+      this.countdownOpen = true;
+    } else if (id === 'lottery') {
+      this.toolsOpen = false;
+      this.lotteryOpen = true;
+    } else if (id === 'replay') {
+      this.toolsOpen = false;
+      this.openReplay();
+    } else if (id === 'settings') {
+      this.toolsOpen = false;
+      this.settingsOpen = true;
+    } else if (id === 'guide') {
+      this.toolsOpen = false;
+      this.guideOpen = true;
     } else if (id === 'courseware') {
       this.openCourseware();
     } else if (id === 'pptExit') {

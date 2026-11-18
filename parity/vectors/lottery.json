@@ -1,0 +1,64 @@
+{
+  "id": "lottery",
+  "entry": "harmony/features/src/main/ets/tools/LotteryEngine.ts",
+  "cases": [
+    {
+      "id": "lottery-names-norepeat",
+      "fn": "lotterySequence",
+      "input": [
+        "a\nb\n",
+        60,
+        true,
+        [
+          0,
+          0.5,
+          0.9
+        ]
+      ],
+      "expected": [
+        "a",
+        "b",
+        null
+      ],
+      "tolerance": 0
+    },
+    {
+      "id": "lottery-count",
+      "fn": "lotterySequence",
+      "input": [
+        "",
+        3,
+        false,
+        [
+          0,
+          0.34,
+          0.99
+        ]
+      ],
+      "expected": [
+        "1",
+        "2",
+        "3"
+      ],
+      "tolerance": 0
+    },
+    {
+      "id": "lottery-trim",
+      "fn": "lotterySequence",
+      "input": [
+        " a \n\n b \n",
+        60,
+        false,
+        [
+          0,
+          0.9
+        ]
+      ],
+      "expected": [
+        "a",
+        "b"
+      ],
+      "tolerance": 0
+    }
+  ]
+}

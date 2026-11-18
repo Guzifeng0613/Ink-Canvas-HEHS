@@ -19,3 +19,6 @@ export {
 export type { BoardAsset, BoardDocumentSummary, BoardSavePageProbe } from './src/main/ets/board/BoardDocument';
 export { CoursewareSession, coursewareNavigate, coursewareManifestSummary } from './src/main/ets/courseware/CoursewareSession';
 export type { CoursewareBundle, CoursewarePageFile, CoursewareSummary } from './src/main/ets/courseware/CoursewareSession';
+export { CountdownEngine, countdownInterval, countdownDisplay, countdownTick } from './src/main/ets/tools/CountdownEngine';
+export type { CountdownTickResult } from './src/main/ets/tools/CountdownEngine';
+export { LotteryEngine, lotterySequence } from './src/main/ets/tools/LotteryEngine';
