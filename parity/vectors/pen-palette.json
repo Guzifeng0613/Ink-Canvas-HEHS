@@ -1,0 +1,104 @@
+{
+  "id": "pen-palette",
+  "entry": "harmony/controls/src/main/ets/PenPaletteCatalog.ts",
+  "cases": [
+    {
+      "id": "palette-light",
+      "fn": "paletteSummary",
+      "input": [
+        true
+      ],
+      "expected": {
+        "PenCount": 9,
+        "HighlighterCount": 6,
+        "PenPacked": [
+          4278190080,
+          4294967295,
+          4293870660,
+          4293675161,
+          4294538006,
+          4294626325,
+          4280468830,
+          4279548070,
+          4282090230
+        ],
+        "HighlighterPacked": [
+          4292617766,
+          4293548044,
+          4293571336,
+          4279080072,
+          4280640491,
+          4287837162
+        ]
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "width-to-stored",
+      "fn": "toStoredPenWidth",
+      "input": [
+        7
+      ],
+      "expected": 3.5,
+      "tolerance": 1e-06
+    },
+    {
+      "id": "width-to-menu",
+      "fn": "toMenuPenWidth",
+      "input": [
+        3.5
+      ],
+      "expected": 7,
+      "tolerance": 1e-06
+    },
+    {
+      "id": "snap-width",
+      "fn": "snap",
+      "input": [
+        4.4,
+        1,
+        1
+      ],
+      "expected": 4,
+      "tolerance": 1e-06
+    },
+    {
+      "id": "snap-alpha",
+      "fn": "snap",
+      "input": [
+        151,
+        20,
+        20
+      ],
+      "expected": 160,
+      "tolerance": 1e-06
+    },
+    {
+      "id": "taper-0",
+      "fn": "taperKindForIndex",
+      "input": [
+        0
+      ],
+      "expected": 1,
+      "tolerance": 0
+    },
+    {
+      "id": "taper-1",
+      "fn": "taperKindForIndex",
+      "input": [
+        1
+      ],
+      "expected": 2,
+      "tolerance": 0
+    },
+    {
+      "id": "taper-2",
+      "fn": "taperKindForIndex",
+      "input": [
+        2
+      ],
+      "expected": 0,
+      "tolerance": 0
+    }
+  ]
+}
