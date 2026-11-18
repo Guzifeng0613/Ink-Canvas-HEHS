@@ -1,4 +1,4 @@
-import { InkCanvasSurface, CanvasInkRenderer, pointerKind, PdfPageSource, StorageService } from '@inkcanvas/platform';
+import { InkCanvasSurface, CanvasInkRenderer, pointerKind, PdfPageSource, StorageService, AutoSaveService, captureComponentToPng } from '@inkcanvas/platform';
 import { FloatingBar, PenPalette, ShapePicker } from '@inkcanvas/controls';
 import {
   InkController,
@@ -9,8 +9,8 @@ import {
   Invalidation
 } from '@inkcanvas/ink';
 import type { SceneStrokeInput, SceneSelectionInput } from '@inkcanvas/ink';
-import { InkStroke, InkColor, InkDocument } from '@inkcanvas/core';
-import type { ShapeKind, StrokePointInput } from '@inkcanvas/core';
+import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings } from '@inkcanvas/core';
+import type { ShapeKind, StrokePointInput, AppSettings } from '@inkcanvas/core';
 import { CoursewareSession, CountdownEngine, LotteryEngine } from '@inkcanvas/features';
 import { ReplayClock, InkReplaySession } from '@inkcanvas/core';
 import { picker } from '@kit.CoreFileKit';
@@ -64,6 +64,8 @@ struct Index {
   private replayTimer: number = -1;
   private replayClock: ReplayClock | null = null;
   private replaySession: InkReplaySession | null = null;
+  private settings: AppSettings = createDefaultSettings();
+  private autoSave: AutoSaveService | null = null;
 
   aboutToDisappear(): void {
     this.stopCountdownTimer();
@@ -77,6 +79,41 @@ struct Index {
       this.refreshScene();
     };
     this.controller.CurrentAttributes.BaseWidth = 2.5;
+    const settingsText = this.storage.readText('Settings.json');
+    if (settingsText !== null) {
+      this.settings = parseSettings(settingsText);
+    }
+    this.applySettings();
+    this.autoSave = new AutoSaveService(this.storage, 'Auto Saved - Strokes', true, this.settings.automation.autoDelSavedFilesDaysThreshold);
+  }
+
+  private applySettings(): void {
+    this.dark = this.settings.appearance.theme === 2;
+    this.widthMenu = this.settings.canvas.inkWidth * 2;
+    this.alpha = this.settings.canvas.inkAlpha;
+    this.taperIndex = this.settings.canvas.inkStyle;
+    this.controller.CurrentAttributes.BaseWidth = this.settings.canvas.inkWidth;
+    this.controller.CurrentAttributes.HighlighterAlpha = this.settings.canvas.inkAlpha;
+    this.controller.CurrentAttributes.TaperKind = this.settings.canvas.inkStyle === 1 ? 2 : (this.settings.canvas.inkStyle === 2 ? 0 : 1);
+  }
+
+  private persistSettings(): void {
+    if (this.storage === null) {
+      return;
+    }
+    this.settings.appearance.theme = this.dark ? 2 : 1;
+    this.settings.canvas.inkWidth = this.widthMenu / 2;
+    this.settings.canvas.inkAlpha = this.alpha;
+    this.settings.canvas.inkStyle = this.taperIndex;
+    this.storage.writeTextAtomic('Settings.json', stringifySettings(this.settings));
+  }
+
+  private async takeScreenshot(): Promise<void> {
+    if (this.storage === null) {
+      return;
+    }
+    const path = this.storage.fullPathPublic('screenshots/shot-' + Date.now() + '.png');
+    await captureComponentToPng('inkRoot', path);
   }
 
   build() {
@@ -154,14 +191,17 @@ struct Index {
             onWidth: (stored: number) => {
               this.widthMenu = stored * 2;
               this.controller.CurrentAttributes.BaseWidth = stored;
+              this.persistSettings();
             },
             onAlpha: (value: number) => {
               this.alpha = value;
               this.controller.CurrentAttributes.HighlighterAlpha = value;
+              this.persistSettings();
             },
             onTaper: (kind: number) => {
               this.taperIndex = kind === 1 ? 0 : (kind === 2 ? 1 : 2);
               this.controller.CurrentAttributes.TaperKind = kind;
+              this.persistSettings();
             },
             onToggleScheme: () => {
               this.dark = !this.dark;
@@ -322,7 +362,7 @@ struct Index {
             Text('设置').fontSize(20).fontColor(this.dark ? Color.White : Color.Black)
             Text(this.dark ? '主题：深色（点击切换）' : '主题：浅色（点击切换）')
               .fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
-              .onClick(() => { this.dark = !this.dark; })
+              .onClick(() => { this.dark = !this.dark; this.persistSettings(); })
             Text('完整设置页将在后续版本接入 Settings.json').fontSize(12).fontColor(this.dark ? '#A8FFFFFF' : '#9E000000')
             Text('关闭').fontSize(14).fontColor(this.dark ? Color.White : Color.Black)
               .onClick(() => { this.settingsOpen = false; })
@@ -339,6 +379,7 @@ struct Index {
         Stack({ alignContent: Alignment.Bottom }) {
           Column({ space: 6 }) {
             this.ToolEntry('课件（PDF）', 'courseware')
+            this.ToolEntry('截图', 'screenshot')
             this.ToolEntry('计时器', 'countdown')
             this.ToolEntry('抽奖', 'lottery')
             this.ToolEntry('回放', 'replay')
@@ -372,6 +413,7 @@ struct Index {
       .height('100%')
       .hitTestBehavior(HitTestMode.Transparent)
     }
+    .id('inkRoot')
     .width('100%')
     .height('100%')
     .onAreaChange((oldValue: Area, newValue: Area) => {
@@ -639,6 +681,9 @@ struct Index {
       this.paletteOpen = false;
       this.shapeOpen = false;
     } else if (id === 'clear' || id === 'clearAndMouse') {
+      if (this.autoSave !== null) {
+        this.autoSave.saveSnapshot(this.controller.Document.Strokes, 'clear');
+      }
       this.controller.ClearSelection();
       this.controller.Clear();
       if (id === 'clearAndMouse') {
@@ -664,6 +709,9 @@ struct Index {
       this.selectedId = 'tools';
     } else if (id === 'closeTools') {
       this.toolsOpen = false;
+    } else if (id === 'screenshot') {
+      this.toolsOpen = false;
+      this.takeScreenshot();
     } else if (id === 'countdown') {
       this.toolsOpen = false;
       this.countdownOpen = true;

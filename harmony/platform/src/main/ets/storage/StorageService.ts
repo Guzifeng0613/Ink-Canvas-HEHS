@@ -13,6 +13,10 @@ export class StorageService {
     this.rootDir = rootDir;
   }
 
+  fullPathPublic(relative: string): string {
+    return this.fullPath(relative);
+  }
+
   private fullPath(relative: string): string {
     if (relative.length === 0) {
       return this.rootDir;

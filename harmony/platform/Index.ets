@@ -23,3 +23,5 @@ export type { PointResult } from './src/main/ets/layout/WindowLayout';
 export { CanvasInkRenderer } from './src/main/ets/rendering/CanvasInkRenderer';
 export { InkCanvasSurface } from './src/main/ets/rendering/InkCanvasSurface';
 export { PdfPageSource } from './src/main/ets/pdf/PdfPageSource';
+export { AutoSaveService } from './src/main/ets/persistence/AutoSaveService';
+export { captureComponentToPng } from './src/main/ets/persistence/SnapshotService';
