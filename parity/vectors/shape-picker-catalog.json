@@ -1,0 +1,17 @@
+{
+  "id": "shape-picker-catalog",
+  "entry": "harmony/controls/src/main/ets/ShapePickerCatalog.ts",
+  "cases": [
+    {
+      "id": "shape-catalog",
+      "fn": "shapeCatalogSummary",
+      "input": [],
+      "expected": {
+        "Count": 24,
+        "Kinds": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 13, 16, 14, 15, 17, 18, 21, 20, 19, 10, 22, 23, 24],
+        "RowCounts": [5, 5, 5, 5, 4]
+      },
+      "tolerance": 0
+    }
+  ]
+}

@@ -25,3 +25,6 @@ export {
 } from './src/main/ets/PenPaletteCatalog';
 export type { Swatch, PaletteSummary } from './src/main/ets/PenPaletteCatalog';
 export { PenPalette } from './src/main/ets/PenPalette';
+export { SHAPE_MENU_ROWS, shapeCatalogSummary } from './src/main/ets/ShapePickerCatalog';
+export type { ShapeMenuEntry, ShapeCatalogSummary } from './src/main/ets/ShapePickerCatalog';
+export { ShapePicker, ShapePreviewCell } from './src/main/ets/ShapePicker';
