@@ -8,6 +8,10 @@ export { InkController, runControllerScenario } from './src/main/ets/InkControll
 export { InkDotAnimation, dotAnimationProbe } from './src/main/ets/InkDotAnimation';
 export { InkPlayback, playbackProbe } from './src/main/ets/InkPlayback';
 export {
+  DrawingObject, LayerAction, sortDrawingObjects, nextLayerOrder, arrangeObjects
+} from './src/main/ets/DrawingObject';
+export type { ArrangeInput, ArrangeOutput } from './src/main/ets/DrawingObject';
+export {
   InkTool,
   InkEraserMode,
   OptionalOperation,

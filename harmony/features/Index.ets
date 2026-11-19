@@ -34,6 +34,8 @@ export type { CoursewareBundle, CoursewarePageFile, CoursewareSummary } from './
 export { CountdownEngine, countdownInterval, countdownDisplay, countdownTick } from './src/main/ets/tools/CountdownEngine';
 export type { CountdownTickResult } from './src/main/ets/tools/CountdownEngine';
 export { LotteryEngine, lotterySequence } from './src/main/ets/tools/LotteryEngine';
+export type { LotteryDraw } from './src/main/ets/tools/LotteryEngine';
+export { parseRoster, splitFields, rosterProbe } from './src/main/ets/tools/ClassroomRoster';
 export {
   applyReplaceRules,
   lotteryDisplayName,

@@ -87,7 +87,14 @@
 
 **仍待补（下轮）**：G6 落点圆点动画状态（ConfirmTap 收拢已移植，动画计时/渲染未建）；G9 控制器级回放融合（独立回放窗可用）；G14 选区装饰细节（小对象边柄隐藏/旋转角度气泡）。
 
-**已补齐（2026-11-19 缺口轮 9+10，第二波演进契约；510 向量全绿 + BUILD SUCCESSFUL）**：
+**已补齐（2026-11-19 缺口轮 11，D1/D3/D5/D6；545 向量全绿 + BUILD SUCCESSFUL）**：
+- **D1 层排列系统**：ink `DrawingObject`/`LayerAction` + 纯算法（sortDrawingObjects/nextLayerOrder/arrangeObjects，layer-arrange 11 向量，含 ShapeSource 组保序）；控制器 InkLayers 段（DrawingObjects 懒重建/MarkLayerOrderDirty/NextLayerOrder/z 序统一命中 hitTestDrawingObject/CanArrange+ArrangeSelection 单撤销单元）；提交/识别/删除/套索/撤销重做均置脏 + 领层号；ISelectionElement 扩 layerOrder/isImageElement（BoardSelectionElement 实现）；选区工具条「顶层/上移/下移/底层」四按钮（CanArrange 门控）；画板元素按 DrawingObjects 层序渲染（墨迹与元素交错为单画布架构下的已记录简化）。
+- **D5 名册+多次抽取**：`ClassroomRoster`（每行一名/CSV/TSV 姓名列/引号转义，roster 7 向量；GBK 回退解码宿主侧）+ LotteryEngine `draw(count)`（部分 Fisher-Yates 抽取内唯一 + 不重复池 + 历史封顶 20，lottery-draw 3 向量）+ entry「导入名单」按钮 + 抽奖走 draw。
+- **D6 批量导页**：BoardDocument.insertPagesAfterCurrent（board-page-ops insertpages 探针）。
+- **D3/D4（部分）**：`SvgSize`（viewBox/宽高归一 + CSS 单位换算 96DPI，svg-size 14 向量）；图片 Opacity 渲染（.opacity()）。XML 校验/命名空间修正/SVGZ 解压与 ImageSceneRenderer 矢量渲染为宿主侧/真机项；WebP/EXIF 由 image-kit 解码承担（真机核对）。
+- 剩余 backlog：D7 解析几何内核、D8 PDF 写回（PDF Kit 可行性调研）；D1 的克隆拖拽层号（SetCloneLayerOrder）待接。
+
+**已补齐（2026-11-19 缺口轮 9+10，第二波演进契约）**：
 - oracle 漂移检测（重生成对比）发现第二波演进：.icink/画板包 LayerOrder+ShapeSource、Settings experimental 组（ScreenTracking 9 键 PascalCase）、图片 Opacity、视频 PosterData/NaturalWidth/NaturalHeight —— 全部双向持久化并向量互认（InkStroke.LayerOrder/ShapeSource、IcinkCodec、BoardPackCodec、BoardDocument、schemas、VectorGen 投影/字面量）。
 - 增量调研：docs/superpowers/research/harmony/17-evolution-delta-2.md（D1–D8 分级）。**剩余 backlog**：D1 层排列系统（InkLayers/DrawingObject/LayerAction/z 序命中/ISelectionElement.LayerOrder+IImageSelectionElement）、D3/D4 SVG+WebP/EXIF/降采样导入策略、D5 ClassroomRoster+多次抽取历史、D6 InsertPagesAfterCurrent 批量导页、D7 解析几何绘图内核（纯逻辑可向量）、D8 PDF 批注写回（PDF Kit 可行性需调研）。插件运行时/ScreenTracking/SoftwareLauncher 等不构成 ArkTS 缺口（报告 §4）。
 

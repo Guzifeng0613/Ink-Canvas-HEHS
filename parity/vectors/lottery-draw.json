@@ -1,0 +1,101 @@
+{
+  "id": "lottery-draw",
+  "entry": "harmony/features/src/main/ets/tools/LotteryEngine.ts",
+  "cases": [
+    {
+      "id": "draw-names-multi",
+      "fn": "drawSequenceProbe",
+      "input": [
+        "a\nb\nc\nd",
+        4,
+        false,
+        2,
+        [
+          0.3,
+          0.9,
+          0.5,
+          0.1
+        ]
+      ],
+      "expected": {
+        "Draws": [
+          [
+            "b",
+            "d"
+          ],
+          [
+            "c",
+            "b"
+          ]
+        ],
+        "Remaining": 4,
+        "HistoryCount": 2
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "draw-no-repeat-depletes",
+      "fn": "drawSequenceProbe",
+      "input": [
+        "a\nb\nc",
+        3,
+        true,
+        2,
+        [
+          0.0,
+          0.5,
+          0.99,
+          0.2,
+          0.4,
+          0.6
+        ]
+      ],
+      "expected": {
+        "Draws": [
+          [
+            "a",
+            "c"
+          ],
+          [
+            "b"
+          ]
+        ],
+        "Remaining": 0,
+        "HistoryCount": 2
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "draw-numeric-mode",
+      "fn": "drawSequenceProbe",
+      "input": [
+        "",
+        5,
+        false,
+        3,
+        [
+          0.0,
+          0.25,
+          0.5
+        ]
+      ],
+      "expected": {
+        "Draws": [
+          [
+            "1",
+            "3",
+            "4"
+          ],
+          [
+            "1",
+            "2",
+            "3"
+          ]
+        ],
+        "Remaining": 5,
+        "HistoryCount": 2
+      },
+      "tolerance": 0
+    }
+  ]
+}

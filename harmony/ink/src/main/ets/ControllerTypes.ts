@@ -59,7 +59,7 @@ export interface ElementSnapshot {
   Transform: number[] | null;
 }
 
-/** 可选元素契约（C# ISelectionElement）。 */
+/** 可选元素契约（C# ISelectionElement；D1 增 layerOrder/isImageElement）。 */
 export interface ISelectionElement {
   id(): string;
   isPresent(): boolean;
@@ -73,6 +73,11 @@ export interface ISelectionElement {
   duplicate(): ISelectionElement;
   capture(): ElementSnapshot;
   restore(snapshot: ElementSnapshot): void;
+  /** D1 层序：与墨迹共享的自后向前 z 序（null = 未分层，按类型默认位）。 */
+  layerOrder(): number | null;
+  setLayerOrder(order: number | null): void;
+  /** 图片元素（排最底层的默认位）；视频等其它元素返回 false。 */
+  isImageElement(): boolean;
 }
 
 /**

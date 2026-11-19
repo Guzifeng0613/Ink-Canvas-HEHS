@@ -1,0 +1,104 @@
+{
+  "id": "svg-size",
+  "entry": "harmony/core/src/main/ets/imaging/SvgSize.ts",
+  "cases": [
+    {
+      "id": "length-units",
+      "fn": "svgLength",
+      "input": ["100"],
+      "expected": 100,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "length-px",
+      "fn": "svgLength",
+      "input": ["12.5px"],
+      "expected": 12.5,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "length-pt",
+      "fn": "svgLength",
+      "input": ["72pt"],
+      "expected": 96,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "length-in",
+      "fn": "svgLength",
+      "input": ["2in"],
+      "expected": 192,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "length-cm",
+      "fn": "svgLength",
+      "input": ["2.54cm"],
+      "expected": 96,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "length-mm",
+      "fn": "svgLength",
+      "input": ["25.4mm"],
+      "expected": 96,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "length-pc",
+      "fn": "svgLength",
+      "input": ["1.5pc"],
+      "expected": 24,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "length-invalid",
+      "fn": "svgLength",
+      "input": ["-5em"],
+      "expected": 0,
+      "tolerance": 0
+    },
+    {
+      "id": "size-both-attrs",
+      "fn": "svgResolveSize",
+      "input": ["0 0 800 600", "400", "300"],
+      "expected": { "Width": 400, "Height": 300 },
+      "tolerance": 1e-9
+    },
+    {
+      "id": "size-height-from-viewbox-ratio",
+      "fn": "svgResolveSize",
+      "input": ["0 0 800 600", "400", ""],
+      "expected": { "Width": 400, "Height": 300 },
+      "tolerance": 1e-9
+    },
+    {
+      "id": "size-width-from-viewbox-ratio",
+      "fn": "svgResolveSize",
+      "input": ["0 0 640 480", "", "240"],
+      "expected": { "Width": 320, "Height": 240 },
+      "tolerance": 1e-9
+    },
+    {
+      "id": "size-from-viewbox-only",
+      "fn": "svgResolveSize",
+      "input": ["0 0 1024 768", "", ""],
+      "expected": { "Width": 1024, "Height": 768 },
+      "tolerance": 1e-9
+    },
+    {
+      "id": "size-defaults",
+      "fn": "svgResolveSize",
+      "input": ["", "", ""],
+      "expected": { "Width": 300, "Height": 150 },
+      "tolerance": 1e-9
+    },
+    {
+      "id": "size-units-and-default",
+      "fn": "svgResolveSize",
+      "input": ["0 0 100 50", "1in", ""],
+      "expected": { "Width": 96, "Height": 48 },
+      "tolerance": 1e-9
+    }
+  ]
+}

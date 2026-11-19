@@ -84,6 +84,7 @@ import {
 import type { ISelectionElement, ElementSnapshot } from './ControllerTypes';
 import { InkDotAnimation } from './InkDotAnimation';
 import { InkPlayback } from './InkPlayback';
+import { DrawingObject, LayerAction, sortDrawingObjects, nextLayerOrder, arrangeObjects } from './DrawingObject';
 import type {
   ShapeAttributesInput,
   VoidCallback,
@@ -1445,6 +1446,12 @@ export class InkController {
    * 注意：C# OnPointerUp 在 CommitStrokes 之后还会再发一次 Invalidated —— 保留该基线行为。
    */
   private commitStrokes(strokes: InkStroke[], name: string, lineEndpointHeld: boolean = false): void {
+    // D1：提交墨迹领取层号（自后向前递增）。
+    let layer = this.NextLayerOrder();
+    for (let i = 0; i < strokes.length; i++) {
+      strokes[i].LayerOrder = layer;
+      layer += 1;
+    }
     for (let i = 0; i < strokes.length; i++) {
       strokes[i].complete();
     }
@@ -1461,6 +1468,7 @@ export class InkController {
     if (this.RecognizeShapes && name === 'ink') {
       this.tryRecognize(strokes, lineEndpointHeld);
     }
+    this.MarkLayerOrderDirty();
     this.invalidate();
   }
 
@@ -1554,6 +1562,12 @@ export class InkController {
     const removed = result.kind === RecognizedShape.Line
       ? committed.slice()
       : this._recentForRecognition.slice();
+    // D1：识别替换笔画领取层号。
+    let layer = this.NextLayerOrder();
+    for (let i = 0; i < replacement.length; i++) {
+      replacement[i].LayerOrder = layer;
+      layer += 1;
+    }
     this.Document.removeAll(removed);
     this.Document.addRange(replacement);
     this.History.push(new ControllerAction(
@@ -1876,16 +1890,10 @@ export class InkController {
     if (handle === SelectionHandle.None) {
       const scale = Math.sqrt(Math.abs(determinant(this.ViewTransform)));
       const hitRadius = 6 / Math.max(0.1, scale);
-      // G2：元素优先于墨迹命中（顶层在后），点击元素只选元素（C# 混合命中）。
-      const elements = this.selectableElements();
-      let hitElement: ISelectionElement | null = null;
-      for (let i = 0; i < elements.length; i++) {
-        if (elements[i].isPresent() && this.frameContainsPoint(elements[i].getFrame(), world.X, world.Y)) {
-          hitElement = elements[i];
-        }
-      }
-      const hits = this.Document.hitTestPoint(world.X, world.Y, hitRadius);
-      const hitStroke: InkStroke | null = hits.length > 0 ? hits[hits.length - 1] : null;
+      // D1：z 序统一命中（自顶向下，元素框与墨迹带宽混合；C# HitTestDrawingObject）。
+      const hit = this.hitTestDrawingObject(world.X, world.Y);
+      const hitElement = hit !== null && hit.Element !== null ? hit.Element : null;
+      const hitStroke = hit !== null && hit.Stroke !== null ? hit.Stroke : null;
       const additive = p.Control || p.Shift;
       if (hitElement === null && hitStroke === null) {
         this._marqueeInitialStrokes = additive ? this.Selection.slice() : [];
@@ -2276,6 +2284,7 @@ export class InkController {
         }
       }
     ));
+    this.MarkLayerOrderDirty();
     this.ClearSelection();
   }
 
@@ -2393,6 +2402,7 @@ export class InkController {
     this.CancelLassoErase();
     if (this.History.undo()) {
       this.pruneSelection();
+      this.MarkLayerOrderDirty();
       this.invalidate();
     }
   }
@@ -2401,6 +2411,7 @@ export class InkController {
     this.CancelLassoErase();
     if (this.History.redo()) {
       this.pruneSelection();
+      this.MarkLayerOrderDirty();
       this.invalidate();
     }
   }
@@ -2428,6 +2439,166 @@ export class InkController {
     if (removed > 0) {
       this.notifySelectionChanged();
     }
+  }
+
+  // ---- D1 层排列系统（C# InkLayers partial） --------------------------------
+  // 墨迹+元素统一自后向前 z 序；排列命令单撤销单元；ShapeSource 同组整体移动。
+
+  private _drawingObjects: DrawingObject[] = [];
+  private _drawingOrderDirty: boolean = true;
+  LayerVersion: number = 0;
+  LayersChanged: VoidCallback | null = null;
+
+  get DrawingObjects(): DrawingObject[] {
+    if (this._drawingOrderDirty) {
+      const objects: DrawingObject[] = [];
+      const elements = this.selectableElements();
+      for (let i = 0; i < elements.length; i++) {
+        if (elements[i].isPresent()) {
+          objects.push(new DrawingObject(null, elements[i]));
+        }
+      }
+      const strokes = this.Document.Strokes;
+      for (let i = 0; i < strokes.length; i++) {
+        objects.push(new DrawingObject(strokes[i], null));
+      }
+      this._drawingObjects = sortDrawingObjects(objects);
+      this._drawingOrderDirty = false;
+    }
+    return this._drawingObjects;
+  }
+
+  /** 文档/元素变动后由宿主或内部路径调用：置脏 + LayerVersion。 */
+  MarkLayerOrderDirty(): void {
+    this._drawingOrderDirty = true;
+    this.LayerVersion += 1;
+    if (this.LayersChanged !== null) {
+      this.LayersChanged();
+    }
+  }
+
+  NextLayerOrder(): number {
+    const objects = this.DrawingObjects;
+    const orders: (number | null)[] = [];
+    for (let i = 0; i < objects.length; i++) {
+      orders.push(objects[i].LayerOrder);
+    }
+    const next = nextLayerOrder(orders);
+    // 全体重排（存在 null 或接近溢出）时把结果写回对象。
+    if (objects.length > 0 && next === objects.length) {
+      for (let i = 0; i < objects.length; i++) {
+        objects[i].LayerOrder = i;
+      }
+    }
+    return next;
+  }
+
+  private isSelectedObject(item: DrawingObject): boolean {
+    if (item.Stroke !== null) {
+      return this.Selection.indexOf(item.Stroke) >= 0;
+    }
+    return item.Element !== null && this.SelectedElements.indexOf(item.Element) >= 0;
+  }
+
+  /** 自顶向下 z 序命中：元素框含点，或墨迹带宽内（半径 = 6/缩放 + 半笔宽）。 */
+  private hitTestDrawingObject(worldX: number, worldY: number): DrawingObject | null {
+    const scale = Math.sqrt(Math.abs(determinant(this.ViewTransform)));
+    const radius = 6 / Math.max(0.1, scale);
+    const objects = this.DrawingObjects;
+    for (let i = objects.length - 1; i >= 0; i--) {
+      const item = objects[i];
+      if (item.Element !== null) {
+        const frame = item.Element.getFrame();
+        const local = transformPointByMatrix(invertMatrix(frame.Transform), worldX, worldY);
+        if (frame.Bounds.contains(local.X, local.Y)) {
+          return item;
+        }
+      }
+      if (item.Stroke !== null) {
+        const stroke = item.Stroke;
+        const bounds = stroke.bounds().inflate(radius);
+        if (bounds.contains(worldX, worldY)
+          && stroke.distanceTo(worldX, worldY) <= radius + stroke.Attributes.BaseWidth / 2) {
+          return item;
+        }
+      }
+    }
+    return null;
+  }
+
+  CanArrangeSelection(action: number): boolean {
+    if (!this.HasSelection || action < 0 || action > 3) {
+      return false;
+    }
+    const objects = this.DrawingObjects;
+    let sawSelected = false;
+    let sawOther = false;
+    const forward = action === LayerAction.BringToFront || action === LayerAction.MoveForward;
+    for (let i = 0; i < objects.length; i++) {
+      const selected = this.isSelectedObject(objects[i]);
+      if (forward && !selected && sawSelected) {
+        return true;
+      }
+      if (!forward && selected && sawOther) {
+        return true;
+      }
+      sawSelected = sawSelected || selected;
+      sawOther = sawOther || !selected;
+    }
+    return false;
+  }
+
+  /** 排列选中对象（置顶/前移/后移/置底），一个可撤销单元；ShapeSource 同组绑定排名。 */
+  ArrangeSelection(action: number): void {
+    if (this._selectionGesture) {
+      this.EndSelectionGesture();
+    } else if (this._activeHandle !== SelectionHandle.None) {
+      this.EndSelectionDrag();
+    }
+    const objects = this.DrawingObjects;
+    const ids: string[] = [];
+    const orders: (number | null)[] = [];
+    const groupIds: (string | null)[] = [];
+    const selectedIds: string[] = [];
+    for (let i = 0; i < objects.length; i++) {
+      const item = objects[i];
+      ids.push(item.id());
+      orders.push(item.LayerOrder);
+      groupIds.push(item.Stroke !== null && item.Stroke.ShapeSource !== null ? item.Stroke.ShapeSource.GroupId : null);
+      if (this.isSelectedObject(item)) {
+        selectedIds.push(item.id());
+      }
+    }
+    const result = arrangeObjects({ Ids: ids, Orders: orders, SelectedIds: selectedIds, GroupIds: groupIds, Action: action });
+    if (result.Order === null) {
+      return;
+    }
+    const before = orders.slice();
+    const next = result.Orders.slice();
+    const apply = (values: (number | null)[]): void => {
+      const present = new Set<string>();
+      const current = this.DrawingObjects;
+      for (let i = 0; i < current.length; i++) {
+        present.add(current[i].id());
+      }
+      for (let i = 0; i < ids.length; i++) {
+        if (present.has(ids[i])) {
+          const item = objects[i];
+          item.LayerOrder = values[i];
+        }
+      }
+      this._drawingOrderDirty = true;
+      this.LayerVersion += 1;
+      if (this.LayersChanged !== null) {
+        this.LayersChanged();
+      }
+      this.notifySelectionChanged();
+      this.invalidate();
+    };
+    apply(next);
+    this.History.push(new ControllerAction('arrange selection',
+      (): void => apply(next),
+      (): void => apply(before)));
   }
 
   // ---- G3 选区命令（C# Recolor/ScaleWidth/RestoreWidth/TransformSelectionUndoable） ----
@@ -2647,6 +2818,7 @@ export class InkController {
         apply();
         this.History.push(new ControllerAction('lasso erase', apply, restore));
         this.pruneSelection();
+        this.MarkLayerOrderDirty();
       }
     }
     this.invalidate();

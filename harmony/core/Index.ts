@@ -73,6 +73,8 @@ export type { ReplayFrameProbeResult } from './src/main/ets/replay/InkReplaySess
 export type { ReplayVisibleResult } from './src/main/ets/replay/InkReplaySession';
 export { blendOver } from './src/main/ets/imaging/PixelCompositing';
 export { compressTargetSize } from './src/main/ets/imaging/CompressMath';
+export { svgLength, svgResolveSize } from './src/main/ets/imaging/SvgSize';
+export type { SvgSize } from './src/main/ets/imaging/SvgSize';
 export type { CompressTarget } from './src/main/ets/imaging/CompressMath';
 export { AppTheme, getMainWindowTheme, getBoardTheme } from './src/main/ets/theming/ThemeResolver';
 export { AppVersion, parseVersion, compareVersions } from './src/main/ets/versioning/AppVersion';

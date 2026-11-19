@@ -79,6 +79,19 @@ export class BoardSelectionElement implements ISelectionElement {
   restore(snapshot: ElementSnapshot): void {
     applyGeometry(this.asset, snapshot);
   }
+
+  // D1 层序：与墨迹共享 z 序（图片默认最底层、视频其上；null=按页序）。
+  layerOrder(): number | null {
+    return this.asset.LayerOrder;
+  }
+
+  setLayerOrder(order: number | null): void {
+    this.asset.LayerOrder = order;
+  }
+
+  isImageElement(): boolean {
+    return !this.isMedia;
+  }
 }
 
 // 确定性向量入口：按 id 定位元素（图片优先，找不到再查视频），执行 ops 序列。

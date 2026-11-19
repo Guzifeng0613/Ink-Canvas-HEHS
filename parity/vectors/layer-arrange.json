@@ -1,0 +1,350 @@
+{
+  "id": "layer-arrange",
+  "entry": "harmony/ink/src/main/ets/DrawingObject.ts",
+  "cases": [
+    {
+      "id": "next-order-empty",
+      "fn": "nextLayerOrder",
+      "input": [
+        []
+      ],
+      "expected": 0,
+      "tolerance": 0
+    },
+    {
+      "id": "next-order-max-plus-one",
+      "fn": "nextLayerOrder",
+      "input": [
+        [
+          null,
+          0,
+          3
+        ]
+      ],
+      "expected": 3,
+      "tolerance": 0
+    },
+    {
+      "id": "next-order-null-rebases",
+      "fn": "nextLayerOrder",
+      "input": [
+        [
+          5,
+          null,
+          2
+        ]
+      ],
+      "expected": 3,
+      "tolerance": 0
+    },
+    {
+      "id": "next-order-plain",
+      "fn": "nextLayerOrder",
+      "input": [
+        [
+          1,
+          4,
+          4
+        ]
+      ],
+      "expected": 5,
+      "tolerance": 0
+    },
+    {
+      "id": "arrange-bring-to-front",
+      "fn": "arrangeObjects",
+      "input": [
+        {
+          "Ids": [
+            "a",
+            "b",
+            "c",
+            "d"
+          ],
+          "Orders": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "SelectedIds": [
+            "a"
+          ],
+          "GroupIds": [
+            null,
+            null,
+            null,
+            null
+          ],
+          "Action": 0
+        }
+      ],
+      "expected": {
+        "Order": [
+          "b",
+          "c",
+          "d",
+          "a"
+        ],
+        "Orders": [
+          3,
+          0,
+          1,
+          2
+        ]
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "arrange-send-to-back",
+      "fn": "arrangeObjects",
+      "input": [
+        {
+          "Ids": [
+            "a",
+            "b",
+            "c",
+            "d"
+          ],
+          "Orders": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "SelectedIds": [
+            "c"
+          ],
+          "GroupIds": [
+            null,
+            null,
+            null,
+            null
+          ],
+          "Action": 3
+        }
+      ],
+      "expected": {
+        "Order": [
+          "c",
+          "a",
+          "b",
+          "d"
+        ],
+        "Orders": [
+          1,
+          2,
+          0,
+          3
+        ]
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "arrange-move-forward",
+      "fn": "arrangeObjects",
+      "input": [
+        {
+          "Ids": [
+            "a",
+            "b",
+            "c",
+            "d"
+          ],
+          "Orders": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "SelectedIds": [
+            "a",
+            "b"
+          ],
+          "GroupIds": [
+            null,
+            null,
+            null,
+            null
+          ],
+          "Action": 1
+        }
+      ],
+      "expected": {
+        "Order": [
+          "c",
+          "a",
+          "b",
+          "d"
+        ],
+        "Orders": [
+          1,
+          2,
+          0,
+          3
+        ]
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "arrange-move-backward",
+      "fn": "arrangeObjects",
+      "input": [
+        {
+          "Ids": [
+            "a",
+            "b",
+            "c",
+            "d"
+          ],
+          "Orders": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "SelectedIds": [
+            "c",
+            "d"
+          ],
+          "GroupIds": [
+            null,
+            null,
+            null,
+            null
+          ],
+          "Action": 2
+        }
+      ],
+      "expected": {
+        "Order": [
+          "a",
+          "c",
+          "d",
+          "b"
+        ],
+        "Orders": [
+          0,
+          3,
+          1,
+          2
+        ]
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "arrange-group-stays-together",
+      "fn": "arrangeObjects",
+      "input": [
+        {
+          "Ids": [
+            "a",
+            "g1",
+            "b",
+            "g2",
+            "c"
+          ],
+          "Orders": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "SelectedIds": [
+            "g1",
+            "g2"
+          ],
+          "GroupIds": [
+            null,
+            "G",
+            null,
+            "G",
+            null
+          ],
+          "Action": 0
+        }
+      ],
+      "expected": {
+        "Order": [
+          "a",
+          "b",
+          "c",
+          "g1",
+          "g2"
+        ],
+        "Orders": [
+          0,
+          3,
+          1,
+          3,
+          2
+        ]
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "arrange-no-selection-noop",
+      "fn": "arrangeObjects",
+      "input": [
+        {
+          "Ids": [
+            "a",
+            "b"
+          ],
+          "Orders": [
+            0,
+            1
+          ],
+          "SelectedIds": [],
+          "GroupIds": [
+            null,
+            null
+          ],
+          "Action": 0
+        }
+      ],
+      "expected": {
+        "Order": null,
+        "Orders": [
+          0,
+          1
+        ]
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "arrange-all-selected-noop",
+      "fn": "arrangeObjects",
+      "input": [
+        {
+          "Ids": [
+            "a",
+            "b"
+          ],
+          "Orders": [
+            0,
+            1
+          ],
+          "SelectedIds": [
+            "a",
+            "b"
+          ],
+          "GroupIds": [
+            null,
+            null
+          ],
+          "Action": 0
+        }
+      ],
+      "expected": {
+        "Order": null,
+        "Orders": [
+          0,
+          1
+        ]
+      },
+      "tolerance": 0
+    }
+  ]
+}

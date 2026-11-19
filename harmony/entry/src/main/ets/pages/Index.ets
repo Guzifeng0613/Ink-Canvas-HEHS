@@ -53,7 +53,7 @@ import {
 import type { SceneStrokeInput, SceneSelectionInput, ISelectionElement } from '@inkcanvas/ink';
 import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings, matrixToArray, transformPointByMatrix, PenNib, calibrationMultiplier, toTaperKind, toPenStyle, toEraserRadius, resetToRecommendation, TaperKind, placeToolbar } from '@inkcanvas/core';
 import type { ShapeKind, StrokePointInput, AppSettings, AdvancedTouchInput, Matrix3x2 } from '@inkcanvas/core';
-import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground, renderMatrix4Values, applyReplaceRules, lotteryDisplayName, lotteryFlicker, lotteryDrawUnique, lotterySplitGroups, appendTransform, transformedBounds, snapshotGeometry, recordTransform, BoardSelectionElement } from '@inkcanvas/features';
+import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground, renderMatrix4Values, applyReplaceRules, lotteryDisplayName, lotteryFlicker, lotteryDrawUnique, lotterySplitGroups, appendTransform, transformedBounds, snapshotGeometry, recordTransform, BoardSelectionElement, parseRoster } from '@inkcanvas/features';
 import type { CoursewarePageFile } from '@inkcanvas/features';
 import type { BoardAsset, ElementGeometry } from '@inkcanvas/features';
 import { ReplayClock } from '@inkcanvas/core';
@@ -281,6 +281,8 @@ struct Index {
     };
     // 选区变化：元素在场/离场需刷新画板 ForEach；选区工具条（G3）随动。
     this.controller.SelectionChanged = () => {
+      // D1：元素在场/离场与选区变化都可能改变层序 → 置脏 + 画板重排。
+      this.controller.MarkLayerOrderDirty();
       this.boardImagesVersion++;
       this.selectionToolbarOpen = this.controller.HasSelection;
       if (this.selectionToolbarOpen) {
@@ -499,11 +501,12 @@ struct Index {
       }
 
       if (this.boardOpen) {
-        ForEach(this.board.Current.Images, (asset: BoardAsset) => {
-          this.BoardImage(asset)
-        }, (asset: BoardAsset) => asset.Id + ':' + this.boardImagesVersion)
-        ForEach(this.board.Current.Media, (asset: BoardAsset) => {
-          this.BoardVideo(asset)
+        ForEach(this.orderedBoardAssets(), (asset: BoardAsset) => {
+          if (this.board.Current.Media.indexOf(asset) >= 0) {
+            this.BoardVideo(asset)
+          } else {
+            this.BoardImage(asset)
+          }
         }, (asset: BoardAsset) => asset.Id + ':' + this.boardImagesVersion)
       }
 
@@ -559,6 +562,18 @@ struct Index {
             .onClick(() => { this.controller.ScaleSelectionWidth(0.8); })
           Text('恢复').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
             .onClick(() => { this.controller.RestoreSelectionWidth(); })
+          Text('顶层').fontSize(12).fontColor(Color.White).padding(6)
+            .backgroundColor(this.controller.CanArrangeSelection(0) ? '#99000000' : '#4D000000').borderRadius(4)
+            .onClick(() => { this.controller.ArrangeSelection(0); })
+          Text('上移').fontSize(12).fontColor(Color.White).padding(6)
+            .backgroundColor(this.controller.CanArrangeSelection(1) ? '#99000000' : '#4D000000').borderRadius(4)
+            .onClick(() => { this.controller.ArrangeSelection(1); })
+          Text('下移').fontSize(12).fontColor(Color.White).padding(6)
+            .backgroundColor(this.controller.CanArrangeSelection(2) ? '#99000000' : '#4D000000').borderRadius(4)
+            .onClick(() => { this.controller.ArrangeSelection(2); })
+          Text('底层').fontSize(12).fontColor(Color.White).padding(6)
+            .backgroundColor(this.controller.CanArrangeSelection(3) ? '#99000000' : '#4D000000').borderRadius(4)
+            .onClick(() => { this.controller.ArrangeSelection(3); })
           Text('删除').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#FFC0392B').borderRadius(4)
             .onClick(() => { this.controller.DeleteSelection(); })
           Text('✕').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
@@ -879,6 +894,8 @@ struct Index {
                   .onClick(() => { this.lotterySingle = !this.lotterySingle; })
                 Text(this.lotteryReplaceOpen ? '收起替换' : '替换名单').fontSize(13).fontColor(this.dark ? Color.White : Color.Black)
                   .onClick(() => { this.lotteryReplaceOpen = !this.lotteryReplaceOpen; })
+                Text('导入名单').fontSize(13).fontColor(Color.White).padding(6).backgroundColor('#FF0067C0').borderRadius(4)
+                  .onClick(() => { this.importRoster(); })
               }
             }
             if (this.lotteryGroups.length > 0) {
@@ -1275,6 +1292,7 @@ struct Index {
         .position({ x: asset.Left, y: asset.Top })
         .width(asset.Width)
         .height(asset.Height)
+        .opacity(asset.Opacity === undefined ? 1 : asset.Opacity)
         .transform(this.boardAssetMatrix(asset))
     }
   }
@@ -2359,6 +2377,45 @@ struct Index {
     this.controller.RecolorSelection(InkColor.fromPackedArgb(packed));
   }
 
+  // D1：画板元素按 DrawingObjects 层序渲染（墨迹仍整体画在独立画布——单画布架构下的
+  // 已记录简化；元素间 z 序完整保留）。空层序时回退 图片→视频 页序。
+  private orderedBoardAssets(): BoardAsset[] {
+    const images = this.board.Current.Images;
+    const media = this.board.Current.Media;
+    const byId = new Map<string, BoardAsset>();
+    for (let i = 0; i < images.length; i++) {
+      byId.set(images[i].Id, images[i]);
+    }
+    for (let i = 0; i < media.length; i++) {
+      byId.set(media[i].Id, media[i]);
+    }
+    const result: BoardAsset[] = [];
+    const objects = this.controller.DrawingObjects;
+    for (let i = 0; i < objects.length; i++) {
+      const element = objects[i].Element;
+      if (element !== null && element.isPresent()) {
+        const asset = byId.get(element.id());
+        if (asset !== undefined) {
+          result.push(asset);
+          byId.delete(element.id());
+        }
+      }
+    }
+    // 未入层序体系（无 GetSelectableElements 数据）的剩余元素按页序补尾。
+    const rest: BoardAsset[] = [];
+    for (let i = 0; i < images.length; i++) {
+      if (byId.has(images[i].Id)) {
+        rest.push(images[i]);
+      }
+    }
+    for (let i = 0; i < media.length; i++) {
+      if (byId.has(media[i].Id)) {
+        rest.push(media[i]);
+      }
+    }
+    return result.concat(rest);
+  }
+
   // 应用触摸校准：乘数 = 目标参考宽度 / 平均接触宽度，写入 advanced.touchMultiplier。
   private applyCalibration(): void {
     const m = calibrationMultiplier(this.calibrationSamples, this.settings.advanced.nibModeBoundsWidthThresholdValue);
@@ -2576,25 +2633,8 @@ struct Index {
   }
 
   private finishLotteryDraw(names: string[], pool: number, count: number): void {
-    const outputs: string[] = [];
-    if (this.lotteryNoRepeat) {
-      for (let i = 0; i < count; i++) {
-        const picked = this.lottery.pick();
-        if (picked === null) {
-          break;
-        }
-        outputs.push(picked);
-      }
-    } else {
-      const drawRandoms: number[] = [];
-      for (let i = 0; i < count * 8 + 8; i++) {
-        drawRandoms.push(Math.random());
-      }
-      const numbers = lotteryDrawUnique(pool, count, drawRandoms);
-      for (let i = 0; i < numbers.length; i++) {
-        outputs.push(lotteryDisplayName(names, numbers[i]));
-      }
-    }
+    // D5：多次抽取走引擎 draw（部分 Fisher-Yates：抽取内唯一 + 不重复池 + 历史封顶 20）。
+    const outputs = this.lottery.draw(count);
     this.lotteryGroups = lotterySplitGroups(outputs);
     this.lotteryResult = outputs.length === 0 ? '已抽完' : this.lotteryGroups[0];
     this.lotteryRolling = false;
@@ -2604,6 +2644,51 @@ struct Index {
         this.stopLotteryTimer();
       }, 1500);
     }
+  }
+
+  // D5：从 CSV/TSV/每行一名文件导入名单（UTF-8 优先，失败回退 GBK 解码）。
+  private async importRoster(): Promise<void> {
+    let uris: string[] = [];
+    try {
+      const docPicker = new picker.DocumentViewPicker();
+      uris = await docPicker.select({ maxSelectNumber: 1, fileSuffixFilters: ['.csv', '.txt', '.tsv'] });
+    } catch (e) {
+      return;
+    }
+    if (uris.length === 0) {
+      return;
+    }
+    const path = this.storage === null ? null : this.storage.importUriToSandbox(uris[0], 'roster.txt');
+    if (path === null) {
+      promptAction.showToast({ message: '名单导入失败', duration: 2000 });
+      return;
+    }
+    let text = '';
+    try {
+      const file = fileIo.openSync(path, fileIo.OpenMode.READ_ONLY);
+      const stat = fileIo.statSync(file.fd);
+      const buffer = new ArrayBuffer(stat.size);
+      fileIo.readSync(file.fd, buffer);
+      fileIo.closeSync(file);
+      const bytes = new Uint8Array(buffer);
+      try {
+        text = new util.TextDecoder('utf-8').decodeToString(bytes);
+      } catch (e) {
+        text = new util.TextDecoder('gbk').decodeToString(bytes);
+      }
+    } catch (e) {
+      promptAction.showToast({ message: '名单读取失败', duration: 2000 });
+      return;
+    }
+    const names = parseRoster(text);
+    if (names.length === 0) {
+      promptAction.showToast({ message: '未解析到名字（支持每行一名或带姓名列的 CSV）', duration: 2500 });
+      return;
+    }
+    this.lotteryNames = names.join('\n');
+    this.lotteryGroups = [];
+    this.lotteryResult = '';
+    promptAction.showToast({ message: '已导入 ' + names.length + ' 个名字', duration: 2000 });
   }
 
   private openReplay(): void {

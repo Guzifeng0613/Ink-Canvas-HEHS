@@ -184,6 +184,25 @@ export class BoardDocument {
     this.CurrentIndex = Math.min(Math.max(this.CurrentIndex + delta, 0), this.Pages.length - 1);
   }
 
+  // D6（C# InsertPagesAfterCurrent）：当前页后批量插入独立页（各自墨迹+图片，无媒体），
+  // 导航到第一插入页；不记撤销（导入语义）。页数超上限/重复引用拒绝。
+  insertPagesAfterCurrent(pages: { Strokes: InkStroke[]; Images: BoardAsset[] }[]): boolean {
+    if (pages.length === 0 || this.Pages.length + pages.length > BoardDocument.MAX_PAGES) {
+      return false;
+    }
+    const insertion = this.CurrentIndex + 1;
+    for (let i = 0; i < pages.length; i++) {
+      const page = new BoardPage();
+      page.Document.addRange(pages[i].Strokes);
+      for (let j = 0; j < pages[i].Images.length; j++) {
+        page.Images.push(pages[i].Images[j]);
+      }
+      this.Pages.splice(insertion + i, 0, page);
+    }
+    this.CurrentIndex = insertion;
+    return true;
+  }
+
   // 原子清空当前页（C# ClearCurrentPage）：墨迹+图片+视频一并清空，一个页内撤销单元整体恢复。
   // 注：单控制器架构下墨迹撤销栈在翻页时清空（BindDocument），此页内单元走 BoardPage.History。
   clearCurrentPage(): boolean {
@@ -502,6 +521,16 @@ export function boardPageOpsProbe(text: string, ops: string[]): Object[] {
       results.push(board.Current.History.undo());
     } else if (op === 'redo') {
       results.push(board.Current.History.redo());
+    } else if (op.startsWith('insertpages:')) {
+      const count = Number(op.substring('insertpages:'.length));
+      const pages: { Strokes: InkStroke[]; Images: BoardAsset[] }[] = [];
+      for (let j = 0; j < count; j++) {
+        const stroke = new InkStroke(new StrokeAttributes());
+        stroke.restorePoints([new InkPoint(50 + j, 60, 0.5, 2.5, 0)]);
+        stroke.complete();
+        pages.push({ Strokes: [stroke], Images: [] });
+      }
+      results.push(board.insertPagesAfterCurrent(pages));
     } else if (op.startsWith('clone:')) {
       const parts = op.substring(6).split('|');
       const indexText = parts.length > 0 ? parts[0] : '';
