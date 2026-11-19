@@ -33,10 +33,38 @@ public static class OriginalMenuCatalog
         new Swatch("荧光笔紫色", InkColor.Opaque(147, 51, 234), InkColor.Opaque(147, 51, 234)),
     });
 
+    public static IReadOnlyList<string> PenNibs { get; } = Array.AsReadOnly(new[] { "圆形", "椭圆 · 右斜 45°" });
+
     public static IReadOnlyList<string> PenStyles { get; } = Array.AsReadOnly(new[]
     {
         "点集笔锋", "速率笔锋", "关闭笔锋",
+        "平滑硬笔", "柔和压感", "自然笔锋", "书法笔锋",
     });
+
+    public static TaperKind ToTaperKind(int style) => style switch
+    {
+        1 => TaperKind.Velocity,
+        2 => TaperKind.None,
+        3 => TaperKind.SmoothPen,
+        4 => TaperKind.SoftPen,
+        5 => TaperKind.Natural,
+        6 => TaperKind.Calligraphy,
+        _ => TaperKind.Tail,
+    };
+
+    public static int ToPenStyle(TaperKind kind) => kind switch
+    {
+        TaperKind.Velocity => 1,
+        TaperKind.None => 2,
+        TaperKind.SmoothPen => 3,
+        TaperKind.SoftPen => 4,
+        TaperKind.Natural => 5,
+        TaperKind.Calligraphy => 6,
+        _ => 0,
+    };
+
+    private static readonly float[] EraserFactors = { .5f, .8f, 1f, 1.25f, 1.8f };
+    public static float ToEraserRadius(int size) => 45 * EraserFactors[Math.Clamp(size, 0, EraserFactors.Length - 1)];
 
     public static IReadOnlyList<string> EraserSizes { get; } = Array.AsReadOnly(new[]
     {
@@ -60,6 +88,7 @@ public static class OriginalMenuCatalog
 
     public const double PenWidthMinimum = 1;
     public const double PenWidthMaximum = 30;
+    public const double HighlighterWidthMaximum = 120;
     public const double PenWidthStep = 1;
     public const double HighlighterAlphaMinimum = 20;
     public const double HighlighterAlphaMaximum = 240;

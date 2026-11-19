@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace InkCanvas.Features.Ppt;
@@ -18,6 +19,13 @@ public sealed class PptInteropService : IDisposable
     private string _progId;
     private PptSnapshot _snapshot = PptSnapshot.Detached;
     private bool _disposed;
+    // Per-presentation SlideID->index map so slideshow polls do not re-scan every slide
+    // through COM on each tick (ink-switch latency). Cleared when identity/count changes.
+    private readonly Dictionary<int, int> _slideIndexById = new();
+    private string _slideIndexKey;
+    // FullName/path/page-setup are stable for one COM presentation identity; reuse them
+    // across polls (Name is re-checked live) instead of re-reading every property per tick.
+    private PptPresentationInfo _cachedInfo;
 
     public string[] ProgIds { get; set; } = { "PowerPoint.Application", "KWPP.Application" };
     public bool AllowWps { get; set; } = true;
@@ -54,6 +62,13 @@ public sealed class PptInteropService : IDisposable
     {
         VerifyThread();
         if (_app is not null) { Poll(); return true; }
+        // MW_PPT.cs:95-98: with WPS support off and wpp.exe running, WPF refuses to attach at
+        // all, because WPS can own the PowerPoint.Application running-object-table entry.
+        if (!AllowWps && IsWpsProcessRunning())
+        {
+            Publish(PptSnapshot.Detached);
+            return false;
+        }
         if (Thread.CurrentThread.GetApartmentState() != ApartmentState.STA)
         {
             Fail("Attach", "COM attachment must run on the owning STA/UI thread.", unchecked((int)0x8001010E));
@@ -86,6 +101,18 @@ public sealed class PptInteropService : IDisposable
         return false;
     }
 
+    private static bool IsWpsProcessRunning()
+    {
+        try
+        {
+            Process[] processes = Process.GetProcessesByName("wpp");
+            bool any = processes.Length > 0;
+            foreach (Process process in processes) process.Dispose();
+            return any;
+        }
+        catch { return false; }
+    }
+
     /// <summary>Refreshes presentation, show and active-slide state; call on the owning UI STA.</summary>
     public PptSnapshot Poll()
     {
@@ -106,6 +133,9 @@ public sealed class PptInteropService : IDisposable
                 ReleaseComObject(_app);
                 _app = null;
                 _progId = null;
+                _slideIndexById.Clear();
+                _slideIndexKey = null;
+                _cachedInfo = null;
                 return Publish(PptSnapshot.Detached);
             }
             return _snapshot;
@@ -129,6 +159,7 @@ public sealed class PptInteropService : IDisposable
             {
                 dynamic slide = scope.Own((object)slides[index]);
                 int id = (int)slide.SlideID;
+                if (id > 0) _slideIndexById[id] = index;
                 dynamic transition = SafeCom(scope, () => (object)slide.SlideShowTransition);
                 list.Add(new PptSlideInfo(id, index, SafeString(() => (string)slide.Name),
                     transition is null ? null : SafeTriState(() => (int)transition.Hidden),
@@ -168,8 +199,28 @@ public sealed class PptInteropService : IDisposable
             }
             else
             {
-                dynamic window = scope.Own((object)app.ActiveWindow);
-                dynamic view = scope.Own((object)window.View);
+                // MW_PPT.cs:155: outside a show the resume prompt jumps through
+                // presentation.Windows[1].View; ActiveWindow is only the fallback.
+                dynamic view = null;
+                object p = GetActivePresentation(scope, app);
+                if (p is not null)
+                {
+                    try
+                    {
+                        dynamic windows = scope.Own((object)((dynamic)p).Windows);
+                        if ((int)windows.Count >= 1)
+                        {
+                            dynamic window = scope.Own((object)windows[1]);
+                            view = scope.Own((object)window.View);
+                        }
+                    }
+                    catch { /* Fall back to the active window below. */ }
+                }
+                if (view is null)
+                {
+                    dynamic window = scope.Own((object)app.ActiveWindow);
+                    view = scope.Own((object)window.View);
+                }
                 view.GotoSlide(slideIndex);
             }
             LastFailure = null;
@@ -284,6 +335,9 @@ public sealed class PptInteropService : IDisposable
         ReleaseComObject(_app);
         _app = null;
         _progId = null;
+        _slideIndexById.Clear();
+        _slideIndexKey = null;
+        _cachedInfo = null;
         LastFailure = null;
         Publish(PptSnapshot.Detached);
     }
@@ -307,17 +361,34 @@ public sealed class PptInteropService : IDisposable
         dynamic presentation = p;
         dynamic slides = scope.Own((object)presentation.Slides);
         int count = (int)slides.Count;
-        string name = SafeString(() => (string)presentation.Name) ?? string.Empty;
-        string fullName = SafeString(() => (string)presentation.FullName) ?? string.Empty;
-        bool hasPath = !string.IsNullOrWhiteSpace(SafeString(() => (string)presentation.Path));
-        dynamic pageSetup = scope.Own((object)presentation.PageSetup);
-        double width = SafeDouble(() => (double)pageSetup.SlideWidth) ?? 0;
-        double height = SafeDouble(() => (double)pageSetup.SlideHeight) ?? 0;
         IntPtr punk = Marshal.GetIUnknownForObject(p);
         string identity;
         try { identity = $"{_attachmentId:N}:{_progId}:{punk.ToInt64():X}"; }
         finally { Marshal.Release(punk); }
-        var info = new PptPresentationInfo(identity, name, fullName, hasPath, count, width, height, _progId);
+        // Name stays live (one call) so an in-place Save As invalidates the cached metadata.
+        string name = SafeString(() => (string)presentation.Name) ?? string.Empty;
+        PptPresentationInfo info;
+        if (_cachedInfo is not null && _cachedInfo.Identity == identity && _cachedInfo.SlideCount == count &&
+            string.Equals(_cachedInfo.Name, name, StringComparison.Ordinal))
+        {
+            info = _cachedInfo;
+        }
+        else
+        {
+            string fullName = SafeString(() => (string)presentation.FullName) ?? string.Empty;
+            bool hasPath = !string.IsNullOrWhiteSpace(SafeString(() => (string)presentation.Path));
+            dynamic pageSetup = scope.Own((object)presentation.PageSetup);
+            double width = SafeDouble(() => (double)pageSetup.SlideWidth) ?? 0;
+            double height = SafeDouble(() => (double)pageSetup.SlideHeight) ?? 0;
+            info = new PptPresentationInfo(identity, name, fullName, hasPath, count, width, height, _progId);
+            _cachedInfo = info;
+        }
+        string indexKey = $"{identity}:{count}";
+        if (!string.Equals(indexKey, _slideIndexKey, StringComparison.Ordinal))
+        {
+            _slideIndexById.Clear();
+            _slideIndexKey = indexKey;
+        }
         PptSlideInfo current = null;
         nint hwnd = 0;
         int showPosition = 0;
@@ -330,7 +401,7 @@ public sealed class PptInteropService : IDisposable
             showPosition = SafeInt(() => (int)view.CurrentShowPosition) ?? 0;
             showState = SafeInt(() => (int)view.State);
             dynamic slide = SafeCom(scope, () => (object)view.Slide);
-            if (slide is not null) current = BuildSlideInfo(scope, slides, slide, (int)slide.SlideID, 0);
+            if (slide is not null) current = BuildSlideInfo(scope, slides, slide, (int)slide.SlideID, 0, _slideIndexById);
         }
         else
         {
@@ -341,7 +412,7 @@ public sealed class PptInteropService : IDisposable
                 dynamic slide = view is null ? null : GetEditingSlide(scope, window, view);
                 if (slide is not null)
                     current = BuildSlideInfo(scope, slides, slide, SafeInt(() => (int)slide.SlideID) ?? 0,
-                        SafeInt(() => (int)slide.SlideIndex) ?? 0);
+                        SafeInt(() => (int)slide.SlideIndex) ?? 0, _slideIndexById);
                 hwnd = SafeNint(() => (nint)(long)window.HWND) ?? 0;
             }
         }
@@ -352,17 +423,20 @@ public sealed class PptInteropService : IDisposable
         };
     }
 
-    private static PptSlideInfo BuildSlideInfo(ComScope scope, dynamic slides, dynamic slide, int slideId, int indexHint)
+    private static PptSlideInfo BuildSlideInfo(ComScope scope, dynamic slides, dynamic slide, int slideId, int indexHint,
+        Dictionary<int, int> indexCache)
     {
         int index = indexHint;
-        if (index < 1)
+        if (index < 1 && !indexCache.TryGetValue(slideId, out index))
         {
             for (int i = 1; i <= (int)slides.Count; i++)
             {
                 dynamic candidate = scope.Own((object)slides[i]);
-                if ((int)candidate.SlideID == slideId) { index = i; break; }
+                int candidateId = (int)candidate.SlideID;
+                if (candidateId == slideId) { index = i; break; }
             }
         }
+        if (index > 0 && slideId > 0) indexCache[slideId] = index;
         dynamic transition = SafeCom(scope, () => (object)slide.SlideShowTransition);
         return new PptSlideInfo(slideId, index, SafeString(() => (string)slide.Name),
             transition is null ? null : SafeTriState(() => (int)transition.Hidden),

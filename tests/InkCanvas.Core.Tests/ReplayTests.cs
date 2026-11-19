@@ -99,6 +99,20 @@ public class ReplayClockTests
 /// <summary>Tests for the pre-existing replay session, which previously had no coverage.</summary>
 public class InkReplaySessionTests
 {
+    [Fact]
+    public void ReusableFrameCanSeekBackWithoutMutatingSource()
+    {
+        var source = Stroke(40, 7);
+        var original = source.Points.ToArray();
+        var session = new InkReplaySession(new[] { source }, 10);
+        var frame = new List<InkStroke>();
+        session.WriteVisibleAt(0, frame); Assert.Empty(frame);
+        session.WriteVisibleAt(200, frame); var partial = Assert.Single(frame); Assert.Equal(20, partial.Count);
+        session.WriteVisibleAt(300, frame); Assert.Same(partial, Assert.Single(frame)); Assert.Equal(30, partial.Count);
+        session.WriteVisibleAt(100, frame); Assert.Equal(10, Assert.Single(frame).Count);
+        session.WriteVisibleAt(400, frame); Assert.Same(source, Assert.Single(frame));
+        Assert.Equal(original, source.Points);
+    }
     private static InkStroke Stroke(int points, float width = 5f)
     {
         var s = new InkStroke(new StrokeAttributes { BaseWidth = width, TaperKind = TaperKind.None });

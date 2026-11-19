@@ -3,105 +3,71 @@ using System.Text.Json;
 
 namespace InkCanvas.Core.Update;
 
-/// <summary>A published release with a downloadable installer.</summary>
-public sealed record ReleaseInfo(
-    string Tag,
-    AppVersion Version,
-    string Name,
-    string Notes,
-    string PageUrl,
-    string InstallerUrl,
-    long InstallerSize)
+public sealed record ReleaseInfo(string Tag, AppVersion Version, string Name, string Notes,
+    string PageUrl, string InstallerUrl, long InstallerSize)
 {
+    public string AssetName { get; init; }
+    public string Sha256 { get; init; }
+    public string ChecksumsUrl { get; init; }
+    public bool IsPortable => AssetName?.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) == true;
     public bool IsNewerThan(AppVersion current) => Version > current;
 }
 
-/// <summary>
-/// Parses GitHub release payloads. Pure JSON handling — the HTTP call lives in the features
-/// layer so this stays unit-testable and offline.
-/// </summary>
 public static class ReleaseFeed
 {
-    /// <summary>Parses the <c>/releases/latest</c> payload (GitHub already excludes drafts).</summary>
     public static ReleaseInfo ParseLatest(string json)
     {
-        var element = TryRead(json);
-        if (element is null || element.Value.ValueKind != JsonValueKind.Object) return null;
-        return FromElement(element.Value);
+        using var document = Read(json);
+        return document?.RootElement.ValueKind == JsonValueKind.Object ? Parse(document.RootElement) : null;
     }
 
-    /// <summary>Parses a <c>/releases</c> array and returns the highest stable version.</summary>
-    public static ReleaseInfo ParseNewestStable(string json)
+    public static IReadOnlyList<ReleaseInfo> ParseStableList(string json)
     {
-        var element = TryRead(json);
-        if (element is null || element.Value.ValueKind != JsonValueKind.Array) return null;
-
-        ReleaseInfo best = null;
-        foreach (var item in element.Value.EnumerateArray())
-        {
-            if (Bool(item, "draft") || Bool(item, "prerelease")) continue;
-            var info = FromElement(item);
-            if (info is null) continue;
-            if (best is null || info.Version > best.Version) best = info;
-        }
-        return best;
+        using var document = Read(json);
+        if (document?.RootElement.ValueKind != JsonValueKind.Array) return Array.Empty<ReleaseInfo>();
+        return document.RootElement.EnumerateArray().Select(Parse).Where(release => release is not null)
+            .OrderByDescending(release => release.Version).ToArray();
     }
 
-    private static JsonElement? TryRead(string json)
+    public static ReleaseInfo ParseNewestStable(string json) => ParseStableList(json).FirstOrDefault();
+
+    private static JsonDocument Read(string json)
     {
-        if (string.IsNullOrWhiteSpace(json)) return null;
-        try
-        {
-            // The document must outlive the element, so copy the root out of a cloned document.
-            using var doc = JsonDocument.Parse(json);
-            return doc.RootElement.Clone();
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
+        try { return string.IsNullOrWhiteSpace(json) ? null : JsonDocument.Parse(json); }
+        catch (JsonException) { return null; }
     }
 
-    private static ReleaseInfo FromElement(JsonElement e)
+    private static ReleaseInfo Parse(JsonElement element)
     {
-        string tag = Str(e, "tag_name");
-        if (!AppVersion.TryParse(tag, out var version)) return null;
-
-        var (url, size) = PickInstaller(e);
-        if (url is null) return null;
-
-        return new ReleaseInfo(tag, version, Str(e, "name"), Str(e, "body"),
-            Str(e, "html_url"), url, size);
-    }
-
-    /// <summary>Prefers an installer-looking .exe over any other executable asset.</summary>
-    private static (string url, long size) PickInstaller(JsonElement e)
-    {
-        if (!e.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
-            return (null, 0);
-
-        string fallbackUrl = null;
-        long fallbackSize = 0;
-        foreach (var a in assets.EnumerateArray())
+        if (element.ValueKind != JsonValueKind.Object || Bool(element, "draft") || Bool(element, "prerelease")) return null;
+        string tag = Text(element, "tag_name");
+        if (!AppVersion.TryParse(tag, out var version) || !element.TryGetProperty("assets", out var assets)
+            || assets.ValueKind != JsonValueKind.Array) return null;
+        var candidates = assets.EnumerateArray().Where(asset => asset.ValueKind == JsonValueKind.Object)
+            .Select(asset => new { Asset = asset, Name = Text(asset, "name") }).ToArray();
+        var package = candidates.Where(item => item.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+                && item.Name.Contains("InkCanvas", StringComparison.OrdinalIgnoreCase)
+                && item.Name.Contains("WinUI", StringComparison.OrdinalIgnoreCase)
+                && item.Name.Contains("x64", StringComparison.OrdinalIgnoreCase)
+                && !item.Name.Contains("arm64", StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault() ?? candidates.Where(item => item.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                && !item.Name.Contains("arm64", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(item => item.Name.Contains("setup", StringComparison.OrdinalIgnoreCase)).FirstOrDefault();
+        if (package is null || string.IsNullOrEmpty(Text(package.Asset, "browser_download_url"))) return null;
+        string digest = Text(package.Asset, "digest");
+        string hash = digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) ? digest[7..] : null;
+        return new(tag, version, Text(element, "name"), Text(element, "body"), Text(element, "html_url"),
+            Text(package.Asset, "browser_download_url"), package.Asset.TryGetProperty("size", out var size)
+                && size.ValueKind == JsonValueKind.Number && size.TryGetInt64(out long length) ? length : 0)
         {
-            string name = Str(a, "name");
-            if (string.IsNullOrEmpty(name) || !name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                continue;
-            string url = Str(a, "browser_download_url");
-            if (string.IsNullOrEmpty(url)) continue;
-            long size = a.TryGetProperty("size", out var s) && s.TryGetInt64(out long n) ? n : 0;
-
-            if (name.Contains("setup", StringComparison.OrdinalIgnoreCase))
-                return (url, size);
-            fallbackUrl ??= url;
-            if (fallbackSize == 0) fallbackSize = size;
-        }
-        return (fallbackUrl, fallbackSize);
+            AssetName = package.Name,
+            Sha256 = hash is { Length: 64 } && hash.All(Uri.IsHexDigit) ? hash.ToLowerInvariant() : null,
+            ChecksumsUrl = candidates.Where(item => item.Name.Equals("SHA256SUMS.txt", StringComparison.OrdinalIgnoreCase))
+                .Select(item => Text(item.Asset, "browser_download_url")).FirstOrDefault(),
+        };
     }
 
-    private static string Str(JsonElement e, string name)
-        => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : string.Empty;
-
-    private static bool Bool(JsonElement e, string name)
-        => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.True;
+    private static string Text(JsonElement element, string name) => element.TryGetProperty(name, out var value)
+        && value.ValueKind == JsonValueKind.String ? value.GetString() : "";
+    private static bool Bool(JsonElement element, string name) => element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
 }
