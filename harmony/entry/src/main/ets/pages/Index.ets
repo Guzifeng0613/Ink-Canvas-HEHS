@@ -29,7 +29,8 @@ import {
   isTablet,
   is2in1,
   breakpointForWidth,
-  isFullLayout
+  isFullLayout,
+  StylusBinding
 } from '@inkcanvas/platform';
 import {
   FloatingBar,
@@ -226,6 +227,8 @@ struct Index {
   private dotTimer: number = -1;
   private settings: AppSettings = createDefaultSettings();
   private autoSave: AutoSaveService | null = null;
+  // 手写笔手势订阅句柄（双击/轻捏轮转工具）；页面销毁时成对释放。
+  private stylusBinding: StylusBinding | null = null;
   private board: BoardDocument = new BoardDocument();
   private boardGridSettings: RenderingContextSettings = new RenderingContextSettings(true);
   private boardGridContext: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.boardGridSettings);
@@ -258,6 +261,7 @@ struct Index {
     this.stopLotteryTimer();
     this.stopReplayTimer();
     this.countdownPiP.stop();
+    this.releaseStylusGesture();
   }
 
   aboutToAppear(): void {
@@ -332,6 +336,7 @@ struct Index {
         this.showCoursewarePage(this.coursewareIndex + (next ? 1 : -1));
       }
     };
+    this.setupStylusGesture();
   }
 
   private loadUiPrefs(): void {
@@ -1572,6 +1577,15 @@ struct Index {
       this.applyGestures();
       this.touchSettings();
     })
+    this.SettingToggle('手写笔手势切换（双击/轻捏轮转工具）', this.settings.gesture.isEnableStylusGesture, (v: boolean) => {
+      this.settings.gesture.isEnableStylusGesture = v;
+      if (v) {
+        this.setupStylusGesture();
+      } else {
+        this.releaseStylusGesture();
+      }
+      this.touchSettings();
+    })
   }
 
   @Builder
@@ -2217,6 +2231,48 @@ struct Index {
       this.settings.gesture.isEnableTwoFingerTranslate,
       this.settings.gesture.isEnableTwoFingerRotation
     );
+  }
+
+  // 手写笔手势（双击 doubleTap / 轻捏 squeeze）工具轮转：画笔 → 区域橡皮 → 套索 → 回到画笔。
+  // 轮转直接复用现有 handleAction(id)，完整沿用其工具状态、面板与 UI 逻辑，不另写一套切换；
+  // 当前工具状态取自 controller.Tool（与工具栏选中态同源）。
+  private rotateToolByStylusGesture(): void {
+    const tool = this.controller.Tool;
+    let nextId: string;
+    if (tool === InkTool.Select) {
+      nextId = 'pen';
+    } else if (tool === InkTool.Eraser) {
+      nextId = 'select';
+    } else {
+      nextId = 'eraserCircle';
+    }
+    this.handleAction(nextId);
+  }
+
+  // 订阅手写笔手势；设置关闭或设备不支持时由 StylusBinding 内部静默降级。
+  private setupStylusGesture(): void {
+    if (!this.settings.gesture.isEnableStylusGesture) {
+      return;
+    }
+    // 重复进入先释放旧订阅，避免同一手势注册多份回调导致轮转触发多次。
+    this.releaseStylusGesture();
+    this.stylusBinding = new StylusBinding();
+    // 现有设置结构未提供区分双击/轻捏的独立开关位，故两种手势当前触发同一轮转；
+    // 回调入口已按手势分开预留，未来可分别绑定不同行为。
+    this.stylusBinding.on('doubleTap', () => {
+      this.rotateToolByStylusGesture();
+    });
+    this.stylusBinding.on('squeeze', () => {
+      this.rotateToolByStylusGesture();
+    });
+  }
+
+  // 释放手写笔手势订阅，与 setupStylusGesture 成对，避免监听泄漏。
+  private releaseStylusGesture(): void {
+    if (this.stylusBinding !== null) {
+      this.stylusBinding.release();
+      this.stylusBinding = null;
+    }
   }
 
   private boardBackgroundColor(): string {
