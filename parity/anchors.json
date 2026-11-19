@@ -202,6 +202,18 @@
       "csharp": "src/InkCanvas.App/Services/ShellController.cs"
     },
     {
+      "arkts": "harmony/features/src/main/ets/analytic/MathExpression.ts",
+      "csharp": "src/InkCanvas.AnalyticGeometry/MathExpression.cs"
+    },
+    {
+      "arkts": "harmony/features/src/main/ets/analytic/PlotCompiler.ts",
+      "csharp": "src/InkCanvas.AnalyticGeometry/PlotDefinition.cs"
+    },
+    {
+      "arkts": "harmony/features/src/main/ets/analytic/PlotSampler.ts",
+      "csharp": "src/InkCanvas.AnalyticGeometry/PlotSampler.cs"
+    },
+    {
       "arkts": "harmony/features/src/main/ets/board/BoardDocument.ts",
       "csharp": "src/InkCanvas.Features/Board/BoardService.cs"
     },

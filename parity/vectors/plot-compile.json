@@ -1,0 +1,269 @@
+{
+  "id": "plot-compile",
+  "entry": "harmony/features/src/main/ets/analytic/PlotCompiler.ts",
+  "cases": [
+    {
+      "id": "y-explicit",
+      "fn": "plotCompileProbe",
+      "input": [
+        0,
+        "y=sin(x)",
+        "",
+        -10,
+        10,
+        -7.5,
+        7.5,
+        0,
+        6.283185307179586,
+        1,
+        0,
+        0
+      ],
+      "expected": {
+        "Kind": 0,
+        "Variables": [
+          "x"
+        ]
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "x-explicit",
+      "fn": "plotCompileProbe",
+      "input": [
+        0,
+        "x=y^2",
+        "",
+        -10,
+        10,
+        -7.5,
+        7.5,
+        0,
+        6.283185307179586,
+        1,
+        0,
+        0
+      ],
+      "expected": {
+        "Kind": 1,
+        "Variables": [
+          "y"
+        ]
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "implicit-with-equals",
+      "fn": "plotCompileProbe",
+      "input": [
+        0,
+        "x^2+y^2=25",
+        "",
+        -10,
+        10,
+        -7.5,
+        7.5,
+        0,
+        6.283185307179586,
+        1,
+        0,
+        0
+      ],
+      "expected": {
+        "Kind": 2,
+        "Variables": [
+          "x",
+          "y"
+        ]
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "implicit-without-equals",
+      "fn": "plotCompileProbe",
+      "input": [
+        0,
+        "x^2+y^2-25",
+        "",
+        -10,
+        10,
+        -7.5,
+        7.5,
+        0,
+        6.283185307179586,
+        1,
+        0,
+        0
+      ],
+      "expected": {
+        "Kind": 2,
+        "Variables": [
+          "x",
+          "y"
+        ]
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "plain-expression-functiony",
+      "fn": "plotCompileProbe",
+      "input": [
+        0,
+        "a*x^2+b*x+c",
+        "",
+        -10,
+        10,
+        -7.5,
+        7.5,
+        0,
+        6.283185307179586,
+        1,
+        0,
+        0
+      ],
+      "expected": {
+        "Kind": 0,
+        "Variables": [
+          "a",
+          "x",
+          "b",
+          "c"
+        ]
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "parametric-prefix",
+      "fn": "plotCompileProbe",
+      "input": [
+        1,
+        "x=cos(t)",
+        "y=sin(t)",
+        -10,
+        10,
+        -7.5,
+        7.5,
+        0,
+        6.283185307179586,
+        1,
+        0,
+        0
+      ],
+      "expected": {
+        "Kind": 3,
+        "Variables": [
+          "t"
+        ],
+        "SecondVariables": [
+          "t"
+        ]
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "polar-prefix",
+      "fn": "plotCompileProbe",
+      "input": [
+        2,
+        "r=1+cos(t)",
+        "",
+        -10,
+        10,
+        -7.5,
+        7.5,
+        0,
+        6.283185307179586,
+        1,
+        0,
+        0
+      ],
+      "expected": {
+        "Kind": 4,
+        "Variables": [
+          "t"
+        ]
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "cartesian-rejects-t",
+      "fn": "plotCompileProbe",
+      "input": [
+        0,
+        "y=sin(t)",
+        "",
+        -10,
+        10,
+        -7.5,
+        7.5,
+        0,
+        6.283185307179586,
+        1,
+        0,
+        0
+      ],
+      "expected": "ERROR:直角坐标请使用 x、y 和参数 a、b、c。",
+      "tolerance": 0
+    },
+    {
+      "id": "parametric-rejects-xy",
+      "fn": "plotCompileProbe",
+      "input": [
+        1,
+        "x=y",
+        "y=x",
+        -10,
+        10,
+        -7.5,
+        7.5,
+        0,
+        6.283185307179586,
+        1,
+        0,
+        0
+      ],
+      "expected": "ERROR:参数方程请使用变量 t 和参数 a、b、c。",
+      "tolerance": 0
+    },
+    {
+      "id": "range-must-increase",
+      "fn": "plotCompileProbe",
+      "input": [
+        0,
+        "y=x",
+        "",
+        10,
+        -10,
+        -7.5,
+        7.5,
+        0,
+        6.283185307179586,
+        1,
+        0,
+        0
+      ],
+      "expected": "ERROR:每个范围的最大值必须大于最小值。",
+      "tolerance": 0
+    },
+    {
+      "id": "two-equals-rejected",
+      "fn": "plotCompileProbe",
+      "input": [
+        0,
+        "y=x=y",
+        "",
+        -10,
+        10,
+        -7.5,
+        7.5,
+        0,
+        6.283185307179586,
+        1,
+        0,
+        0
+      ],
+      "expected": "ERROR:方程需要完整的左右两侧，等号最多一个。",
+      "tolerance": 0
+    }
+  ]
+}

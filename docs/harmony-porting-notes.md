@@ -87,7 +87,15 @@
 
 **仍待补（下轮）**：G6 落点圆点动画状态（ConfirmTap 收拢已移植，动画计时/渲染未建）；G9 控制器级回放融合（独立回放窗可用）；G14 选区装饰细节（小对象边柄隐藏/旋转角度气泡）。
 
-**已补齐（2026-11-19 缺口轮 11，D1/D3/D5/D6；545 向量全绿 + BUILD SUCCESSFUL）**：
+**已补齐（2026-11-19 缺口轮 12，D1 克隆层号 + D7 解析几何内核；576 向量全绿 + BUILD SUCCESSFUL）**：
+- **D1 SetCloneLayerOrder**：两处克隆路径（拖拽/双指手势）副本按源对象 z 序领取连续新层号（C# SetCloneLayerOrder 语义）。
+- **D7 解析几何内核**（features/analytic，三个模块 + VectorGen AnalyticVectors 生成器——**C# 项目级 oracle 双向跑**）：
+  - `MathExpression`：有界算术文法（4096 限长/512 节点/48 深度），归一（上标/NFKC/数学符号/π/θ）、隐式乘法、多字母变量积、pi/e、21 个数值函数、^ 右结合、错误消息带位置——14 向量。
+  - `PlotCompiler`：直角（y=/x=/隐式 有无等号）/参数（x(t) 前缀）/极坐标（r 前缀）五类编译 + 变量域校验 + 中文错误——11 向量。
+  - `PlotSampler`：640×480 屏幕格自适应曲线（128 区间/误差 0.55/黄金分割 0.382 校验/深 10）、Liang-Barsky 裁剪（**修复 enter/exit 跨四次 Clip 累积**——C# ref 语义）、隐函数 256×192 marching squares（二分求根 12 次/中心消歧）、1024 量化缝合；32000 点/220000 求值预算——6 向量（路径数/首末点/点数与 C# 逐位一致）。
+- 剩余 backlog：D8 PDF 批注写回（需 PDF Kit 可行性调研，未开工）；D3/D4 的 SVG XML 校验/SVGZ 解压宿主侧。
+
+**已补齐（2026-11-19 缺口轮 11，D1/D3/D5/D6）**：
 - **D1 层排列系统**：ink `DrawingObject`/`LayerAction` + 纯算法（sortDrawingObjects/nextLayerOrder/arrangeObjects，layer-arrange 11 向量，含 ShapeSource 组保序）；控制器 InkLayers 段（DrawingObjects 懒重建/MarkLayerOrderDirty/NextLayerOrder/z 序统一命中 hitTestDrawingObject/CanArrange+ArrangeSelection 单撤销单元）；提交/识别/删除/套索/撤销重做均置脏 + 领层号；ISelectionElement 扩 layerOrder/isImageElement（BoardSelectionElement 实现）；选区工具条「顶层/上移/下移/底层」四按钮（CanArrange 门控）；画板元素按 DrawingObjects 层序渲染（墨迹与元素交错为单画布架构下的已记录简化）。
 - **D5 名册+多次抽取**：`ClassroomRoster`（每行一名/CSV/TSV 姓名列/引号转义，roster 7 向量；GBK 回退解码宿主侧）+ LotteryEngine `draw(count)`（部分 Fisher-Yates 抽取内唯一 + 不重复池 + 历史封顶 20，lottery-draw 3 向量）+ entry「导入名单」按钮 + 抽奖走 draw。
 - **D6 批量导页**：BoardDocument.insertPagesAfterCurrent（board-page-ops insertpages 探针）。

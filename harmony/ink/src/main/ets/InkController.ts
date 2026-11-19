@@ -1989,6 +1989,8 @@ export class InkController {
       for (let i = 0; i < this._dragElements.length; i++) {
         elementClones.push(this._dragElements[i].duplicate());
       }
+      // D1 SetCloneLayerOrder：副本按源对象的 z 序领取连续新层号。
+      this.setCloneLayerOrder(this.Selection.slice(), clones, this._dragElements.slice(), elementClones);
       this._dragElements = elementClones;
       this._dragElementSnapshots = [];
       for (let i = 0; i < elementClones.length; i++) {
@@ -2196,6 +2198,8 @@ export class InkController {
       for (let i = 0; i < this._dragElements.length; i++) {
         elementClones.push(this._dragElements[i].duplicate());
       }
+      // D1 SetCloneLayerOrder（C# ApplySelectionGesture 克隆路径）。
+      this.setCloneLayerOrder(this.Selection.slice(), clones, this._dragElements.slice(), elementClones);
       this._dragElements = elementClones;
       this._dragElementSnapshots = [];
       for (let i = 0; i < elementClones.length; i++) {
@@ -2546,6 +2550,32 @@ export class InkController {
       sawOther = sawOther || !selected;
     }
     return false;
+  }
+
+  // D1 SetCloneLayerOrder：副本按源对象在 z 序中的出现顺序领取连续新层号（C# 语义）。
+  private setCloneLayerOrder(
+    sourceStrokes: InkStroke[],
+    strokeCopies: InkStroke[],
+    sourceElements: ISelectionElement[],
+    elementCopies: ISelectionElement[]
+  ): void {
+    const next = this.NextLayerOrder();
+    const copyOf = new Map<string, DrawingObject>();
+    for (let i = 0; i < sourceStrokes.length && i < strokeCopies.length; i++) {
+      copyOf.set(sourceStrokes[i].Id, new DrawingObject(strokeCopies[i], null));
+    }
+    for (let i = 0; i < sourceElements.length && i < elementCopies.length; i++) {
+      copyOf.set(sourceElements[i].id(), new DrawingObject(null, elementCopies[i]));
+    }
+    let order = next;
+    const objects = this.DrawingObjects;
+    for (let i = 0; i < objects.length; i++) {
+      const copy = copyOf.get(objects[i].id());
+      if (copy !== undefined) {
+        copy.LayerOrder = order;
+        order += 1;
+      }
+    }
   }
 
   /** 排列选中对象（置顶/前移/后移/置底），一个可撤销单元；ShapeSource 同组绑定排名。 */
