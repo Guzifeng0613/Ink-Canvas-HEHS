@@ -2053,6 +2053,7 @@ struct Index {
       Width: 320,
       Height: 240,
       LayerOrder: null,
+      Opacity: 1,
       Transform: null
     });
     // G11：插图记为页内可撤销单元（撤销移除、重做放回）。
@@ -2117,6 +2118,9 @@ struct Index {
       Width: 360,
       Height: 240,
       LayerOrder: null,
+      PosterData: '',
+      NaturalWidth: 0,
+      NaturalHeight: 0,
       Transform: null
     });
     // G11：插视频记为页内可撤销单元。

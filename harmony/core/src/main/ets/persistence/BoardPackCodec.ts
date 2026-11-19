@@ -1,6 +1,8 @@
 // @parity src/InkCanvas.Features/Board/BoardService.cs (BoardFile/BoardPageFile 格式)
 // 画板包：Format/Version 严格校验；Background 大小写不敏感；GridSpacing 夹 12..160；
 // 页笔画**无 HighlighterAlpha**（v1 缺陷复刻）；资源 Data 保持 base64 字符串。
+import type { ShapeSourceData } from '../ink/InkStroke';
+
 export interface BoardStrokeSummary {
   Color: number;
   Width: number;
@@ -10,6 +12,7 @@ export interface BoardStrokeSummary {
   Nib: number;
   NibRotation: number;
   LayerOrder: number | null;
+  ShapeSource: ShapeSourceData | null;
   Shape: boolean;
   ObjectFrame: number[] | null;
   Points: number[][];
@@ -25,6 +28,10 @@ export interface BoardAssetSummary {
   Width: number;
   Height: number;
   LayerOrder: number | null;
+  Opacity?: number;
+  PosterData?: string;
+  NaturalWidth?: number;
+  NaturalHeight?: number;
   Transform: number[] | null;
 }
 
@@ -147,10 +154,25 @@ function parseStroke(raw: object): BoardStrokeSummary | null {
     LayerOrder: typeof dict['LayerOrder'] === 'number' && isFinite(dict['LayerOrder'] as number)
       ? (dict['LayerOrder'] as number)
       : null,
+    ShapeSource: readShapeSource(dict['ShapeSource']),
     Shape: bool(dict['Shape'], false),
     ObjectFrame: objectFrame,
     Points: points
   };
+}
+
+function readShapeSource(value: Object | undefined): ShapeSourceData | null {
+  if (value === null || value === undefined || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const dict = asDict(value);
+  const groupId = dict['GroupId'];
+  const provider = dict['Provider'];
+  const definition = dict['Definition'];
+  if (typeof groupId === 'string' && typeof provider === 'string' && typeof definition === 'string') {
+    return { GroupId: groupId, Provider: provider, Definition: definition };
+  }
+  return null;
 }
 
 function parseAsset(raw: object, isVideo: boolean): BoardAssetSummary | null {
@@ -168,7 +190,7 @@ function parseAsset(raw: object, isVideo: boolean): BoardAssetSummary | null {
     const values = transformValue as number[];
     transform = [num(values[0], 1), num(values[1], 0), num(values[2], 0), num(values[3], 1), num(values[4], 0), num(values[5], 0)];
   }
-  return {
+  const summary: BoardAssetSummary = {
     Id: str(dict['Id'], ''),
     Name: str(dict['Name'], isVideo ? 'Video' : 'Image'),
     Data: str(dict['Data'], ''),
@@ -182,6 +204,15 @@ function parseAsset(raw: object, isVideo: boolean): BoardAssetSummary | null {
       : null,
     Transform: transform
   };
+  // 类型专属字段：只在本类型的对象上创建键（undefined 值的键也会被 Object.keys 计入）。
+  if (isVideo) {
+    summary.PosterData = str(dict['PosterData'], '');
+    summary.NaturalWidth = num(dict['NaturalWidth'], 0);
+    summary.NaturalHeight = num(dict['NaturalHeight'], 0);
+  } else {
+    summary.Opacity = num(dict['Opacity'], 1);
+  }
+  return summary;
 }
 
 function parsePage(raw: object): BoardPageSummary {

@@ -36,6 +36,10 @@ export interface BoardAsset {
   Width: number;
   Height: number;
   LayerOrder: number | null;
+  Opacity?: number;
+  PosterData?: string;
+  NaturalWidth?: number;
+  NaturalHeight?: number;
   Transform: number[] | null;
 }
 
@@ -58,6 +62,10 @@ function assetSummary(asset: BoardAsset): BoardAssetSummary {
     Width: asset.Width,
     Height: asset.Height,
     LayerOrder: asset.LayerOrder,
+    Opacity: asset.Opacity,
+    PosterData: asset.PosterData,
+    NaturalWidth: asset.NaturalWidth,
+    NaturalHeight: asset.NaturalHeight,
     Transform: asset.Transform
   };
 }
@@ -73,6 +81,10 @@ function assetFromSummary(summary: BoardAssetSummary): BoardAsset {
     Width: summary.Width,
     Height: summary.Height,
     LayerOrder: summary.LayerOrder,
+    Opacity: summary.Opacity,
+    PosterData: summary.PosterData,
+    NaturalWidth: summary.NaturalWidth,
+    NaturalHeight: summary.NaturalHeight,
     Transform: summary.Transform
   };
 }
@@ -92,6 +104,11 @@ function strokeSummary(stroke: InkStroke): BoardStrokeSummary {
     Nib: stroke.Attributes.Nib,
     NibRotation: stroke.Attributes.NibRotation,
     LayerOrder: stroke.LayerOrder,
+    ShapeSource: stroke.ShapeSource === null ? null : {
+      GroupId: stroke.ShapeSource.GroupId,
+      Provider: stroke.ShapeSource.Provider,
+      Definition: stroke.ShapeSource.Definition
+    },
     Shape: stroke.IsRecognizedShape,
     ObjectFrame: stroke.exportObjectFrame(),
     Points: points
@@ -110,6 +127,11 @@ function strokeFromSummary(summary: BoardStrokeSummary): InkStroke {
   const stroke = new InkStroke(attributes);
   stroke.IsRecognizedShape = summary.Shape;
   stroke.LayerOrder = summary.LayerOrder;
+  stroke.ShapeSource = summary.ShapeSource === null ? null : {
+    GroupId: summary.ShapeSource.GroupId,
+    Provider: summary.ShapeSource.Provider,
+    Definition: summary.ShapeSource.Definition
+  };
   const points: InkPoint[] = [];
   for (let i = 0; i < summary.Points.length; i++) {
     const row = summary.Points[i];
@@ -380,6 +402,10 @@ export function cloneBoardAsset(asset: BoardAsset, newId: string): BoardAsset {
     Width: asset.Width,
     Height: asset.Height,
     LayerOrder: asset.LayerOrder,
+    Opacity: asset.Opacity,
+    PosterData: asset.PosterData,
+    NaturalWidth: asset.NaturalWidth,
+    NaturalHeight: asset.NaturalHeight,
     Transform: asset.Transform === null ? null : asset.Transform.slice()
   };
 }

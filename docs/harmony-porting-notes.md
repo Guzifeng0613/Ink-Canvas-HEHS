@@ -87,7 +87,11 @@
 
 **仍待补（下轮）**：G6 落点圆点动画状态（ConfirmTap 收拢已移植，动画计时/渲染未建）；G9 控制器级回放融合（独立回放窗可用）；G14 选区装饰细节（小对象边柄隐藏/旋转角度气泡）。
 
-**已补齐（2026-11-19 缺口轮 8，G6/G9/G14 纯逻辑；510 向量全绿 + BUILD SUCCESSFUL）——G1–G17 至此全部落地**：
+**已补齐（2026-11-19 缺口轮 9+10，第二波演进契约；510 向量全绿 + BUILD SUCCESSFUL）**：
+- oracle 漂移检测（重生成对比）发现第二波演进：.icink/画板包 LayerOrder+ShapeSource、Settings experimental 组（ScreenTracking 9 键 PascalCase）、图片 Opacity、视频 PosterData/NaturalWidth/NaturalHeight —— 全部双向持久化并向量互认（InkStroke.LayerOrder/ShapeSource、IcinkCodec、BoardPackCodec、BoardDocument、schemas、VectorGen 投影/字面量）。
+- 增量调研：docs/superpowers/research/harmony/17-evolution-delta-2.md（D1–D8 分级）。**剩余 backlog**：D1 层排列系统（InkLayers/DrawingObject/LayerAction/z 序命中/ISelectionElement.LayerOrder+IImageSelectionElement）、D3/D4 SVG+WebP/EXIF/降采样导入策略、D5 ClassroomRoster+多次抽取历史、D6 InsertPagesAfterCurrent 批量导页、D7 解析几何绘图内核（纯逻辑可向量）、D8 PDF 批注写回（PDF Kit 可行性需调研）。插件运行时/ScreenTracking/SoftwareLauncher 等不构成 ArkTS 缺口（报告 §4）。
+
+**已补齐（2026-11-19 缺口轮 8，G6/G9/G14 纯逻辑）——第一波 G1–G17 至此全部落地**：
 - **G6 落点动画**：ink `InkDotAnimation`（120ms、smoothstep 缓动、向最终持久宽度过渡；构造 InkDotAnimation(dot, stroke)，dot-animation 3 向量）+ 控制器 DotAnimations/DotAnimationVersion/IsAnimatingDot/AdvanceDotAnimations/FinishDotAnimations + ConfirmTap 记录（多点/位移/宽度差条件）+ entry 常驻覆盖层画预览、16ms 帧步进自停。
 - **G9 回放融合**：ink `InkPlayback`（display-only，InkReplaySession 克隆驱动，playback 2 向量）+ 控制器 Begin/Seek/EndPlayback（期间拒绝输入、切工具/换文档自动结束）+ entry 回放条驱动 SeekPlayback、画布只画可见前缀（源笔画与历史不动）。
 - **G14（纯逻辑）**：core `visibleResizeHandles`（短/薄对象省略边中点柄，Transform*view 法向长度；selection-handles 5 向量）。渲染层接线（覆盖层用可见柄集 + 旋转箭头/角度气泡）为待办。
