@@ -9,7 +9,7 @@ export { effectiveWidths, applyTaperAt, createTaperProfile, TaperProfile, NoneTa
 export type { TaperOptionsInput } from './src/main/ets/ink/TaperProfile';
 export { OneEuroFilter } from './src/main/ets/ink/OneEuroFilter';
 export { InkStroke, Rect, SelectionFrameState, strokeBounds, setTaperAndWidths, strokeTaperProbe } from './src/main/ets/ink/InkStroke';
-export type { StrokePointInput, StrokeTaperSampleInput, StrokeTaperProbeResult } from './src/main/ets/ink/InkStroke';
+export type { StrokePointInput, StrokeTaperSampleInput, StrokeTaperProbeResult, ShapeSourceData } from './src/main/ets/ink/InkStroke';
 export { InkDocument } from './src/main/ets/ink/InkDocument';
 export {
   buildSegmentOutline,

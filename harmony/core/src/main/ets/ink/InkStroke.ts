@@ -88,6 +88,9 @@ export class InkStroke {
   Attributes: StrokeAttributes;
   IsCompleted: boolean = false;
   IsRecognizedShape: boolean = false;
+  // 基线演进：图层序（null = 未分层，按文档序）与形状来源（可选中形状共享的公式数据）。
+  LayerOrder: number | null = null;
+  ShapeSource: ShapeSourceData | null = null;
   private points: InkPoint[] = [];
   private cachedBounds: Rect | null = null;
   private objectFrame: SelectionFrameState | null = null;
@@ -291,12 +294,25 @@ export class InkStroke {
     copy.Id = this.Id;
     copy.IsRecognizedShape = this.IsRecognizedShape;
     copy.IsCompleted = this.IsCompleted;
+    copy.LayerOrder = this.LayerOrder;
+    copy.ShapeSource = this.ShapeSource === null ? null : {
+      GroupId: this.ShapeSource.GroupId,
+      Provider: this.ShapeSource.Provider,
+      Definition: this.ShapeSource.Definition
+    };
     copy.restorePoints(this.points);
     if (this.objectFrame !== null) {
       copy.objectFrame = new SelectionFrameState(this.objectFrame.Bounds, this.objectFrame.Transform);
     }
     return copy;
   }
+}
+
+/** C# ShapeSource record：提供方所有的形状公式数据（同一可选形状的各轮廓共享 GroupId）。 */
+export interface ShapeSourceData {
+  GroupId: string;
+  Provider: string;
+  Definition: string;
 }
 
 export interface StrokePointInput {

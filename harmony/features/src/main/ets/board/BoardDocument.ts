@@ -35,6 +35,7 @@ export interface BoardAsset {
   Top: number;
   Width: number;
   Height: number;
+  LayerOrder: number | null;
   Transform: number[] | null;
 }
 
@@ -56,6 +57,7 @@ function assetSummary(asset: BoardAsset): BoardAssetSummary {
     Top: asset.Top,
     Width: asset.Width,
     Height: asset.Height,
+    LayerOrder: asset.LayerOrder,
     Transform: asset.Transform
   };
 }
@@ -70,6 +72,7 @@ function assetFromSummary(summary: BoardAssetSummary): BoardAsset {
     Top: summary.Top,
     Width: summary.Width,
     Height: summary.Height,
+    LayerOrder: summary.LayerOrder,
     Transform: summary.Transform
   };
 }
@@ -88,6 +91,7 @@ function strokeSummary(stroke: InkStroke): BoardStrokeSummary {
     Taper: stroke.Attributes.TaperKind,
     Nib: stroke.Attributes.Nib,
     NibRotation: stroke.Attributes.NibRotation,
+    LayerOrder: stroke.LayerOrder,
     Shape: stroke.IsRecognizedShape,
     ObjectFrame: stroke.exportObjectFrame(),
     Points: points
@@ -105,6 +109,7 @@ function strokeFromSummary(summary: BoardStrokeSummary): InkStroke {
   attributes.NibRotation = summary.NibRotation;
   const stroke = new InkStroke(attributes);
   stroke.IsRecognizedShape = summary.Shape;
+  stroke.LayerOrder = summary.LayerOrder;
   const points: InkPoint[] = [];
   for (let i = 0; i < summary.Points.length; i++) {
     const row = summary.Points[i];
@@ -256,6 +261,7 @@ export class BoardDocument {
       Top: asset.Top,
       Width: asset.Width,
       Height: asset.Height,
+      LayerOrder: asset.LayerOrder,
       Transform: asset.Transform === null ? null : asset.Transform.slice()
     };
   }
@@ -373,6 +379,7 @@ export function cloneBoardAsset(asset: BoardAsset, newId: string): BoardAsset {
     Top: asset.Top,
     Width: asset.Width,
     Height: asset.Height,
+    LayerOrder: asset.LayerOrder,
     Transform: asset.Transform === null ? null : asset.Transform.slice()
   };
 }

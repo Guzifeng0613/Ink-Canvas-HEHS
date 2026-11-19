@@ -2052,6 +2052,7 @@ struct Index {
       Top: Math.max(0, (this.windowHeight - 240) / 2),
       Width: 320,
       Height: 240,
+      LayerOrder: null,
       Transform: null
     });
     // G11：插图记为页内可撤销单元（撤销移除、重做放回）。
@@ -2115,6 +2116,7 @@ struct Index {
       Top: Math.max(0, (this.windowHeight - 240) / 2),
       Width: 360,
       Height: 240,
+      LayerOrder: null,
       Transform: null
     });
     // G11：插视频记为页内可撤销单元。

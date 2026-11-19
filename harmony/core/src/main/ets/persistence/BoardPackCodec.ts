@@ -9,6 +9,7 @@ export interface BoardStrokeSummary {
   Taper: number;
   Nib: number;
   NibRotation: number;
+  LayerOrder: number | null;
   Shape: boolean;
   ObjectFrame: number[] | null;
   Points: number[][];
@@ -23,6 +24,7 @@ export interface BoardAssetSummary {
   Top: number;
   Width: number;
   Height: number;
+  LayerOrder: number | null;
   Transform: number[] | null;
 }
 
@@ -142,6 +144,9 @@ function parseStroke(raw: object): BoardStrokeSummary | null {
     Taper: taper,
     Nib: num(dict['Nib'], 0) === 1 ? 1 : 0,
     NibRotation: num(dict['NibRotation'], 0),
+    LayerOrder: typeof dict['LayerOrder'] === 'number' && isFinite(dict['LayerOrder'] as number)
+      ? (dict['LayerOrder'] as number)
+      : null,
     Shape: bool(dict['Shape'], false),
     ObjectFrame: objectFrame,
     Points: points
@@ -172,6 +177,9 @@ function parseAsset(raw: object, isVideo: boolean): BoardAssetSummary | null {
     Top: num(dict['Top'], 0),
     Width: num(dict['Width'], isVideo ? 360 : 0),
     Height: num(dict['Height'], isVideo ? 240 : 0),
+    LayerOrder: typeof dict['LayerOrder'] === 'number' && isFinite(dict['LayerOrder'] as number)
+      ? (dict['LayerOrder'] as number)
+      : null,
     Transform: transform
   };
 }
