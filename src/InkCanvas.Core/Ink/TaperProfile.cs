@@ -10,6 +10,11 @@ public enum TaperKind
 
     /// <summary>Width driven by drawing speed (fast = thinner).</summary>
     Velocity = 2,
+
+    SmoothPen = 3,
+    SoftPen = 4,
+    Natural = 5,
+    Calligraphy = 6,
 }
 
 /// <summary>
@@ -38,6 +43,7 @@ public abstract class TaperProfile
     /// <param name="tipIndex">Index of the point that just arrived.</param>
     /// <param name="baseWidth">Full stroke width.</param>
     public abstract void Apply(Span<InkPoint> points, int tipIndex, float baseWidth);
+    public virtual int StablePointCount(int count) => count;
 
     /// <summary>Monotonic width assignment: never shrink an already-drawn point.</summary>
     protected static void Settle(ref float slot, float candidate)
@@ -49,6 +55,7 @@ public abstract class TaperProfile
     {
         TaperKind.None => new NoneTaper(),
         TaperKind.Velocity => new VelocityTaper(),
+        TaperKind.SmoothPen or TaperKind.SoftPen or TaperKind.Natural or TaperKind.Calligraphy => new SimulatedPressureTaper(kind),
         _ => new TailTaper(),
     };
 }
@@ -79,6 +86,7 @@ public sealed class TailTaper : TaperProfile
 
     /// <summary>Width ratio at the very tip. Original pressure 0.1 against 0.5 baseline.</summary>
     public float TipRatio { get; init; } = 0.2f;
+    public override int StablePointCount(int count) => Math.Max(0, count - Math.Max(2, TailPoints));
 
     public override void Apply(Span<InkPoint> points, int tipIndex, float baseWidth)
     {

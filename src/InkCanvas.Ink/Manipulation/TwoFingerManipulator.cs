@@ -29,7 +29,7 @@ public sealed class TwoFingerManipulator
     /// Accumulates the delta from the previous pair position into <paramref name="transform"/>.
     /// Returns false when there is nothing to apply.
     /// </summary>
-    public bool Update(Vector2 a, Vector2 b, ref Matrix3x2 transform, Vector2 center)
+    public bool Update(Vector2 a, Vector2 b, ref Matrix3x2 transform, Vector2 center, bool screenSpace = false)
     {
         if (!_hasPrevious)
         {
@@ -69,7 +69,7 @@ public sealed class TwoFingerManipulator
         _prevA = a; _prevB = b;
 
         if (delta == Matrix3x2.Identity) return false;
-        transform = delta * transform;
+        transform = screenSpace ? transform * delta : delta * transform;
         return true;
     }
 }

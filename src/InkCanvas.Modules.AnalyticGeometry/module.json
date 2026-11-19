@@ -1,0 +1,9 @@
+{
+  "Id": "inkcanvas.analytic-geometry",
+  "Name": "解析几何",
+  "Version": "1.0.0",
+  "ApiVersion": 1,
+  "EntryAssembly": "InkCanvas.Modules.AnalyticGeometry.dll",
+  "EntryType": "InkCanvas.Modules.AnalyticGeometry.GeometryModule",
+  "PackageFiles": ["InkCanvas.AnalyticGeometry.dll"]
+}

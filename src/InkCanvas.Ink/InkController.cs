@@ -3,6 +3,7 @@ using InkCanvas.Core.Ink;
 using InkCanvas.Core.Input;
 using InkCanvas.Core.Recognition;
 using InkCanvas.Core.Selection;
+using InkCanvas.Core.Settings;
 using InkCanvas.Core.Shapes;
 using InkCanvas.Ink.Manipulation;
 using InkCanvas.Platform.Input;
@@ -11,7 +12,8 @@ using System.Numerics;
 
 namespace InkCanvas.Ink;
 
-public enum InkTool { Pen, Highlighter, Eraser, Select, Shape }
+public enum InkTool { Pen, Highlighter, Eraser, Select, Shape, Pan }
+public enum InkEraserMode { Area, WholeStroke, Lasso }
 
 /// <summary>
 /// The single entry point the UI uses for ink: routes input, owns the document and history,
@@ -23,21 +25,118 @@ public enum InkTool { Pen, Highlighter, Eraser, Select, Shape }
 /// and no frame in which its geometry is recomputed.
 /// </para>
 /// </summary>
-public sealed class InkController : IDisposable
+public sealed partial class InkController : IDisposable
 {
+    public InkController() => Document.Changed += OnPlaybackDocumentChanged;
+    public InkPlayback Playback { get; private set; }
+    public event Action PlaybackChanged;
+    public bool BeginPlayback()
+    {
+        EndPlayback();
+        FinishDotAnimations();
+        HideEraserPreview();
+        if (_live.Count > 0 || IsLassoErasing || _erasing) return false;
+        var source = Document.Strokes.Where(s => Selection.Count == 0 || Selection.Contains(s)).ToList();
+        if (source.Count == 0) return false;
+        Playback = new InkPlayback(source);
+        PlaybackChanged?.Invoke(); Invalidated?.Invoke(); return true;
+    }
+    public void SeekPlayback(float elapsedMs)
+    {
+        if (Playback is null) return;
+        Playback.Seek(elapsedMs); Invalidated?.Invoke();
+    }
+    public void EndPlayback()
+    {
+        if (Playback is null) return;
+        Playback = null; PlaybackChanged?.Invoke(); Invalidated?.Invoke();
+    }
+    private void OnPlaybackDocumentChanged()
+    {
+        _drawingOrderDirty = true;
+        EndPlayback();
+        if (_dotAnimations.RemoveAll(animation => !Document.Strokes.Contains(animation.Source)
+            || animation.SourceVersion != animation.Source.GeometryVersion) == 0) return;
+        DotAnimationVersion++;
+        DotAnimationChanged?.Invoke();
+    }
+
+    private readonly List<InkDotAnimation> _dotAnimations = new();
+    public IReadOnlyList<InkDotAnimation> DotAnimations => _dotAnimations;
+    public long DotAnimationVersion { get; private set; }
+    public event Action DotAnimationChanged;
+    public bool IsAnimatingDot(InkStroke stroke)
+    {
+        foreach (var animation in _dotAnimations)
+            if (ReferenceEquals(animation.Source, stroke)) return true;
+        return false;
+    }
+
+    public void AdvanceDotAnimations(float milliseconds)
+    {
+        if (_dotAnimations.Count == 0 || !float.IsFinite(milliseconds) || milliseconds <= 0) return;
+        for (int index = _dotAnimations.Count - 1; index >= 0; index--)
+        {
+            var animation = _dotAnimations[index];
+            if (animation.Advance(milliseconds))
+            {
+                _dotAnimations.RemoveAt(index);
+                DotAnimationVersion++;
+            }
+        }
+        DotAnimationChanged?.Invoke();
+    }
+
+    public void FinishDotAnimations()
+    {
+        if (_dotAnimations.Count == 0) return;
+        _dotAnimations.Clear();
+        DotAnimationVersion++;
+        DotAnimationChanged?.Invoke();
+    }
     private readonly Dictionary<uint, InkStroke> _live = new();
+    private readonly Dictionary<uint, uint> _strokeStartTimes = new();
+    private readonly Dictionary<uint, (Vector2 Position, uint Since)> _lineEndpoints = new();
+    private const int LineHoldMilliseconds = 450;
+    private const float LineHoldRadius = 3;
     private readonly Dictionary<uint, OverlayPointer> _touches = new();
+    private readonly List<uint> _scratchIds = new();
     private readonly TwoFingerManipulator _manipulator = new();
+    private readonly TwoFingerManipulator _selectionManipulator = new();
     private readonly PalmRejector _palm = new();
     private readonly List<InkStroke> _recentForRecognition = new();
     private readonly Dictionary<uint, Vector2> _shapeDragStart = new();
     private List<InkStroke> _shapePreview = new();
+
+    // Two-step shape state (Cuboid / Hyperbola, upstream drawMultiStepShape* / CuboidFrontRect*).
+    private int _shapeStep;                 // 0 = first drag, 1 = second drag
+    private Vector2 _stepAnchor;            // cuboid: normalized front top-left; hyperbola: locked center
+    private Vector2 _stepSecond;            // cuboid: normalized front bottom-right
+    private float _stepK;                   // hyperbola: asymptote slope |dy/dx| from step 1
+    private List<InkStroke> _stepPending = new(); // step-1 ink kept visible until step 2 commits
     private Vector2 _lastEraserPoint;
     private bool _erasing;
+    private uint? _panPointerId;
+    private Vector2 _panStart;
+    private Matrix3x2 _panView;
 
     public InkDocument Document { get; } = new();
 
     public UndoStack History { get; } = new(200);
+
+    public bool HasActiveInteraction => _live.Count > 0 || _touches.Count > 0 || _erasing || IsLassoErasing
+        || _activeHandle != SelectionHandle.None || _selectionGesture || _panPointerId is not null || _shapeStep != 0;
+
+    public bool RestoreScreenContext(IEnumerable<InkStroke> strokes, UndoHistoryState history, Matrix3x2 view)
+    {
+        if (HasActiveInteraction) return false;
+        EndPlayback(); FinishDotAnimations(); ClearSelection(); HideEraserPreview();
+        ViewTransform = view;
+        Document.ReplaceAll(strokes);
+        History.Restore(history);
+        NotifyElementsChanged();
+        return true;
+    }
 
     public StrokeAttributes CurrentAttributes { get; } = new()
     {
@@ -46,11 +145,214 @@ public sealed class InkController : IDisposable
         TaperKind = TaperKind.Tail,
     };
 
-    public InkTool Tool { get; set; } = InkTool.Pen;
+    private InkTool _tool = InkTool.Pen;
 
-    public ShapeKind ShapeKind { get; set; } = ShapeKind.Line;
+    public InkTool Tool
+    {
+        get => _tool;
+        set
+        {
+            EndPlayback();
+            if (_tool == value) return;
+            var previous = _tool;
+            HideEraserPreview();
+            _tool = value;
+            if (_configuredPenWidth.HasValue)
+                CurrentAttributes.BaseWidth = value == InkTool.Highlighter ? _configuredHighlighterWidth : _configuredPenWidth.Value;
+            _panPointerId = null;
+            CancelLassoErase();
+            if (previous == InkTool.Eraser && _erasing) EndErase();
+            if (previous == InkTool.Select)
+            {
+                ClearSelection();
+                CloneMode = false;
+            }
+            // Leaving shape mode abandons any half-finished multi-step shape and clears
+            // stickiness, like BtnPen_Click resetting isLongPressSelected (upstream:104-112).
+            if (previous == InkTool.Shape)
+            {
+                ResetShapeState();
+                StickyShape = false;
+            }
+            ToolChanged?.Invoke();
+        }
+    }
 
-    public float EraserRadius { get; set; } = 16f;
+    /// <summary>Raised whenever <see cref="Tool"/> changes (incl. the auto-revert to pen after a shape).</summary>
+    public event Action ToolChanged;
+    private float? _configuredPenWidth;
+    private float _configuredHighlighterWidth;
+
+    public void ConfigurePenWidths(float pen, float highlighter)
+    {
+        _configuredPenWidth = pen;
+        _configuredHighlighterWidth = highlighter;
+        CurrentAttributes.BaseWidth = Tool == InkTool.Highlighter ? highlighter : pen;
+    }
+
+    private ShapeKind _shapeKind = ShapeKind.Line;
+
+    public ShapeKind ShapeKind
+    {
+        get => _shapeKind;
+        set
+        {
+            // Every menu pick restarts multi-step state and clears stickiness, like the
+            // original BtnDraw*_Click handlers (MW_ShapeDrawing.cs:124-467).
+            ResetShapeState();
+            _shapeKind = value;
+            StickyShape = false;
+            ShapeSelectionChanged?.Invoke();
+        }
+    }
+
+    /// <summary>
+    /// WPF 长按保持选中: while true the shape tool survives commits. Set by the menu's
+    /// long-press path; a plain <see cref="ShapeKind"/> set always resets it to false.
+    /// </summary>
+    private bool _stickyShape;
+    public bool StickyShape
+    {
+        get => _stickyShape;
+        set
+        {
+            if (_stickyShape == value) return;
+            _stickyShape = value;
+            ShapeSelectionChanged?.Invoke();
+        }
+    }
+
+    public event Action ShapeSelectionChanged;
+    public event Action ElementsChanged;
+
+    public void NotifyElementsChanged()
+    {
+        _drawingOrderDirty = true;
+        ElementsChanged?.Invoke();
+        // A selection drag updates every object before issuing its single frame invalidation.
+        if (PreviewStrokes is null) Invalidated?.Invoke();
+    }
+
+    public void SelectElement(ISelectionElement element)
+    {
+        if (element is null || !element.IsPresent) return;
+        Tool = InkTool.Select;
+        ClearSelection();
+        SelectedElements.Add(element);
+        SelectionChanged?.Invoke();
+        Invalidated?.Invoke();
+    }
+
+    public void SetSelectionImageOpacity(float opacity)
+    {
+        if (!float.IsFinite(opacity)) return;
+        opacity = Math.Clamp(opacity, 0, 1);
+        var images = SelectedElements.OfType<IImageSelectionElement>()
+            .Where(image => image.ImageData is { Length: > 0 } && image.Opacity != opacity).ToArray();
+        if (images.Length == 0) return;
+        var before = images.Select(image => image.Opacity).ToArray();
+        var after = Enumerable.Repeat(opacity, images.Length).ToArray();
+        Apply(after);
+        History.Push(new DelegateAction("image opacity", () => Apply(after), () => Apply(before)));
+
+        void Apply(float[] values)
+        {
+            for (int i = 0; i < images.Length; i++) images[i].Opacity = values[i];
+            NotifyElementsChanged();
+        }
+    }
+
+    /// <summary>Menu selection entry point: pick a kind and whether it stays selected (long-press).</summary>
+    public void SelectShape(ShapeKind kind, bool sticky = false)
+    {
+        ShapeKind = kind;
+        StickyShape = sticky;
+        Tool = InkTool.Shape;
+    }
+
+    /// <summary>Dragging a selection can create copies while retaining the original selection.</summary>
+    private bool _cloneMode;
+    public bool CloneMode
+    {
+        get => _cloneMode;
+        set { if (_cloneMode == value) return; _cloneMode = value; SelectionChanged?.Invoke(); Invalidated?.Invoke(); }
+    }
+
+    private float _eraserRadius = 16f;
+    public float EraserRadius
+    {
+        get => _eraserRadius;
+        set
+        {
+            if (_eraserRadius == value) return;
+            _eraserRadius = value;
+            if (IsEraserPreviewVisible) EraserPreviewChanged?.Invoke();
+        }
+    }
+
+    private OverlayPointer? _eraserPreviewPointer;
+    public event Action EraserPreviewChanged;
+    public bool IsEraserPreviewVisible => _eraserPreviewPointer.HasValue && Playback is null
+        && (_erasing ? _partialEraseGesture : Tool == InkTool.Eraser && EraserMode == InkEraserMode.Area);
+    public Vector2 EraserPreviewCenter => _eraserPreviewPointer is { } pointer ? ToWorld(pointer) : Vector2.Zero;
+    public float EraserPreviewRadius => _gestureEraserRadius ?? EraserRadius;
+    public Rect EraserVisualBounds
+    {
+        get
+        {
+            if (!IsEraserPreviewVisible || _eraserPreviewPointer is not { } pointer) return Rect.Empty;
+            float radius = EraserPreviewRadius;
+            float rx = radius * MathF.Sqrt(ViewTransform.M11 * ViewTransform.M11 + ViewTransform.M21 * ViewTransform.M21);
+            float ry = radius * MathF.Sqrt(ViewTransform.M12 * ViewTransform.M12 + ViewTransform.M22 * ViewTransform.M22);
+            return Rect.FromLTRB(pointer.X - rx - 3, pointer.Y - ry - 3, pointer.X + rx + 3, pointer.Y + ry + 3);
+        }
+    }
+
+    public void OnPointerHover(in OverlayPointer pointer)
+    {
+        if (pointer.Kind == OverlayPointerKind.Touch || _erasing || Playback is not null) return;
+        UpdateEraserPreview(pointer);
+    }
+
+    public void HideEraserPreview(uint? pointerId = null)
+    {
+        if (_eraserPreviewPointer is not { } pointer || pointerId.HasValue && pointerId != pointer.Id) return;
+        bool visible = IsEraserPreviewVisible;
+        _eraserPreviewPointer = null;
+        if (visible) EraserPreviewChanged?.Invoke();
+    }
+
+    private void UpdateEraserPreview(in OverlayPointer pointer, bool notify = true)
+    {
+        if (_erasing && pointer.Id != _eraserPointerId) return;
+        bool moved = _eraserPreviewPointer is not { } previous
+            || previous.Id != pointer.Id || previous.X != pointer.X || previous.Y != pointer.Y;
+        _eraserPreviewPointer = pointer;
+        if (notify && moved && !_erasing && IsEraserPreviewVisible) EraserPreviewChanged?.Invoke();
+    }
+
+    private InkEraserMode _eraserMode = InkEraserMode.Area;
+    public InkEraserMode EraserMode
+    {
+        get => _eraserMode;
+        set
+        {
+            if (_eraserMode == value) return;
+            CancelLassoErase();
+            if (_erasing) EndErase();
+            HideEraserPreview();
+            _eraserMode = value;
+            if (Tool == InkTool.Eraser) ToolChanged?.Invoke();
+        }
+    }
+
+    private readonly List<Vector2> _lassoPath = new();
+    private Rect _lassoBounds;
+    private uint _lassoPointerId;
+    private Matrix3x2 _lassoViewAtStart;
+    public bool IsLassoErasing { get; private set; }
+    public IReadOnlyList<Vector2> LassoPath => _lassoPath;
+    public Rect LassoVisualBounds => IsLassoErasing ? _lassoBounds.Inflate(4) : Rect.Empty;
 
     /// <summary>Palm/back-of-hand acts as an area eraser.</summary>
     public bool PalmErases { get; set; } = true;
@@ -60,6 +362,15 @@ public sealed class InkController : IDisposable
     public bool MultiTouchEnabled { get; set; } = true;
 
     public Matrix3x2 ViewTransform { get; set; } = Matrix3x2.Identity;
+    public bool PanZoomEnabled { get; set; }
+    public void ConfigureViewScaleLimits(float minimum, float maximum)
+    {
+        _manipulator.MinScale = minimum;
+        _manipulator.MaxScale = maximum;
+    }
+    public bool IsViewManipulating => _panPointerId is not null
+        || PanZoomEnabled && Tool == InkTool.Pan && _touches.Count >= 2
+        || !_selectionGesture && !MultiTouchEnabled && _touches.Count >= 2 && Tool is not (InkTool.Select or InkTool.Eraser);
 
     public Vector2 ViewCenter { get; set; } = new(960, 540);
 
@@ -70,11 +381,40 @@ public sealed class InkController : IDisposable
         => MatrixTransformCenter.Resolve(TransformCenterOption, ViewCenter, gestureCenter,
             SelectionBounds.Center, isLoaded: true);
 
-    public IReadOnlyCollection<InkStroke> LiveStrokes => _live.Values;
+    // Concrete collection types: foreach over these uses struct enumerators, so the per-frame
+    // render loops do not box an IEnumerator (allocation-light hot path).
+    public Dictionary<uint, InkStroke>.ValueCollection LiveStrokes => _live.Values;
 
-    public IReadOnlyList<InkStroke> ShapePreview => _shapePreview;
+    public List<InkStroke> ShapePreview => _shapePreview;
 
     public List<InkStroke> Selection { get; } = new();
+    public List<ISelectionElement> SelectedElements { get; } = new();
+    private Func<IEnumerable<ISelectionElement>> _getSelectableElements;
+    public Func<IEnumerable<ISelectionElement>> GetSelectableElements
+    {
+        get => _getSelectableElements;
+        set { _getSelectableElements = value; _drawingOrderDirty = true; }
+    }
+    public bool HasSelection => Selection.Count > 0 || SelectedElements.Count > 0;
+    public bool IsMarqueeSelecting { get; private set; }
+    public Rect MarqueeBounds { get; private set; }
+    public bool IsRotatingSelection => _activeHandle == SelectionHandle.Rotate && _dragMoved;
+    public float SelectionRotationDegrees => (MathF.Atan2(SelectionFrame.Transform.M12, SelectionFrame.Transform.M11)
+        * 180 / MathF.PI % 360 + 360) % 360;
+    public Rect SelectionVisualBounds
+    {
+        get
+        {
+            if (Tool != InkTool.Select) return Rect.Empty;
+            var bounds = IsMarqueeSelecting ? MarqueeBounds.Inflate(3) : Rect.Empty;
+            if (!HasSelection) return bounds;
+            var frame = SelectionFrame;
+            foreach (var p in frame.Corners(ViewTransform))
+                bounds = bounds.Union(Rect.FromLTRB(p.X - 12, p.Y - 12, p.X + 12, p.Y + 12));
+            var rotate = frame.HandlePosition(SelectionHandle.Rotate, ViewTransform);
+            return bounds.Union(Rect.FromLTRB(rotate.X - 12, rotate.Y - 12, rotate.X + 75, rotate.Y + 40));
+        }
+    }
 
     /// <summary>When true, two-finger gestures transform the selection instead of the view.</summary>
     public bool GesturesTargetSelection { get; set; }
@@ -84,8 +424,11 @@ public sealed class InkController : IDisposable
     {
         get
         {
+            if (_dragMoved) return Rendering.CommittedInkLayer.TransformBounds(_dragBounds, _selectionPreview);
             var r = Rect.Empty;
-            foreach (var s in Selection) r = r.Union(s.Bounds);
+            foreach (var s in Selection) r = r.Union(IsPreviewStroke(s)
+                ? Rendering.CommittedInkLayer.TransformBounds(s.Bounds, _selectionPreview) : s.Bounds);
+            foreach (var element in SelectedElements) r = r.Union(element.Bounds);
             return r;
         }
     }
@@ -94,9 +437,89 @@ public sealed class InkController : IDisposable
     // drag start, so a long drag never accumulates rounding error.
     private SelectionHandle _activeHandle = SelectionHandle.None;
     private Vector2 _dragFromView;
-    private Rect _dragStartViewBounds;
     private Matrix3x2 _viewAtDragStart;
     private List<InkStroke> _dragSnapshot;
+    private List<InkStroke> _dragTargets;   // the selection, or the copies in a clone drag
+    private bool _cloneDrag;
+    private bool _controlCloneDrag;
+    private InkStroke _controlClickStroke;
+    private ISelectionElement _controlClickElement;
+    private Rect _dragBounds;
+    private bool _dragMoved;
+    private uint _selectionPointerId;
+    private SelectionFrame _selectionFrame;
+    private SelectionFrame _dragFrame;
+    private readonly List<(InkStroke Stroke, long Version)> _frameStrokes = new();
+    private readonly List<(ISelectionElement Element, SelectionFrame Frame)> _frameElements = new();
+    private List<ISelectionElement> _dragElements;
+    private List<object> _dragElementSnapshot;
+    private List<InkStroke> _marqueeInitialStrokes;
+    private List<ISelectionElement> _marqueeInitialElements;
+    private bool _selectionGesture;
+    private Matrix3x2 _selectionPreview = Matrix3x2.Identity;
+    private bool DeferSelectionPoints => _selectionGesture || _activeHandle is SelectionHandle.Move or SelectionHandle.Rotate;
+    private readonly HashSet<InkStroke> _previewSet = new();
+    public IReadOnlyList<InkStroke> PreviewStrokes => _dragMoved && DeferSelectionPoints ? _dragTargets : null;
+    public Matrix3x2 SelectionPreviewTransform => _selectionPreview;
+    public Rect SelectionPreviewSourceBounds => _dragBounds;
+    public bool IsPreviewStroke(InkStroke stroke) => _dragMoved && DeferSelectionPoints && _previewSet.Contains(stroke);
+
+    public SelectionFrame SelectionFrame
+    {
+        get
+        {
+            if (_dragMoved)
+                return _dragFrame with { Transform = _dragFrame.Transform * _selectionPreview };
+            bool valid = _frameStrokes.Count == Selection.Count && _frameElements.Count == SelectedElements.Count;
+            for (int i = 0; valid && i < Selection.Count; i++)
+                valid = ReferenceEquals(_frameStrokes[i].Stroke, Selection[i]) && _frameStrokes[i].Version == Selection[i].GeometryVersion;
+            for (int i = 0; valid && i < SelectedElements.Count; i++)
+                valid = ReferenceEquals(_frameElements[i].Element, SelectedElements[i]) && _frameElements[i].Frame == SelectedElements[i].Frame;
+            if (!valid)
+            {
+                var frame = Selection.Count == 1 && SelectedElements.Count == 0 ? Selection[0].ObjectFrame
+                    : Selection.Count == 0 && SelectedElements.Count == 1 ? SelectedElements[0].Frame
+                    : new SelectionFrame(SelectionBounds, Matrix3x2.Identity);
+                RememberFrame(frame);
+            }
+            return _selectionFrame;
+        }
+    }
+
+    private void RememberFrame(SelectionFrame frame)
+    {
+        _selectionFrame = frame;
+        _frameStrokes.Clear();
+        foreach (var stroke in Selection) _frameStrokes.Add((stroke, stroke.GeometryVersion));
+        _frameElements.Clear();
+        foreach (var element in SelectedElements) _frameElements.Add((element, element.Frame));
+    }
+
+    private void RestoreSelectionFrame(List<InkStroke> strokes, List<ISelectionElement> elements, SelectionFrame frame)
+    {
+        if (Selection.SequenceEqual(strokes) && SelectedElements.SequenceEqual(elements)) RememberFrame(frame);
+        else { _frameStrokes.Clear(); _frameElements.Clear(); }
+    }
+
+    public void ClearSelection()
+    {
+        if (_selectionGesture) EndSelectionGesture();
+        else if (_activeHandle != SelectionHandle.None) EndSelectionDrag();
+        Selection.Clear(); SelectedElements.Clear();
+        IsMarqueeSelecting = false; MarqueeBounds = Rect.Empty;
+        _marqueeInitialStrokes = null; _marqueeInitialElements = null;
+        _touches.Clear();
+        SelectionChanged?.Invoke(); Invalidated?.Invoke();
+    }
+
+    public void SelectAll()
+    {
+        Tool = InkTool.Select;
+        ClearSelection();
+        Selection.AddRange(Document.Strokes);
+        if (GetSelectableElements is not null) SelectedElements.AddRange(GetSelectableElements().Where(e => e.IsPresent));
+        SelectionChanged?.Invoke(); Invalidated?.Invoke();
+    }
 
     public PalmRejector Palm => _palm;
 
@@ -110,30 +533,85 @@ public sealed class InkController : IDisposable
         _manipulator.AllowZoom = zoom;
         _manipulator.AllowTranslate = translate;
         _manipulator.AllowRotation = rotate;
+        _selectionManipulator.AllowZoom = zoom;
+        _selectionManipulator.AllowTranslate = translate;
     }
 
     // ---- input ------------------------------------------------------------
 
     public void OnPointerDown(in OverlayPointer p)
     {
+        if (Playback is not null) return;
+        UpdateEraserPreview(p, notify: false);
         _palm.OnDown(p);
+        if (Tool == InkTool.Pan)
+        {
+            if (PanZoomEnabled && p.Kind == OverlayPointerKind.Touch)
+            {
+                _touches[p.Id] = p;
+                if (_touches.Count >= 2 && TryGetTouchPair(out var a, out var b))
+                {
+                    _panPointerId = null;
+                    _manipulator.Begin(new(a.X, a.Y), new(b.X, b.Y));
+                    return;
+                }
+            }
+            if (_panPointerId is null)
+            {
+                _panPointerId = p.Id; _panStart = new Vector2(p.X, p.Y); _panView = ViewTransform;
+            }
+            return;
+        }
         var world = ToWorld(p);
+        if (Tool == InkTool.Eraser && EraserMode == InkEraserMode.Lasso)
+        {
+            if (!IsLassoErasing && !_erasing) BeginLassoErase(p);
+            return;
+        }
+        if (Tool == InkTool.Select)
+        {
+            if (p.Kind == OverlayPointerKind.Touch)
+            {
+                _touches[p.Id] = p;
+                if (_selectionGesture) return;
+                if (_touches.Count == 2 && !MultiTouchEnabled && HasSelection)
+                {
+                    BeginSelectionGesture();
+                    _selectionManipulator.AllowRotation = GesturesTargetSelection && !CloneMode;
+                    if (TryGetTouchPair(out var a, out var b)) _selectionManipulator.Begin(ToWorld(a), ToWorld(b));
+                    return;
+                }
+            }
+            if ((_activeHandle != SelectionHandle.None || IsMarqueeSelecting) && p.Id != _selectionPointerId) return;
+            BeginSelectionInteraction(p, world);
+            return;
+        }
 
         if (p.Kind == OverlayPointerKind.Touch)
         {
             _touches[p.Id] = p;
-            if (_touches.Count == 2 && MultiTouchEnabled)
+            // An explicitly selected eraser must keep its mode/size instead of being
+            // reclassified as an implicit palm eraser or a slideshow swipe.
+            if (Tool == InkTool.Eraser)
             {
-                // A second finger cancels any in-progress touch ink and starts a gesture.
+                if (!_erasing) BeginErase(p.Id, world, partialStroke: EraserMode == InkEraserMode.Area);
+                return;
+            }
+            // WPF MW_TouchEvents.cs:275-291: isInMultiTouchMode==true means multi-finger
+            // WRITING (gestures disabled); gestures run only when the mode is OFF. The second
+            // finger then cancels partial touch ink and starts the gesture (first-contact
+            // snapshot rollback on lift, MW_TouchEvents.cs:273-321).
+            if (_touches.Count == 2 && !MultiTouchEnabled)
+            {
                 CancelTouchInk();
-                var pair = _touches.Values.Take(2).ToArray();
-                _manipulator.Begin(ToWorld(pair[0]), ToWorld(pair[1]));
+                if (TryGetTouchPair(out var a, out var b))
+                    _manipulator.Begin(new Vector2(a.X, a.Y), new Vector2(b.X, b.Y));
                 Invalidated?.Invoke();
                 return;
             }
             if (PalmErases && _palm.ShouldErase(p))
             {
-                BeginErase(world);
+                BeginErase(p.Id, world, partialStroke: true);
                 return;
             }
 
@@ -152,11 +630,11 @@ public sealed class InkController : IDisposable
                         return;
                     case TouchIntent.EraseByPoint when PalmErases:
                         _gestureEraserRadius = (float)(decision.EraserDiameter / 2.0);
-                        BeginErase(world);
+                        BeginErase(p.Id, world, partialStroke: true);
                         return;
                     case TouchIntent.EraseByStroke when PalmErases:
                         _gestureEraserRadius = 2.5f;
-                        BeginErase(world);
+                        BeginErase(p.Id, world, partialStroke: false);
                         return;
                 }
             }
@@ -167,7 +645,7 @@ public sealed class InkController : IDisposable
         switch (Tool)
         {
             case InkTool.Eraser:
-                BeginErase(world);
+                if (!_erasing) BeginErase(p.Id, world, partialStroke: EraserMode == InkEraserMode.Area);
                 break;
 
             case InkTool.Select:
@@ -175,7 +653,11 @@ public sealed class InkController : IDisposable
                 break;
 
             case InkTool.Shape:
-                _shapeDragStart[p.Id] = world;
+                // Hyperbola step 2 keeps iniP locked at the center (NeedUpdateIniP,
+                // upstream MW_ShapeDrawing.cs:1646-1653); the cuboid depth drag only uses endP.
+                _shapeDragStart[p.Id] = _shapeStep == 1 && ShapeGenerator.IsHyperbola(ShapeKind)
+                    ? _stepAnchor
+                    : world;
                 break;
 
             default:
@@ -186,19 +668,65 @@ public sealed class InkController : IDisposable
 
     public void OnPointerMove(in OverlayPointer p)
     {
+        if (Playback is not null) return;
+        UpdateEraserPreview(p);
+        if (Tool == InkTool.Pan)
+        {
+            if (PanZoomEnabled && p.Kind == OverlayPointerKind.Touch && _touches.ContainsKey(p.Id))
+            {
+                _touches[p.Id] = p;
+                if (_touches.Count >= 2 && TryGetTouchPair(out var a, out var b))
+                {
+                    var view = ViewTransform;
+                    if (_manipulator.Update(new(a.X, a.Y), new(b.X, b.Y), ref view, new((a.X + b.X) / 2, (a.Y + b.Y) / 2), screenSpace: true))
+                    { ViewTransform = view; Invalidated?.Invoke(); }
+                    return;
+                }
+            }
+            if (_panPointerId == p.Id)
+            {
+                ViewTransform = _panView * Matrix3x2.CreateTranslation(new Vector2(p.X, p.Y) - _panStart);
+                Invalidated?.Invoke();
+            }
+            return;
+        }
+        if (IsLassoErasing)
+        {
+            if (p.Id == _lassoPointerId) AppendLassoPoint(new Vector2(p.X, p.Y));
+            return;
+        }
         var world = ToWorld(p);
+        if (_selectionGesture)
+        {
+            if (!_touches.ContainsKey(p.Id)) return;
+            _touches[p.Id] = p;
+            if (TryGetTouchPair(out var a, out var b))
+            {
+                var delta = Matrix3x2.Identity;
+                if (_selectionManipulator.Update(ToWorld(a), ToWorld(b), ref delta, ResolvePivot((ToWorld(a) + ToWorld(b)) / 2)))
+                    ApplySelectionGesture(delta);
+            }
+            return;
+        }
+        if (IsMarqueeSelecting)
+        {
+            if (p.Id == _selectionPointerId) UpdateMarquee(new Vector2(p.X, p.Y));
+            return;
+        }
 
         if (p.Kind == OverlayPointerKind.Touch && _touches.ContainsKey(p.Id))
         {
             _touches[p.Id] = p;
-            if (_touches.Count >= 2 && MultiTouchEnabled)
+            if (_touches.Count >= 2 && !MultiTouchEnabled && Tool != InkTool.Eraser)
             {
-                var pair = _touches.Values.Take(2).ToArray();
+                if (!TryGetTouchPair(out var ta, out var tb)) return;
                 if (GesturesTargetSelection && Selection.Count > 0)
                 {
                     // Manipulate the selection rather than the whole view.
                     var identity = Matrix3x2.Identity;
-                    if (_manipulator.Update(ToWorld(pair[0]), ToWorld(pair[1]), ref identity, SelectionBounds.Center))
+                    // WPF GridInkCanvasSelectionCover_ManipulationDelta uses the settings-driven
+                    // pivot (GetMatrixTransformCenterPoint), not always the selection centre.
+                    if (_manipulator.Update(ToWorld(ta), ToWorld(tb), ref identity, ResolvePivot((ToWorld(ta) + ToWorld(tb)) * 0.5f)))
                     {
                         TransformSelectionByGesture(identity);
                         Invalidated?.Invoke();
@@ -207,9 +735,11 @@ public sealed class InkController : IDisposable
                 }
 
                 var t = ViewTransform;
-                var a = ToWorld(pair[0]);
-                var b = ToWorld(pair[1]);
-                if (_manipulator.Update(a, b, ref t, ResolvePivot((a + b) * 0.5f)))
+                var a = new Vector2(ta.X, ta.Y);
+                var b = new Vector2(tb.X, tb.Y);
+                var pivot = MatrixTransformCenter.Resolve(TransformCenterOption, ViewCenter, (a + b) * .5f,
+                    Vector2.Transform(SelectionBounds.Center, ViewTransform), isLoaded: true);
+                if (_manipulator.Update(a, b, ref t, pivot, screenSpace: true))
                 {
                     ViewTransform = t;
                     Invalidated?.Invoke();
@@ -220,39 +750,98 @@ public sealed class InkController : IDisposable
 
         if (_activeHandle != SelectionHandle.None)
         {
-            UpdateSelectionDrag(new Vector2(p.X, p.Y));
+            if (p.Id == _selectionPointerId) UpdateSelectionDrag(new Vector2(p.X, p.Y), p.Shift, p.Control);
             return;
         }
 
         if (_erasing)
         {
-            EraseAlong(_lastEraserPoint, world);
+            if (p.Id != _eraserPointerId) return;
+            bool changed = EraseAlong(_lastEraserPoint, world);
             _lastEraserPoint = world;
+            if (_partialEraseGesture && !changed) EraserPreviewChanged?.Invoke();
             return;
         }
 
         if (Tool == InkTool.Shape && _shapeDragStart.TryGetValue(p.Id, out var start))
         {
-            _shapePreview = ShapeGenerator.Generate(ShapeKind, start, world, CurrentAttributes);
+            _shapePreview = GenerateShapePreview(start, world);
             Invalidated?.Invoke();
             return;
         }
 
         if (_live.TryGetValue(p.Id, out var stroke))
         {
+            var position = new Vector2(p.X, p.Y);
+            if (!_lineEndpoints.TryGetValue(p.Id, out var endpoint)
+                || Vector2.DistanceSquared(position, endpoint.Position) > LineHoldRadius * LineHoldRadius)
+                _lineEndpoints[p.Id] = (position, p.TimeMs);
             // Widths are settled here, as the point arrives — never after pen-up.
-            stroke.AddPoint(world.X, world.Y, p.Pressure, p.TimeMs);
+            float time = _strokeStartTimes.TryGetValue(p.Id, out uint startTime) ? unchecked(p.TimeMs - startTime) : p.TimeMs;
+            stroke.AddPoint(world.X, world.Y, p.Pressure, time);
             Invalidated?.Invoke();
         }
     }
 
-    public void OnPointerUp(in OverlayPointer p)
+    public void OnPointerUp(in OverlayPointer p, bool canceled = false)
     {
+        if (Playback is not null) return;
+        if (p.Kind == OverlayPointerKind.Touch) HideEraserPreview(p.Id);
+        else UpdateEraserPreview(p);
+        if (Tool == InkTool.Pan)
+        {
+            OnPointerMove(p);
+            if (_panPointerId == p.Id) _panPointerId = null;
+            if (PanZoomEnabled)
+            {
+                _touches.Remove(p.Id);
+                if (_touches.Count < 2) _manipulator.Reset();
+                if (_touches.Count == 1)
+                {
+                    var remaining = _touches.Values.First();
+                    _panPointerId = remaining.Id; _panStart = new(remaining.X, remaining.Y); _panView = ViewTransform;
+                }
+            }
+            Invalidated?.Invoke();
+            _palm.OnUp(p); return;
+        }
+        if (IsLassoErasing)
+        {
+            _palm.OnUp(p);
+            if (p.Id == _lassoPointerId)
+            {
+                AppendLassoPoint(new Vector2(p.X, p.Y), final: true);
+                CommitLassoErase();
+            }
+            return;
+        }
+        if (_selectionGesture)
+        {
+            OnPointerMove(p);
+            _palm.OnUp(p); _touches.Remove(p.Id);
+            if (_touches.Count < 2)
+            {
+                EndSelectionGesture();
+            }
+            return;
+        }
+        bool viewGestureEnded = IsViewManipulating;
+        if (viewGestureEnded) OnPointerMove(p);
         _palm.OnUp(p);
         _touches.Remove(p.Id);
         if (_touches.Count < 2) _manipulator.Reset();
+        if (viewGestureEnded) Invalidated?.Invoke();
 
         var world = ToWorld(p);
+        if (IsMarqueeSelecting)
+        {
+            if (p.Id != _selectionPointerId) return;
+            UpdateMarquee(new Vector2(p.X, p.Y));
+            IsMarqueeSelecting = false; MarqueeBounds = Rect.Empty;
+            _marqueeInitialStrokes = null; _marqueeInitialElements = null;
+            SelectionChanged?.Invoke(); Invalidated?.Invoke();
+            return;
+        }
 
         // Finger slide control in a slideshow (original GestureOnly mode). 未验证。
         if (_slideGestureActive)
@@ -265,30 +854,79 @@ public sealed class InkController : IDisposable
 
         if (_activeHandle != SelectionHandle.None)
         {
+            if (p.Id != _selectionPointerId) return;
+            UpdateSelectionDrag(new Vector2(p.X, p.Y), p.Shift, p.Control);
             EndSelectionDrag();
             return;
         }
 
         if (_erasing)
         {
+            if (p.Id != _eraserPointerId) return;
+            // The final up can carry a new position even when no move packet was delivered.
+            EraseAlong(_lastEraserPoint, world);
             EndErase();
             return;
         }
 
         if (Tool == InkTool.Shape && _shapeDragStart.Remove(p.Id, out var start))
         {
-            var shapes = ShapeGenerator.Generate(ShapeKind, start, world, CurrentAttributes);
-            _shapePreview = new List<InkStroke>();
-            if (shapes.Count > 0) CommitStrokes(shapes, "shape");
-            Invalidated?.Invoke();
+            CommitShapeDrag(start, world);
             return;
         }
 
         if (_live.Remove(p.Id, out var stroke))
         {
-            if (stroke.Count >= 2) CommitStrokes(new List<InkStroke> { stroke }, "ink");
+            _strokeStartTimes.Remove(p.Id);
+            bool held = _lineEndpoints.Remove(p.Id, out var endpoint)
+                && Vector2.DistanceSquared(new Vector2(p.X, p.Y), endpoint.Position) <= LineHoldRadius * LineHoldRadius
+                && unchecked((int)(p.TimeMs - endpoint.Since)) >= LineHoldMilliseconds;
+            if (!canceled) stroke = ConfirmTap(stroke, world, p.Kind);
+            if (stroke.Count >= 1) CommitStrokes(new List<InkStroke> { stroke }, "ink", held);
+            if (_dotAnimations.Count > 0) DotAnimationChanged?.Invoke();
             Invalidated?.Invoke();
         }
+    }
+
+    private InkStroke ConfirmTap(InkStroke stroke, Vector2 end, OverlayPointerKind kind)
+    {
+        if (stroke.Count == 0) return stroke;
+        var first = stroke.Points[0];
+        var firstScreen = Vector2.Transform(first.Position, ViewTransform);
+        var endScreen = Vector2.Transform(end, ViewTransform);
+        float scale = MathF.Sqrt(MathF.Abs(ViewTransform.GetDeterminant()));
+        float screenWidth = stroke.Attributes.BaseWidth * scale;
+        float tolerance = kind == OverlayPointerKind.Touch
+            ? Math.Clamp(screenWidth * .35f, 4, 6)
+            : Math.Clamp(screenWidth * .25f, 1.5f, 3);
+        var minimum = Vector2.Min(firstScreen, endScreen);
+        var maximum = Vector2.Max(firstScreen, endScreen);
+        if (maximum.X - minimum.X > tolerance * 2 || maximum.Y - minimum.Y > tolerance * 2) return stroke;
+        foreach (var point in stroke.Points)
+        {
+            var screen = Vector2.Transform(point.Position, ViewTransform);
+            minimum = Vector2.Min(minimum, screen);
+            maximum = Vector2.Max(maximum, screen);
+            if (maximum.X - minimum.X > tolerance * 2 || maximum.Y - minimum.Y > tolerance * 2) return stroke;
+        }
+
+        var center = (minimum + maximum) / 2;
+        if (Vector2.DistanceSquared(center, endScreen) > tolerance * tolerance) return stroke;
+        foreach (var point in stroke.Points)
+            if (Vector2.DistanceSquared(center, Vector2.Transform(point.Position, ViewTransform)) > tolerance * tolerance) return stroke;
+        if (!Matrix3x2.Invert(ViewTransform, out var inverse)) return stroke;
+        var worldCenter = Vector2.Transform(center, inverse);
+
+        float targetWidth = stroke.Attributes.BaseWidth;
+        var dot = new InkStroke(stroke.Attributes.Clone());
+        dot.RestorePoints(new[] { new InkPoint(worldCenter.X, worldCenter.Y, first.Pressure, targetWidth, first.TimeMs) });
+        if (stroke.Count > 1 || Vector2.DistanceSquared(first.Position, worldCenter) > .001f
+            || MathF.Abs(MathF.Max(.5f, first.Width) - MathF.Max(.5f, targetWidth)) > .001f)
+        {
+            _dotAnimations.Add(new InkDotAnimation(dot, stroke));
+            DotAnimationVersion++;
+        }
+        return dot;
     }
 
     private void StartStroke(in OverlayPointer p, Vector2 world)
@@ -296,44 +934,187 @@ public sealed class InkController : IDisposable
         var attrs = CurrentAttributes.Clone();
         attrs.IsHighlighter = Tool == InkTool.Highlighter;
         var stroke = new InkStroke(attrs);
-        stroke.AddPoint(world.X, world.Y, p.Pressure, p.TimeMs);
+        bool relativeTime = attrs.EffectiveTaper is >= TaperKind.SmoothPen and <= TaperKind.Calligraphy;
+        if (relativeTime) _strokeStartTimes[p.Id] = p.TimeMs;
+        stroke.AddPoint(world.X, world.Y, p.Pressure, relativeTime ? 0 : p.TimeMs);
         _live[p.Id] = stroke;
+        _lineEndpoints[p.Id] = (new Vector2(p.X, p.Y), p.TimeMs);
         Invalidated?.Invoke();
+    }
+
+    // ---- shape drawing ------------------------------------------------------
+
+    /// <summary>
+    /// Finish a partial cuboid face or explicitly requested asymptotes when switching tools.
+    /// </summary>
+    private void ResetShapeState()
+    {
+        if (_stepPending.Count > 0 && (ShapeGenerator.IsTwoStepSolid(ShapeKind) || ShapeGenerator.HasHyperbolaAsymptotes(ShapeKind)))
+        {
+            var pending = _stepPending;
+            _stepPending = new List<InkStroke>();
+            CommitStrokes(pending, "shape");
+        }
+        _shapeStep = 0;
+        _stepPending.Clear();
+        _stepK = 0;
+        _stepAnchor = default;
+        _stepSecond = default;
+        _shapePreview = new List<InkStroke>();
+        _shapeDragStart.Clear();
+    }
+
+    /// <summary>WPF shapes are uniform-width: the handwriting taper never applies to shape ink.</summary>
+    private StrokeAttributes ShapeAttributes()
+    {
+        var a = CurrentAttributes.Clone();
+        a.TaperKind = TaperKind.None;
+        return a;
+    }
+
+    private List<InkStroke> GenerateShapePreview(Vector2 start, Vector2 end)
+    {
+        if (_shapeStep == 1)
+        {
+            if (ShapeGenerator.IsTwoStepSolid(ShapeKind))
+            {
+                var offset = SolidOffset(start, end);
+                var screenOffset = Vector2.TransformNormal(offset, ViewTransform);
+                return screenOffset.LengthSquared() < 9 ? new List<InkStroke>(_stepPending)
+                    : ShapeGenerator.GenerateSolid(ShapeKind, _stepAnchor, _stepSecond, offset, ShapeAttributes());
+            }
+            if (ShapeGenerator.IsHyperbola(ShapeKind))
+            {
+                return _stepPending
+                    .Concat(ShapeGenerator.GenerateHyperbolaBranches(_stepAnchor, _stepK, end,
+                        ShapeGenerator.HasHyperbolaFoci(ShapeKind), ShapeAttributes()))
+                    .ToList();
+            }
+        }
+        return ShapeGenerator.Generate(ShapeKind, start, end, ShapeAttributes());
+    }
+
+    private Vector2 SolidOffset(Vector2 start, Vector2 end)
+        => ShapeKind == ShapeKind.SquarePyramid ? end - (_stepAnchor + _stepSecond) / 2 : end - start;
+
+    private void CommitShapeDrag(Vector2 start, Vector2 end)
+    {
+        var kind = ShapeKind;
+        var attrs = ShapeAttributes();
+
+        if (ShapeGenerator.IsTwoStepSolid(kind))
+        {
+            if (_shapeStep == 0)
+            {
+                end = ShapeGenerator.SolidBaseEnd(kind, start, end);
+                float scale = MathF.Sqrt(MathF.Abs(ViewTransform.GetDeterminant()));
+                if (MathF.Abs(end.X - start.X) * scale < 3 || MathF.Abs(end.Y - start.Y) * scale < 3)
+                {
+                    _shapePreview.Clear(); Invalidated?.Invoke(); return;
+                }
+                // Hold the first face as preview until the signed depth/apex drag commits.
+                _stepPending = ShapeGenerator.Generate(kind, start, end, attrs);
+                _stepAnchor = new Vector2(MathF.Min(start.X, end.X), MathF.Min(start.Y, end.Y));
+                _stepSecond = new Vector2(MathF.Max(start.X, end.X), MathF.Max(start.Y, end.Y));
+                _shapeStep = 1;
+                _shapePreview = new List<InkStroke>(_stepPending);
+                Invalidated?.Invoke();
+                return; // stay in shape mode for the depth drag
+            }
+            // The signed second drag places the opposite face. Commit all edges in one undo unit.
+            var offset = SolidOffset(start, end);
+            if (Vector2.TransformNormal(offset, ViewTransform).LengthSquared() < 9)
+            {
+                _shapePreview = new List<InkStroke>(_stepPending); Invalidated?.Invoke(); return;
+            }
+            var solid = ShapeGenerator.GenerateSolid(kind, _stepAnchor, _stepSecond, offset, attrs);
+            if (solid.Count == 0) return;
+            _stepPending = new List<InkStroke>();
+            _shapeStep = 0;
+            _shapePreview = new List<InkStroke>();
+            CommitStrokes(solid, "shape");
+            if (!StickyShape) Tool = InkTool.Pen;
+            return;
+        }
+
+        if (ShapeGenerator.IsHyperbola(kind))
+        {
+            if (_shapeStep == 0)
+            {
+                // Step 1: dashed asymptotes lock k=|dy/dx| (upstream:894-902,1550-1555).
+                var asymptotes = ShapeGenerator.Generate(kind, start, end, attrs);
+                if (asymptotes.Count == 0) { Invalidated?.Invoke(); return; } // degenerate drag: retry
+                _stepPending = asymptotes;
+                _stepK = MathF.Abs((end.Y - start.Y) / (end.X - start.X));
+                _stepAnchor = start;
+                _shapeStep = 1;
+                _shapePreview = new List<InkStroke>(_stepPending);
+                Invalidated?.Invoke();
+                return;
+            }
+            var branches = ShapeGenerator.GenerateHyperbolaBranches(_stepAnchor, _stepK, end,
+                ShapeGenerator.HasHyperbolaFoci(kind), attrs);
+            if (branches.Count == 0) { Invalidated?.Invoke(); return; }
+            var kept = _stepPending;
+            _stepPending = new List<InkStroke>();
+            _shapeStep = 0;
+            _shapePreview.Clear();
+            var hyperbola = ShapeGenerator.HasHyperbolaAsymptotes(kind) ? kept.Concat(branches).ToList() : branches;
+            if (hyperbola.Count > 0) CommitStrokes(hyperbola, "shape");
+            if (!StickyShape) Tool = InkTool.Pen;
+            return;
+        }
+
+        var shapes = ShapeGenerator.Generate(kind, start, end, attrs);
+        _shapePreview = new List<InkStroke>();
+        if (shapes.Count > 0) CommitStrokes(shapes, "shape");
+        Invalidated?.Invoke();
+        // 画完一次还原到笔模式 unless long-press sticky (upstream:1502-1518).
+        if (shapes.Count > 0 && !StickyShape) Tool = InkTool.Pen;
     }
 
     /// <summary>
     /// Complete + move to document + record history, then invalidate exactly once.
     /// </summary>
-    private void CommitStrokes(List<InkStroke> strokes, string name)
+    private void CommitStrokes(List<InkStroke> strokes, string name, bool lineEndpointHeld = false)
     {
+        long layer = NextLayerOrder();
+        foreach (var stroke in strokes) stroke.LayerOrder = layer++;
         foreach (var s in strokes) s.Complete();
         Document.AddRange(strokes);
         History.Push(new DelegateAction(name,
             () => Document.AddRange(strokes),
             () => Document.RemoveAll(strokes)));
 
-        if (RecognizeShapes && name == "ink") TryRecognize(strokes);
+        if (RecognizeShapes && name == "ink") TryRecognize(strokes, lineEndpointHeld);
         Invalidated?.Invoke();
     }
 
-    private void TryRecognize(List<InkStroke> committed)
+    private void TryRecognize(List<InkStroke> committed, bool lineEndpointHeld)
     {
         _recentForRecognition.AddRange(committed);
         while (_recentForRecognition.Count > 4) _recentForRecognition.RemoveAt(0);
         _recentForRecognition.RemoveAll(s => !Document.Strokes.Contains(s));
         if (_recentForRecognition.Count == 0) return;
 
-        var result = ShapeRecognizer.Recognize(_recentForRecognition);
+        // A line belongs to the stroke just completed. Nearby handwriting must never be
+        // replaced as part of a combined line fit.
+        var single = ShapeRecognizer.Recognize(committed);
+        var result = single.Shape == RecognizedShape.Line ? single : ShapeRecognizer.Recognize(_recentForRecognition);
         if (result.Shape is RecognizedShape.None or RecognizedShape.Triangle) return;
+        if (result.Shape == RecognizedShape.Line && (!lineEndpointHeld || committed.Count != 1
+            || single.Shape != RecognizedShape.Line || committed[0].Attributes.IsHighlighter)) return;
 
         List<InkStroke> replacement;
-        var attrs = committed[0].Attributes;
+        var attrs = committed[0].Attributes.Clone();
+        attrs.TaperKind = TaperKind.None; // recognized shapes are uniform-width too
         switch (result.Shape)
         {
             case RecognizedShape.Circle:
-                replacement = ShapeGenerator.Generate(ShapeKind.Circle,
-                    result.Center - new Vector2(result.RadiusX, result.RadiusY),
-                    result.Center + new Vector2(result.RadiusX, result.RadiusY), attrs);
+                // Circle generation is center+radius now: anchor at the recognized center.
+                replacement = ShapeGenerator.Generate(ShapeKind.CircleFromCenter,
+                    result.Center,
+                    result.Center + new Vector2(MathF.Max(result.RadiusX, result.RadiusY), 0), attrs);
                 break;
             case RecognizedShape.Ellipse:
                 replacement = ShapeGenerator.Generate(ShapeKind.Ellipse,
@@ -350,7 +1131,9 @@ public sealed class InkController : IDisposable
                 return;
         }
 
-        var removed = _recentForRecognition.ToList();
+        var removed = result.Shape == RecognizedShape.Line ? committed.ToList() : _recentForRecognition.ToList();
+        long layer = NextLayerOrder();
+        foreach (var stroke in replacement) stroke.LayerOrder = layer++;
         Document.RemoveAll(removed);
         Document.AddRange(replacement);
         History.Push(new DelegateAction("recognize",
@@ -361,7 +1144,95 @@ public sealed class InkController : IDisposable
 
     // ---- erasing ----------------------------------------------------------
 
+    private void BeginLassoErase(in OverlayPointer pointer)
+    {
+        _lassoPath.Clear();
+        _lassoPointerId = pointer.Id;
+        _lassoViewAtStart = ViewTransform;
+        var point = new Vector2(pointer.X, pointer.Y);
+        _lassoBounds = new Rect(point.X, point.Y, point.X, point.Y);
+        IsLassoErasing = true;
+        AppendLassoPoint(point, final: true);
+    }
+
+    private void AppendLassoPoint(Vector2 point, bool final = false)
+    {
+        if (!float.IsFinite(point.X) || !float.IsFinite(point.Y)) return;
+        if (_lassoPath.Count > 0 && Vector2.DistanceSquared(_lassoPath[^1], point) < (final ? 0.001f : 4f)) return;
+        // Bound memory and path-rendering work during very long gestures.
+        if (_lassoPath.Count >= 4096)
+        {
+            int count = 1;
+            for (int i = 2; i < _lassoPath.Count; i += 2) _lassoPath[count++] = _lassoPath[i];
+            _lassoPath.RemoveRange(count, _lassoPath.Count - count);
+        }
+        _lassoPath.Add(point);
+        _lassoBounds = new Rect(MathF.Min(_lassoBounds.Left, point.X), MathF.Min(_lassoBounds.Top, point.Y),
+            MathF.Max(_lassoBounds.Right, point.X), MathF.Max(_lassoBounds.Bottom, point.Y));
+        Invalidated?.Invoke();
+    }
+
+    private void CommitLassoErase()
+    {
+        var lasso = new LassoGeometry(_lassoPath);
+        var view = _lassoViewAtStart;
+        // Clear the transient path before document notifications can render a committed frame.
+        IsLassoErasing = false; _lassoPath.Clear(); _lassoBounds = Rect.Empty;
+        if (lasso.IsValid)
+        {
+            var removed = Document.Strokes.Select((stroke, index) => (Index: index, Stroke: stroke))
+                .Where(item => lasso.IntersectsStroke(item.Stroke, view)).ToList();
+            var elements = GetSelectableElements?.Invoke()
+                .Where(e => e.IsPresent && lasso.IntersectsFrame(e.Frame, view)).ToList() ?? new();
+            if (removed.Count > 0 || elements.Count > 0)
+            {
+                var strokes = removed.Select(item => item.Stroke).ToList();
+                Remove();
+                History.Push(new DelegateAction("lasso erase", Remove, Restore));
+                PruneSelection();
+
+                void Remove()
+                {
+                    Document.RemoveAll(strokes);
+                    foreach (var element in elements) element.SetPresent(false);
+                }
+                void Restore()
+                {
+                    Document.InsertRange(removed);
+                    // Reinsert in reverse removal order to preserve object stacking.
+                    for (int i = elements.Count - 1; i >= 0; i--) elements[i].SetPresent(true);
+                }
+            }
+        }
+        Invalidated?.Invoke();
+    }
+
+    public void CancelLassoErase()
+    {
+        if (!IsLassoErasing) return;
+        IsLassoErasing = false; _lassoPath.Clear(); _lassoBounds = Rect.Empty;
+        Invalidated?.Invoke();
+    }
+
+    /// <summary>Cancelled lasso input never deletes; other tools keep their final-sample behavior.</summary>
+    public void OnPointerCanceled(in OverlayPointer pointer)
+    {
+        // Capture loss can commit the last sample, but cannot express an intentional hold.
+        _lineEndpoints.Remove(pointer.Id);
+        if (IsLassoErasing)
+        {
+            _palm.OnUp(pointer);
+            if (pointer.Id == _lassoPointerId) CancelLassoErase();
+            return;
+        }
+        OnPointerUp(pointer, canceled: true);
+        HideEraserPreview(pointer.Id);
+    }
+
     private readonly List<InkStroke> _erasedThisGesture = new();
+    private List<InkStroke> _eraseBeforeSnapshot;
+    private bool _partialEraseGesture;
+    private uint _eraserPointerId;
 
     /// <summary>Per-contact eraser size from the classifier; falls back to the configured size.</summary>
     private float? _gestureEraserRadius;
@@ -372,15 +1243,21 @@ public sealed class InkController : IDisposable
     /// <summary>Raised when a finger swipe should flip slides: true = next, false = previous.</summary>
     public event Action<bool> SlideFlipRequested;
 
-    private void BeginErase(Vector2 world)
+    private void BeginErase(uint pointerId, Vector2 world, bool partialStroke)
     {
+        _eraserPointerId = pointerId;
         _erasing = true;
+        _partialEraseGesture = partialStroke;
         _lastEraserPoint = world;
         _erasedThisGesture.Clear();
-        EraseAlong(world, world);
+        _eraseBeforeSnapshot = partialStroke
+            ? Document.Strokes.Select(s => s.Clone()).ToList()
+            : null;
+        bool changed = EraseAlong(world, world);
+        if (partialStroke && !changed) EraserPreviewChanged?.Invoke();
     }
 
-    private void EraseAlong(Vector2 from, Vector2 to)
+    private bool EraseAlong(Vector2 from, Vector2 to)
     {
         float radius = _gestureEraserRadius ?? EraserRadius;
         // Sample along the sweep so a fast wipe cannot skip strokes.
@@ -390,21 +1267,48 @@ public sealed class InkController : IDisposable
         for (int i = 0; i <= steps; i++)
         {
             var p = Vector2.Lerp(from, to, steps == 0 ? 0 : (float)i / steps);
-            var hits = Document.EraseAt(p, radius);
-            if (hits.Count > 0)
+            if (_partialEraseGesture)
             {
-                _erasedThisGesture.AddRange(hits);
-                any = true;
+                var currentStrokes = Document.Strokes.ToArray();
+                foreach (var stroke in currentStrokes)
+                {
+                    if (!StrokeEraser.EraseDisc(stroke, p, radius, out var remaining)) continue;
+                    Document.Replace(stroke, remaining);
+                    any = true;
+                }
+            }
+            else
+            {
+                var hits = Document.EraseAt(p, radius);
+                if (hits.Count > 0)
+                {
+                    _erasedThisGesture.AddRange(hits);
+                    any = true;
+                }
             }
         }
         if (any) Invalidated?.Invoke();
+        return any;
     }
 
     private void EndErase()
     {
         _erasing = false;
         _gestureEraserRadius = null;
-        if (_erasedThisGesture.Count > 0)
+        if (_partialEraseGesture)
+        {
+            var before = _eraseBeforeSnapshot ?? new List<InkStroke>();
+            var after = Document.Strokes.Select(s => s.Clone()).ToList();
+            if (before.Count != after.Count || !SameStrokeSnapshot(before, after))
+            {
+                History.Push(new DelegateAction("area erase",
+                    () => RestoreDocument(after),
+                    () => RestoreDocument(before)));
+            }
+            _eraseBeforeSnapshot = null;
+            _partialEraseGesture = false;
+        }
+        else if (_erasedThisGesture.Count > 0)
         {
             var removed = _erasedThisGesture.ToList();
             History.Push(new DelegateAction("erase",
@@ -413,6 +1317,29 @@ public sealed class InkController : IDisposable
             _erasedThisGesture.Clear();
         }
         Invalidated?.Invoke();
+    }
+
+    private void RestoreDocument(List<InkStroke> strokes)
+    {
+        Document.Clear();
+        Document.AddRange(strokes.Select(s => s.Clone()));
+        Selection.Clear();
+        SelectedElements.Clear();
+        _frameStrokes.Clear(); _frameElements.Clear();
+        SelectionChanged?.Invoke();
+        Invalidated?.Invoke();
+    }
+
+    private static bool SameStrokeSnapshot(IReadOnlyList<InkStroke> a, IReadOnlyList<InkStroke> b)
+    {
+        if (a.Count != b.Count) return false;
+        for (int i = 0; i < a.Count; i++)
+        {
+            if (a[i].Count != b[i].Count) return false;
+            for (int p = 0; p < a[i].Count; p++)
+                if (a[i].Points[p].Position != b[i].Points[p].Position) return false;
+        }
+        return true;
     }
 
     // ---- selection --------------------------------------------------------
@@ -441,65 +1368,208 @@ public sealed class InkController : IDisposable
     private void BeginSelectionInteraction(in OverlayPointer p, Vector2 world)
     {
         var viewPoint = new Vector2(p.X, p.Y);
-        var handle = Selection.Count > 0
-            ? SelectionGeometry.HitTest(ViewBoundsOf(SelectionBounds), viewPoint)
-            : SelectionHandle.None;
-
+        _selectionPointerId = p.Id;
+        var handle = HasSelection ? SelectionFrame.HitTest(viewPoint, ViewTransform) : SelectionHandle.None;
+        if (handle == SelectionHandle.Move && Selection.Select(stroke => stroke.ShapeSource?.GroupId ?? stroke.Id).Distinct().Count() + SelectedElements.Count == 1
+            && HitTestDrawingObject(world) is { } top && !IsSelectedObject(top))
+            handle = SelectionHandle.None;
+        _controlCloneDrag = p.Control && handle == SelectionHandle.Move;
+        _controlClickStroke = null; _controlClickElement = null;
+        if (_controlCloneDrag)
+        {
+            _controlClickElement = SelectedElements.LastOrDefault(element => element.Frame.Contains(world, Matrix3x2.Identity));
+            if (_controlClickElement is null)
+                _controlClickStroke = Document.HitTest(world, 6f / MathF.Max(.1f, MathF.Sqrt(MathF.Abs(ViewTransform.GetDeterminant()))))
+                    .LastOrDefault(stroke => Selection.Contains(stroke));
+        }
+        else if (p.Control) handle = SelectionHandle.None;
         if (handle == SelectionHandle.None)
         {
-            var hits = Document.HitTest(world, 8f);
-            Selection.Clear();
-            Selection.AddRange(hits);
-            SelectionChanged?.Invoke();
-            if (Selection.Count == 0)
+            var hit = HitTestDrawingObject(world);
+            var hitElement = hit?.Element;
+            var hitStroke = hit?.Stroke;
+            bool additive = p.Control || p.Shift;
+            if (hitElement is null && hitStroke is null)
             {
+                _marqueeInitialStrokes = additive ? Selection.ToList() : new();
+                _marqueeInitialElements = additive ? SelectedElements.ToList() : new();
+                if (!additive) { Selection.Clear(); SelectedElements.Clear(); }
+                IsMarqueeSelecting = true;
+                _dragFromView = viewPoint;
+                MarqueeBounds = Rect.Empty;
+                SelectionChanged?.Invoke();
                 Invalidated?.Invoke();
                 return;
             }
-            // Tapping a stroke selects it and immediately allows dragging it.
+            if (!additive) { Selection.Clear(); SelectedElements.Clear(); }
+            if (hitElement is not null)
+            {
+                if (p.Control && SelectedElements.Contains(hitElement)) SelectedElements.Remove(hitElement);
+                else if (!SelectedElements.Contains(hitElement)) SelectedElements.Add(hitElement);
+            }
+            if (hitStroke is not null)
+            {
+                var members = ShapeMembers(hitStroke).ToArray();
+                if (p.Control && Selection.Contains(hitStroke)) Selection.RemoveAll(stroke => members.Contains(stroke));
+                else foreach (var member in members) if (!Selection.Contains(member)) Selection.Add(member);
+            }
+            SelectionChanged?.Invoke();
+            if (p.Control || !HasSelection) { Invalidated?.Invoke(); return; }
             handle = SelectionHandle.Move;
         }
-
         _activeHandle = handle;
         _dragFromView = viewPoint;
         _viewAtDragStart = ViewTransform;
-        _dragStartViewBounds = ViewBoundsOf(SelectionBounds);
-        _dragSnapshot = Selection.Select(s => s.Clone()).ToList();
+        _dragFrame = SelectionFrame;
+        _dragBounds = SelectionBounds;
+        _dragTargets = Selection.ToList();
+        _dragElements = SelectedElements.ToList();
+        _cloneDrag = false;
+        _dragMoved = false;
+        _selectionPreview = Matrix3x2.Identity;
+        _previewSet.Clear();
+        // Translation/rotation keep the source points intact until release. Capture history
+        // then, so pressing or cloning a large selection never duplicates every sample twice.
+        _dragSnapshot = null;
+        _dragElementSnapshot = _dragElements.Select(e => e.Capture()).ToList();
         Invalidated?.Invoke();
     }
 
-    private void UpdateSelectionDrag(Vector2 viewPoint)
+    private void UpdateSelectionDrag(Vector2 viewPoint, bool constrain = false, bool control = false)
     {
-        if (_dragSnapshot is null || Selection.Count != _dragSnapshot.Count) return;
-
-        var viewDelta = SelectionGeometry.DragMatrix(_activeHandle, _dragStartViewBounds,
-            _dragFromView, viewPoint, keepAspect: false);
-
-        // Conjugate the view-space drag into world space: w' = w * V * D * V^-1.
-        Matrix3x2.Invert(_viewAtDragStart, out var inverse);
-        var worldDelta = _viewAtDragStart * viewDelta * inverse;
-
-        ApplySnapshot(Selection, _dragSnapshot);
-        foreach (var s in Selection) s.Transform(worldDelta);
-        Document.Touch();
+        if (_dragTargets is null) return;
+        if (!_dragMoved && Vector2.DistanceSquared(viewPoint, _dragFromView) < 9) return;
+        _dragMoved = true;
+        var worldDelta = _dragFrame.Drag(_activeHandle, _dragFromView, viewPoint, _viewAtDragStart, constrain, out _);
+        _selectionPreview = worldDelta;
+        if ((CloneMode || _controlCloneDrag || control) && _activeHandle == SelectionHandle.Move && !_cloneDrag)
+        {
+            _controlCloneDrag |= control;
+            _dragTargets = InkStroke.CloneObjects(Selection);
+            _dragElements = SelectedElements.Select(e => e.Duplicate()).ToList();
+            SetCloneLayerOrder();
+            _cloneDrag = true;
+            _previewSet.Clear();
+            _previewSet.UnionWith(_dragTargets);
+            Document.AddRange(_dragTargets);
+            foreach (var element in _dragElements) element.SetPresent(true);
+        }
+        if (_previewSet.Count == 0) _previewSet.UnionWith(_dragTargets);
+        if (!DeferSelectionPoints)
+        {
+            _dragSnapshot ??= _dragTargets.Select(stroke => stroke.Clone()).ToList();
+            ApplySnapshot(_dragTargets, _dragSnapshot);
+            foreach (var stroke in _dragTargets) stroke.Transform(worldDelta);
+            Document.Touch();
+        }
+        for (int i = 0; i < _dragElements.Count; i++)
+        {
+            _dragElements[i].TransformFrom(_dragElementSnapshot[i], worldDelta);
+        }
         Invalidated?.Invoke();
     }
 
-    private void EndSelectionDrag()
+    private void EndSelectionDrag(bool gesture = false)
     {
-        var targets = Selection.ToList();
+        var targets = _dragTargets ?? Selection;
         var before = _dragSnapshot;
-        var after = Selection.Select(s => s.Clone()).ToList();
+        bool cloneDrag = _cloneDrag;
+        bool controlClone = _controlCloneDrag;
+        bool moved = _dragMoved;
+        var elements = _dragElements;
+        var beforeElements = _dragElementSnapshot;
+        var beforeFrame = _dragFrame;
+        var afterFrame = SelectionFrame;
+        if (moved && !cloneDrag) before ??= targets.Select(stroke => stroke.Clone()).ToList();
+        if (moved && (DeferSelectionPoints || gesture)) foreach (var stroke in targets) stroke.Transform(_selectionPreview);
         _activeHandle = SelectionHandle.None;
         _dragSnapshot = null;
-
-        if (before is not null && before.Count == after.Count)
+        _dragTargets = null;
+        _cloneDrag = false;
+        _controlCloneDrag = false;
+        _dragElements = null; _dragElementSnapshot = null;
+        _dragMoved = false;
+        _selectionPreview = Matrix3x2.Identity;
+        _previewSet.Clear();
+        if (!moved && controlClone)
         {
-            History.Push(new DelegateAction("transform selection",
-                () => { ApplySnapshot(targets, after); Document.Touch(); Invalidated?.Invoke(); },
-                () => { ApplySnapshot(targets, before); Document.Touch(); Invalidated?.Invoke(); }));
+            if (_controlClickStroke is not null) { var members = ShapeMembers(_controlClickStroke).ToHashSet(); Selection.RemoveAll(members.Contains); }
+            if (_controlClickElement is not null) SelectedElements.Remove(_controlClickElement);
         }
-        Document.Touch();
+        _controlClickStroke = null; _controlClickElement = null;
+        if (moved)
+        {
+            if (!cloneDrag) RememberFrame(afterFrame);
+            Document.Touch();
+        }
+        if (cloneDrag && moved)
+        {
+            // One undo unit: undo removes the copies, redo puts them back where they landed.
+            var clones = targets;
+            var sourceStrokes = Selection.ToList();
+            var sourceElements = SelectedElements.ToList();
+            if (controlClone) SelectCopies(true);
+            History.Push(new DelegateAction("clone selection",
+                () =>
+                {
+                    Document.AddRange(clones);
+                    for (int i = elements.Count - 1; i >= 0; i--) elements[i].SetPresent(true);
+                    if (controlClone) SelectCopies(true);
+                    Invalidated?.Invoke();
+                },
+                () =>
+                {
+                    Document.RemoveAll(clones);
+                    foreach (var element in elements) element.SetPresent(false);
+                    if (controlClone) SelectCopies(false);
+                    Invalidated?.Invoke();
+                }));
+
+            void SelectCopies(bool copies)
+            {
+                if (!Selection.SequenceEqual(copies ? sourceStrokes : clones)
+                    || !SelectedElements.SequenceEqual(copies ? sourceElements : elements)) return;
+                Selection.Clear(); Selection.AddRange(copies ? clones : sourceStrokes);
+                SelectedElements.Clear(); SelectedElements.AddRange(copies ? elements : sourceElements);
+                RememberFrame(copies ? afterFrame : beforeFrame);
+                SelectionChanged?.Invoke();
+            }
+        }
+        else if (moved && before is not null && before.Count == targets.Count)
+        {
+            var after = targets.Select(s => s.Clone()).ToList();
+            var afterElements = elements.Select(e => e.Capture()).ToList();
+            History.Push(new DelegateAction("transform selection",
+                () => Restore(after, afterElements, afterFrame),
+                () => Restore(before, beforeElements, beforeFrame)));
+        }
+        SelectionChanged?.Invoke();
+        Invalidated?.Invoke();
+
+        void Restore(List<InkStroke> strokeState, List<object> elementState, SelectionFrame frame)
+        {
+            ApplySnapshot(targets, strokeState);
+            for (int i = 0; i < elements.Count; i++) elements[i].Restore(elementState[i]);
+            RestoreSelectionFrame(targets, elements, frame);
+            Document.Touch(); SelectionChanged?.Invoke(); Invalidated?.Invoke();
+        }
+    }
+
+    private void UpdateMarquee(Vector2 viewPoint)
+    {
+        MarqueeBounds = Rect.FromLTRB(MathF.Min(_dragFromView.X, viewPoint.X), MathF.Min(_dragFromView.Y, viewPoint.Y),
+            MathF.Max(_dragFromView.X, viewPoint.X), MathF.Max(_dragFromView.Y, viewPoint.Y));
+        if (Vector2.DistanceSquared(_dragFromView, viewPoint) >= 9)
+        {
+            Selection.Clear(); Selection.AddRange(_marqueeInitialStrokes);
+            foreach (var stroke in Document.HitTest(MarqueeBounds, ViewTransform)) if (!Selection.Contains(stroke)) Selection.Add(stroke);
+            ExpandShapeSelection();
+            SelectedElements.Clear(); SelectedElements.AddRange(_marqueeInitialElements);
+            if (GetSelectableElements is not null)
+                foreach (var element in GetSelectableElements())
+                    if (element.IsPresent && element.Frame.Intersects(MarqueeBounds, ViewTransform) && !SelectedElements.Contains(element)) SelectedElements.Add(element);
+            SelectionChanged?.Invoke();
+        }
         Invalidated?.Invoke();
     }
 
@@ -509,7 +1579,55 @@ public sealed class InkController : IDisposable
         {
             targets[i].RestorePoints(snapshot[i].Points);
             targets[i].Attributes.BaseWidth = snapshot[i].Attributes.BaseWidth;
+            targets[i].Attributes.NibRotation = snapshot[i].Attributes.NibRotation;
+            targets[i].ObjectFrame = snapshot[i].ObjectFrame;
         }
+    }
+
+    public void BeginSelectionGesture()
+    {
+        if (_selectionGesture || !HasSelection) return;
+        if (_activeHandle != SelectionHandle.None) EndSelectionDrag();
+        IsMarqueeSelecting = false; MarqueeBounds = Rect.Empty;
+        _marqueeInitialStrokes = null; _marqueeInitialElements = null;
+        _dragTargets = Selection.ToList(); _dragSnapshot = null;
+        _dragElements = SelectedElements.ToList(); _dragElementSnapshot = _dragElements.Select(e => e.Capture()).ToList();
+        _dragFrame = SelectionFrame; _cloneDrag = false; _dragMoved = false;
+        _dragBounds = SelectionBounds;
+        _controlCloneDrag = false; _controlClickStroke = null; _controlClickElement = null;
+        _selectionPreview = Matrix3x2.Identity; _previewSet.Clear();
+        _selectionGesture = true;
+    }
+
+    public void ApplySelectionGesture(Matrix3x2 delta)
+    {
+        if (delta == Matrix3x2.Identity || _dragTargets is null) return;
+        if (CloneMode && !_cloneDrag)
+        {
+            _dragTargets = InkStroke.CloneObjects(Selection);
+            _dragElements = SelectedElements.Select(e => e.Duplicate()).ToList();
+            SetCloneLayerOrder();
+            _cloneDrag = true;
+            _previewSet.Clear();
+            _previewSet.UnionWith(_dragTargets);
+            _dragMoved = true;
+            _selectionPreview *= delta;
+            Document.AddRange(_dragTargets);
+            foreach (var element in _dragElements) element.SetPresent(true);
+        }
+        else _selectionPreview *= delta;
+        _dragMoved = true;
+        if (_previewSet.Count == 0) _previewSet.UnionWith(_dragTargets);
+        foreach (var element in _dragElements) element.Transform(delta);
+        Invalidated?.Invoke();
+    }
+
+    public void EndSelectionGesture()
+    {
+        if (!_selectionGesture) return;
+        _selectionGesture = false;
+        _selectionManipulator.Reset();
+        EndSelectionDrag(gesture: true);
     }
 
     /// <summary>Apply a gesture matrix to the selection, recording one undoable step.</summary>
@@ -527,15 +1645,17 @@ public sealed class InkController : IDisposable
 
     public void DeleteSelection()
     {
-        if (Selection.Count == 0) return;
+        if (_selectionGesture) EndSelectionGesture();
+        else if (_activeHandle != SelectionHandle.None) EndSelectionDrag();
+        if (!HasSelection) return;
         var removed = Selection.ToList();
+        var elements = SelectedElements.ToList();
         Document.RemoveAll(removed);
+        foreach (var e in elements) e.SetPresent(false);
         History.Push(new DelegateAction("delete",
-            () => Document.RemoveAll(removed),
-            () => Document.AddRange(removed)));
-        Selection.Clear();
-        SelectionChanged?.Invoke();
-        Invalidated?.Invoke();
+            () => { Document.RemoveAll(removed); foreach (var e in elements) e.SetPresent(false); },
+            () => { Document.AddRange(removed); for (int i = elements.Count - 1; i >= 0; i--) elements[i].SetPresent(true); }));
+        ClearSelection();
     }
 
     public void TransformSelection(Matrix3x2 m)
@@ -545,33 +1665,129 @@ public sealed class InkController : IDisposable
         Invalidated?.Invoke();
     }
 
+    public void TransformSelectionUndoable(Matrix3x2 matrix, string name, bool scaleWidth = true)
+    {
+        if (!HasSelection) return;
+        var strokes = Selection.ToList();
+        var elements = SelectedElements.ToList();
+        var beforeFrame = SelectionFrame;
+        var before = strokes.Select(s => s.Clone()).ToList();
+        var beforeElements = elements.Select(e => e.Capture()).ToList();
+        foreach (var stroke in strokes) stroke.Transform(matrix, scaleWidth);
+        foreach (var element in elements) element.Transform(matrix);
+        var after = strokes.Select(s => s.Clone()).ToList();
+        var afterElements = elements.Select(e => e.Capture()).ToList();
+        var afterFrame = beforeFrame with { Transform = beforeFrame.Transform * matrix };
+        RememberFrame(afterFrame);
+        History.Push(new DelegateAction(name, () => Restore(after, afterElements, afterFrame),
+            () => Restore(before, beforeElements, beforeFrame)));
+        Document.Touch(); SelectionChanged?.Invoke(); Invalidated?.Invoke();
+
+        void Restore(List<InkStroke> state, List<object> elementState, SelectionFrame frame)
+        {
+            ApplySnapshot(strokes, state);
+            for (int i = 0; i < elements.Count; i++) elements[i].Restore(elementState[i]);
+            RestoreSelectionFrame(strokes, elements, frame); Document.Touch(); SelectionChanged?.Invoke(); Invalidated?.Invoke();
+        }
+    }
+
     // ---- commands ---------------------------------------------------------
+
+    public void RecolorSelection(InkColor color)
+        => ChangeSelectionAttributes("selection color", attributes => attributes.Color = color);
+
+    public void ScaleSelectionWidth(float factor)
+        => ChangeSelectionAttributes("selection width", attributes => attributes.BaseWidth = Math.Clamp(attributes.BaseWidth * factor, .5f, 60f));
+
+    public void RestoreSelectionWidth()
+        => ChangeSelectionAttributes("selection width restore", attributes => attributes.BaseWidth = CurrentAttributes.BaseWidth);
+
+    private void ChangeSelectionAttributes(string name, Action<StrokeAttributes> change)
+    {
+        var targets = Selection.ToArray();
+        if (targets.Length == 0) return;
+        var before = targets.Select(stroke => stroke.Attributes.Clone()).ToArray();
+        foreach (var stroke in targets) change(stroke.Attributes);
+        var after = targets.Select(stroke => stroke.Attributes.Clone()).ToArray();
+        History.Push(new DelegateAction(name, () => Restore(after), () => Restore(before)));
+        Document.Touch(); SelectionChanged?.Invoke(); Invalidated?.Invoke();
+
+        void Restore(StrokeAttributes[] attributes)
+        {
+            for (int i = 0; i < targets.Length; i++)
+            {
+                targets[i].Attributes.Color = attributes[i].Color;
+                targets[i].Attributes.BaseWidth = attributes[i].BaseWidth;
+            }
+            Document.Touch(); SelectionChanged?.Invoke(); Invalidated?.Invoke();
+        }
+    }
 
     public void Undo()
     {
-        if (History.Undo()) Invalidated?.Invoke();
+        EndPlayback();
+        CancelLassoErase();
+        if (History.Undo()) { PruneSelection(); Invalidated?.Invoke(); }
     }
 
     public void Redo()
     {
-        if (History.Redo()) Invalidated?.Invoke();
+        EndPlayback();
+        CancelLassoErase();
+        if (History.Redo()) { PruneSelection(); Invalidated?.Invoke(); }
+    }
+
+    private void PruneSelection()
+    {
+        int removed = Selection.RemoveAll(s => !Document.Strokes.Contains(s));
+        removed += SelectedElements.RemoveAll(e => !e.IsPresent);
+        if (removed > 0) SelectionChanged?.Invoke();
     }
 
     public void Clear()
     {
-        if (Document.Count == 0) return;
+        CancelLassoErase();
+        ClearSelection();
+        var elements = GetSelectableElements?.Invoke().Where(element => element.IsPresent).ToList() ?? new();
+        if (Document.Count == 0 && elements.Count == 0) return;
         var removed = Document.Strokes.ToList();
         Document.Clear();
+        foreach (var element in elements) element.SetPresent(false);
         History.Push(new DelegateAction("clear",
-            () => Document.RemoveAll(removed),
-            () => Document.AddRange(removed)));
+            () => { Document.RemoveAll(removed); foreach (var element in elements) element.SetPresent(false); },
+            () => { Document.AddRange(removed); for (int i = elements.Count - 1; i >= 0; i--) elements[i].SetPresent(true); }));
         Invalidated?.Invoke();
     }
 
     private void CancelTouchInk()
     {
-        var touchIds = _live.Keys.Where(id => _touches.ContainsKey(id)).ToList();
-        foreach (var id in touchIds) _live.Remove(id);
+        // Allocation-free: reuse a scratch list instead of LINQ Where(...).ToList() per gesture.
+        _scratchIds.Clear();
+        foreach (var id in _live.Keys)
+            if (_touches.ContainsKey(id)) _scratchIds.Add(id);
+        foreach (var id in _scratchIds)
+        {
+            _live.Remove(id);
+            _strokeStartTimes.Remove(id);
+            _lineEndpoints.Remove(id);
+        }
+    }
+
+    /// <summary>
+    /// First two active touch contacts in enumeration order (what <c>_touches.Values.Take(2)</c>
+    /// produced), without allocating an array or LINQ iterators on the per-move gesture path.
+    /// </summary>
+    private bool TryGetTouchPair(out OverlayPointer a, out OverlayPointer b)
+    {
+        a = default; b = default;
+        int n = 0;
+        foreach (var t in _touches.Values)
+        {
+            if (n == 0) a = t;
+            else { b = t; return true; }
+            n++;
+        }
+        return false;
     }
 
     public Vector2 ToWorld(in OverlayPointer p)
@@ -582,8 +1798,20 @@ public sealed class InkController : IDisposable
 
     public void Dispose()
     {
+        EndPlayback(); Document.Changed -= OnPlaybackDocumentChanged;
+        _panPointerId = null;
+        _lassoPath.Clear(); IsLassoErasing = false;
         _live.Clear();
+        _dotAnimations.Clear();
+        _strokeStartTimes.Clear();
+        _eraserPreviewPointer = null;
+        _lineEndpoints.Clear();
         _touches.Clear();
         Selection.Clear();
+        SelectedElements.Clear(); GetSelectableElements = null;
+        _frameStrokes.Clear(); _frameElements.Clear();
+        _shapeDragStart.Clear();
+        _stepPending.Clear();
+        _shapePreview.Clear();
     }
 }

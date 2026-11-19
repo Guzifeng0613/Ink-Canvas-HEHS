@@ -12,6 +12,7 @@
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="1.8.260803003" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\InkCanvas.Extensibility\InkCanvas.Extensibility.csproj" />
     <ProjectReference Include="..\InkCanvas.Core\InkCanvas.Core.csproj" />
     <ProjectReference Include="..\InkCanvas.Platform\InkCanvas.Platform.csproj" />
     <ProjectReference Include="..\InkCanvas.Ink\InkCanvas.Ink.csproj" />

@@ -13,7 +13,9 @@ public readonly record struct OverlayPointer(
     float ContactWidth,
     float ContactHeight,
     OverlayPointerKind Kind,
-    uint TimeMs);
+    uint TimeMs,
+    bool Shift = false,
+    bool Control = false);
 
 /// <summary>
 /// A borderless, topmost, <b>per-pixel transparent</b> overlay that receives pen/touch input.
@@ -44,9 +46,41 @@ public sealed class LayeredInkWindow : IDisposable
     private IntPtr _dib;
     private IntPtr _oldBitmap;
     private IntPtr _bits;
+    private IntPtr _screenDc;
     private bool _disposed;
+    private readonly Dictionary<uint, OverlayPointer> _activePointers = new();
+    private OverlayPointer? _fallbackMouse;
+    private bool _trackingMouseLeave;
 
     private delegate IntPtr WndProcDelegate(IntPtr h, uint msg, IntPtr w, IntPtr l);
+
+    // ---- touch latency / feedback interop (kept private to this window) ----
+    // TWF_FINETOUCH: prefer noncoalesced touch input; TWF_WANTPALM: disable the system's
+    // palm-rejection buffering so packets arrive immediately (RegisterTouchWindow docs).
+    // We do our own palm classification (PalmRejector), so palm contacts must reach us.
+    private const uint TWF_FINETOUCH = 0x00000001;
+    private const uint TWF_WANTPALM = 0x00000002;
+    private const uint PM_NOREMOVE = 0x0000;
+    private const uint PM_NOYIELD = 0x0002;
+
+    // FEEDBACK_TYPE (winuser.h): touch/pen visuals and press-and-hold right-click gestures.
+    private const uint FEEDBACK_TOUCH_CONTACTVISUALIZATION = 1;
+    private const uint FEEDBACK_PEN_TAP = 3;
+    private const uint FEEDBACK_PEN_DOUBLETAP = 4;
+    private const uint FEEDBACK_PEN_PRESSANDHOLD = 5;
+    private const uint FEEDBACK_PEN_RIGHTTAP = 6;
+    private const uint FEEDBACK_TOUCH_TAP = 7;
+    private const uint FEEDBACK_TOUCH_DOUBLETAP = 8;
+    private const uint FEEDBACK_TOUCH_PRESSANDHOLD = 9;
+    private const uint FEEDBACK_TOUCH_RIGHTTAP = 10;
+    private const uint FEEDBACK_GESTURE_PRESSANDHOLD = 11;
+
+    [DllImport("user32.dll")] private static extern bool RegisterTouchWindow(IntPtr h, uint flags);
+    [DllImport("user32.dll")] private static extern bool SetWindowFeedbackSetting(
+        IntPtr h, uint feedback, uint flags, uint size, ref int configuration);
+    [DllImport("user32.dll", EntryPoint = "PeekMessageW")]
+    private static extern bool PeekMessageW(out NativeMethods.MSG msg, IntPtr h,
+        uint filterMin, uint filterMax, uint remove);
 
     public LayeredInkWindow(int x, int y, int width, int height)
     {
@@ -92,8 +126,20 @@ public sealed class LayeredInkWindow : IDisposable
         uint dpi = NativeMethods.GetDpiForWindow(_hwnd);
         DpiScale = dpi == 0 ? 1.0f : dpi / 96.0f;
 
-        IntPtr screen = NativeMethods.GetDC(IntPtr.Zero);
-        _memDc = NativeMethods.CreateCompatibleDC(screen);
+        // Touch optimisation (WPF parity: MainWindow.xaml:26 Stylus.IsPressAndHoldEnabled=False,
+        // and WPF's own touch stack delivers every contact unbuffered for custom classification):
+        // - TWF_FINETOUCH|TWF_WANTPALM removes the system's coalescing/palm-detection buffering
+        //   so first-contact ink is laid down with minimal delay; pen input is unaffected.
+        // - Feedback suppression kills the press-and-hold right-click ring, tap ripples and
+        //   contact dots on this surface (WM_POINTERDOWN is consumed, so no WM_GESTURE/flicks
+        //   are generated either; this removes the DWM-drawn visuals that remain).
+        // Edge swipes are handled separately by ShellController.ApplyEdgeGestureSetting, which
+        // honours the user's IsEnableEdgeGestureUtil setting — not forced here.
+        RegisterTouchWindow(_hwnd, TWF_FINETOUCH | TWF_WANTPALM);
+        SuppressSystemInputFeedback();
+
+        _screenDc = NativeMethods.GetDC(IntPtr.Zero);
+        _memDc = NativeMethods.CreateCompatibleDC(_screenDc);
         var bi = new NativeMethods.BITMAPINFO
         {
             biSize = Marshal.SizeOf<NativeMethods.BITMAPINFO>(),
@@ -103,12 +149,34 @@ public sealed class LayeredInkWindow : IDisposable
             biBitCount = 32,
             biCompression = 0,
         };
-        _dib = NativeMethods.CreateDIBSection(screen, ref bi, 0, out _bits, IntPtr.Zero, 0);
+        _dib = NativeMethods.CreateDIBSection(_screenDc, ref bi, 0, out _bits, IntPtr.Zero, 0);
         _oldBitmap = NativeMethods.SelectObject(_memDc, _dib);
-        NativeMethods.ReleaseDC(IntPtr.Zero, screen);
         if (_bits == IntPtr.Zero)
             throw new InvalidOperationException("CreateDIBSection failed");
     }
+
+    private void SuppressSystemInputFeedback()
+    {
+        int disabled = 0; // BOOL FALSE
+        uint[] kinds =
+        {
+            FEEDBACK_TOUCH_CONTACTVISUALIZATION, FEEDBACK_PEN_TAP, FEEDBACK_PEN_DOUBLETAP,
+            FEEDBACK_PEN_PRESSANDHOLD, FEEDBACK_PEN_RIGHTTAP, FEEDBACK_TOUCH_TAP,
+            FEEDBACK_TOUCH_DOUBLETAP, FEEDBACK_TOUCH_PRESSANDHOLD, FEEDBACK_TOUCH_RIGHTTAP,
+            FEEDBACK_GESTURE_PRESSANDHOLD,
+        };
+        foreach (var kind in kinds)
+            SetWindowFeedbackSetting(_hwnd, kind, 0, sizeof(int), ref disabled);
+    }
+
+    /// <summary>
+    /// True when another pointer message for this window is already queued. The presenter uses
+    /// this to skip a stale present: the newer message will present the latest state, so no
+    /// latency is added — work is only dropped when the pump is behind the digitizer.
+    /// </summary>
+    public bool HasQueuedPointerMessage()
+        => PeekMessageW(out _, _hwnd, NativeMethods.WM_POINTERUPDATE, NativeMethods.WM_POINTERUP,
+            PM_NOREMOVE | PM_NOYIELD);
 
     public IntPtr Handle => _hwnd;
     public int X { get; private set; }
@@ -161,6 +229,16 @@ public sealed class LayeredInkWindow : IDisposable
     public event Action<OverlayPointer> PointerDown;
     public event Action<OverlayPointer> PointerMove;
     public event Action<OverlayPointer> PointerUp;
+    public event Action<OverlayPointer> PointerCanceled;
+    public event Action<OverlayPointer> PointerHover;
+    public event Action<uint> PointerExited;
+
+    /// <summary>
+    /// Raised on the UI thread whenever input lands on the overlay. Receiving a click moves a
+    /// topmost window to the top of the topmost Z-band, which would put this full-screen overlay
+    /// above every chrome window; the shell re-asserts the chrome above it when this fires.
+    /// </summary>
+    public event Action InputBegan;
 
     /// <summary>Raised for WM_HOTKEY; the argument is the registration id.</summary>
     public event Action<int> HotkeyPressed;
@@ -193,29 +271,57 @@ public sealed class LayeredInkWindow : IDisposable
             SourceConstantAlpha = 255,
             AlphaFormat = 1,           // AC_SRC_ALPHA -> honour per-pixel alpha
         };
-        IntPtr screen = NativeMethods.GetDC(IntPtr.Zero);
-        NativeMethods.UpdateLayeredWindow(_hwnd, screen, ref dst, ref size, _memDc, ref src, 0,
+        // Screen DC is cached for the window lifetime: one less P/Invoke pair per presented frame.
+        NativeMethods.UpdateLayeredWindow(_hwnd, _screenDc, ref dst, ref size, _memDc, ref src, 0,
             ref blend, NativeMethods.ULW_ALPHA);
-        NativeMethods.ReleaseDC(IntPtr.Zero, screen);
         if (!IsVisible) Show();
     }
 
+    // Latency contract: pointer messages are handled synchronously on the UI thread — Raise
+    // calls the presenter, which renders and calls UpdateLayeredWindow before this WndProc
+    // returns. There is deliberately no dispatcher hop or timer batching on this path.
     private IntPtr WndProc(IntPtr h, uint msg, IntPtr w, IntPtr l)
     {
         switch (msg)
         {
+            case NativeMethods.WM_MOUSEACTIVATE:
+                return new IntPtr(NativeMethods.MA_NOACTIVATE);
+            case NativeMethods.WM_POINTERACTIVATE:
+                return new IntPtr(NativeMethods.PA_NOACTIVATE);
             case NativeMethods.WM_POINTERDOWN:
                 PointerMessageCount++; PointerDownCount++;
-                Raise(PointerDown, w);
+                BeginPointer(w);
                 return IntPtr.Zero;
             case NativeMethods.WM_POINTERUPDATE:
                 PointerMessageCount++; PointerMoveCount++;
-                Raise(PointerMove, w);
+                MovePointer(w);
+                return IntPtr.Zero;
+            case 0x0249: // WM_POINTERENTER
+                if (TryReadPointer((uint)(w.ToInt64() & 0xFFFF), out var entered)
+                    && entered.Kind != OverlayPointerKind.Touch) PointerHover?.Invoke(entered);
+                return IntPtr.Zero;
+            case 0x024A: // WM_POINTERLEAVE
+                PointerExited?.Invoke((uint)(w.ToInt64() & 0xFFFF));
                 return IntPtr.Zero;
             case NativeMethods.WM_POINTERUP:
+                PointerMessageCount++;
+                EndPointer((uint)(w.ToInt64() & 0xFFFF), readCurrent: true);
+                return IntPtr.Zero;
             case NativeMethods.WM_POINTERCAPTURECHANGED:
-                PointerMessageCount++; PointerUpCount++;
-                Raise(PointerUp, w);
+                // GetPointerInfo can fail once capture has changed. Finish from the last
+                // valid sample rather than leaving a live stroke attached to the old pointer.
+                EndPointer((uint)(w.ToInt64() & 0xFFFF), readCurrent: false, canceled: true);
+                return IntPtr.Zero;
+            case 0x0215: // WM_CAPTURECHANGED (mouse capture)
+            case 0x001F: // WM_CANCELMODE
+                foreach (var pointer in _activePointers.Values.ToArray())
+                    if (pointer.Kind == OverlayPointerKind.Mouse || msg == 0x001F)
+                        EndPointer(pointer.Id, readCurrent: false, canceled: true);
+                if (_fallbackMouse is { } mouse)
+                {
+                    _fallbackMouse = null;
+                    RaiseCanceled(mouse);
+                }
                 return IntPtr.Zero;
             case NativeMethods.WM_HOTKEY:
                 HotkeyPressed?.Invoke(w.ToInt32());
@@ -224,13 +330,19 @@ public sealed class LayeredInkWindow : IDisposable
             // Fallback for the case where mouse-in-pointer could not be enabled: without it the
             // mouse never produces pointer messages and drawing would silently do nothing.
             case NativeMethods.WM_LBUTTONDOWN when !_mouseAsPointer:
+                InputBegan?.Invoke();
                 RaiseMouse(PointerDown, l, mouseDown: true);
                 return IntPtr.Zero;
             case NativeMethods.WM_MOUSEMOVE when !_mouseAsPointer:
-                if ((w.ToInt64() & 0x0001) != 0) RaiseMouse(PointerMove, l, mouseDown: false);
+                TrackMouseLeave();
+                RaiseMouse(_fallbackMouse.HasValue ? PointerMove : PointerHover, l, mouseDown: false);
+                return IntPtr.Zero;
+            case 0x02A3: // WM_MOUSELEAVE
+                _trackingMouseLeave = false;
+                PointerExited?.Invoke(1);
                 return IntPtr.Zero;
             case NativeMethods.WM_LBUTTONUP when !_mouseAsPointer:
-                RaiseMouse(PointerUp, l, mouseDown: false);
+                RaiseMouse(PointerUp, l, mouseDown: false, mouseUp: true);
                 return IntPtr.Zero;
             case NativeMethods.WM_DESTROY:
                 return IntPtr.Zero;
@@ -238,23 +350,101 @@ public sealed class LayeredInkWindow : IDisposable
         return NativeMethods.DefWindowProcW(h, msg, w, l);
     }
 
-    private void RaiseMouse(Action<OverlayPointer> handler, IntPtr lParam, bool mouseDown)
+    private void RaiseMouse(Action<OverlayPointer> handler, IntPtr lParam, bool mouseDown, bool mouseUp = false)
     {
         MouseMessageCount++;
         if (handler is null) return;
-        if (mouseDown) NativeMethods.SetCapture(Handle);
-        else NativeMethods.ReleaseCapture();
         int raw = lParam.ToInt32();
         short x = (short)(raw & 0xFFFF);
         short y = (short)((raw >> 16) & 0xFFFF);
-        handler(new OverlayPointer(1, x / DpiScale, y / DpiScale, 0.5f, 0, 0, OverlayPointerKind.Mouse, (uint)Environment.TickCount));
+        var sample = new OverlayPointer(1, x / DpiScale, y / DpiScale, 0.5f, 0, 0,
+            OverlayPointerKind.Mouse, (uint)Environment.TickCount,
+            NativeMethods.GetKeyState(0x10) < 0, NativeMethods.GetKeyState(0x11) < 0);
+        if (mouseUp)
+        {
+            if (!_fallbackMouse.HasValue) return;
+            _fallbackMouse = null;
+            handler(sample);
+            if (NativeMethods.GetCapture() == Handle) NativeMethods.ReleaseCapture();
+        }
+        else
+        {
+            if (mouseDown || _fallbackMouse.HasValue) _fallbackMouse = sample;
+            if (mouseDown) NativeMethods.SetCapture(Handle);
+            handler(sample);
+        }
     }
 
-    private void Raise(Action<OverlayPointer> handler, IntPtr wParam)
+    private void BeginPointer(IntPtr wParam)
     {
-        if (handler is null) return;
         uint id = (uint)(wParam.ToInt64() & 0xFFFF);
-        if (!NativeMethods.GetPointerInfo(id, out var info)) return;
+        if (!TryReadPointer(id, out var sample)) return;
+        if (_activePointers.ContainsKey(id)) EndPointer(id, readCurrent: false, canceled: true);
+        _activePointers[id] = sample;
+        // Establish controller state before callbacks that can synchronously change focus
+        // or capture (closing a popup, presenting ink, or raising another window).
+        PointerDown?.Invoke(sample);
+        InputBegan?.Invoke();
+        // Touch/pen have implicit pointer capture. Mouse-in-pointer still needs mouse
+        // capture so dragging over a toolbar HWND keeps delivering its final up here.
+        if (_activePointers.ContainsKey(id) && sample.Kind == OverlayPointerKind.Mouse)
+            NativeMethods.SetCapture(Handle);
+    }
+
+    private void MovePointer(IntPtr wParam)
+    {
+        uint id = (uint)(wParam.ToInt64() & 0xFFFF);
+        if (!TryReadPointer(id, out var sample)) return;
+        if (!_activePointers.ContainsKey(id))
+        {
+            if (sample.Kind != OverlayPointerKind.Touch) PointerHover?.Invoke(sample);
+            return;
+        }
+        _activePointers[id] = sample;
+        if (NativeMethods.GetPointerInfo(id, out var info)
+            && ((info.pointerFlags & 0x8000 /* CANCELED */) != 0
+                || (info.pointerFlags & 0x0004 /* INCONTACT */) == 0))
+        {
+            EndPointer(id, readCurrent: false, canceled: (info.pointerFlags & 0x8000) != 0);
+            return;
+        }
+        PointerMove?.Invoke(sample);
+    }
+
+    private void TrackMouseLeave()
+    {
+        if (_trackingMouseLeave) return;
+        var tracking = new TRACKMOUSEEVENT { Size = (uint)Marshal.SizeOf<TRACKMOUSEEVENT>(), Flags = 2, Window = Handle };
+        _trackingMouseLeave = TrackMouseEvent(ref tracking);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct TRACKMOUSEEVENT { public uint Size, Flags; public IntPtr Window; public uint HoverTime; }
+    [DllImport("user32.dll")]
+    private static extern bool TrackMouseEvent(ref TRACKMOUSEEVENT tracking);
+
+    private void EndPointer(uint id, bool readCurrent, bool canceled = false)
+    {
+        if (!_activePointers.Remove(id, out var sample)) return;
+        if (readCurrent && TryReadPointer(id, out var current)) sample = current;
+        if (readCurrent && NativeMethods.GetPointerInfo(id, out var info) && (info.pointerFlags & 0x8000) != 0) canceled = true;
+        PointerUpCount++;
+        if (canceled) RaiseCanceled(sample);
+        else PointerUp?.Invoke(sample);
+        if (sample.Kind == OverlayPointerKind.Mouse && NativeMethods.GetCapture() == Handle)
+            NativeMethods.ReleaseCapture();
+    }
+
+    private void RaiseCanceled(OverlayPointer sample)
+    {
+        if (PointerCanceled is not null) PointerCanceled.Invoke(sample);
+        else PointerUp?.Invoke(sample);
+    }
+
+    private bool TryReadPointer(uint id, out OverlayPointer sample)
+    {
+        sample = default;
+        if (!NativeMethods.GetPointerInfo(id, out var info)) return false;
 
         float pressure = 0.5f, cw = 0, ch = 0;
         var kind = OverlayPointerKind.Mouse;
@@ -280,8 +470,9 @@ public sealed class LayeredInkWindow : IDisposable
         }
 
         var pt = info.ptPixelLocation;
-        handler(new OverlayPointer(id, (pt.X - X) / DpiScale, (pt.Y - Y) / DpiScale,
-            pressure, cw, ch, kind, info.dwTime));
+        sample = new OverlayPointer(id, (pt.X - X) / DpiScale, (pt.Y - Y) / DpiScale,
+            pressure, cw, ch, kind, info.dwTime, NativeMethods.GetKeyState(0x10) < 0, NativeMethods.GetKeyState(0x11) < 0);
+        return true;
     }
 
     public void Dispose()
@@ -295,6 +486,7 @@ public sealed class LayeredInkWindow : IDisposable
             _memDc = IntPtr.Zero;
         }
         if (_dib != IntPtr.Zero) { NativeMethods.DeleteObject(_dib); _dib = IntPtr.Zero; }
+        if (_screenDc != IntPtr.Zero) { NativeMethods.ReleaseDC(IntPtr.Zero, _screenDc); _screenDc = IntPtr.Zero; }
         if (_hwnd != IntPtr.Zero) { NativeMethods.DestroyWindow(_hwnd); _hwnd = IntPtr.Zero; }
     }
 }
