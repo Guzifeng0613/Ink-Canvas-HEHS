@@ -215,7 +215,16 @@ function transformStroke(stroke: InkStroke, m: Matrix3x2, scaleWidth: boolean): 
   for (let i = 0; i < stroke.Points.length; i++) {
     const point = stroke.Points[i];
     const transformed = transformPointByMatrix(m, point.X, point.Y);
-    nextPoints.push(new InkPoint(transformed.X, transformed.Y, point.Pressure, point.Width * widthScale, point.TimeMs));
+    nextPoints.push(new InkPoint(
+      transformed.X,
+      transformed.Y,
+      point.Pressure,
+      point.Width * widthScale,
+      point.TimeMs,
+      point.TiltX,
+      point.TiltY,
+      point.HasPressure
+    ));
   }
   stroke.restorePoints(nextPoints);
   stroke.Attributes.BaseWidth *= widthScale;
@@ -1098,7 +1107,7 @@ export class InkController {
       // 宽度在点到达时结算，绝不在抬笔后重算；模拟压感笔锋用相对时间。
       const startTime = this._strokeStartTimes.get(p.Id);
       const time = startTime !== undefined ? p.TimeMs - startTime : this.pointerTime(p);
-      stroke.addPoint(world.X, world.Y, p.Pressure, time);
+      stroke.addPoint(world.X, world.Y, p.Pressure, time, p.TiltX, p.TiltY, p.HasPressure);
       this.markGeometry(stroke);
       this.invalidate();
     }
@@ -1431,7 +1440,15 @@ export class InkController {
     if (relativeTime) {
       this._strokeStartTimes.set(p.Id, p.TimeMs);
     }
-    stroke.addPoint(world.X, world.Y, p.Pressure, relativeTime ? 0 : this.pointerTime(p));
+    stroke.addPoint(
+      world.X,
+      world.Y,
+      p.Pressure,
+      relativeTime ? 0 : this.pointerTime(p),
+      p.TiltX,
+      p.TiltY,
+      p.HasPressure
+    );
     this._lineEndpoints.set(p.Id, { X: p.X, Y: p.Y, Since: p.TimeMs });
     if (!this._live.has(p.Id)) {
       this._liveIds.push(p.Id);

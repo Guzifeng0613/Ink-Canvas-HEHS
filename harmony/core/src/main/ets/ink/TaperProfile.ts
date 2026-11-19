@@ -12,9 +12,20 @@ export interface TaperOptionsInput {
   TipRatio?: number;
 }
 
+// 真实手写笔压感到宽度的调制因子（鸿蒙 M-Pencil 平台增强，C# 端暂无对应能力）。
+// 设计约束：p=0.5（常规按压力度/中立点）必须返回 1.0，使硬件路径在中立按压下与速度笔锋
+// 完全重合；轻压收细、重压加粗，硬截断防止极端采样产生毛刺。仅在 InkPoint.HasPressure
+// 为 true 时由 settlePoint 施加，黄金向量与手指/鼠标路径逐位不变。
+export function pressureWidthFactor(pressure: number): number {
+  return clamp(0.5 + pressure, 0.35, 1.4);
+}
+
 export function settlePoint(points: InkPoint[], index: number, candidate: number): void {
-  if (candidate > points[index].Width) {
-    points[index].Width = candidate;
+  const target = points[index].HasPressure
+    ? candidate * pressureWidthFactor(points[index].Pressure)
+    : candidate;
+  if (target > points[index].Width) {
+    points[index].Width = target;
   }
 }
 

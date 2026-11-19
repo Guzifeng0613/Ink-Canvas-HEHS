@@ -2806,9 +2806,17 @@ struct Index {
   private handleTouch(event: TouchEvent): void {
     const timeMs = event.timestamp / 1000000;
     const touches = event.changedTouches;
+    // ArkUI SourceTool.Pen=2；仅手写笔通道的非零压感才视为真实硬件压感，
+    // 手指/鼠标/模拟器继续走 0.5 回退，宽度行为与 C# 速度笔锋保持一致。
+    // pressure/tiltX/tiltY 定义在 BaseEvent 上（API9，pressure 已归一化到 [0,1]），
+    // TouchObject 自身不携带倾角；同一次 TouchEvent 内各触点共享该笔状态。
+    const isStylus = event.sourceTool === 2;
+    const hasPressure = isStylus && event.pressure > 0;
+    const pressure = event.pressure > 0 ? event.pressure : 0.5;
+    const tiltX = event.tiltX;
+    const tiltY = event.tiltY;
     for (let i = 0; i < touches.length; i++) {
       const touch = touches[i];
-      const pressure = event.pressure > 0 ? event.pressure : 0.5;
       const width = touch.width === undefined ? 0 : touch.width;
       const height = touch.height === undefined ? 0 : touch.height;
       const sample = new PointerSample(
@@ -2819,7 +2827,12 @@ struct Index {
         width,
         height,
         pointerKind(event.source, event.sourceTool),
-        timeMs
+        timeMs,
+        false,
+        false,
+        tiltX,
+        tiltY,
+        hasPressure
       );
       if (this.settings.canvas.isShowCursor) {
         this.cursorX = touch.x;
