@@ -86,6 +86,7 @@ internal static class ExtensionsRegression
         {
             window?.Close();
             File.WriteAllText(Path.Combine(directory, "extensions.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
+            shell.Dispose();
             foreach (var item in shell.OpenWindows.ToArray()) item.Close();
             Application.Current.Exit();
         }
