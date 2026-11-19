@@ -17,6 +17,9 @@ import {
   COMPRESS_MAX_DIM,
   CountdownPiPService,
   CountdownPiPParams,
+  writeAnnotatedPdf,
+  readPdfGeometries,
+  containPlacement,
   openInWps,
   openAppGalleryDetail,
   checkForUpdate,
@@ -51,6 +54,7 @@ import {
   Invalidation
 } from '@inkcanvas/ink';
 import type { SceneStrokeInput, SceneSelectionInput, ISelectionElement } from '@inkcanvas/ink';
+import type { PagePlacement } from '@inkcanvas/platform';
 import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings, matrixToArray, transformPointByMatrix, PenNib, calibrationMultiplier, toTaperKind, toPenStyle, toEraserRadius, resetToRecommendation, TaperKind, placeToolbar } from '@inkcanvas/core';
 import type { ShapeKind, StrokePointInput, AppSettings, AdvancedTouchInput, Matrix3x2 } from '@inkcanvas/core';
 import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground, renderMatrix4Values, applyReplaceRules, lotteryDisplayName, lotteryFlicker, lotteryDrawUnique, lotterySplitGroups, appendTransform, transformedBounds, snapshotGeometry, recordTransform, BoardSelectionElement, parseRoster } from '@inkcanvas/features';
@@ -208,6 +212,8 @@ struct Index {
   private annotateDocument: InkDocument = new InkDocument();
   private pdfSource: PdfPageSource = new PdfPageSource();
   private courseware: CoursewareSession = new CoursewareSession();
+  // D8：课件源 PDF 沙箱路径（保存批注 PDF 用）。
+  private coursewareSourcePath: string = '';
   private storage: StorageService | null = null;
   private countdown: CountdownEngine = new CountdownEngine();
   private countdownPiP: CountdownPiPService = new CountdownPiPService();
@@ -1174,6 +1180,9 @@ struct Index {
           Column({ space: 6 }) {
             this.ToolEntry('课件（PDF）', 'courseware')
             this.ToolEntry('PPT（WPS）', 'pptWps')
+            if (this.mode === 'courseware') {
+              this.ToolEntry('保存批注 PDF', 'saveAnnotatedPdf')
+            }
             this.ToolEntry('截图', 'screenshot')
             this.ToolEntry('Desmos', 'desmos')
             this.ToolEntry('检查更新', 'update')
@@ -1868,6 +1877,47 @@ struct Index {
         .fontSize(13).fontColor(Color.White).padding(10)
         .backgroundColor('#FF0067C0').borderRadius(6)
         .onClick(() => { this.settingsOpen = false; this.changelogOpen = true; })
+    }
+  }
+
+  // D8：保存批注 PDF——当前会话各页墨迹写为标准 INK 批注的 PDF 副本（沙箱）+ sidecar .icink（权威层）。
+  private async saveAnnotatedCoursewarePdf(): Promise<void> {
+    if (this.storage === null || this.coursewareSourcePath.length === 0) {
+      promptAction.showToast({ message: '请先打开课件 PDF', duration: 2000 });
+      return;
+    }
+    const geometries = readPdfGeometries(this.coursewareSourcePath);
+    if (geometries === null) {
+      promptAction.showToast({ message: 'PDF Kit 不可用（仅中国大陆设备），已保留 .icink 批注层', duration: 2500 });
+      this.saveCoursewareBundle();
+      return;
+    }
+    const pages = new Map<number, InkStroke[]>();
+    const placements = new Map<number, PagePlacement>();
+    for (let i = 0; i < this.courseware.PageCount; i++) {
+      const doc = this.courseware.pageDocument(i);
+      if (doc.Strokes.length > 0) {
+        pages.set(i, doc.Strokes);
+        const size = this.pdfSource.pageSize(i);
+        const dipWidth = size[0] * 96 / 72;
+        const dipHeight = size[1] * 96 / 72;
+        placements.set(i, containPlacement(this.windowWidth, this.windowHeight, dipWidth, dipHeight));
+      }
+    }
+    const stamp = Date.now();
+    const target = this.storage.fullPathPublic('annotated-' + stamp + '.pdf');
+    const result = await writeAnnotatedPdf(this.coursewareSourcePath, target, pages, geometries, placements);
+    // sidecar：会话级 .icink 清单照常保存（权威可编辑层）。
+    this.saveCoursewareBundle();
+    if (result.Ok) {
+      promptAction.showToast({
+        message: '批注 PDF 已保存（' + result.Annotations + ' 条墨迹' + (result.Limited ? '，部分页跳过' : '') + '）',
+        duration: 2500
+      });
+    } else if (result.Annotations > 0) {
+      promptAction.showToast({ message: '批注写入失败，.icink 批注层已保存', duration: 2500 });
+    } else {
+      promptAction.showToast({ message: '无可写墨迹，.icink 批注层已保存', duration: 2000 });
     }
   }
 
@@ -2962,6 +3012,7 @@ struct Index {
       promptAction.showToast({ message: 'PDF 打开失败', duration: 2000 });
       return;
     }
+    this.coursewareSourcePath = path;
     if (this.mode !== 'courseware') {
       this.annotateDocument = this.controller.Document;
     }
@@ -3168,6 +3219,9 @@ struct Index {
       this.changelogOpen = true;
     } else if (id === 'courseware') {
       this.openCourseware();
+    } else if (id === 'saveAnnotatedPdf') {
+      this.toolsOpen = false;
+      this.saveAnnotatedCoursewarePdf();
     } else if (id === 'pptWps') {
       this.toolsOpen = false;
       this.openPptInWps();

@@ -322,6 +322,10 @@
       "csharp": "src/InkCanvas.App/Views/CountdownWindow.cs"
     },
     {
+      "arkts": "harmony/platform/src/main/ets/pdf/PdfAnnotationWriter.ets",
+      "csharp": "src/InkCanvas.Pdf/PdfAnnotationFile.cs"
+    },
+    {
       "arkts": "harmony/platform/src/main/ets/pdf/PdfPageSource.ets",
       "csharp": "src/InkCanvas.Features/Ppt/PptInteropService.cs"
     },

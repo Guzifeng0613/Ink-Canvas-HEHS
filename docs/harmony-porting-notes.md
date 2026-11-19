@@ -94,7 +94,8 @@
   - `PdfContinuousLayout`：页垂直居中排布 + NearestPage 二分/HitTest/VisiblePages。
   - `PdfInkCodec`：PDF 注释内无损二进制墨迹（ICK2 魔数/小端/float32 单精度往返/16 字节 GUID 域/LayerOrder int64/ShapeSource 文本限长/点数预算）——pdf-ink-codec 6 向量往返逐字段一致。
   - 向量运行器：`@kit.ArkTS` shim（parity/node/arkts-shim.mjs，TextEncoder.encodeInto/TextDecoder.decodeToString → Node）。
-- **D8 待调研**：PDF Kit 注释写回 API 能力（调研 18 号报告进行中）——决定 PdfAnnotationFile（打开/提取/保存回/外观流）在真机侧的可行路径。
+- **D8 写回落地（调研 18 结论驱动，API ≤12 全兼容）**：`PdfAnnotationWriter.ets`（platform/pdf）——每笔笔画一条标准 INK 批注（`InkAnnotationInfo.inkPoints` + `lineColor`，宽度/透明度借 `border.borderWidth`/`opacity`，荧光笔 alpha→opacity），世界→页 DIP（containPlacement=objectFit.Contain 同式）→PDF 用户空间（PdfPageGeometry 含旋转，getBox(BOX_CROP)/getRotation，无 UserUnit 按 1）；官方临时副本模式保存（文档不可同时读写）；`canIUse` 探测降级（PDF Kit 仅中国大陆→仅 sidecar）；`readPdfGeometries` 页几何枚举；课件工具面板「保存批注 PDF」入口 + CoursewareSession.pageDocument(i) 按页枚举。**保真限制（调研 §3/§4）**：单路径等宽、无 Nib/Taper/ShapeSource/LayerOrder——无损可编辑往返由课件会话 sidecar .icink（既有权威层）承担；外观流由 Kit 内部生成（渲染保真待真机）。
+- **D8 不做项（调研 §4 结论）**：自定义批注键/流（/InkCanvasVersion//InkCanvasData 不可）、自建 PDF 写入器（相对 sidecar 无收益）、26.0.1 enablePen（Beta-only，生产不上）。
 
 **已补齐（2026-11-19 缺口轮 12，D1 克隆层号 + D7 解析几何内核）**：
 - **D1 SetCloneLayerOrder**：两处克隆路径（拖拽/双指手势）副本按源对象 z 序领取连续新层号（C# SetCloneLayerOrder 语义）。

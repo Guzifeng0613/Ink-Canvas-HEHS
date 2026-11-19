@@ -41,6 +41,16 @@ export class CoursewareSession {
     return doc;
   }
 
+  /** 指定页的墨迹文档（懒建；D8 批注写回按页枚举用）。 */
+  pageDocument(index: number): InkDocument {
+    let doc = this.pages.get(index);
+    if (doc === undefined) {
+      doc = new InkDocument();
+      this.pages.set(index, doc);
+    }
+    return doc;
+  }
+
   next(): boolean {
     if (this.CurrentIndex + 1 >= this.PageCount) {
       return false;

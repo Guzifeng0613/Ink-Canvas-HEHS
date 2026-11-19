@@ -26,6 +26,12 @@ export type { PointResult } from './src/main/ets/layout/WindowLayout';
 export { CanvasInkRenderer } from './src/main/ets/rendering/CanvasInkRenderer';
 export { InkCanvasSurface } from './src/main/ets/rendering/InkCanvasSurface';
 export { PdfPageSource } from './src/main/ets/pdf/PdfPageSource';
+export {
+  writeAnnotatedPdf,
+  readPdfGeometries,
+  containPlacement
+} from './src/main/ets/pdf/PdfAnnotationWriter';
+export type { AnnotatedPdfResult, PagePlacement } from './src/main/ets/pdf/PdfAnnotationWriter';
 export { AutoSaveService } from './src/main/ets/persistence/AutoSaveService';
 export { captureComponentToPng } from './src/main/ets/persistence/SnapshotService';
 export { openExternalUrl } from './src/main/ets/system/SystemServices';
