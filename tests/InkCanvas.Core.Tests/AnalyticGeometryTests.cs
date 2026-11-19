@@ -126,6 +126,22 @@ public sealed class AnalyticGeometryTests
         }
         finally { File.Delete(path); }
     }
+    [Theory]
+    [InlineData(LayerAction.MoveForward)][InlineData(LayerAction.MoveBackward)]
+    public void LayerStepsKeepFormulaContoursTogether(LayerAction action)
+    {
+        using var controller = new InkController { Tool = InkTool.Select };
+        var first = new ShapeSource(Guid.NewGuid(), "inkcanvas.analytic-geometry", "{}");
+        var second = new ShapeSource(Guid.NewGuid(), "inkcanvas.analytic-geometry", "{}");
+        var a = new[] { Contour(10, first), Contour(20, first) }; var b = new[] { Contour(30, second), Contour(40, second) };
+        foreach (var stroke in a) stroke.LayerOrder = 0;
+        foreach (var stroke in b) stroke.LayerOrder = 1;
+        controller.Document.AddRange(a.Concat(b)); controller.Selection.AddRange(action == LayerAction.MoveForward ? a : b);
+        controller.ArrangeSelection(action);
+        Assert.Equal(new[] { second.GroupId, second.GroupId, first.GroupId, first.GroupId }, controller.DrawingObjects.Select(item => item.Stroke.ShapeSource.GroupId));
+        controller.Undo(); Assert.Equal(new[] { first.GroupId, first.GroupId, second.GroupId, second.GroupId }, controller.DrawingObjects.Select(item => item.Stroke.ShapeSource.GroupId));
+        controller.Redo(); Assert.Equal(new[] { second.GroupId, second.GroupId, first.GroupId, first.GroupId }, controller.DrawingObjects.Select(item => item.Stroke.ShapeSource.GroupId));
+    }
     [Fact]
     public void LegacyPdfInkWithoutFormulaMetadataStillLoads()
     {

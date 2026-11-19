@@ -84,7 +84,11 @@ public sealed partial class InkController
         var previous = before.Select(item => item.LayerOrder).ToArray();
         var next = new long?[before.Length];
         var indices = after.Select((item, index) => (item, index)).ToDictionary(pair => pair.item, pair => pair.index);
-        for (int i = 0; i < before.Length; i++) next[i] = indices[before[i]];
+        bool forward = action is LayerAction.BringToFront or LayerAction.MoveForward;
+        var groupedRanks = before.Where(item => item.Stroke?.ShapeSource is not null)
+            .GroupBy(item => item.Stroke.ShapeSource.GroupId)
+            .ToDictionary(group => group.Key, group => forward ? group.Min(item => indices[item]) : group.Max(item => indices[item]));
+        for (int i = 0; i < before.Length; i++) next[i] = before[i].Stroke?.ShapeSource is { } source ? groupedRanks[source.GroupId] : indices[before[i]];
         Apply(next);
         History.Push(new DelegateAction("arrange selection", () => Apply(next), () => Apply(previous)));
 
