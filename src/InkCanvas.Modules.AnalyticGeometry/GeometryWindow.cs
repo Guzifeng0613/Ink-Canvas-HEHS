@@ -53,6 +53,10 @@ public sealed class GeometryWindow : Window
     {
         _host = host; Title = "解析几何 — Ink Canvas";
         _root.Background = new SolidColorBrush(Microsoft.UI.Colors.WhiteSmoke);
+        void ApplyTheme() => _root.Background = new SolidColorBrush(_root.ActualTheme == ElementTheme.Dark
+            ? Windows.UI.Color.FromArgb(255, 32, 32, 32) : Microsoft.UI.Colors.WhiteSmoke);
+        _root.ActualThemeChanged += (_, _) => ApplyTheme();
+        _root.Loaded += (_, _) => ApplyTheme();
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
