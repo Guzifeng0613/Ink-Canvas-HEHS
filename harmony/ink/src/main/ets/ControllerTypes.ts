@@ -1,7 +1,7 @@
 // @parity src/InkCanvas.Platform/Windows/LayeredInkWindow.cs
 // 归一化指针样本、工具/橡皮模式与控制器注入配置。
 // 本文件不 import 任何 ArkUI/@kit：宿主（Phase C）负责把 TouchEvent/MouseEvent 归一化为 PointerSample。
-import type { InkDocument, PalmRejector } from '@inkcanvas/core';
+import type { InkDocument, PalmRejector, SelectionFrameState, Matrix3x2 } from '@inkcanvas/core';
 
 /** 与 C# OverlayPointerKind 同值。 */
 export enum PointerKind {
@@ -45,6 +45,35 @@ export type VoidCallback = () => void;
 export type SlideFlipCallback = (next: boolean) => void;
 export type TimeSource = () => number;
 export type AskRemoveAsymptotesCallback = () => boolean;
+
+// ---- G2 元素选区桥（C# ISelectionElement/BoardSelectionElement） --------------------------
+// 宿主提供的页面元素（图片/视频）：参与框选/点击选中/删除/克隆/双指手势/套索擦。
+// 坐标约定：Frame 为世界坐标（Bounds LTRB + 行向量 Transform）；SetPresent 带 z 序恢复。
+
+/** 元素几何快照（Left/Top/Width/Height + 行向量 3x2 变换；与 features ElementGeometry 同形）。 */
+export interface ElementSnapshot {
+  Left: number;
+  Top: number;
+  Width: number;
+  Height: number;
+  Transform: number[] | null;
+}
+
+/** 可选元素契约（C# ISelectionElement）。 */
+export interface ISelectionElement {
+  id(): string;
+  isPresent(): boolean;
+  /** 世界坐标定向框（LTRB + Transform）。 */
+  getFrame(): SelectionFrameState;
+  /** 离场/在场（离场记住 z 序索引，在场按原序恢复）。 */
+  setPresent(present: boolean): void;
+  /** 对元素应用世界坐标增量矩阵（行向量：existing * delta）。 */
+  transform(delta: Matrix3x2): void;
+  /** 复制元素并使其在场（共享字节、新 Id）。 */
+  duplicate(): ISelectionElement;
+  capture(): ElementSnapshot;
+  restore(snapshot: ElementSnapshot): void;
+}
 
 /**
  * C# OverlayPointer 的 ArkTS 等价物（视图 DIP）。

@@ -85,7 +85,15 @@
 - **G16 布局纯逻辑**：FloatingToolbarLayout（候选位评分放置）+ BoardDockLayout（55DIP 三条两行自适应），6 向量。
 - 模拟压感笔锋相对时间（_strokeStartTimes）同步到控制器书写路径。
 
-**仍待补（下轮）**：G2 元素选区桥（SelectedElements/SetPresent，套索/选区作用于图片视频）→ G3+G15 选区命令工具条（Recolor/ScaleWidth/TransformSelectionUndoable + 入口）；G6 落点圆点动画状态；G7 橡皮悬停预览 API（ArkTS 无 hover，触摸期间由画笔光标环承担）；G9 控制器级回放融合；G11 元素撤销并入页栈统一；G14 选区装饰细节；G17 课件轮询节奏（200/1000ms）。纯 WinUI3 窗口 chrome 不构成缺口（报告 §3）。
+**仍待补（下轮）**：G6 落点圆点动画状态（ConfirmTap 收拢已移植，动画计时/渲染未建）；G9 控制器级回放融合（独立回放窗可用）；G14 选区装饰细节（小对象边柄隐藏/旋转角度气泡）。
+
+**已补齐（2026-11-19 缺口轮 7，G2/G3/G7/G11/G17；500 向量全绿 + BUILD SUCCESSFUL）**：
+- **G2 元素选区桥**：ink 层 ISelectionElement/ElementSnapshot 契约 + 控制器 GetSelectableElements/SelectedElements 全路径接线（框选相交、点击优先命中、Ctrl/Shift 增减、删除 SetPresent+逆序 z 序恢复、克隆 Duplicate、双指手势实时 Transform、拖拽步进 delta、套索 IntersectsFrame、pruneSelection、选区 AABB 含元素框）；features BoardSelectionElement（z 序恢复/共享字节克隆/BoardElementMath 管线，6 向量）；entry 画板页注入图片+视频。features 新增 @inkcanvas/ink 依赖（分层允许）。
+- **G3 选区命令 + 工具条**：RecolorSelection/ScaleSelectionWidth/RestoreSelectionWidth（ChangeSelectionAttributes 单撤销）/TransformSelectionUndoable（含元素）；选区工具条（placeToolbar 候选评分放置：克隆开关/9 色/B±/恢复/删除/取消，ArkTS 差异化紧凑形态）。
+- **G7**：橡皮触摸期间指示环常显（不受 isShowCursor 限制；hover 语义 ArkTS 无对等，真机笔悬浮待核）。
+- **G11**：插图/插视频记页内撤销单元。
+- **G17**：RecommendedPollInterval 纯函数（200/1000ms，2 向量；PDF 课件无轮询宿主，仅对齐语义）。
+- 撤销失效次数对齐：DeleteSelection 委托内部不失效（外层统一一次），controller.json selection-delete Inv 序列与 C# 逐位一致。
 
 ## 与 WinUI3 基线的已知差异（设计决定）
 

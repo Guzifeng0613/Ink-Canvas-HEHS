@@ -1,0 +1,94 @@
+{
+  "id": "board-selection-element",
+  "entry": "harmony/features/src/main/ets/board/BoardSelectionElement.ts",
+  "cases": [
+    {
+      "id": "z-order-restore",
+      "fn": "boardElementSelectionProbe",
+      "input": [
+        "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"Black\",\"GridSpacing\":40,\"Pages\":[{\"Strokes\":[],\"Images\":[{\"Id\":\"a\",\"Name\":\"a.png\",\"Data\":\"QQ==\",\"ContentType\":\"image/png\",\"Left\":100,\"Top\":100,\"Width\":640,\"Height\":360,\"Transform\":null},{\"Id\":\"b\",\"Name\":\"b.png\",\"Data\":\"Qg==\",\"ContentType\":\"image/png\",\"Left\":50,\"Top\":50,\"Width\":100,\"Height\":100,\"Transform\":null},{\"Id\":\"c\",\"Name\":\"c.png\",\"Data\":\"Qw==\",\"ContentType\":\"image/png\",\"Left\":10,\"Top\":10,\"Width\":80,\"Height\":60,\"Transform\":null}],\"Media\":[{\"Id\":\"m1\",\"Name\":\"v.mp4\",\"Data\":\"QQ==\",\"ContentType\":\"video/mp4\",\"Left\":200,\"Top\":200,\"Width\":360,\"Height\":240,\"Transform\":null}]}]}",
+        ["list", "absent:b", "list", "restore:b", "list"]
+      ],
+      "expected": [
+        ["a", "b", "c", "m:m1"],
+        true,
+        ["a", "c", "m:m1"],
+        true,
+        ["a", "b", "c", "m:m1"]
+      ],
+      "tolerance": 0
+    },
+    {
+      "id": "multi-absent-reverse-restore",
+      "fn": "boardElementSelectionProbe",
+      "input": [
+        "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"Black\",\"GridSpacing\":40,\"Pages\":[{\"Strokes\":[],\"Images\":[{\"Id\":\"a\",\"Name\":\"a.png\",\"Data\":\"QQ==\",\"ContentType\":\"image/png\",\"Left\":100,\"Top\":100,\"Width\":640,\"Height\":360,\"Transform\":null},{\"Id\":\"b\",\"Name\":\"b.png\",\"Data\":\"Qg==\",\"ContentType\":\"image/png\",\"Left\":50,\"Top\":50,\"Width\":100,\"Height\":100,\"Transform\":null},{\"Id\":\"c\",\"Name\":\"c.png\",\"Data\":\"Qw==\",\"ContentType\":\"image/png\",\"Left\":10,\"Top\":10,\"Width\":80,\"Height\":60,\"Transform\":null}],\"Media\":[]}]}",
+        ["absent:b", "absent:a", "list", "restore:a", "restore:b", "list"]
+      ],
+      "expected": [
+        true,
+        true,
+        ["c"],
+        true,
+        true,
+        ["a", "b", "c"]
+      ],
+      "tolerance": 0
+    },
+    {
+      "id": "frame-and-transform",
+      "fn": "boardElementSelectionProbe",
+      "input": [
+        "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"Black\",\"GridSpacing\":40,\"Pages\":[{\"Strokes\":[],\"Images\":[{\"Id\":\"a\",\"Name\":\"a.png\",\"Data\":\"QQ==\",\"ContentType\":\"image/png\",\"Left\":100,\"Top\":100,\"Width\":640,\"Height\":360,\"Transform\":null}],\"Media\":[]}]}",
+        ["frame:a", "move:a|1,0,0,1,10,20", "frame:a"]
+      ],
+      "expected": [
+        [100, 100, 740, 460, 1, 0, 0, 1, 0, 0],
+        true,
+        [100, 100, 740, 460, 1, 0, 0, 1, 10, 20]
+      ],
+      "tolerance": 1e-9
+    },
+    {
+      "id": "duplicate-shares-present",
+      "fn": "boardElementSelectionProbe",
+      "input": [
+        "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"Black\",\"GridSpacing\":40,\"Pages\":[{\"Strokes\":[],\"Images\":[{\"Id\":\"a\",\"Name\":\"a.png\",\"Data\":\"QQ==\",\"ContentType\":\"image/png\",\"Left\":100,\"Top\":100,\"Width\":640,\"Height\":360,\"Transform\":null}],\"Media\":[]}]}",
+        ["dup:a", "list"]
+      ],
+      "expected": [
+        { "Id": "a#1", "Present": true },
+        ["a", "a#1"]
+      ],
+      "tolerance": 0
+    },
+    {
+      "id": "capture-restore-roundtrip",
+      "fn": "boardElementSelectionProbe",
+      "input": [
+        "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"Black\",\"GridSpacing\":40,\"Pages\":[{\"Strokes\":[],\"Images\":[{\"Id\":\"a\",\"Name\":\"a.png\",\"Data\":\"QQ==\",\"ContentType\":\"image/png\",\"Left\":100,\"Top\":100,\"Width\":640,\"Height\":360,\"Transform\":null}],\"Media\":[]}]}",
+        ["capres:a|15,25"]
+      ],
+      "expected": [
+        [100, 100, 640, 360]
+      ],
+      "tolerance": 1e-9
+    },
+    {
+      "id": "media-present-cycle",
+      "fn": "boardElementSelectionProbe",
+      "input": [
+        "{\"Format\":\"inkcanvas-board\",\"Version\":1,\"Background\":\"Black\",\"GridSpacing\":40,\"Pages\":[{\"Strokes\":[],\"Images\":[{\"Id\":\"a\",\"Name\":\"a.png\",\"Data\":\"QQ==\",\"ContentType\":\"image/png\",\"Left\":100,\"Top\":100,\"Width\":640,\"Height\":360,\"Transform\":null}],\"Media\":[{\"Id\":\"m1\",\"Name\":\"v.mp4\",\"Data\":\"QQ==\",\"ContentType\":\"video/mp4\",\"Left\":200,\"Top\":200,\"Width\":360,\"Height\":240,\"Transform\":null}]}]}",
+        ["present:m1", "absent:m1", "list", "restore:m1", "list"]
+      ],
+      "expected": [
+        true,
+        true,
+        ["a"],
+        true,
+        ["a", "m:m1"]
+      ],
+      "tolerance": 0
+    }
+  ]
+}

@@ -206,6 +206,14 @@
       "csharp": "src/InkCanvas.Features/Board/BoardService.cs"
     },
     {
+      "arkts": "harmony/features/src/main/ets/board/BoardSelectionElement.ts",
+      "csharp": "src/InkCanvas.Features/Board/BoardSelectionElement.cs"
+    },
+    {
+      "arkts": "harmony/features/src/main/ets/courseware/CoursewareSession.ts",
+      "csharp": "src/InkCanvas.Features/Ppt/PptInkSession.cs"
+    },
+    {
       "arkts": "harmony/features/src/main/ets/courseware/CoursewareSession.ts",
       "csharp": "src/InkCanvas.Features/Ppt/PptInkSession.cs"
     },

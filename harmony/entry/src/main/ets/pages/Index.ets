@@ -50,10 +50,10 @@ import {
   buildScene,
   Invalidation
 } from '@inkcanvas/ink';
-import type { SceneStrokeInput, SceneSelectionInput } from '@inkcanvas/ink';
-import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings, matrixToArray, transformPointByMatrix, PenNib, calibrationMultiplier, toTaperKind, toPenStyle, toEraserRadius, resetToRecommendation, TaperKind } from '@inkcanvas/core';
+import type { SceneStrokeInput, SceneSelectionInput, ISelectionElement } from '@inkcanvas/ink';
+import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings, matrixToArray, transformPointByMatrix, PenNib, calibrationMultiplier, toTaperKind, toPenStyle, toEraserRadius, resetToRecommendation, TaperKind, placeToolbar } from '@inkcanvas/core';
 import type { ShapeKind, StrokePointInput, AppSettings, AdvancedTouchInput, Matrix3x2 } from '@inkcanvas/core';
-import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground, renderMatrix4Values, applyReplaceRules, lotteryDisplayName, lotteryFlicker, lotteryDrawUnique, lotterySplitGroups, appendTransform, transformedBounds, snapshotGeometry, recordTransform } from '@inkcanvas/features';
+import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground, renderMatrix4Values, applyReplaceRules, lotteryDisplayName, lotteryFlicker, lotteryDrawUnique, lotterySplitGroups, appendTransform, transformedBounds, snapshotGeometry, recordTransform, BoardSelectionElement } from '@inkcanvas/features';
 import type { CoursewarePageFile } from '@inkcanvas/features';
 import type { BoardAsset, ElementGeometry } from '@inkcanvas/features';
 import { ReplayClock, InkReplaySession } from '@inkcanvas/core';
@@ -68,6 +68,24 @@ import { image } from '@kit.ImageKit';
 interface UiPrefs {
   reduceMotion: boolean;
 }
+
+// G3 选区工具条重染色板（9 色，与笔板深色套一致）。
+interface SelectionColor {
+  packed: number;
+  hex: string;
+}
+
+const SELECTION_COLORS: SelectionColor[] = [
+  { packed: 0xFF000000, hex: '#FF000000' },
+  { packed: 0xFFFFFFFF, hex: '#FFFFFFFF' },
+  { packed: 0xFFDC2626, hex: '#FFDC2626' },
+  { packed: 0xFF9333CE, hex: '#FF9333CE' },
+  { packed: 0xFFEA580C, hex: '#FFEA580C' },
+  { packed: 0xFFEAB308, hex: '#FFEAB308' },
+  { packed: 0xFF16A34A, hex: '#FF16A34A' },
+  { packed: 0xFF0D9488, hex: '#FF0D9488' },
+  { packed: 0xFF2563EB, hex: '#FF2563EB' }
+];
 
 // 更新日志静态条目（摘要自 CHANGELOG.md；HarmonyOS 移植版随 HAP 分发，不读外部文件）。
 interface ChangelogEntry {
@@ -147,6 +165,10 @@ struct Index {
   @State countdownFullscreen: boolean = false;
   @State countdownFinished: boolean = false;
   @State countdownPiPActive: boolean = false;
+  // G3 选区工具条：随选区放置（FloatingToolbarLayout 候选评分，差异化紧凑形态）。
+  @State selectionToolbarOpen: boolean = false;
+  @State selectionToolbarX: number = 0;
+  @State selectionToolbarY: number = 0;
   @State lotteryOpen: boolean = false;
   @State lotteryNames: string = '';
   @State lotteryResult: string = '';
@@ -238,6 +260,31 @@ struct Index {
       this.refreshScene();
     };
     this.controller.ToolChanged = () => {
+      this.refreshScene();
+    };
+    // G2 元素选区桥：画板模式注入当前页图片/视频为可选元素。
+    this.controller.GetSelectableElements = (): ISelectionElement[] => {
+      if (!this.boardOpen) {
+        return [];
+      }
+      const result: ISelectionElement[] = [];
+      const images = this.board.Current.Images;
+      for (let i = 0; i < images.length; i++) {
+        result.push(new BoardSelectionElement(this.board, images[i], false));
+      }
+      const media = this.board.Current.Media;
+      for (let i = 0; i < media.length; i++) {
+        result.push(new BoardSelectionElement(this.board, media[i], true));
+      }
+      return result;
+    };
+    // 选区变化：元素在场/离场需刷新画板 ForEach；选区工具条（G3）随动。
+    this.controller.SelectionChanged = () => {
+      this.boardImagesVersion++;
+      this.selectionToolbarOpen = this.controller.HasSelection;
+      if (this.selectionToolbarOpen) {
+        this.updateSelectionToolbarPosition();
+      }
       this.refreshScene();
     };
     this.controller.CurrentAttributes.BaseWidth = 2.5;
@@ -489,7 +536,44 @@ struct Index {
           .onReady(() => { this.drawLassoOverlay(); })
       }
 
-      if (this.cursorVisible && this.settings.canvas.isShowCursor) {
+      // G3 选区工具条（ArkTS 差异化紧凑形态；位置走 placeToolbar 候选评分）。
+      if (this.selectionToolbarOpen) {
+        Row({ space: 6 }) {
+          Text(this.controller.CloneMode ? '克隆开' : '克隆')
+            .fontSize(12).fontColor(Color.White).padding(6)
+            .backgroundColor(this.controller.CloneMode ? '#FF0067C0' : '#99000000').borderRadius(4)
+            .onClick(() => {
+              this.controller.CloneMode = !this.controller.CloneMode;
+              this.refreshScene();
+            })
+          ForEach(SELECTION_COLORS, (color: SelectionColor) => {
+            Circle()
+              .width(20).height(20)
+              .fill(color.hex)
+              .stroke('#66FFFFFF')
+              .strokeWidth(1)
+              .onClick(() => { this.recolorSelection(color.packed); })
+          }, (color: SelectionColor) => color.hex)
+          Text('B+').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+            .onClick(() => { this.controller.ScaleSelectionWidth(1.25); })
+          Text('B-').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+            .onClick(() => { this.controller.ScaleSelectionWidth(0.8); })
+          Text('恢复').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+            .onClick(() => { this.controller.RestoreSelectionWidth(); })
+          Text('删除').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#FFC0392B').borderRadius(4)
+            .onClick(() => { this.controller.DeleteSelection(); })
+          Text('✕').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+            .onClick(() => { this.controller.ClearSelection(); })
+        }
+        .padding(6)
+        .backgroundColor(panelBackground(this.dark, this.blurEnabled))
+        .backgroundBlurStyle(panelBlurStyle(this.blurEnabled))
+        .borderRadius(10)
+        .position({ x: this.selectionToolbarX, y: this.selectionToolbarY })
+        .transition(overlayTransition(this.isMotionReduced()))
+      }
+
+      if (this.cursorVisible && (this.settings.canvas.isShowCursor || this.controller.Tool === InkTool.Eraser)) {
         Circle()
           .width(this.cursorDiameter())
           .height(this.cursorDiameter())
@@ -1971,6 +2055,23 @@ struct Index {
       Height: 240,
       Transform: null
     });
+    // G11：插图记为页内可撤销单元（撤销移除、重做放回）。
+    const page = this.board.Current;
+    const inserted = page.Images[page.Images.length - 1];
+    page.History.push({
+      name: 'insert image',
+      redo: (): void => {
+        if (page.Images.indexOf(inserted) < 0) {
+          page.Images.push(inserted);
+        }
+      },
+      undo: (): void => {
+        const index = page.Images.indexOf(inserted);
+        if (index >= 0) {
+          page.Images.splice(index, 1);
+        }
+      }
+    });
     this.boardImagesVersion++;
   }
 
@@ -2016,6 +2117,23 @@ struct Index {
       Width: 360,
       Height: 240,
       Transform: null
+    });
+    // G11：插视频记为页内可撤销单元。
+    const page = this.board.Current;
+    const inserted = page.Media[page.Media.length - 1];
+    page.History.push({
+      name: 'insert video',
+      redo: (): void => {
+        if (page.Media.indexOf(inserted) < 0) {
+          page.Media.push(inserted);
+        }
+      },
+      undo: (): void => {
+        const index = page.Media.indexOf(inserted);
+        if (index >= 0) {
+          page.Media.splice(index, 1);
+        }
+      }
     });
     this.boardImagesVersion++;
   }
@@ -2159,6 +2277,42 @@ struct Index {
       return Math.max(8, this.eraserRadiusForSize(this.settings.canvas.eraserSize) * 2);
     }
     return Math.max(8, this.controller.CurrentAttributes.BaseWidth * 2);
+  }
+
+  // G3 选区工具条放置：选区 AABB → 视图矩形 → FloatingToolbarLayout 候选评分（G16）。
+  private updateSelectionToolbarPosition(): void {
+    const bounds = this.controller.SelectionBounds;
+    if (bounds.isEmpty()) {
+      this.selectionToolbarOpen = false;
+      return;
+    }
+    const view = this.controller.ViewTransform;
+    const corners: number[][] = [
+      [bounds.Left, bounds.Top], [bounds.Right, bounds.Top],
+      [bounds.Right, bounds.Bottom], [bounds.Left, bounds.Bottom]
+    ];
+    let left = Number.MAX_VALUE;
+    let top = Number.MAX_VALUE;
+    let right = -Number.MAX_VALUE;
+    let bottom = -Number.MAX_VALUE;
+    for (let i = 0; i < corners.length; i++) {
+      const p = transformPointByMatrix(view, corners[i][0], corners[i][1]);
+      left = Math.min(left, p.X);
+      top = Math.min(top, p.Y);
+      right = Math.max(right, p.X);
+      bottom = Math.max(bottom, p.Y);
+    }
+    const placed = placeToolbar(
+      [0, 0, this.windowWidth, this.windowHeight],
+      [left, top, right, bottom],
+      [0, 0, 0, 0], 320, 44, 10);
+    this.selectionToolbarX = placed[0];
+    this.selectionToolbarY = placed[1];
+  }
+
+  // 选区工具条动作（G3：Recolor/ScaleWidth/RestoreWidth/Delete/克隆开关/取消）。
+  private recolorSelection(packed: number): void {
+    this.controller.RecolorSelection(InkColor.fromPackedArgb(packed));
   }
 
   // 应用触摸校准：乘数 = 目标参考宽度 / 平均接触宽度，写入 advanced.touchMultiplier。

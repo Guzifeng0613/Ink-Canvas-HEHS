@@ -363,6 +363,20 @@ export class BoardDocument {
   }
 }
 
+export function cloneBoardAsset(asset: BoardAsset, newId: string): BoardAsset {
+  return {
+    Id: newId,
+    Name: asset.Name,
+    Data: asset.Data,
+    ContentType: asset.ContentType,
+    Left: asset.Left,
+    Top: asset.Top,
+    Width: asset.Width,
+    Height: asset.Height,
+    Transform: asset.Transform === null ? null : asset.Transform.slice()
+  };
+}
+
 export interface BoardDocumentSummary {
   Pages: number;
   Current: number;

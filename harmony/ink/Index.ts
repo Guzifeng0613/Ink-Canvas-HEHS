@@ -33,5 +33,7 @@ export type {
   ControllerStrokeSummary,
   ControllerFrameSummary,
   ControllerFinalState,
-  ControllerScenarioResult
+  ControllerScenarioResult,
+  ISelectionElement,
+  ElementSnapshot
 } from './src/main/ets/ControllerTypes';

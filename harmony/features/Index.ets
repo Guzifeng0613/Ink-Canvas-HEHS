@@ -28,7 +28,8 @@ export {
   elementTransformProbe
 } from './src/main/ets/board/BoardElementHistory';
 export type { ElementGeometry, ElementAssetLike, ElementUndoEntry } from './src/main/ets/board/BoardElementHistory';
-export { CoursewareSession, coursewareNavigate, coursewareManifestSummary } from './src/main/ets/courseware/CoursewareSession';
+export { BoardSelectionElement, boardElementSelectionProbe } from './src/main/ets/board/BoardSelectionElement';
+export { CoursewareSession, coursewareNavigate, coursewareManifestSummary, recommendedPollIntervalMs } from './src/main/ets/courseware/CoursewareSession';
 export type { CoursewareBundle, CoursewarePageFile, CoursewareSummary } from './src/main/ets/courseware/CoursewareSession';
 export { CountdownEngine, countdownInterval, countdownDisplay, countdownTick } from './src/main/ets/tools/CountdownEngine';
 export type { CountdownTickResult } from './src/main/ets/tools/CountdownEngine';

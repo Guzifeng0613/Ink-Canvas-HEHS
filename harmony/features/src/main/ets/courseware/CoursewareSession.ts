@@ -155,3 +155,10 @@ export function coursewareManifestSummary(pageCount: number, current: number, in
   session.goto(current);
   return session.manifest();
 }
+
+// @parity src/InkCanvas.Features/Ppt/PptInkSession.cs（RecommendedPollInterval）
+// C#：无事件订阅时宿主按此节奏轮询——放映中 200ms（低延迟墨迹切换）、空闲 1000ms。
+// HarmonyOS 课件为 PDF 本地渲染、无 COM 附着；保留纯函数供宿主计时器对齐节奏语义（G17）。
+export function recommendedPollIntervalMs(slideShowRunning: boolean): number {
+  return slideShowRunning ? 200 : 1000;
+}
