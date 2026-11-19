@@ -39,7 +39,9 @@
 - 已完成：InkController 状态机/手势/选区（B2/B3）并接入 entry 触摸输入；画板分页/元素变换/保存语义（E1）。
 - 已完成：课件(PDF)/计时/抽奖/回放、设置面板/指南/是否窗、画板模式（分页/背景/插图/视频/保存打开）、应用内快捷键/沉浸式/Desmos/更新提示、manifest 56 项收口（98.21%）、api-matrix 补全。
 - 覆盖率：**55/56 = 98.21%**（32 ported + 23 adapted + 1 not-ported=开机自启）。
-- 仍为部分/待补：仅剩平台不可行项（跨应用批注/全局热键/鼠标穿透/前台识别自动收纳/进程查杀/边缘手势抑制/希沃视频展台/PPT 放映控制待 WPS 开放）+ 开机自启（跳过）；其余功能子缺口已补齐。运行时行为（WPS 响应/PiP 空 surface/市场弹框/弹簧曲线/matrix4/压感/SymbolGlyph/视频首帧）待真机核对。
+- **平台禁用决策（2026-11-19 用户拍板，不再制作/迁移）**：跨应用悬浮批注（应用内 Canvas 承担）、PPT 放映控制（WPS 跳转/PDF 批注写回承担）、全局热键（应用内快捷键保留）、自动收纳（手动收纳保留）、静默安装、内置升级（市场更新唯一路径）、进程查杀、边缘手势抑制——设置面板对应行已收敛为禁用说明；manifest 中自动收纳与手势抑制改记 not-ported（覆盖率口径 55/56→53/56=94.64%，为诚实反映禁用决策）。
+- 开机自启：唯一既有 not-ported（用户此前已跳过）。其余功能子缺口已补齐。运行时行为（WPS 响应/PiP 空 surface/市场弹框/弹簧曲线/matrix4/压感/SymbolGlyph/视频首帧/PDF 写回保真）待真机核对。
+- **GitHub Actions 自动构建已关闭**（.github/workflows/dotnet-desktop.yml 仅保留 workflow_dispatch 手动触发）。
 - 已补齐（2026-11-18 缺口轮）：设置全量 88 字段、更新日志窗口、系统材质/blur（API26 门控）、画板图片 matrix4 精确变换、视频进度保持/续播、SymbolGlyph 46 项映射（文字兜底）、浮层/浮条动效。
 - 已补齐（2026-11-18 缺口轮 2）：倒计时圆环进度/紧凑/全屏/结束提示音（TimerDownNotice.wav）、抽奖滚动闪烁/替换名单（old-->new）/单次模式/多人抽选/分组输出（LotteryRoll 向量）、画板图片拖拽手势（Select/Pan 命中接管 + BoardElementHistory 单撤销单元，向量）、动效升级弹簧曲线 curves.springMotion + 共享元素 geometryTransition。弹窗界面按 ArkTS 设计特色差异化（用户授权）。
 - 已补齐（2026-11-18 缺口轮 3，平台对接调研后落地）：PPT 放映→WPS 鸿蒙版（WpsInterop：文件打开 Want + UTD + FLAG_AUTH_READ，手机/Pad 包自适应，16000019 回退引导安装；无公开放映 intent，放映控制待 WPS 开放）；自更新→市场更新（MarketUpdate：updateManager.checkAppUpdate/showUpdateDialog + AppGallery appdetail 详情页）；顶层置顶→倒计时画中画悬浮窗（CountdownPiP：PiPWindow typeNode + customUIController 圆环数字，三方免权限，系统播放/暂停复用为暂停/继续，退桌面自动拉起）。调研依据 docs/superpowers/research/harmony/14/15。

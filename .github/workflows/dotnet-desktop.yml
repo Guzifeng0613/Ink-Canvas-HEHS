@@ -1,10 +1,7 @@
 name: build
 
+# 自动构建已按用户决策关闭（2026-11-19）——仅保留手动触发。
 on:
-  push:
-    branches: [master, feat/winui3-migration]
-  pull_request:
-    branches: [master]
   workflow_dispatch:
 
 jobs:
