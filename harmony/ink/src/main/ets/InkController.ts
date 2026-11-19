@@ -5,8 +5,7 @@
 // 边界：
 // - 不 import ArkUI/@kit；只依赖 @inkcanvas/core 与本模块 ControllerTypes。
 // - 宿主通过 ControllerOptions 注入文档、重绘回调、时间源与手掌决策器（core PalmRejector）。
-// - 未移植（Phase B2/B3 范围外，见报告）：Lasso 擦、SelectedElements/SelectionFrame 元素、
-//   TransformSelectionUndoable。双曲线渐近线去留与 C# 一致由 kind 决定
+// - 双曲线渐近线去留与 C# 一致由 kind 决定
 //   （hasHyperbolaAsymptotes）；HyperbolaAsymptoteOption/AskRemoveAsymptotes 仅保留为
 //   兼容宿主的旧 API 字段，提交路径不再读取。
 // - 选区 Move/Rotate 拖拽与选区双指手势延迟写点：期间以 SelectionPreviewTransform
@@ -17,8 +16,9 @@
 //   与 C# 一致；GesturesTargetSelection 非 Select 工具路径两侧均为逐 move 单元（C# 631 同款）。
 // - 两步体完成后尊重 StickyShape；一般图形仅在生成结果非空时回笔（C# 934/962/971）。
 // - 单笔提交 Invalidated 两次（CommitStrokes 内一次 + Up 尾部一次）——与 C# OnPointerUp 完全一致。
-// - 未移植（待 G2/G3 轮）：SelectedElements/SelectionFrame 元素、
-//   TransformSelectionUndoable、落点圆点动画（ConfirmTap 已收拢为单点，动画状态未建）。
+// - G2 元素选区（SelectedElements，:489）、SelectionFrame 定向帧（selectionFrameSummary :2337 起）、
+//   TransformSelectionUndoable（:2715）均已落地；仅落点圆点动画未建
+//   （ConfirmTap 已收拢为单点，动画状态未建）。
 // - G1 套索擦已移植：LassoGeometry（core/selection，向量互认）+ 视图 DIP 路径 +
 //   4096 抽稀 + even/odd 命中 + 恢复保叠放序（insertRange）。
 const LINE_HOLD_MS = 450;
@@ -704,6 +704,18 @@ export class InkController {
 
   get ShapePreview(): InkStroke[] {
     return this._shapePreview;
+  }
+
+  /** 框选橡皮筋（视图 DIP 矩形 [left, top, right, bottom]）；空矩形返回 null。
+   *  仅供渲染层读取，命中与选择口径仍由 updateMarquee/hitTestRect 负责，本 getter 不参与判断。 */
+  get MarqueeBounds(): number[] | null {
+    if (this._marqueeBounds.isEmpty()) {
+      return null;
+    }
+    return [
+      this._marqueeBounds.Left, this._marqueeBounds.Top,
+      this._marqueeBounds.Right, this._marqueeBounds.Bottom
+    ];
   }
 
   /** 切换目标文档（画板页/课件页/批注）：清空历史与活动状态，避免跨文档撤销污染。 */

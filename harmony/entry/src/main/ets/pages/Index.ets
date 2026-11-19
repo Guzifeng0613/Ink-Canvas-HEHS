@@ -534,6 +534,10 @@ struct Index {
         InkCanvasSurface({
           onRendererReady: (renderer: CanvasInkRenderer) => {
             this.renderer = renderer;
+            if (this.windowWidth > 0 && this.windowHeight > 0) {
+              this.controller.ViewCenter.X = this.windowWidth / 2;
+              this.controller.ViewCenter.Y = this.windowHeight / 2;
+            }
             this.renderer.resize(this.windowWidth, this.windowHeight);
             this.refreshScene();
           }
@@ -1259,6 +1263,12 @@ struct Index {
     .onAreaChange((oldValue: Area, newValue: Area) => {
       this.windowWidth = Number(newValue.width);
       this.windowHeight = Number(newValue.height);
+      // F3：对齐 C# InkSurface.OnDraw 每帧按视口半尺寸刷新 ViewCenter（vp，与触摸手势同单位）；
+      // 布局尚未给出有效尺寸时保留控制器默认 960×540，默认视口下行为逐位不变。
+      if (this.windowWidth > 0 && this.windowHeight > 0) {
+        this.controller.ViewCenter.X = this.windowWidth / 2;
+        this.controller.ViewCenter.Y = this.windowHeight / 2;
+      }
       if (this.renderer !== null) {
         this.renderer.resize(this.windowWidth, this.windowHeight);
         this.refreshScene();
@@ -3099,6 +3109,13 @@ struct Index {
     }
     const activeStroke = this.controller.ActiveStroke;
     const active = activeStroke === null ? null : this.toSceneStroke(activeStroke);
+    // F3：形状拖动预览（控制器每 move 已算好，此处只做场景透传，不改识别/生成算法）。
+    const previewInputs: SceneStrokeInput[] = [];
+    for (let i = 0; i < this.controller.ShapePreview.length; i++) {
+      previewInputs.push(this.toSceneStroke(this.controller.ShapePreview[i]));
+    }
+    // F3：框选橡皮筋（视图 DIP 矩形；命中与选择结果仍由控制器负责）。
+    const marquee = this.controller.MarqueeBounds;
     let selection: SceneSelectionInput | null = null;
     if (this.controller.Selection.length > 0) {
       const frame = this.controller.selectionFrameSummary();
@@ -3109,7 +3126,10 @@ struct Index {
         RotationRadians: Math.atan2(m[1], m[0])
       };
     }
-    this.renderer.render(buildScene(committed, active, selection, matrixToArray(this.controller.ViewTransform)), Invalidation.full());
+    this.renderer.render(buildScene(
+      committed, active, selection, matrixToArray(this.controller.ViewTransform),
+      previewInputs, marquee
+    ), Invalidation.full());
     this.drawLassoOverlay();
     this.drawDotAnimations();
     this.ensureDotTimer();

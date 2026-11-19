@@ -34,6 +34,10 @@ export class CanvasInkRenderer implements InkRenderer {
   // 活动层脏矩形状态（世界坐标）
   private prevActiveBox: number[] | null = null;
   private prevSelectionVisible: boolean = false;
+  // F3 形状预览（世界坐标）脏盒与可见性缓存；橡皮筋为视图 DIP，仅跟踪可见性。
+  private prevPreviewBox: number[] | null = null;
+  private prevPreviewVisible: boolean = false;
+  private prevMarqueeVisible: boolean = false;
 
   // Pen Kit 报点预测临时段：世界坐标扁平点列 [x0,y0,x1,y1,...]。
   // 只存在于活动层，每帧由宿主用最新 TouchEvent 整体替换；绝不进入 OffscreenCanvas 离屏缓存、
@@ -86,6 +90,9 @@ export class CanvasInkRenderer implements InkRenderer {
     this.prevActiveBox = null;
     this.prevSelectionVisible = false;
     this.prevPredictionBox = null;
+    this.prevPreviewBox = null;
+    this.prevPreviewVisible = false;
+    this.prevMarqueeVisible = false;
     this.prediction = [];
     this.predictionColor = 0;
     this.predictionWidth = 0;
@@ -209,12 +216,23 @@ export class CanvasInkRenderer implements InkRenderer {
     const activeBox = scene.Active !== null
       ? CanvasInkRenderer.commandBox(scene.Active, WORLD_BOX_PADDING_VP)
       : null;
+    // F3：形状预览与活体笔画同处世界坐标，脏盒一并并入；橡皮筋为视图 DIP，只跟踪可见性。
+    const previewVisible = scene.Preview.length > 0;
+    const previewToggled = previewVisible !== this.prevPreviewVisible;
+    const previewBox = CanvasInkRenderer.commandsBox(scene.Preview, WORLD_BOX_PADDING_VP);
+    const marqueeVisible = scene.Marquee !== null;
+    const marqueeToggled = marqueeVisible !== this.prevMarqueeVisible;
     const currPredictionBox = this.predictionAabb();
-    // 当前帧活动层总脏盒 = 活体笔画盒 ∪ 预测段盒。
-    const currBox = activeBox === null
-      ? currPredictionBox
-      : (currPredictionBox === null ? activeBox : CanvasInkRenderer.unionBox(activeBox, currPredictionBox));
-    const fullRedraw = forceFull || selectionVisible || selectionToggled;
+    // 当前帧活动层总脏盒 = 活体笔画盒 ∪ 预测段盒 ∪ 预览盒。
+    let currBox = activeBox;
+    if (currPredictionBox !== null) {
+      currBox = currBox === null ? currPredictionBox : CanvasInkRenderer.unionBox(currBox, currPredictionBox);
+    }
+    if (previewBox !== null) {
+      currBox = currBox === null ? previewBox : CanvasInkRenderer.unionBox(currBox, previewBox);
+    }
+    const fullRedraw = forceFull || selectionVisible || selectionToggled
+      || previewVisible || previewToggled || marqueeVisible || marqueeToggled;
 
     if (fullRedraw) {
       this.active.setTransform(1, 0, 0, 1, 0, 0);
@@ -224,8 +242,15 @@ export class CanvasInkRenderer implements InkRenderer {
         this.drawCommands(this.active, [scene.Active], false);
       }
       this.drawPrediction(v);
+      // R1 DrawLive 叠放顺序：live 之后画 shape preview，同款视图变换与描边样式。
+      if (scene.Preview.length > 0) {
+        this.drawCommands(this.active, scene.Preview, false);
+      }
       if (scene.Selection !== null) {
         this.drawSelection(scene);
+      }
+      if (scene.Marquee !== null) {
+        this.drawMarquee(scene.Marquee);
       }
     } else {
       let dirtyWorld: number[] | null = null;
@@ -244,11 +269,22 @@ export class CanvasInkRenderer implements InkRenderer {
       } else if (this.prevPredictionBox !== null) {
         dirtyWorld = CanvasInkRenderer.unionBox(dirtyWorld, this.prevPredictionBox);
       }
+      // 上一帧形状预览所在区域一并纳入，避免两步体驻留预览拖影。
+      if (dirtyWorld === null) {
+        if (this.prevPreviewBox !== null) {
+          dirtyWorld = this.prevPreviewBox.slice();
+        }
+      } else if (this.prevPreviewBox !== null) {
+        dirtyWorld = CanvasInkRenderer.unionBox(dirtyWorld, this.prevPreviewBox);
+      }
       if (dirtyWorld === null) {
         // 前后帧均无活动笔画：上层保持空位图，无需任何绘制。
         this.prevActiveBox = null;
         this.prevPredictionBox = null;
+        this.prevPreviewBox = null;
         this.prevSelectionVisible = selectionVisible;
+        this.prevPreviewVisible = previewVisible;
+        this.prevMarqueeVisible = marqueeVisible;
         return;
       }
       const screenBox = this.worldToScreenBox(dirtyWorld, v);
@@ -262,15 +298,20 @@ export class CanvasInkRenderer implements InkRenderer {
           screenBox[2] - screenBox[0], screenBox[3] - screenBox[1]);
       }
       this.active.setTransform(v[0], v[1], v[2], v[3], v[4], v[5]);
-      if (scene.Active !== null) {
+      if (scene.Active !== null || scene.Preview.length > 0) {
         this.active.save();
         if (screenBox !== null) {
           this.active.rect(dirtyWorld[0], dirtyWorld[1],
             dirtyWorld[2] - dirtyWorld[0], dirtyWorld[3] - dirtyWorld[1]);
           this.active.clip();
         }
-        this.drawCommands(this.active, [scene.Active], false);
-        this.drawPrediction(v);
+        if (scene.Active !== null) {
+          this.drawCommands(this.active, [scene.Active], false);
+          this.drawPrediction(v);
+        }
+        if (scene.Preview.length > 0) {
+          this.drawCommands(this.active, scene.Preview, false);
+        }
         this.active.restore();
         // Active===null 时入口已 clearPrediction，预测段不再补画，避免无活体笔画的残留重绘。
       }
@@ -278,7 +319,10 @@ export class CanvasInkRenderer implements InkRenderer {
 
     this.prevActiveBox = activeBox;
     this.prevPredictionBox = currPredictionBox;
+    this.prevPreviewBox = previewBox;
     this.prevSelectionVisible = selectionVisible;
+    this.prevPreviewVisible = previewVisible;
+    this.prevMarqueeVisible = marqueeVisible;
   }
 
   // 预测段世界坐标轴对齐包围盒；点数不足（不足一条线段）时返回 null。
@@ -397,6 +441,12 @@ export class CanvasInkRenderer implements InkRenderer {
     context.strokeStyle = 'rgba(0,120,212,1)';
     context.lineWidth = 1.5;
     context.strokeRect(left - centerX, top - centerY, right - left, bottom - top);
+    // 旋转柄连接线（R1 InkSceneRenderer.cs:82-86）：顶边中点局部 (0, top-centerY)，
+    // 旋转柄局部 (0, top-28-centerY)，与 SceneBuilder 第 5 手柄点一致。
+    context.beginPath();
+    context.moveTo(0, top - centerY);
+    context.lineTo(0, top - 28 - centerY);
+    context.stroke();
     context.fillStyle = '#FFFFFF';
     for (let i = 0; i < selection.Handles.length; i++) {
       const handle = selection.Handles[i];
@@ -406,6 +456,32 @@ export class CanvasInkRenderer implements InkRenderer {
       context.fill();
       context.stroke();
     }
+    context.restore();
+  }
+
+  // F3 框选橡皮筋：视图 DIP 矩形，平台通用选择框样式——虚线描边 + 淡色半透明填充，
+  // accent 与现有选区同款 rgba(0,120,212,*)。必须在身份变换下绘制，不套视图矩阵。
+  private drawMarquee(bounds: number[]): void {
+    if (bounds.length !== 4) {
+      return;
+    }
+    const left = bounds[0];
+    const top = bounds[1];
+    const right = bounds[2];
+    const bottom = bounds[3];
+    if (right <= left || bottom <= top) {
+      return;
+    }
+    const context = this.active;
+    context.save();
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.fillStyle = 'rgba(0,120,212,0.12)';
+    context.fillRect(left, top, right - left, bottom - top);
+    context.strokeStyle = 'rgba(0,120,212,1)';
+    context.lineWidth = 1.5;
+    context.setLineDash([4, 4]);
+    context.strokeRect(left, top, right - left, bottom - top);
+    context.setLineDash([]);
     context.restore();
   }
 
@@ -481,6 +557,18 @@ export class CanvasInkRenderer implements InkRenderer {
       Math.max(a[2], b[2]),
       Math.max(a[3], b[3])
     ];
+  }
+
+  // 多条命令的世界坐标并集包围盒；全部为空/退化为 null。
+  private static commandsBox(commands: DrawCommand[], padding: number): number[] | null {
+    let result: number[] | null = null;
+    for (let i = 0; i < commands.length; i++) {
+      const box = CanvasInkRenderer.commandBox(commands[i], padding);
+      if (box !== null) {
+        result = result === null ? box : CanvasInkRenderer.unionBox(result, box);
+      }
+    }
+    return result;
   }
 
   // 世界坐标脏盒经仿射视图矩阵映射为屏幕空间轴对齐包围盒，并与视口求交。
