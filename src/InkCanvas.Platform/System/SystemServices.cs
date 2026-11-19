@@ -17,17 +17,22 @@ public readonly record struct ScreenRect(int X, int Y, int Width, int Height)
     }
 }
 
-public readonly record struct ScreenInfo(IntPtr Handle, ScreenRect Bounds, ScreenRect WorkArea, double DpiScale);
+public readonly record struct ScreenInfo(IntPtr Handle, ScreenRect Bounds, ScreenRect WorkArea, double DpiScale)
+{
+    public string DeviceName { get; init; } = "";
+    public bool IsPrimary { get; init; }
+}
 
 public static class ScreenService
 {
     private const uint Nearest = 2;
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct MonitorInfo
     {
         public int Size;
         public NativeMethods.RECT Monitor, Work;
         public uint Flags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string Device;
     }
     private delegate bool MonitorCallback(IntPtr monitor, IntPtr dc, ref NativeMethods.RECT rect, IntPtr data);
     [DllImport("user32.dll")] private static extern IntPtr MonitorFromRect(ref NativeMethods.RECT rect, uint flags);
@@ -65,7 +70,7 @@ public static class ScreenService
         var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
         if (!GetMonitorInfoW(monitor, ref info)) return new(monitor, Primary, WorkArea, 1);
         double scale = GetDpiForMonitor(monitor, 0, out uint dpi, out _) == 0 && dpi > 0 ? dpi / 96d : 1;
-        return new(monitor, Rect(info.Monitor), Rect(info.Work), scale);
+        return new(monitor, Rect(info.Monitor), Rect(info.Work), scale) { DeviceName = info.Device, IsPrimary = (info.Flags & 1) != 0 };
     }
 
     private static ScreenRect Rect(NativeMethods.RECT r) => new(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top);
@@ -99,6 +104,19 @@ public static class ScreenService
 /// <summary>Identifies the foreground application, used by the auto-fold rules.</summary>
 public static class ForegroundWindowService
 {
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowTextW(IntPtr window, global::System.Text.StringBuilder text, int length);
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr window, out NativeMethods.RECT rect);
+
+    public static (string Process, string Title, int Height) DescribeForeground()
+    {
+        var window = GetForegroundWindow();
+        var text = new global::System.Text.StringBuilder(512);
+        GetWindowTextW(window, text, text.Capacity);
+        GetWindowRect(window, out var rect);
+        return (GetForegroundProcessName(), text.ToString(), rect.Bottom - rect.Top);
+    }
     public static IntPtr GetForegroundWindow() => NativeMethods.GetForegroundWindow();
 
     public static string GetForegroundProcessName()

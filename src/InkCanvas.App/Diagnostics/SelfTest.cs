@@ -35,7 +35,11 @@ public static class SelfTest
         bool erasingWorks = EraserRegression.Run(checks);
         bool lassoErasingWorks = LassoEraserRegression.Run(checks);
         bool boardFeaturesWork = BoardFeatureRegression.Run(checks);
+        int playbackCheckStart = checks.Count;
         bool playbackWorks = PlaybackRegression.Run(checks) && PlaybackRegression.CheckCachedRendering(checks);
+        File.WriteAllText(Path.Combine(outputDirectory, "playback.json"), JsonSerializer.Serialize(
+            new { passed = playbackWorks, checks = checks.Skip(playbackCheckStart).ToArray() },
+            new JsonSerializerOptions { WriteIndented = true }));
         await LassoEraserRegression.SavePreview(outputDirectory);
         bool selectionWorks = SelectionRegression.Run(checks);
         bool? boardSelectionWorks = await SelectionWindowRegression.Run(checks, outputDirectory);
@@ -377,9 +381,11 @@ public static class SelfTest
         }
     }
 
-    internal static async Task<bool?> CheckBackdropTransparency(ShellController shell, List<object> checks)
+    internal static Task<bool?> CheckBackdropTransparency(ShellController shell, List<object> checks)
+        => CheckBackdropTransparency(shell.OpenWindows.OfType<FloatingBarWindow>().First(), checks);
+
+    internal static async Task<bool?> CheckBackdropTransparency(FloatingBarWindow bar, List<object> checks)
     {
-        var bar = shell.OpenWindows.OfType<FloatingBarWindow>().First();
         var rect = WindowChrome.GetScreenBounds(bar, bar.Bar.ChromeSurfaces.First());
         var background = new Grid { Background = new SolidColorBrush(Microsoft.UI.Colors.Red) };
         var window = new Window { Title = "InkCanvas translucency regression", Content = background };
@@ -518,7 +524,8 @@ public static class SelfTest
                     && previewBounds.Right <= card.ActualWidth + 1 && previewBounds.Bottom <= card.ActualHeight + 1;
                 if (scale == 100)
                 {
-                    var widthSlider = Descendants(palette).OfType<Slider>().Single(slider => AutomationProperties.GetName(slider).StartsWith("画笔粗细"));
+                    var widthSlider = Descendants(palette).OfType<Slider>().Single(slider =>
+                        AutomationProperties.GetName(slider).StartsWith(highlighter ? "荧光笔粗细" : "画笔粗细"));
                     widthSlider.Value = 2;
                     float thinHeight = preview.Stroke.Bounds.Height;
                     widthSlider.Value = 30;

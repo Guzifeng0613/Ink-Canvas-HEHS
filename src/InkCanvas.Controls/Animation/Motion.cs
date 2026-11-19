@@ -69,7 +69,9 @@ public static class Motion
     }
 
     /// <summary>Fade + rise entrance, used when a panel or window content appears.</summary>
-    public static void PlayEntrance(UIElement element, float offsetPx = 12f)
+    public static void PlayEntrance(UIElement element, float offsetPx = 12f) => PlayEntrance(element, offsetPx, 0);
+
+    public static void PlayEntrance(UIElement element, float offsetPx, int delayMilliseconds)
     {
         if (element is null || !AnimationsEnabled) return;
         // Offset belongs to XAML layout. Animating it to zero discards the element's arranged
@@ -82,11 +84,13 @@ public static class Motion
         fade.InsertKeyFrame(0f, 0f);
         fade.InsertKeyFrame(1f, 1f);
         fade.Duration = Normal;
+        fade.DelayTime = TimeSpan.FromMilliseconds(Math.Max(0, delayMilliseconds));
 
         var rise = compositor.CreateVector3KeyFrameAnimation();
         rise.InsertKeyFrame(0f, new Vector3(0, offsetPx, 0));
         rise.InsertKeyFrame(1f, Vector3.Zero);
         rise.Duration = Normal;
+        rise.DelayTime = fade.DelayTime;
         rise.Target = "Translation";
 
         visual.StartAnimation("Opacity", fade);

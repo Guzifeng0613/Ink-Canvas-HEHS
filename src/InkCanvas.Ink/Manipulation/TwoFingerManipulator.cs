@@ -25,6 +25,26 @@ public sealed class TwoFingerManipulator
 
     public void Reset() => _hasPrevious = false;
 
+    /// <summary>Maps the contact pair captured by Begin to its current position.</summary>
+    public Matrix3x2 TransformFromStart(Vector2 a, Vector2 b)
+    {
+        if (!_hasPrevious) return Matrix3x2.Identity;
+        var previousMidpoint = (_prevA + _prevB) / 2;
+        var midpoint = AllowTranslate ? (a + b) / 2 : previousMidpoint;
+        var before = _prevB - _prevA;
+        var after = b - a;
+        float previousLength = before.Length();
+        float length = after.Length();
+        float scale = 1, angle = 0;
+        if (previousLength > 1 && length > 1)
+        {
+            if (AllowZoom) scale = Math.Clamp(length / previousLength, MinScale, MaxScale);
+            if (AllowRotation) angle = MathF.Atan2(after.Y, after.X) - MathF.Atan2(before.Y, before.X);
+        }
+        return Matrix3x2.CreateTranslation(-previousMidpoint) * Matrix3x2.CreateScale(scale)
+            * Matrix3x2.CreateRotation(angle) * Matrix3x2.CreateTranslation(midpoint);
+    }
+
     /// <summary>
     /// Accumulates the delta from the previous pair position into <paramref name="transform"/>.
     /// Returns false when there is nothing to apply.

@@ -26,6 +26,7 @@ public sealed class WindowWorkspace : UserControl
         Padding = new Thickness(24, 8, 24, 24),
     };
     private readonly List<(string Name, Func<UIElement> Build)> _pages = new();
+    private FrameworkElement _scrollTarget;
     public string SelectedPage { get; private set; }
     public AutoSuggestBox SearchBox
     {
@@ -42,6 +43,31 @@ public sealed class WindowWorkspace : UserControl
     public void RevealContent()
     {
         if (_navigation.DisplayMode != NavigationViewDisplayMode.Expanded) _navigation.IsPaneOpen = false;
+    }
+
+    public void ScrollToElement(FrameworkElement element)
+    {
+        _scrollTarget = element;
+        _scroll.LayoutUpdated -= OnScrollLayoutUpdated;
+        _scroll.LayoutUpdated += OnScrollLayoutUpdated;
+        OnScrollLayoutUpdated(null, null);
+    }
+
+    private void OnScrollLayoutUpdated(object sender, object args)
+    {
+        if (_scrollTarget is null || _scroll.Content is not FrameworkElement page
+            || _scroll.ViewportHeight <= 0 || _scroll.ExtentHeight <= 0) return;
+        var origin = _scrollTarget.TransformToVisual(page).TransformPoint(default);
+        // The first navigation request can arrive before the ScrollViewer computes its extent.
+        if (origin.Y > _scroll.ViewportHeight && _scroll.ScrollableHeight <= 0) return;
+        double offset = Math.Clamp(origin.Y - 12, 0, _scroll.ScrollableHeight);
+        if (Math.Abs(_scroll.VerticalOffset - offset) > 1)
+        {
+            _scroll.ChangeView(null, offset, null, true);
+            return;
+        }
+        _scroll.LayoutUpdated -= OnScrollLayoutUpdated;
+        _scrollTarget = null;
     }
     public bool IsTitleBarAutoPaddingEnabled
     {
@@ -77,6 +103,8 @@ public sealed class WindowWorkspace : UserControl
 
     private void ShowPage(int index)
     {
+        _scroll.LayoutUpdated -= OnScrollLayoutUpdated;
+        _scrollTarget = null;
         SelectedPage = _pages[index].Name;
         _navigation.Header = new TextBlock { Text = SelectedPage, FontSize = 28, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
         _scroll.Content = _pages[index].Build();

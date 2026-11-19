@@ -7,6 +7,37 @@ namespace InkCanvas.Core.Tests;
 public sealed class ClassroomToolsTests
 {
     [Fact]
+    public void RosterChangesNotifyOnceAndKeepUnchangedRounds()
+    {
+        var service = new LotteryService { NoRepeat = true };
+        int changes = 0;
+        service.NamesChanged += () => changes++;
+        service.LoadNames(new[] { "甲", "乙" });
+        service.Draw(1);
+        service.LoadNames(new[] { "甲", "乙" });
+        Assert.Equal(1, changes);
+        Assert.Equal(1, service.RemainingCount);
+        service.LoadNames(new[] { "丙", "丁" });
+        Assert.Equal(2, changes);
+        Assert.Equal(2, service.RemainingCount);
+        Assert.Empty(service.History);
+    }
+
+    [Fact]
+    public void SavedRosterKeepsNamesContainingCommasAndAppliesLegacyReplacements()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "InkCanvas-roster-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            File.WriteAllText(Path.Combine(directory, "Names.txt"), "Smith, John\n旧名\n同名\n同名\n\n");
+            File.WriteAllText(Path.Combine(directory, "Replace.txt"), "旧名-->新名");
+            Assert.Equal(new[] { "Smith, John", "新名", "同名", "同名" }, ClassroomRoster.Load(directory));
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Fact]
     public void WholeRoundDrawsEveryParticipantExactlyOnce()
     {
         for (int seed = 0; seed < 100; seed++)

@@ -4,6 +4,7 @@ using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.Svg;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
+using Rect = InkCanvas.Core.Ink.Rect;
 
 namespace InkCanvas.Ink.Rendering;
 
@@ -18,10 +19,16 @@ public sealed class ImageSceneRenderer : IDisposable
         public Vector2 VectorSize;
         public string ContentType;
         public Task Loading;
+        public long LastUsed;
     }
 
     private readonly Dictionary<byte[], Entry> _images = new();
     private bool _disposed;
+    private long _clock;
+    private const long WarmBitmapBytes = 64 * 1024 * 1024;
+    private const int WarmImageCount = 12;
+    public long CachedBitmapBytes => _images.Values.Sum(entry => entry.Bitmap is null ? 0
+        : (long)entry.Bitmap.SizeInPixels.Width * entry.Bitmap.SizeInPixels.Height * 4);
     public int CachedBitmapCount => _images.Values.Count(entry => entry.Bitmap is not null || entry.Vector is not null);
     public int CachedVectorCount => _images.Values.Count(entry => entry.Vector is not null);
     public event Action Changed;
@@ -44,7 +51,11 @@ public sealed class ImageSceneRenderer : IDisposable
     }
 
     public void Draw(CanvasDrawingSession session, IImageSelectionElement image, Matrix3x2 view)
+        => Draw(session, image, view, null);
+
+    public void Draw(CanvasDrawingSession session, IImageSelectionElement image, Matrix3x2 view, Rect? viewport)
     {
+        if (viewport is { } area && !IsNearViewport(image, view, area)) return;
         var entry = Get(session.Device, image);
         if (entry.Bitmap is null && entry.Vector is null) return;
         var previous = session.Transform;
@@ -70,6 +81,35 @@ public sealed class ImageSceneRenderer : IDisposable
 
     public void Retain(InkController controller) => Retain(Images(controller));
 
+    public void TrimOutsideViewport(InkController controller, Matrix3x2 view, Rect viewport)
+    {
+        long bytes = CachedBitmapBytes;
+        if (_images.Count <= WarmImageCount && bytes <= WarmBitmapBytes) return;
+        var visible = Images(controller).Where(image => IsNearViewport(image, view, viewport))
+            .Select(image => image.ImageData).ToHashSet();
+        foreach (var entry in _images.Values.Where(entry => !visible.Contains(entry.Data)).OrderBy(entry => entry.LastUsed).ToArray())
+        {
+            if (_images.Count <= WarmImageCount && bytes <= WarmBitmapBytes) break;
+            if (entry.Bitmap is not null) bytes -= (long)entry.Bitmap.SizeInPixels.Width * entry.Bitmap.SizeInPixels.Height * 4;
+            entry.Bitmap?.Dispose();
+            entry.Vector?.Dispose();
+            _images.Remove(entry.Data);
+        }
+    }
+
+    private static bool IsNearViewport(IImageSelectionElement image, Matrix3x2 view, Rect viewport)
+    {
+        var frame = image.Frame;
+        var transform = frame.Transform * view;
+        var first = Vector2.Transform(new(frame.Bounds.Left, frame.Bounds.Top), transform);
+        var second = Vector2.Transform(new(frame.Bounds.Right, frame.Bounds.Top), transform);
+        var third = Vector2.Transform(new(frame.Bounds.Right, frame.Bounds.Bottom), transform);
+        var fourth = Vector2.Transform(new(frame.Bounds.Left, frame.Bounds.Bottom), transform);
+        var minimum = Vector2.Min(Vector2.Min(first, second), Vector2.Min(third, fourth));
+        var maximum = Vector2.Max(Vector2.Max(first, second), Vector2.Max(third, fourth));
+        return new Rect(minimum.X, minimum.Y, maximum.X, maximum.Y).Intersects(viewport.Inflate(128));
+    }
+
     private void Retain(IEnumerable<IImageSelectionElement> images)
     {
         var present = images.Select(image => image.ImageData).ToHashSet();
@@ -83,8 +123,8 @@ public sealed class ImageSceneRenderer : IDisposable
 
     private Entry Get(CanvasDevice device, IImageSelectionElement image)
     {
-        if (_images.TryGetValue(image.ImageData, out var entry)) return entry;
-        entry = new Entry { Data = image.ImageData, ContentType = image.ImageContentType };
+        if (_images.TryGetValue(image.ImageData, out var entry)) { entry.LastUsed = ++_clock; return entry; }
+        entry = new Entry { Data = image.ImageData, ContentType = image.ImageContentType, LastUsed = ++_clock };
         _images[image.ImageData] = entry;
         entry.Loading = LoadAsync(device, entry);
         return entry;
@@ -131,6 +171,11 @@ public sealed class ImageSceneRenderer : IDisposable
     public void Dispose()
     {
         _disposed = true;
+        Clear();
+    }
+
+    public void Clear()
+    {
         foreach (var entry in _images.Values)
         {
             entry.Bitmap?.Dispose();

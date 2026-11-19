@@ -6,6 +6,7 @@ using InkCanvas.Features.Tools;
 using InkCanvas.Features.Board;
 using InkCanvas.Ink;
 using InkCanvas.Platform.System;
+using InkCanvas.Platform.Interop;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -25,9 +26,15 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private readonly PptInkSession _pptSession;
     private FloatingBarWindow _bar;
     private SelectionToolbarWindow _selectionToolbar;
+    private bool _selectionToolbarCollapsed;
     private BoardWindow _board;
     private SettingsWindow _settings;
     private bool _settingsOpening;
+    private IntPtr _settingsDrawingSurface;
+    private bool _settingsSurfaceWasTopmost;
+    private LotteryWindow _settingsRosterSource;
+    private string _requestedSettingsCategory;
+    internal string RosterDirectory { get; set; } = LotteryWindow.DataDir;
     private bool _imagePicking;
     private CancellationTokenSource _imageImportCancellation;
     private CountdownWindow _countdown;
@@ -41,6 +48,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private bool _lastAutoFoldRequested;
     private bool? _manualFoldOverride;
     private bool _exiting;
+    private bool _exitPromptOpen;
     private bool _paletteHighlighter;
     private bool _disposed;
     private InkController _boundBoardController;
@@ -54,6 +62,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
         services.SettingsApplied += ApplyDocumentSettings;
         _dispatcher = DispatcherQueue.GetForCurrentThread();
         Overlay = new OverlayHost(services.OverlayInk);
+        Overlay.ConfigureDisplays(services.Settings.Display);
+        services.SettingsApplied += ApplyDisplaySettings;
         Overlay.Window.DisplaySettingsChanged += QueueDisplayRefresh;
         _screens = ScreenService.All();
         services.StartModules(new ScreenTrackingHost(services, Overlay, () => _board is not null || _documentWorkspace is not null), new DocumentHost(this), new CanvasToolsHost(this));
@@ -85,12 +95,12 @@ public sealed partial class ShellController : IShellActions, IDisposable
         _pptSession.ScreenshotRequested += OnPptScreenshotRequested;
         _pptSession.Failed += failure => Core.Diagnostics.FileLog.WriteLogToFile(
             $"PPT/{failure.Operation}: {failure.Message} (0x{failure.ErrorCode:X8})", Core.Diagnostics.LogType.Error);
-        _pptSession.Poll();
+        if (services.Settings.PowerPoint.PowerPointSupport) _pptSession.Poll();
         Updater = new UpdateCoordinator(services)
         {
             Confirm = ConfirmAsync,
             Notify = NotifyAsync,
-            ExitForInstall = Exit,
+            ExitForInstall = () => { _installingUpdate = true; Exit(); },
             CanInstallSilently = CanInstallUpdateSilently,
             PrepareForInstall = PrepareForUpdateAsync,
             ChooseRelease = ChooseUpdateReleaseAsync,
@@ -133,6 +143,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         try
         {
             Overlay.RefreshDisplayBounds();
+            Overlay.ConfigureDisplays(Services.Settings.Display);
             _bar?.RefreshDisplayPlacement();
             _palette?.RefreshDisplayPlacement();
             _shapePicker?.RefreshDisplayPlacement();
@@ -208,8 +219,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
         WindowChrome.ApplyTheme(_bar, Services.Settings.Appearance.Theme);
         WindowChrome.ShowWithoutActivation(_bar);
 
-        _selectionToolbar = new SelectionToolbarWindow(this);
-        NotifyWindowOpened(_selectionToolbar);
         Services.OverlayInk.Invalidated += QueueDesktopSelection;
         Services.OverlayInk.SelectionChanged += QueueDesktopSelection;
         _bar.AppWindow.Changed += OnBarWindowChanged;
@@ -233,8 +242,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
             clear: () =>
             {
                 if (ActiveController.HasSelection) ActiveController.DeleteSelection();
-                else if (_board is not null) Services.Board.ClearCurrentPage();
-                else ActiveController.Clear();
+                else ClearCanvas();
             },
             togglePassThrough: ToggleClickThrough,
             toggleBoard: ToggleBoard,
@@ -286,7 +294,22 @@ public sealed partial class ShellController : IShellActions, IDisposable
 
     private void QueueDesktopSelection()
     {
-        if (Services.OverlayInk.HasSelection || _selectionToolbar?.IsShown == true) _selectionToolbar?.QueueUpdate();
+        if (_disposed || _exiting) return;
+        var ink = Services.OverlayInk;
+        if (_selectionToolbar is null && DesktopSelectionAvailable && ink.HasSelection && ink.Playback is null
+            && !ink.IsMarqueeSelecting && !ink.IsRotatingSelection)
+        {
+            var toolbar = new SelectionToolbarWindow(this);
+            _selectionToolbar = toolbar;
+            if (_selectionToolbarCollapsed) toolbar.Toolbar.ToggleCollapsed();
+            toolbar.Closed += (_, _) =>
+            {
+                _selectionToolbarCollapsed = toolbar.Toolbar.IsCollapsed;
+                if (ReferenceEquals(_selectionToolbar, toolbar)) _selectionToolbar = null;
+            };
+            NotifyWindowOpened(toolbar);
+        }
+        if (ink.HasSelection || _selectionToolbar?.IsShown == true) _selectionToolbar?.QueueUpdate();
     }
 
     internal bool DesktopSelectionAvailable => _board is null && _documentWorkspace is null && !_exiting && !Overlay.ClickThrough
@@ -343,7 +366,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private async Task<bool> ConfirmAsync(string title, string message)
     {
         var owner = DocumentActive ? _documentWorkspace.Window : (Window)_board ?? _bar;
-        return await YesOrNoWindow.AskAsync(owner, $"{title}\n{message}");
+        return await YesOrNoWindow.AskAsync(owner, message, title);
     }
 
     private async Task NotifyAsync(string title, string message)
@@ -428,6 +451,10 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private void Poll()
     {
         if (_exiting) return;
+        MaintainAutomation();
+        Overlay.TrimIdleResources();
+        if (_selectionToolbar is { IsShown: false } toolbar && Environment.TickCount64 - toolbar.HiddenSince >= 15_000)
+            toolbar.Close();
         if (Environment.TickCount64 - _lastDisplayCheck >= 1000) RefreshDisplays();
         // WPF used COM events; the port polls. 200ms while a show runs keeps slide-ink
         // switching snappy; idle stays at 900ms so chrome Z maintenance cadence is unchanged.
@@ -443,6 +470,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
             if (isShow != _lastSlideShowState)
             {
                 _lastSlideShowState = isShow;
+                Services.PresentationActive = isShow;
+                Services.ApplySettings();
                 _bar?.Bar.SetPptModeVisible(isShow);
                 if (isShow && _bar is not null && current.WindowHandle != IntPtr.Zero)
                     WindowChrome.MoveToMonitor(_bar, ScreenService.FromWindow(current.WindowHandle));
@@ -471,6 +500,13 @@ public sealed partial class ShellController : IShellActions, IDisposable
         }
         else
         {
+            if (_lastSlideShowState)
+            {
+                _lastSlideShowState = false;
+                Services.PresentationActive = false;
+                Services.ApplySettings();
+                _bar?.Bar.SetPptModeVisible(false);
+            }
             UpdatePptNavigation(PptSnapshot.Detached);
         }
 
@@ -489,9 +525,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
     }
 
     /// <summary>
-    /// WPF parity: every auxiliary window is Topmost and sits above the annotation surface.
-    /// The overlay is a full-screen topmost input capturer, so each open chrome window must be
-    /// re-asserted above it after placement, on overlay input, and on the maintenance poll.
+    /// Keep floating tools above the annotation surface after overlay input and placement.
     /// </summary>
     private void RaiseChromeAboveOverlay()
     {
@@ -499,8 +533,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         if (_bar is not null && _board is null) WindowChrome.EnsureAbove(_bar, Overlay.Window.Handle);
         if (_selectionToolbar?.IsShown == true) WindowChrome.EnsureAbove(_selectionToolbar, Overlay.Window.Handle);
         _bar?.EnsureHandlesAbove(Overlay.Window.Handle);
-        if (_board is not null) WindowChrome.EnsureAbove(_board, Overlay.Window.Handle);
-        if (_settings is not null) WindowChrome.EnsureAbove(_settings, Overlay.Window.Handle);
+        if (_board is not null && _settingsDrawingSurface != WindowChrome.GetHwnd(_board)) WindowChrome.EnsureAbove(_board, Overlay.Window.Handle);
         if (_countdown is not null) WindowChrome.EnsureAbove(_countdown, Overlay.Window.Handle);
         if (_lottery is not null) WindowChrome.EnsureAbove(_lottery, Overlay.Window.Handle);
         if (_replay is not null) WindowChrome.EnsureAbove(_replay, Overlay.Window.Handle);
@@ -512,6 +545,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         if (_palette is not null) WindowChrome.EnsureAbove(_palette, Overlay.Window.Handle);
         if (_shapePicker is not null) WindowChrome.EnsureAbove(_shapePicker, Overlay.Window.Handle);
         foreach (var window in _documentWindows) if (!ReferenceEquals(window, _documentWorkspace?.Window) && window.AppWindow.IsVisible) WindowChrome.EnsureAbove(window, Overlay.Window.Handle);
+        UpdateSettingsDrawingOrder();
     }
 
     private void UpdatePptNavigation(PptSnapshot snapshot)
@@ -560,15 +594,9 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private void ApplyAutoFold()
     {
         if (_bar is null) return;
-        string foreground = ForegroundWindowService.GetForegroundProcessName();
+        var foreground = ForegroundWindowService.DescribeForeground();
         var a = Services.Settings.Automation;
-        bool fold = !string.IsNullOrEmpty(foreground) && a.IsEnableAutoFold && (
-            (a.IsAutoFoldInEasiNote && foreground.Contains("EasiNote", StringComparison.OrdinalIgnoreCase)) ||
-            (a.IsAutoFoldInEasiCamera && foreground.Contains("EasiCamera", StringComparison.OrdinalIgnoreCase)) ||
-            (a.IsAutoFoldInSeewoPincoTeacher && foreground.Contains("Pinco", StringComparison.OrdinalIgnoreCase)) ||
-            (a.IsAutoFoldInHiteTouchPro && foreground.Contains("HiteTouch", StringComparison.OrdinalIgnoreCase)) ||
-            (a.IsAutoFoldInMSWhiteboard && foreground.Contains("Whiteboard", StringComparison.OrdinalIgnoreCase)) ||
-            (a.IsAutoFoldInPPTSlideShow && _lastSlideShowState));
+        bool fold = Core.Settings.AutomationPolicy.ShouldFold(a, foreground.Process, foreground.Title, foreground.Height, _lastSlideShowState);
 
         if (fold != _lastAutoFoldRequested)
         {
@@ -601,6 +629,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
         _replay?.Close();
         if (_board is null)
         {
+            Services.BoardModeActive = true;
+            Services.ApplySettings();
             _documentWorkspace?.Window.AppWindow.Hide();
             _palette?.Close(); _shapePicker?.Close();
             _board = new BoardWindow(Services, this, _bar);
@@ -645,6 +675,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
     {
         if (!ReferenceEquals(_board, board)) return;
         _board = null;
+        Services.BoardModeActive = false;
+        Services.ApplySettings();
         board.CurrentPageChanged -= OnBoardPageChanged;
         board.CanvasInputBegan -= OnBoardInputBegan;
         if (_disposed || _exiting) return;
@@ -664,9 +696,16 @@ public sealed partial class ShellController : IShellActions, IDisposable
         QueueDesktopSelection();
     }
 
-    public void OpenSettings()
+    public void OpenSettings() => OpenSettingsPage(null);
+
+    private void OpenSettingsPage(string category)
     {
-        if (_settings is not null) { _settings.Activate(); return; }
+        if (category is not null) _requestedSettingsCategory = category;
+        if (_settings is not null)
+        {
+            ShowRequestedSettingsPage(_settings);
+            _settings.Activate(); return;
+        }
         if (_settingsOpening || _exiting) return;
         _settingsOpening = true;
         _dispatcher.TryEnqueue(() =>
@@ -677,16 +716,68 @@ public sealed partial class ShellController : IShellActions, IDisposable
                 _bar?.ClosePanels();
                 _palette?.Close();
                 _shapePicker?.Close();
-                var window = new SettingsWindow(Services, Updater, this);
+                var window = new SettingsWindow(Services, Updater, this, RosterDirectory);
                 _settings = window;
+                ShowRequestedSettingsPage(window);
                 NotifyWindowOpened(window);
                 window.SettingsChanged += OnSettingsChanged;
-                window.Closed += (_, _) => { window.SettingsChanged -= OnSettingsChanged; _settings = null; };
+                window.Activated += (_, _) => UpdateSettingsDrawingOrder();
+                window.Closed += (_, _) =>
+                {
+                    window.SettingsChanged -= OnSettingsChanged;
+                    _settings = null;
+                    UpdateSettingsDrawingOrder();
+                    _settingsRosterSource?.AppWindow.Show(activateWindow: false);
+                    _settingsRosterSource = null;
+                };
                 window.Activate();
-                WindowChrome.EnsureAbove(window);
             }
             finally { _settingsOpening = false; }
         });
+    }
+
+    private void ShowRequestedSettingsPage(SettingsWindow window)
+    {
+        if (_requestedSettingsCategory is null) return;
+        window.SelectCategory(_requestedSettingsCategory);
+        if (_requestedSettingsCategory == "抽奖与点名") window.RevealRosterEditor();
+        _requestedSettingsCategory = null;
+    }
+
+    private void UpdateSettingsDrawingOrder()
+    {
+        if (_disposed) return;
+        var settings = _settings is null ? IntPtr.Zero : WindowChrome.GetHwnd(_settings);
+        var surface = IntPtr.Zero;
+        if (settings != IntPtr.Zero && NativeMethods.GetForegroundWindow() == settings)
+        {
+            if (_board is not null) surface = WindowChrome.GetHwnd(_board);
+            else if (!DocumentActive) surface = Overlay.Window.Handle;
+        }
+        const uint flags = NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE;
+        if (surface != _settingsDrawingSurface)
+        {
+            if (_settingsDrawingSurface != IntPtr.Zero)
+                NativeMethods.SetWindowPos(_settingsDrawingSurface,
+                    _settingsSurfaceWasTopmost ? NativeMethods.HWND_TOPMOST : NativeMethods.HWND_NOTOPMOST, 0, 0, 0, 0, flags);
+            _settingsDrawingSurface = surface;
+            _settingsSurfaceWasTopmost = surface != IntPtr.Zero && NativeMethods.HasExStyle(surface, NativeMethods.WS_EX_TOPMOST);
+        }
+        // A normal settings window must receive input while the drawing surface stays visible.
+        // Inserting the drawing HWND after it also removes that surface from the topmost band.
+        if (surface != IntPtr.Zero) NativeMethods.SetWindowPos(surface, settings, 0, 0, 0, 0, flags);
+    }
+
+    private void OpenRosterSettings(LotteryWindow source)
+    {
+        if (!ReferenceEquals(_settingsRosterSource, source))
+        {
+            _settingsRosterSource?.AppWindow.Show(activateWindow: false);
+            _settingsRosterSource = source;
+            source.Closed += (_, _) => { if (ReferenceEquals(_settingsRosterSource, source)) _settingsRosterSource = null; };
+        }
+        source.AppWindow.Hide();
+        OpenSettingsPage("抽奖与点名");
     }
 
     private void OnSettingsChanged()
@@ -707,6 +798,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
         ApplyEdgeGestureSetting();
     }
 
+    private void ApplyDisplaySettings() => Overlay.ConfigureDisplays(Services.Settings.Display);
+
     public void OpenTimer()
     {
         if (_countdown is not null) { _countdown.Activate(); return; }
@@ -721,11 +814,13 @@ public sealed partial class ShellController : IShellActions, IDisposable
     public void OpenLottery()
     {
         if (_lottery is not null) { _lottery.Activate(); return; }
-        _lottery = new LotteryWindow(Services.Lottery, autoClose: false, EffectiveTheme);
+        _lottery = new LotteryWindow(Services.Lottery, autoClose: false, EffectiveTheme, RosterDirectory, OpenRosterSettings);
         _lottery.OptionsChanged += () =>
         {
             Services.Settings.Rand.PeopleCount = Services.Lottery.PeopleCount;
-            Services.Settings.Rand.IsNotRepeatName = Services.Lottery.NoRepeat;
+            Services.Settings.Rand.SamplingMode = Services.Lottery.SamplingMode;
+            Services.Settings.Rand.CooldownHalfLifeDays = Services.Lottery.CooldownHalfLifeDays;
+            Services.Settings.Rand.CooldownPenaltyStrength = Services.Lottery.CooldownPenaltyStrength;
             Services.SaveSettings();
         };
         NotifyWindowOpened(_lottery);
@@ -738,7 +833,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
     /// <summary>WPF 单次抽选: quick-pick lottery that auto-rolls and auto-closes after results.</summary>
     public void OpenLotteryQuick()
     {
-        var quick = new LotteryWindow(Services.Lottery, autoClose: true, EffectiveTheme);
+        var quick = new LotteryWindow(Services.Lottery, autoClose: true, EffectiveTheme, RosterDirectory, OpenRosterSettings);
         WindowChrome.ApplyTheme(quick, EffectiveTheme);
         quick.Activate();
         WindowChrome.EnsureAbove(quick);
@@ -978,6 +1073,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
             AttributesChanged = () => _bar?.Bar.RefreshSelection(),
         };
         NotifyWindowOpened(_palette);
+        _palette.ConfigureNibMode(Services.Settings.Appearance.IsEnableDisPlayNibModeToggler, Services.Settings.Startup.IsEnableNibMode,
+            value => { Services.Settings.Startup.IsEnableNibMode = value; Services.ApplySettings(); Services.SaveSettings(); });
         _palette.Closed += (_, _) => _palette = null;
         WindowChrome.ShowWithoutActivation(_palette);
         if (_board is not null || _bar is not null)
@@ -1012,8 +1109,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         try
         {
             var screen = ScreenService.FromWindow(WindowChrome.GetHwnd(_documentWorkspace?.Window ?? (Window)_board ?? _bar)).Bounds;
-            string dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "InkCanvas");
+            string dir = Path.Combine(Services.Settings.Automation.AutoSavedStrokesLocation, "Screenshots");
             await ScreenshotService.CaptureToFileAsync(dir, screen.X, screen.Y, screen.Width, screen.Height,
                 Services.Settings.Automation.IsSaveScreenshotsInDateFolders);
 
@@ -1024,6 +1120,20 @@ public sealed partial class ShellController : IShellActions, IDisposable
         {
             // Capture can fail on a locked-down desktop; never take the app down for it.
         }
+    }
+
+    public bool ClearCanvas()
+    {
+        var controller = ActiveController;
+        var automation = Services.Settings.Automation;
+        if (automation.IsAutoSaveStrokesAtClear && controller.Document.Count > automation.MinimumAutomationStrokeNumber)
+        {
+            Services.AutoSave.SaveSnapshot(controller.Document.Strokes, "clear");
+            _ = ScreenshotAsync();
+        }
+        if (DocumentActive) controller.Clear();
+        else (_board is not null ? Services.Board : Services.ScreenImages).ClearCurrentPage();
+        return true;
     }
 
     public void ToggleFold()
@@ -1060,6 +1170,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
                 ? Services.Settings.PowerPoint.IsShowStrokeOnSelectInPowerPoint
                 : !Services.Settings.Canvas.HideStrokeWhenSelecting;
             Overlay.SetInteractionMode(clickThrough: true, inkVisible: showInk);
+            if (Core.Settings.AutomationPolicy.ShouldClearOnMouseMode(Services.Settings.Automation, Services.Settings.PowerPoint, _lastSlideShowState))
+                Services.ScreenImages.ClearCurrentPage();
         }
         else
         {
@@ -1120,20 +1232,35 @@ public sealed partial class ShellController : IShellActions, IDisposable
         _pptSession.ShowSlideNavigationPane();
     }
 
-    public async void Exit()
+    public void Exit() => _ = ExitAsync(restart: false);
+    public void Restart() => _ = ExitAsync(restart: true);
+
+    private async Task ExitAsync(bool restart)
     {
-        if (_exiting) return;
-        if (_documentWorkspace is not null && !await _documentWorkspace.CloseAsync()) return;
-        _exiting = true;
-        _pollTimer.Stop();
+        if (_exiting || _exitPromptOpen) return;
+        _exitPromptOpen = true;
+        try
+        {
+            if (Services.Settings.Advanced.IsSecondConfimeWhenShutdownApp && !_installingUpdate
+                && !await ConfirmAsync(restart ? "重启 Ink Canvas" : "退出 Ink Canvas", restart ? "确认保存设置并重启 Ink Canvas？" : "确认关闭 Ink Canvas？")) return;
+            if (_documentWorkspace is not null && !await _documentWorkspace.CloseAsync()) return;
+            if (restart)
+            {
+                Services.SaveSettings();
+                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath, "-m") { UseShellExecute = true }); }
+                catch (Exception ex) { await NotifyAsync("重启失败", ex.Message); return; }
+            }
+            _exiting = true;
+            _pollTimer.Stop();
 
-        if (Services.Settings.Automation.IsAutoSaveStrokesAtClear)
-            Services.AutoSave.SaveSnapshot(Services.OverlayInk.Document.Strokes, "exit");
-        Services.AutoSave.Prune();
-        Services.SaveSettings();
+            if (Services.Settings.Automation.IsAutoSaveStrokesAtClear)
+                Services.AutoSave.SaveSnapshot(Services.OverlayInk.Document.Strokes, "exit");
+            Services.SaveSettings();
 
-        Dispose();
-        Application.Current.Exit();
+            Dispose();
+            Application.Current.Exit();
+        }
+        finally { _exitPromptOpen = false; }
     }
 
     public void Dispose()
@@ -1142,6 +1269,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         _imageImportCancellation?.Cancel();
         Services.Plugins.Changed -= OnPluginsChanged;
         Services.SettingsApplied -= ApplyDocumentSettings;
+        Services.SettingsApplied -= ApplyDisplaySettings;
         Services.Plugins.Dispose();
         Services.Modules.Dispose();
         Services.OverlayInk.Invalidated -= QueueDesktopSelection;

@@ -69,6 +69,17 @@ public sealed class InkSceneRenderer : IDisposable
         if (controller.IsLassoErasing) DrawLasso(session, controller, view);
         if (ShowSelectionOutline && controller.Tool == InkTool.Select) DrawSelection(session, controller, view);
         if (controller.IsEraserPreviewVisible) DrawEraserPreview(session, controller, view);
+        if (controller.IsPenCursorVisible)
+        {
+            if (Matrix3x2.Invert(controller.ViewTransform, out var inverse))
+            {
+                var cursorView = inverse * view;
+                var center = Vector2.Transform(controller.PenCursorCenter, cursorView);
+                float radius = controller.PenCursorRadius * MathF.Sqrt(MathF.Abs(cursorView.GetDeterminant()));
+                session.DrawCircle(center, radius, Windows.UI.Color.FromArgb(230, 255, 255, 255), 2);
+                session.DrawCircle(center, radius, Windows.UI.Color.FromArgb(230, 30, 30, 30), 1);
+            }
+        }
     }
 
     /// <summary>Allows page hosts to show selection handles outside the clipped paper extent.</summary>
@@ -185,5 +196,6 @@ public sealed class InkSceneRenderer : IDisposable
         foreach (var s in strokes) Strokes.Invalidate(s);
     }
 
+    public void ReleaseResources() { Images.Clear(); Strokes.InvalidateAll(); _extensionStrokes.InvalidateAll(); }
     public void Dispose() { Images.Dispose(); Strokes.Dispose(); _extensionStrokes.Dispose(); }
 }

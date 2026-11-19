@@ -1056,6 +1056,11 @@ public sealed class VectorParityTests
             var expected = JsonNode.Parse(c.GetProperty("expected").GetRawText())!;
             // WPF vectors predate the WinUI screen-follow extension, covered by ScreenTrackingTests.
             if (expected["experimental"] is null) actual.AsObject().Remove("experimental");
+            // Monitor selection is a Windows extension with its own persistence coverage.
+            if (expected["display"] is null) actual.AsObject().Remove("display");
+            // Soft cooldown settings extend the WPF schema and have dedicated persistence tests.
+            foreach (string field in new[] { "samplingMode", "cooldownHalfLifeDays", "cooldownPenaltyStrength" })
+                if (expected["randSettings"]?[field] is null) actual["randSettings"]?.AsObject().Remove(field);
             Assert.True(JsonNode.DeepEquals(actual, expected), $"settings case {id} mismatch");
         }
     }

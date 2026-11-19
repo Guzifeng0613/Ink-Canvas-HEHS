@@ -14,6 +14,7 @@ namespace InkCanvas.App.Views;
 /// </summary>
 public sealed class PenPaletteWindow : Window
 {
+    public void ConfigureNibMode(bool visible, bool enabled, Action<bool> changed) => _palette.ConfigureNibMode(visible, enabled, changed);
     private static bool _lastPinned;
     private readonly PenPalette _palette;
     private readonly Viewbox _host;

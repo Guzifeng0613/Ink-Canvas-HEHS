@@ -25,6 +25,7 @@ public sealed class InkSurface : UserControl, IDisposable
     private DotAnimationClock _dotClock;
     private readonly Dictionary<uint, OverlayPointer> _activePointers = new();
     private bool _disposed;
+    public bool IsRenderingSuspended { get; private set; }
     public event Action InputBegan;
     /// <summary>Lets a continuous document bind the touched page before its first sample.</summary>
     public event Action<OverlayPointer> InputStarting;
@@ -110,11 +111,25 @@ public sealed class InkSurface : UserControl, IDisposable
     // surface can present — and Win2D coalesces repeated invalidations into one draw. There is
     // no dispatcher hop, no timer, and no redraw of an unchanged scene: CanvasControl only draws
     // when invalidated, never on a free-running loop.
-    private void OnInvalidated() => _canvas.Invalidate();
+    private void OnInvalidated() { if (!IsRenderingSuspended) _canvas.Invalidate(); }
+
+    public void SuspendRendering()
+    {
+        IsRenderingSuspended = true;
+        _scene?.ReleaseResources();
+        _committed.Dispose();
+    }
+
+    public void ResumeRendering()
+    {
+        if (_disposed) return;
+        IsRenderingSuspended = false;
+        _canvas.Invalidate();
+    }
 
     private void OnDraw(CanvasControl sender, CanvasDrawEventArgs args)
     {
-        if (_controller is null || _scene is null) return;
+        if (_controller is null || _scene is null || IsRenderingSuspended) return;
         _controller.ViewCenter = new System.Numerics.Vector2(
             (float)ActualWidth / 2, (float)ActualHeight / 2);
         Microsoft.Graphics.Canvas.CanvasActiveLayer clip = null;

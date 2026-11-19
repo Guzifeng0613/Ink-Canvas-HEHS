@@ -22,22 +22,22 @@ public sealed class PalmRejector
     /// <summary>A pen in range suppresses touch drawing entirely (hardware palm rejection).</summary>
     public bool PenHasPriority { get; set; } = true;
 
-    private uint? _activePenId;
+    private readonly Dictionary<uint, long> _activePens = new();
     private readonly HashSet<uint> _palms = new();
 
-    public bool IsPenActive => _activePenId.HasValue;
+    public bool IsPenActive => _activePens.Count > 0;
 
     public IReadOnlyCollection<uint> ActivePalms => _palms;
 
     public void OnDown(in OverlayPointer p)
     {
-        if (p.Kind == OverlayPointerKind.Pen) _activePenId = p.Id;
+        if (p.Kind == OverlayPointerKind.Pen) _activePens[p.Id] = p.InputSurface;
         else if (p.Kind == OverlayPointerKind.Touch && IsPalmContact(p)) _palms.Add(p.Id);
     }
 
     public void OnUp(in OverlayPointer p)
     {
-        if (_activePenId == p.Id) _activePenId = null;
+        _activePens.Remove(p.Id);
         _palms.Remove(p.Id);
     }
 
@@ -81,7 +81,7 @@ public sealed class PalmRejector
     {
         if (p.Kind == OverlayPointerKind.Pen) return true;
         if (_palms.Contains(p.Id)) return false;
-        if (PenHasPriority && IsPenActive) return false;
+        if (PenHasPriority && _activePens.Values.Contains(p.InputSurface)) return false;
         return true;
     }
 
@@ -90,7 +90,7 @@ public sealed class PalmRejector
 
     public void Reset()
     {
-        _activePenId = null;
+        _activePens.Clear();
         _palms.Clear();
     }
 }

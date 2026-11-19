@@ -5,11 +5,13 @@ using InkCanvas.App.Views;
 using InkCanvas.Core.Ink;
 using InkCanvas.Ink;
 using InkCanvas.Platform.System;
+using InkCanvas.Platform.Interop;
 using InkCanvas.Platform.Windows;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 
 namespace InkCanvas.App.Diagnostics;
 
@@ -112,6 +114,10 @@ internal static class DisplayRegression
             overlay.RefreshDisplayBounds();
             overlay.Show();
             Check("resized hidden viewport restores", overlay.Window.IsVisible && Vector2.Distance(initial, DesktopPoint(world)) < .01);
+            await CheckReplayLayout(bar);
+            CheckIndependentTouch();
+            await CheckNativeTouch();
+            await CheckDisplaySettings();
 
             Vector2 DesktopPoint(Vector2 p) => Vector2.Transform(p, controller.ViewTransform) * overlay.Window.DpiScale
                 + new Vector2(overlay.Window.X, overlay.Window.Y);
@@ -124,6 +130,170 @@ internal static class DisplayRegression
             Application.Current.Exit();
         }
         void Check(string name, bool passed) => checks.Add(new { check = name, passed });
+
+        async Task CheckReplayLayout(FloatingBarWindow owner)
+        {
+            using var ink = new InkController();
+            var stroke = new InkStroke(new StrokeAttributes()); stroke.AddPoint(100, 100); stroke.AddPoint(200, 120); stroke.Complete();
+            ink.Document.Add(stroke);
+            foreach (var screen in ScreenService.All())
+            foreach (double scale in new[] { 50d, 100d, 150d })
+            {
+                WindowChrome.MoveToMonitor(owner, screen);
+                ink.BeginPlayback();
+                var replay = new ReplayWindow(ink, 1, scale, owner);
+                WindowChrome.ShowWithoutActivation(replay);
+                try
+                {
+                    await Task.Delay(200);
+                    replay.RefreshDisplayPlacement();
+                    await Task.Delay(80);
+                    var root = (FrameworkElement)replay.Content;
+                    bool contentFits = Descendants(root).OfType<Control>().All(control =>
+                    {
+                        var bounds = control.TransformToVisual(root).TransformBounds(new Windows.Foundation.Rect(0, 0, control.ActualWidth, control.ActualHeight));
+                        return bounds.Left >= -1 && bounds.Top >= -1 && bounds.Right <= root.ActualWidth + 1 && bounds.Bottom <= root.ActualHeight + 1;
+                    });
+                    Check("replay toolbar fits loaded controls and monitor " + scale, contentFits && Fits(replay, screen.WorkArea));
+                    Check("replay toolbar keeps nonactivating input", NativeMethods.HasExStyle(WindowChrome.GetHwnd(replay), NativeMethods.WS_EX_NOACTIVATE));
+                    if (scale == 100) await BoardWindowRegression.SaveVisual(root, Path.Combine(directory, "replay-" + screen.Handle + ".png"));
+                }
+                finally { replay.Close(); }
+            }
+        }
+
+        void CheckIndependentTouch()
+        {
+            var overlay = shell.Overlay;
+            var window = overlay.Window;
+            var ink = services.OverlayInk;
+            overlay.SetDisplayBounds(new(-800, -200, 2000, 1000));
+            window.SetScreenLayout(new[]
+            {
+                new ScreenInfo(new IntPtr(111), new(-800, -200, 800, 600), new(-800, -200, 800, 600), 1.5) { DeviceName = "test-left" },
+                new ScreenInfo(new IntPtr(222), new(0, 0, 1200, 800), new(0, 0, 1200, 800), 1.25) { DeviceName = "test-right" },
+            });
+            window.SetInputAreas(null);
+            ink.Document.Clear(); ink.History.Clear(); ink.ViewTransform = Matrix3x2.Identity;
+            ink.Palm.Advanced = null; ink.MultiTouchEnabled = false; ink.PalmErases = false;
+            var received = new List<OverlayPointer>();
+            void Capture(OverlayPointer pointer) => received.Add(pointer);
+            window.PointerDown += Capture;
+            try
+            {
+                Contact(11, -40000, 2, 0); Contact(22, 40000, 2, 0);
+                Contact(11, -35000, 1, 30); Contact(22, 45000, 1, 30);
+                Contact(11, -34000, 4, 40); Contact(22, 46000, 4, 40);
+                Check("two legacy digitizers with identical contact IDs produce separate strokes", received.Count == 2
+                    && received[0].Id != received[1].Id && ink.Document.Count == 2 && !ink.HasActiveInteraction);
+                Check("mixed DPI touch groups keep physical screen coordinates", received.Count == 2
+                    && received[0].InputSurface == 111 && received[1].InputSurface == 222
+                    && Math.Abs(received[0].X * window.DpiScale + window.X + 400) < .01
+                    && Math.Abs(received[1].X * window.DpiScale + window.X - 400) < .01);
+                Check("contact dimensions use each touch monitor DPI", received.Count == 2
+                    && Math.Abs(received[0].ContactWidth - 8 / 1.5f) < .01 && Math.Abs(received[1].ContactWidth - 8 / 1.25f) < .01);
+                window.SetInputAreas(new[] { new ScreenRect(-800, -200, 800, 600) });
+                int before = ink.Document.Count;
+                Contact(22, 40000, 2, 50); Contact(22, 45000, 4, 60);
+                Check("disabled screen rejects new contacts", ink.Document.Count == before && !window.AllowsInput(400, 100) && window.AllowsInput(-400, 100));
+                window.SetInputAreas(Array.Empty<ScreenRect>());
+                Check("empty screen selection releases the entire input surface", !window.AllowsInput(-400, 100) && !window.AllowsInput(400, 100));
+            }
+            finally
+            {
+                window.PointerDown -= Capture; window.CancelInput(); window.SetInputAreas(null);
+                overlay.RefreshDisplayBounds(); overlay.ConfigureDisplays(services.Settings.Display); services.ApplySettings();
+            }
+            void Contact(int device, int x, uint flags, uint time) => window.ProcessTouch(new LayeredInkWindow.TouchInput
+                { Source = new(device), Id = 1, X = x, Y = 10000, Flags = flags, Mask = 4, Width = 800, Height = 800, Time = time });
+        }
+
+        async Task CheckDisplaySettings()
+        {
+            var settings = new SettingsWindow(services);
+            settings.Activate(); await Task.Delay(160);
+            try
+            {
+                Check("settings search exposes monitor configuration", settings.SearchSettings("显示器").Any());
+                settings.SelectCategory("显示器");
+                ((FrameworkElement)settings.Content).UpdateLayout();
+                await Task.Delay(100);
+                var all = Descendants(settings.Content).OfType<ToggleSwitch>().Single(toggle => Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(toggle) == "所有显示器均可书写");
+                all.IsOn = false;
+                Check("custom screen mode initializes connected displays", !services.Settings.Display.AllDisplays
+                    && ScreenService.All().All(screen => services.Settings.Display.EnabledDevices.Contains(screen.DeviceName)));
+                var screenToggle = Descendants(settings.Content).OfType<ToggleSwitch>().First(toggle => !ReferenceEquals(toggle, all));
+                screenToggle.IsOn = false;
+                var first = ScreenService.All().OrderByDescending(screen => screen.IsPrimary).ThenBy(screen => screen.DeviceName).First();
+                Check("monitor toggle applies input range and saves immediately", !shell.Overlay.Window.AllowsInput(first.Bounds.X + 10, first.Bounds.Y + 10)
+                    && !services.Store.Load().Display.EnabledDevices.Contains(first.DeviceName));
+                all.IsOn = true;
+                Check("all screens restores writing range", shell.Overlay.Window.AllowsInput(first.Bounds.X + 10, first.Bounds.Y + 10));
+                await BoardWindowRegression.SaveVisual((FrameworkElement)settings.Content, Path.Combine(directory, "display-settings.png"));
+            }
+            finally { settings.Close(); }
+        }
+
+        async Task CheckNativeTouch()
+        {
+            if (!InitializeTouchInjection(2, 3))
+            {
+                checks.Add(new { check = "native touch injection available", available = false,
+                    error = System.Runtime.InteropServices.Marshal.GetLastWin32Error() });
+                return;
+            }
+            var ink = services.OverlayInk;
+            ink.MultiTouchEnabled = true; ink.PalmErases = false; ink.Palm.Advanced = null;
+            int before = ink.Document.Count;
+            var downEvents = new List<OverlayPointer>();
+            void RecordDown(OverlayPointer pointer) => downEvents.Add(pointer);
+            shell.Overlay.Window.PointerDown += RecordDown;
+            var work = ScreenService.Primary;
+            var input = new[] { Contact(0, work.X + 150, work.Y + 180), Contact(1, work.X + 350, work.Y + 180) };
+            bool injected = InjectTouchInput(2, input);
+            int downError = injected ? 0 : System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+            int moveError = 0, upError = 0;
+            try
+            {
+                await Task.Delay(80);
+                for (int index = 0; index < input.Length; index++)
+                {
+                    input[index].pointerInfo.pointerFlags = 0x20006;
+                    input[index].pointerInfo.ptPixelLocation.X += 60;
+                }
+                bool moved = InjectTouchInput(2, input);
+                moveError = moved ? 0 : System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+                injected &= moved;
+                await Task.Delay(80);
+            }
+            finally
+            {
+                for (int index = 0; index < input.Length; index++) input[index].pointerInfo.pointerFlags = 0x40000;
+                bool ended = InjectTouchInput(2, input);
+                upError = ended ? 0 : System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+                injected &= ended;
+                await Task.Delay(120);
+                shell.Overlay.Window.PointerDown -= RecordDown;
+            }
+            checks.Add(new { check = "native Windows touch dispatch completes two strokes without mouse duplicates", passed = injected
+                && ink.Document.Count == before + 2 && !ink.HasActiveInteraction, injected, downError, moveError, upError,
+                before, after = ink.Document.Count, live = ink.LiveStrokes.Count, downEvents });
+            shell.Overlay.Window.CancelInput(); services.ApplySettings();
+
+            NativeMethods.POINTER_TOUCH_INFO Contact(uint id, int x, int y) => new()
+            {
+                pointerInfo = new() { pointerType = 2, pointerId = id, pointerFlags = 0x10006,
+                    ptPixelLocation = new() { X = x, Y = y } },
+                touchMask = 1, rcContact = new() { Left = x - 2, Right = x + 2, Top = y - 2, Bottom = y + 2 },
+            };
+        }
+    }
+
+    private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
+    {
+        yield return parent;
+        for (int index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+            foreach (var child in Descendants(VisualTreeHelper.GetChild(parent, index))) yield return child;
     }
 
     private static bool Fits(Window window, ScreenRect work)
@@ -136,4 +306,8 @@ internal static class DisplayRegression
 
     [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
     private static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out int value, int size);
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    private static extern bool InitializeTouchInjection(uint maxCount, uint mode);
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    private static extern bool InjectTouchInput(uint count, [System.Runtime.InteropServices.In] NativeMethods.POINTER_TOUCH_INFO[] input);
 }

@@ -27,6 +27,7 @@ public interface IShellActions
     void OpenShapePicker();
     void InsertImage();
     Task ScreenshotAsync();
+    bool ClearCanvas() => false;
     void ToggleFold();
     void ToggleClickThrough();
     void PptNext();
@@ -84,10 +85,9 @@ public sealed class FloatingBar : UserControl
 
     private TouchIconButton _cursorButton, _penButton, _highlighterButton, _clearButton;
     private TouchIconButton _eraserButton, _selectButton, _shapeButton;
-    private TouchIconButton _insertImageButton, _insertVideoButton, _undoButton, _redoButton, _clearMouseButton;
+    private TouchIconButton _undoButton, _redoButton, _clearMouseButton;
     private TouchIconButton _boardButton, _toolsButton, _foldButton, _gestureButton, _hideControlButton, _lrSwitchButton;
     private TouchIconButton _exitButton;
-    private TouchIconButton _cloneButton;
     private readonly List<TouchIconButton> _captioned = new();
     private readonly List<StackPanel> _gestureOptionRows = new();
     private ToggleSwitch _multiTouchSwitch, _translateSwitch, _zoomSwitch, _rotateSwitch;
@@ -188,6 +188,7 @@ public sealed class FloatingBar : UserControl
     }
 
     public event Action LayoutChanged;
+    public event Action SwitchSideRequested;
 
     private void OnControllerSelectionChanged()
     {
@@ -412,15 +413,7 @@ public sealed class FloatingBar : UserControl
             PanelRequested?.Invoke(BarPanelKind.Eraser, _eraserOpen);
         });
         _selectButton = AddComposite(_canvasControls, Glyphs.SelectWpf, Glyphs.SelectOverlay, 10 * S, "选择", "选择 — 快捷键 Alt+S", () => SetTool(InkTool.Select));
-        _cloneButton = AddPrimary(_canvasControls, "\uE8C8", "克隆", "克隆模式：拖出副本，保留原对象；可连续拖出多个", () =>
-        {
-            SetTool(InkTool.Select);
-            if (Controller is not null) Controller.CloneMode = !Controller.CloneMode;
-            RefreshSelection();
-        });
         _shapeButton = AddPrimary(_canvasControls, Glyphs.ShapesWpf, "图形", "图形", () => Shell?.OpenShapePicker());
-        _insertImageButton = AddPrimary(_canvasControls, Glyphs.InsertMedia, "插入图片", "插入图片", () => Shell?.InsertImage());
-        _insertVideoButton = AddPrimary(_canvasControls, Glyphs.InsertMedia, "插入视频", "插入视频：桌面批注层尚未接入视频插入", null);
         _undoButton = AddPrimary(_canvasControls, Glyphs.Undo, "撤销", "撤销 — 快捷键 Ctrl+Z", () => { if (Controller?.History.CanUndo == true) Controller.Undo(); });
         _redoButton = AddPrimary(_canvasControls, Glyphs.Redo, "重做", "重做 — 快捷键 Ctrl+Y", () => { if (Controller?.History.CanRedo == true) Controller.Redo(); });
         _clearMouseButton = AddComposite(_canvasControls, Glyphs.Cursor, Glyphs.Delete, 12 * S, "清并鼠", "清空并进入鼠标模式", () =>
@@ -431,7 +424,7 @@ public sealed class FloatingBar : UserControl
         });
 
         _hideControlButton = AddPrimary(Glyphs.HideControl, "隐藏控制", "收起/展开主工具栏", ToggleMainCollapsed);
-        _lrSwitchButton = AddPrimary(Glyphs.LRSwitch, "左右切换", "左右切换：尚未接入", null);
+        _lrSwitchButton = AddPrimary(Glyphs.LRSwitch, "左右切换", "将工具栏移动到当前屏幕的另一侧", () => SwitchSideRequested?.Invoke());
 
         _boardButton = AddPrimary(Glyphs.BoardWpf, "画板", "画板 — 快捷键 Alt+B", () => Shell?.ToggleBoard());
         _boardButton.Margin = new Thickness(PartBorder, 0, 0, 0);
@@ -463,6 +456,7 @@ public sealed class FloatingBar : UserControl
         AddMore(row2, Glyphs.SaveStrokes, "保存墨迹", () => Shell?.SaveStrokes());
         AddMore(row2, Glyphs.OpenStrokes, "打开墨迹", () => Shell?.OpenStrokes());
         AddMore(row2, Glyphs.ReplayWpf, "播放墨迹", () => Shell?.OpenReplay());
+        AddMore(row2, Glyphs.InsertMedia, "插入图片", () => Shell?.InsertImage());
         var row3 = MoreRow();
         AddMore(row3, Glyphs.Camera, "截屏", async () => { if (Shell is not null) await Shell.ScreenshotAsync(); });
         AddMore(row3, Glyphs.GuideWpf, "指南", () => Shell?.OpenGuide());
@@ -495,7 +489,7 @@ public sealed class FloatingBar : UserControl
     {
         if (Controller is null) return;
         if (Controller.HasSelection) Controller.DeleteSelection();
-        else Controller.Clear();
+        else if (Shell?.ClearCanvas() != true) Controller.Clear();
     }
 
     private TouchIconButton AddPrimary(string glyph, string label, string tooltip, Action onClick)
@@ -797,7 +791,6 @@ public sealed class FloatingBar : UserControl
         if (_eraserButton is not null) _eraserButton.IsSelected = ink && tool == InkTool.Eraser;
         if (_selectButton is not null) _selectButton.IsSelected = ink && tool == InkTool.Select;
         if (_shapeButton is not null) _shapeButton.IsSelected = ink && tool == InkTool.Shape;
-        if (_cloneButton is not null) _cloneButton.IsSelected = ink && tool == InkTool.Select && Controller?.CloneMode == true;
         if (_cursorButton is not null) _cursorButton.IsSelected = false;
 
         if (_canvasControls is not null)

@@ -65,13 +65,30 @@ internal static class ScreenTrackingRegression
             Check("new page has independent ink", services.OverlayInk.Document.Count == 0);
             coordinator.ApplySnapshot(snapshot);
             Check("returning page restores same stroke", services.OverlayInk.Document.Strokes.Single() == stroke && Alpha(350, 300) > 50);
+            long framesBefore = overlay.Presenter.PresentedFrames;
+            coordinator.ApplySnapshot(snapshot with { ScrollPixels = new Vector2(0, 80) });
+            Check("scroll transition starts from the displayed ink", overlay.Presenter.IsScreenTrackingAnimating
+                && Alpha(350, 300) > 50 && Math.Abs(services.OverlayInk.ViewTransform.M32 + 80 / dpi) < .01);
+            await Task.Delay(35);
+            float intermediate = overlay.Presenter.DisplayedView.M32;
+            Check("scroll transition renders intermediate positions", intermediate < 0 && intermediate > -80 / dpi
+                && overlay.Presenter.PresentedFrames > framesBefore);
+            coordinator.ApplySnapshot(snapshot with { ScrollPixels = new Vector2(0, 120) });
+            Check("scroll retarget keeps its displayed position", overlay.Presenter.IsScreenTrackingAnimating
+                && overlay.Presenter.DisplayedView.M32 < 0 && overlay.Presenter.DisplayedView.M32 > -120 / dpi);
+            await Task.Delay(180);
+            Check("scroll transition settles on exact ink pixels", !overlay.Presenter.IsScreenTrackingAnimating
+                && Alpha(350, 180) > 50 && Alpha(350, 300) <= 1);
+            coordinator.ApplySnapshot(snapshot with { ScrollPixels = new Vector2(0, 160) });
+            overlay.Presenter.FinishScreenTrackingTransition();
+            Check("finishing transition restores exact input view", !overlay.Presenter.IsScreenTrackingAnimating
+                && overlay.Presenter.DisplayedView == services.OverlayInk.ViewTransform && Alpha(350, 140) > 50);
+            coordinator.ApplySnapshot(snapshot with { ContextKey = "B" });
+            Check("page change cancels a scroll transition", !overlay.Presenter.IsScreenTrackingAnimating && services.OverlayInk.Document.Count == 0);
             overlay.SetInteractionMode(true, false);
-            if (NativeMethods.GetForegroundWindow() == 0)
-            {
-                checks.Add(new { check = "native Office and Edge interaction", skipped = true, reason = "No interactive input desktop is available. GetForegroundWindow returned zero." });
-                return;
-            }
-            using dynamic reader = Activator.CreateInstance(coordinator.GetType().Assembly.GetType("InkCanvas.Platform.System.ScreenContentReader", true)!);
+            nint observedWindow = 0;
+            using dynamic reader = Activator.CreateInstance(coordinator.GetType().Assembly.GetType("InkCanvas.Platform.System.ScreenContentReader", true)!,
+                new object[] { (Func<nint>)(() => Volatile.Read(ref observedWindow)) });
             reader.Configure(new ExperimentalSettings { ScreenContentTracking = true });
             await CheckOffice(TrackedApplication.Word, "Word.Application");
             await CheckOffice(TrackedApplication.PowerPoint, "PowerPoint.Application");
@@ -115,18 +132,69 @@ internal static class ScreenTrackingRegression
                         handle = FindProcessWindow(GetCurrentProcessIdByName(processName));
                     }
                     if (handle == 0) { Check(application + " native document window", false); return; }
-                    SetForegroundWindow(handle); await Task.Delay(600);
+                    Volatile.Write(ref observedWindow, handle);
+                    await Task.Delay(600);
                     var initial = await WaitFor(value => value.Application == application && value.IsValid);
                     Check(application + " native document detected", initial is not null, initial);
                     if (initial is null) return;
                     if (application == TrackedApplication.Word)
                     {
-                        dynamic view = Own(active.View); dynamic zoom = Own(view.Zoom); zoom.Percentage = 150;
-                        var zoomed = await WaitFor(value => value.Application == application && value.IsValid && value.Scale > initial.Scale * 1.2f);
-                        Check("Word native zoom follows", zoomed is not null, zoomed);
+                        dynamic view = Own(active.View); dynamic zoom = Own(view.Zoom);
+                        dynamic anchor = Own(document.Range(0, 1));
+                        int left = 0, top = 0, width = 0, height = 0;
+                        active.GetPoint(out left, out top, out width, out height, anchor);
+                        var character = new Vector2(left, top);
+                        int initialPercentage = Convert.ToInt32(zoom.Percentage);
+                        Matrix3x2.Invert(initial.ContentToScreen(), out var inverse);
+                        foreach (int percentage in new[] { 150, 75, initialPercentage })
+                        {
+                            zoom.Percentage = percentage;
+                            float expectedScale = initial.Scale * percentage / initialPercentage;
+                            var zoomed = await WaitFor(value => value.Application == application && value.IsValid
+                                && Math.Abs(value.Scale - expectedScale) < .005f);
+                            Check($"Word {percentage}% native zoom follows", zoomed is not null);
+                            if (zoomed is null) continue;
+                            active.GetPoint(out left, out top, out width, out height, anchor);
+                            var expected = new Vector2(left, top);
+                            var actual = Vector2.Transform(character, inverse * zoomed.ContentToScreen());
+                            float errorPixels = Vector2.Distance(expected, actual);
+                            Check($"Word {percentage}% preserves native character alignment", zoomed.AlignmentReliable && errorPixels < 4,
+                                new { errorPixels, expectedX = expected.X, expectedY = expected.Y, actualX = actual.X, actualY = actual.Y,
+                                    zoomed.Scale, zoomed.AlignmentReliable });
+                        }
+                        var continuousErrors = new List<float>();
+                        int observedFrames = 0;
+                        foreach (int percentage in new[] { 104, 111, 119, 128, 138, 149, 158, 147, 134, 121, 109, 97, 86, 78, 87, 100 })
+                        {
+                            zoom.Percentage = percentage;
+                            await Task.Delay(65);
+                            ScreenViewSnapshot sample = reader.Latest;
+                            if (sample is null || !sample.IsValid || sample.ContextKey != initial.ContextKey || !sample.AlignmentReliable) continue;
+                            active.GetPoint(out left, out top, out width, out height, anchor);
+                            var expected = new Vector2(left, top);
+                            var actual = Vector2.Transform(character, inverse * sample.ContentToScreen());
+                            if (Math.Abs(sample.Scale - initial.Scale * percentage / initialPercentage) < .01f)
+                            {
+                                continuousErrors.Add(Vector2.Distance(expected, actual));
+                                observedFrames++;
+                            }
+                        }
+                        Check("Word continuous zoom keeps observed characters aligned", observedFrames >= 8
+                            && continuousErrors.All(error => error < 4), new { observedFrames, errors = continuousErrors });
+                        var settled = await WaitFor(value => value.Application == application && value.IsValid && value.AlignmentReliable
+                            && Math.Abs(value.Scale - initial.Scale) < .005f);
+                        Check("Word continuous zoom returns to its original alignment", settled is not null && settled.ContextKey == initial.ContextKey);
                         active.VerticalPercentScrolled = 45;
                         var scrolled = await WaitFor(value => value.Application == application && value.IsValid && value.HasScrollMetrics && value.ScrollPixels.Y > initial.ScrollPixels.Y + 100);
-                        Check("Word native scroll follows", scrolled is not null, scrolled);
+                        ScreenViewSnapshot last = reader.Latest;
+                        Check("Word native scroll follows", scrolled is not null, new { scrollX = last?.ScrollPixels.X,
+                            scrollY = last?.ScrollPixels.Y, percent = Convert.ToInt32(active.VerticalPercentScrolled),
+                            snapshot = scrolled ?? last, sampleAge = reader.SampleAge.TotalMilliseconds });
+                        await Task.Delay(400);
+                        ScreenViewSnapshot afterScroll = reader.Latest;
+                        Check("Word scroll position survives acquiring new visible anchors", scrolled is not null
+                            && afterScroll is { IsValid: true, AlignmentReliable: true }
+                            && afterScroll.ContextKey == initial.ContextKey && afterScroll.ScrollPixels.Y > initial.ScrollPixels.Y + 100);
                     }
                     else
                     {
@@ -138,11 +206,59 @@ internal static class ScreenTrackingRegression
                         view.Zoom = 125;
                         var zoomed = await WaitFor(value => value.Application == application && value.IsValid && value.HasZoomMetrics && Math.Abs(value.Scale - initial.Scale) > .05);
                         Check("PowerPoint native zoom follows", zoomed is not null, zoomed);
+                        if (zoomed is not null)
+                        {
+                            var actual = Vector2.Transform(new Vector2(100, 100), zoomed.ContentToScreen());
+                            var expected = new Vector2(Convert.ToSingle(active.PointsToScreenPixelsX(100f)), Convert.ToSingle(active.PointsToScreenPixelsY(100f)));
+                            Check("PowerPoint edit view uses native slide coordinates", Vector2.Distance(expected, actual) < 2,
+                                new { errorPixels = Vector2.Distance(expected, actual) });
+                        }
+                        dynamic presentations = Own(app.Presentations);
+                        dynamic second = Own(presentations.Add());
+                        try
+                        {
+                            dynamic slides = Own(second.Slides); Own(slides.Add(1, 12));
+                            await Task.Delay(250);
+                            var original = await WaitFor(value => value.Application == application && value.IsValid && value.ContextKey == initial.ContextKey);
+                            Check("PowerPoint observer stays bound to its window when another document activates", original is not null);
+                        }
+                        finally { second.Saved = -1; second.Close(); }
+
+                        dynamic showSettings = Own(document.SlideShowSettings);
+                        foreach (int showType in new[] { 2, 1 })
+                        {
+                            string mode = showType == 2 ? "windowed" : "full-screen";
+                            showSettings.ShowType = showType;
+                            dynamic show = Own(showSettings.Run());
+                            dynamic showView = Own(show.View);
+                            try
+                            {
+                                await Task.Delay(350);
+                                int officePid = GetCurrentProcessIdByName(processName);
+                                nint showHandle = FindProcessWindow(officePid, "screenClass");
+                                if (showHandle == 0) showHandle = FindProcessWindow(officePid, "PPTFrameClass", handle);
+                                Volatile.Write(ref observedWindow, showHandle);
+                                var showFirst = await WaitFor(value => value.Application == application && value.IsValid && value.WindowHandle == showHandle);
+                                Check($"PowerPoint {mode} slideshow detected", showHandle != 0 && showFirst is not null, showFirst);
+                                Check($"PowerPoint {mode} slideshow shares the edit page identity", showFirst?.ContextKey == initial.ContextKey);
+                                showView.GotoSlide(2);
+                                var showSecond = await WaitFor(value => value.Application == application && value.IsValid
+                                    && value.WindowHandle == showHandle && value.ContextKey != showFirst?.ContextKey);
+                                Check($"PowerPoint {mode} slideshow changes page identity", showFirst is not null && showSecond is not null);
+                                showView.GotoSlide(1);
+                                Check($"PowerPoint {mode} slideshow return restores its page identity", showFirst is not null
+                                    && await WaitFor(value => value.IsValid && value.WindowHandle == showHandle && value.ContextKey == showFirst.ContextKey) is not null);
+                            }
+                            finally { try { showView.Exit(); } catch (COMException) { } }
+                            Volatile.Write(ref observedWindow, handle);
+                            await Task.Delay(200);
+                        }
                     }
                 }
                 catch (Exception ex) { Check(application + " native integration", false, new { error = ex.Message }); }
                 finally
                 {
+                    Volatile.Write(ref observedWindow, 0);
                     try { if (document is not null) { if (application == TrackedApplication.Word) document.Close(0); else { document.Saved = -1; document.Close(); } } } catch { }
                     try { app?.Quit(); } catch { }
                     foreach (var value in owned.AsEnumerable().Reverse()) if (Marshal.IsComObject(value)) Marshal.ReleaseComObject(value);
@@ -160,6 +276,16 @@ internal static class ScreenTrackingRegression
                 { ArgumentList = { "--user-data-dir=" + profile, "--no-first-run", "--no-default-browser-check", "--new-window", page }, UseShellExecute = false });
                 try
                 {
+                    await Task.Delay(800);
+                    var handle = FindProcessWindow(process.Id);
+                    SetForegroundWindow(handle);
+                    await Task.Delay(200);
+                    if (handle == 0 || NativeMethods.GetForegroundWindow() != handle)
+                    {
+                        checks.Add(new { check = "Edge native input", skipped = true, reason = "Windows did not grant foreground activation to the diagnostic browser." });
+                        return;
+                    }
+                    Volatile.Write(ref observedWindow, handle);
                     var initial = await WaitFor(value => value.Application == TrackedApplication.Edge && value.IsValid, 12000);
                     Check("Edge native document detected", initial is not null, initial); if (initial is null) return;
                     SetForegroundWindow((nint)initial.WindowHandle); Key(0x22);
@@ -195,6 +321,7 @@ internal static class ScreenTrackingRegression
                     await Task.Delay(100);
                 }
                 File.WriteAllText(Path.Combine(directory, "last-observation.json"), JsonSerializer.Serialize(reader.Latest, new JsonSerializerOptions { WriteIndented = true }));
+                File.WriteAllText(Path.Combine(directory, "last-office-error.txt"), (string)reader.LastOfficeError ?? "No Office exception was reported.");
                 return null;
             }
         }
@@ -226,18 +353,25 @@ internal static class ScreenTrackingRegression
     }
     private static int GetCurrentProcessIdByName(string name) => Process.GetProcessesByName(name).Select(process =>
     { using (process) return process.Id; }).FirstOrDefault();
-    private static nint FindProcessWindow(int processId)
+    private static nint FindProcessWindow(int processId, string className = null, nint excluded = 0)
     {
         nint found = 0;
         EnumWindows((window, _) =>
         {
             GetWindowThreadProcessId(window, out uint pid);
-            if (pid == processId && IsWindowVisible(window) && GetAncestor(window, 2) == window) { found = window; return false; }
+            if (pid == processId && window != excluded && IsWindowVisible(window) && GetAncestor(window, 2) == window)
+            {
+                var name = new System.Text.StringBuilder(128);
+                GetClassNameW(window, name, name.Capacity);
+                if (className is not null && name.ToString() != className) return true;
+                found = window; return false;
+            }
             return true;
         }, 0);
         return found;
     }
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint hwnd);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassNameW(nint hwnd, System.Text.StringBuilder name, int maximum);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint hwnd);
     [DllImport("user32.dll")] private static extern nint GetAncestor(nint hwnd, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool EnumWindows(WindowCallback callback, nint parameter);

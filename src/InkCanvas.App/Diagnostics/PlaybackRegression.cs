@@ -1,5 +1,6 @@
 using System.Numerics;
 using InkCanvas.Core.Ink;
+using InkCanvas.Core.Shapes;
 using InkCanvas.Ink;
 using InkCanvas.Ink.Rendering;
 using Microsoft.Graphics.Canvas;
@@ -79,6 +80,43 @@ internal static class PlaybackRegression
             bool restored = target.GetPixelBytes().Any(b => b > 0);
             passed &= reused && hidden && restored;
             checks.Add(new { check = "board history cache reused and restored after playback", reused, hidden, restored });
+        }
+        foreach (var kind in new[] { ShapeKind.DashedLine, ShapeKind.DashedCircleFromCenter, ShapeKind.Cylinder, ShapeKind.Circle })
+        {
+            using var controller = new InkController();
+            using var scene = new InkSceneRenderer();
+            var source = ShapeGenerator.Generate(kind, new(80, 80), new(220, 160),
+                new StrokeAttributes { BaseWidth = 6, TaperKind = TaperKind.None });
+            controller.Document.AddRange(source);
+            using (var draw = reference.CreateDrawingSession())
+            { draw.Clear(Microsoft.UI.Colors.Transparent); scene.Draw(draw, controller); }
+            byte[] expectedFinal = reference.GetPixelBytes();
+            controller.BeginPlayback();
+            float firstDuration = source[0].ArcLength() / 3 * 12;
+            int previousPixels = 0;
+            bool grows = true, cacheMatches = true;
+            // Close frames exercise an interpolated endpoint changing with an unchanged point count.
+            foreach (float progress in new[] { .1f, .11f, .2f, .21f, .5f, .51f, .8f, .81f })
+            {
+                controller.SeekPlayback(firstDuration * progress);
+                using (var draw = target.CreateDrawingSession())
+                { draw.Clear(Microsoft.UI.Colors.Transparent); scene.Draw(draw, controller); }
+                byte[] actual = target.GetPixelBytes();
+                using var fresh = new InkSceneRenderer();
+                using (var draw = reference.CreateDrawingSession())
+                { draw.Clear(Microsoft.UI.Colors.Transparent); fresh.Draw(draw, controller); }
+                cacheMatches &= actual.SequenceEqual(reference.GetPixelBytes());
+                int pixels = 0;
+                for (int i = 3; i < actual.Length; i += 4) if (actual[i] > 0) pixels++;
+                grows &= pixels >= previousPixels;
+                previousPixels = pixels;
+            }
+            controller.SeekPlayback((float)controller.Playback.Duration.TotalMilliseconds);
+            using (var draw = target.CreateDrawingSession())
+            { draw.Clear(Microsoft.UI.Colors.Transparent); scene.Draw(draw, controller); }
+            bool finalMatches = expectedFinal.SequenceEqual(target.GetPixelBytes());
+            passed &= grows && cacheMatches && finalMatches;
+            checks.Add(new { check = "shape replay grows smoothly and preserves final raster", kind = kind.ToString(), grows, cacheMatches, finalMatches });
         }
         return passed;
     }

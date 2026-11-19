@@ -126,6 +126,9 @@ public sealed class YesOrNoWindow : Window
     /// the dialog is its own topmost window with its own XamlRoot.
     /// </summary>
     public static Task<bool> AskAsync(Window owner, string text)
+        => AskAsync(owner, text, null);
+
+    public static Task<bool> AskAsync(Window owner, string text, string title)
     {
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         DispatcherQueue queue = owner?.DispatcherQueue ?? DispatcherQueue.GetForCurrentThread();
@@ -141,6 +144,7 @@ public sealed class YesOrNoWindow : Window
                 yesAction: () => tcs.TrySetResult(true),
                 noAction: () => tcs.TrySetResult(false),
                 theme: theme);
+            if (!string.IsNullOrWhiteSpace(title)) window.Title = title;
             window.Closed += (_, _) => tcs.TrySetResult(false);
             window.Activate();
             WindowChrome.EnsureAbove(window);

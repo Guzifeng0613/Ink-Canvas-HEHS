@@ -24,6 +24,7 @@ public static class WindowChrome
     }
 
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Window, Placement> Placements = new();
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Window, ClippedWindowFrame> ClippedFrames = new();
     private readonly record struct SurfaceRect(double Left, double Top, double Right, double Bottom,
         double TopLeft, double TopRight, double BottomRight, double BottomLeft);
 
@@ -89,8 +90,14 @@ public static class WindowChrome
         EnsureAbove(window);
     }
 
-    public static void MakeStandard(Window window, int widthDip = 1000, int heightDip = 700, bool resizable = true)
+    public static void MakeStandard(Window window, int widthDip = 1000, int heightDip = 700, bool resizable = true, bool topmost = true)
     {
+        bool wasClipped = ClippedFrames.TryGetValue(window, out var clippedFrame);
+        if (wasClipped)
+        {
+            clippedFrame.Dispose();
+            ClippedFrames.Remove(window);
+        }
         window.ExtendsContentIntoTitleBar = false;
         if (window.AppWindow.Presenter is OverlappedPresenter presenter)
         {
@@ -98,15 +105,26 @@ public static class WindowChrome
             presenter.IsResizable = resizable;
             presenter.IsMaximizable = resizable;
             presenter.IsMinimizable = true;
-            presenter.IsAlwaysOnTop = true;
+            presenter.IsAlwaysOnTop = topmost;
         }
         var hwnd = GetHwnd(window);
+        if (wasClipped)
+        {
+            // The presenter may restore only WS_BORDER after a manually cleared native frame.
+            int style = NativeMethods.GetWindowLongW(hwnd, NativeMethods.GWL_STYLE);
+            NativeMethods.SetWindowLongW(hwnd, NativeMethods.GWL_STYLE, style | 0x00C00000 /* WS_CAPTION */);
+            NativeMethods.SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0,
+                NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE
+                | 0x0004 /* SWP_NOZORDER */ | 0x0020 /* SWP_FRAMECHANGED */);
+        }
         SetWindowRgn(hwnd, IntPtr.Zero, true);
         int preference = 0, policy = 0;
         int border = unchecked((int)0xFFFFFFFF);
         DwmSetWindowAttribute(hwnd, 33, ref preference, sizeof(int));
         DwmSetWindowAttribute(hwnd, 2, ref policy, sizeof(int));
         DwmSetWindowAttribute(hwnd, 34, ref border, sizeof(int));
+        int transitions = 0;
+        DwmSetWindowAttribute(hwnd, 3, ref transitions, sizeof(int));
         bool placed = false, closed = false;
         window.Closed += (_, _) => closed = true;
         if (window.Content is FrameworkElement root)
@@ -286,12 +304,8 @@ public static class WindowChrome
     /// </summary>
     public static void ClipToSurfaces(Window window, Func<IEnumerable<Border>> getSurfaces)
     {
-        // A multi-card HWND has gaps and several independent corners. DWM's rectangular
-        // window shadow / corner treatment cannot follow this region and leaves dark fringes.
-        int squareCorners = 1, noNonClient = 1;
-        var handle = GetHwnd(window);
-        DwmSetWindowAttribute(handle, 33, ref squareCorners, sizeof(int));
-        DwmSetWindowAttribute(handle, 2, ref noNonClient, sizeof(int));
+        var clippedFrame = ClippedFrames.GetValue(window, static current => new ClippedWindowFrame(current));
+        clippedFrame.StopSurfaceTracking?.Invoke();
         var root = (FrameworkElement)window.Content;
         string lastRegion = null;
         bool closed = false, pending = false;
@@ -353,7 +367,7 @@ public static class WindowChrome
             });
         }
         root.LayoutUpdated += OnLayoutUpdated;
-        window.Closed += (_, _) => { closed = true; root.LayoutUpdated -= OnLayoutUpdated; };
+        clippedFrame.StopSurfaceTracking = () => { closed = true; root.LayoutUpdated -= OnLayoutUpdated; };
     }
 
     private static IEnumerable<RectInt32> SurfaceStrips(SurfaceRect r)
@@ -698,6 +712,7 @@ public static class WindowChrome
             2 => ElementTheme.Dark,
             _ => ElementTheme.Default,
         };
+        (window.SystemBackdrop as ChromeBackdrop)?.SetTheme(theme);
         var hwnd = GetHwnd(window);
         if ((NativeMethods.GetWindowLongW(hwnd, -16) & 0x00C00000) == 0x00C00000)
         {
@@ -712,6 +727,7 @@ public static class WindowChrome
     /// </summary>
     public static void EnsureAbove(Window window, IntPtr overlay = default)
     {
+        if (window.AppWindow.Presenter is OverlappedPresenter { IsAlwaysOnTop: false }) return;
         var hwnd = GetHwnd(window);
         if (hwnd == IntPtr.Zero || !NativeMethods.IsWindowVisible(hwnd)) return;
         if (overlay != IntPtr.Zero)
@@ -745,9 +761,8 @@ public static class WindowChrome
     }
 
     /// <summary>
-    /// Ask DWM to round the window itself. Keep the DWM frame out of the XAML client area:
-    /// extending a glass frame over an opaque WinUI surface produces a white halo around the
-    /// toolbar. The normal DWM non-client shadow remains managed by the window manager.
+    /// Configure rounded borderless content without extending a glass frame into XAML.
+    /// Card-shaped tools install ClippedWindowFrame when their native region is attached.
     /// </summary>
     public static void SetRoundedCorners(Window window)
     {

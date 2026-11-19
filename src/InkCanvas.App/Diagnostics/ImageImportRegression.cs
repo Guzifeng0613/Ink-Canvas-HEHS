@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using InkCanvas.App.Services;
 using InkCanvas.App.Views;
+using InkCanvas.Controls.Controls;
 using InkCanvas.Features.Board;
 using InkCanvas.Ink;
 using InkCanvas.Ink.Rendering;
@@ -12,6 +13,9 @@ using InkCanvas.Platform.Interop;
 using InkCanvas.Platform.Windows;
 using Microsoft.Graphics.Canvas;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation.Peers;
+using Microsoft.UI.Xaml.Automation.Provider;
+using Microsoft.UI.Xaml.Controls;
 using Windows.Graphics.Imaging;
 using Windows.Storage;
 
@@ -42,6 +46,32 @@ internal static class ImageImportRegression
             await Task.Delay(150);
             var controller = services.OverlayInk;
             controller.RecognizeShapes = false; controller.Tool = InkTool.Pen;
+            var toolbar = shell.OpenWindows.OfType<FloatingBarWindow>().Single();
+            Check("screen toolbar media entries are usable", Descendants(toolbar.Bar).OfType<TouchIconButton>()
+                .Where(button => button.Glyph == Glyphs.InsertMedia).All(button => button.IsEnabled && button.Opacity == 1));
+            foreach (bool mouseMode in new[] { true, false })
+            {
+                if (shell.Overlay.ClickThrough != mouseMode) shell.ToggleClickThrough();
+                Invoke(Descendants(toolbar.Bar).OfType<TouchIconButton>().Single(button => button.Label == "工具"));
+                await Task.Delay(100);
+                var image = Descendants(toolbar.Bar.CreateMorePanelContent()).OfType<TouchIconButton>()
+                    .Single(button => button.Label == "插入图片");
+                Check("image insertion menu is enabled in mouse mode " + mouseMode,
+                    image.IsEnabled && image.Opacity == 1 && new ButtonAutomationPeer(image).IsEnabled());
+                if (mouseMode) { toolbar.ClosePanels(); continue; }
+                Invoke(image);
+                var menuDialog = await FindPickerAsync();
+                Check("tools menu opens image picker and dismisses popup", !toolbar.Bar.IsExpanded);
+                await ChooseFileAsync(menuDialog, sample);
+                for (int i = 0; i < 500 && services.ScreenImages.CurrentImages.Count == 0; i++) await Task.Delay(20);
+                Check("tools menu inserts and selects an image on the screen", services.ScreenImages.CurrentImages.Count == 1
+                    && controller.SelectedElements.Count == 1 && controller.Tool == InkTool.Select && !shell.Overlay.ClickThrough);
+                controller.Undo();
+                Check("screen image menu insertion can be undone", services.ScreenImages.CurrentImages.Count == 0);
+                controller.Redo();
+                Check("screen image menu insertion can be restored", services.ScreenImages.CurrentImages.Count == 1);
+                controller.Undo(); controller.History.Clear(); controller.ClearSelection(); controller.Tool = InkTool.Pen;
+            }
             var watch = Stopwatch.StartNew();
             var pending = shell.InsertImageAsync();
             Check("opening image picker returns immediately to the dispatcher", watch.ElapsedMilliseconds < 150);
@@ -175,6 +205,9 @@ internal static class ImageImportRegression
         }
         throw new TimeoutException("Image picker did not open.");
     }
+
+    private static void Invoke(Button button) =>
+        ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke();
 
     private static void DrawStroke(InkController controller)
     {

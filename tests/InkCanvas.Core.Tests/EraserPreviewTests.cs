@@ -8,6 +8,25 @@ namespace InkCanvas.Core.Tests;
 
 public sealed class EraserPreviewTests
 {
+    [Fact]
+    public void PenCursorFollowsMouseAndPenWithoutChangingInk()
+    {
+        using var controller = new InkController { Tool = InkTool.Pen, ShowPenCursor = true };
+        controller.OnPointerHover(Sample());
+        Assert.True(controller.IsPenCursorVisible);
+        Assert.False(controller.IsEraserPreviewVisible);
+        Assert.True(controller.PenCursorVisualBounds.Contains(new(150, 100)));
+        controller.HideEraserPreview();
+        Assert.False(controller.IsPenCursorVisible);
+        controller.OnPointerHover(Sample(OverlayPointerKind.Touch));
+        Assert.False(controller.IsPenCursorVisible);
+        controller.OnPointerHover(Sample(OverlayPointerKind.Pen));
+        Assert.True(controller.IsPenCursorVisible);
+        controller.ShowPenCursor = false;
+        Assert.False(controller.IsPenCursorVisible);
+        Assert.Empty(controller.Document.Strokes);
+        Assert.False(controller.History.CanUndo);
+    }
     private static OverlayPointer Sample(OverlayPointerKind kind = OverlayPointerKind.Mouse, uint id = 1)
         => new(id, 150, 100, .5f, 1, 1, kind, 100);
 

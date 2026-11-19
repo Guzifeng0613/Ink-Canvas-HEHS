@@ -339,7 +339,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "无三方悬浮窗权限；改为应用内触摸路由（ns→ms、压感/接触面积归一化）。"
+      "notes": "跨应用悬浮批注已按用户决策禁用（2026-11-19，平台限制，不再迁移）：应用内双层 Canvas 承担批注；PiP 倒计时悬浮窗（免权限）保留。"
     },
     {
       "id": "ink-overlay-render",
@@ -409,7 +409,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "无 COM/无公开放映 intent；课件批注主路径 PDF Kit 逐页渲染+自绘墨迹；原始 PPT 经「PPT（WPS）」工具以文件打开 Want 拉起 WPS 鸿蒙版（手机 cn.wps.mobileoffice.hap / Pad cn.wps.office.hap，UTD+FLAG_AUTH_READ 授权，16000019 回退引导安装）。放映控制待 WPS 官方开放；WPS 响应需真机核对。"
+      "notes": "PPT 放映控制（COM 联动）已按用户决策禁用（2026-11-19，平台限制，不再迁移）：课件批注主路径 PDF（逐页渲染+自绘墨迹+批注写回）；原始 PPT 经「PPT（WPS）」拉起 WPS 鸿蒙版查看。"
     },
     {
       "id": "system-autostart",
@@ -428,7 +428,7 @@
       "id": "system-edge-gesture",
       "name": "Windows 边缘手势抑制",
       "phase": "C",
-      "status": "adapted",
+      "status": "not-ported",
       "csharp": [
         "src/InkCanvas.Platform/System/EdgeGestureService.cs",
         "src/InkCanvas.App/App.xaml.cs"
@@ -438,7 +438,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "无边缘手势抑制 API；沉浸式全屏，系统手势由系统管理。"
+      "notes": "已按用户决策禁用（2026-11-19，平台限制，不再迁移）：边缘手势抑制（无 API）；沉浸式全屏下系统手势由系统管理。"
     },
     {
       "id": "system-filelog",
@@ -459,7 +459,7 @@
       "id": "system-foreground-autofold",
       "name": "前台进程识别与自动收纳",
       "phase": "C",
-      "status": "adapted",
+      "status": "not-ported",
       "csharp": [
         "src/InkCanvas.Platform/System/SystemServices.cs",
         "src/InkCanvas.App/Services/ShellController.cs"
@@ -469,7 +469,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "无法读取前台应用；移除自动收纳，保留手动折叠。"
+      "notes": "已按用户决策禁用（2026-11-19，平台限制，不再迁移）：自动收纳（前台识别不可用）；手动收纳保留（Alt+V/浮条隐藏）。"
     },
     {
       "id": "system-update",
@@ -489,7 +489,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "ReleaseFeed/UpdatePolicy 逻辑移植；自更新→市场更新：updateManager.checkAppUpdate+showUpdateDialog（@kit.AppGalleryKit，API12+）+ AppGallery 详情页（appdetail store://）。无静默自安装；需已上架/真机/前台/中国境内，模拟器不支持。"
+      "notes": "内置升级/静默安装已按用户决策禁用（2026-11-19，平台限制，不再迁移）：市场更新为唯一路径（checkAppUpdate/showUpdateDialog + AppGallery 详情页）。"
     },
     {
       "id": "tool-launchers",
@@ -535,7 +535,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "无全局热键；应用内 onKeyEvent（Alt/Ctrl 组合），需焦点。"
+      "notes": "全局热键（系统级）已按用户决策禁用（2026-11-19，平台限制，不再迁移）：应用内 onKeyEvent（Alt/Ctrl 组合，需焦点）保留。"
     },
     {
       "id": "ui-mouse-mode",
@@ -1015,8 +1015,8 @@
   "coverage": {
     "total": 56,
     "ported": 32,
-    "adapted": 23,
-    "not-ported": 1,
-    "percent": 98.21
+    "adapted": 21,
+    "not-ported": 3,
+    "percent": 94.64
   }
 }

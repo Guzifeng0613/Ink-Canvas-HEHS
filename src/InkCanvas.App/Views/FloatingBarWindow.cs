@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using InkCanvas.Platform.System;
+using InkCanvas.Controls.Lifecycle;
 
 namespace InkCanvas.App.Views;
 
@@ -25,6 +26,7 @@ public sealed class FloatingBarWindow : Window
     private bool _initialDpiPlacementDone;
     private double _lastDpiScale = 1;
     private XamlRoot _trackedXamlRoot;
+    private readonly WindowIdleResources _idleResources;
 
     public FloatingBarWindow()
     {
@@ -47,6 +49,11 @@ public sealed class FloatingBarWindow : Window
         WindowChrome.MakeBorderless(this, topmost: true, noActivate: true);
         EnableTransparency(this);
         WindowChrome.ClipToSurfaces(this, () => _bar.ChromeSurfaces);
+        _idleResources = new WindowIdleResources(this, () => SystemBackdrop = null, () =>
+        {
+            if (SystemBackdrop is null) EnableTransparency(this);
+            UpdateAcrylicTint(this, _bar.Theme);
+        });
         WindowChrome.MoveToMonitor(this, ScreenService.AtCursor());
         WindowChrome.EnableDragMove(this, _root, () => { _userPlaced = true; ClosePanels(); }, fromAnywhere: true,
             onDragCompleted: RefreshDisplayPlacement);
@@ -64,6 +71,7 @@ public sealed class FloatingBarWindow : Window
 
         _bar.LayoutUpdated += OnBarLayoutUpdated;
         _bar.PanelRequested += OnPanelRequested;
+        _bar.SwitchSideRequested += SwitchSide;
         _bar.ThemeRefreshed += () => UpdateAcrylicTint(this, _bar.Theme);
 
         Activated += (_, args) =>
@@ -81,12 +89,26 @@ public sealed class FloatingBarWindow : Window
             if (_trackedXamlRoot is not null) _trackedXamlRoot.Changed -= OnXamlRootChanged;
             _bar.LayoutUpdated -= OnBarLayoutUpdated;
             _bar.PanelRequested -= OnPanelRequested;
+            _bar.SwitchSideRequested -= SwitchSide;
             ClosePanels();
             CloseFoldHandles();
         };
     }
 
     internal double UserScale => Math.Clamp(_scalePercent, 50, 200) / 100.0;
+
+    private void SwitchSide()
+    {
+        var work = WindowChrome.GetWorkArea(this);
+        var position = AppWindow.Position;
+        int width = AppWindow.Size.Width;
+        int mirrored = work.X + work.Width - (position.X - work.X) - width;
+        if (Math.Abs(mirrored - position.X) < 2) mirrored = work.X + work.Width - width - 12;
+        _userPlaced = true;
+        ClosePanels();
+        WindowChrome.Place(this, Math.Clamp(mirrored, work.X, work.X + Math.Max(0, work.Width - width)),
+            position.Y, width, AppWindow.Size.Height);
+    }
 
     private void AttachDpiTracking()
     {
@@ -308,7 +330,15 @@ public sealed class FloatingBarWindow : Window
     /// <summary>Leave tint to the XAML brushes and keep the desktop acrylic clear on deactivation.</summary>
     public static void EnableTransparency(Window window)
     {
-        window.SystemBackdrop = new ChromeBackdrop(WindowChrome.GetHwnd(window));
+        var backdrop = new ChromeBackdrop(WindowChrome.GetHwnd(window));
+        int theme = (window.Content as FrameworkElement)?.RequestedTheme switch
+        {
+            ElementTheme.Light => 1,
+            ElementTheme.Dark => 2,
+            _ => 0,
+        };
+        backdrop.SetTheme(theme);
+        window.SystemBackdrop = backdrop;
     }
 
     /// <summary>

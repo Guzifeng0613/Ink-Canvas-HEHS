@@ -21,6 +21,7 @@ public sealed class AppSettings
     [JsonPropertyName("startup")] public StartupSettings Startup { get; set; } = new();
     [JsonPropertyName("randSettings")] public RandSettings Rand { get; set; } = new();
     [JsonPropertyName("experimental")] public ExperimentalSettings Experimental { get; set; } = new();
+    [JsonPropertyName("display")] public DisplaySettings Display { get; set; } = new();
 
     public AppSettings Clone() =>
         JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(this)) ?? new AppSettings();
@@ -132,9 +133,13 @@ public sealed class AppSettings
         Startup.AutoUpdateWithSilenceStartTime = "18:20";
         Startup.AutoUpdateWithSilenceEndTime = "07:40";
         Startup.IsFoldAtStartup = false;
+        Display = new();
 
         Rand.PeopleCount = 60; // upstream constructor default
         Rand.IsNotRepeatName = false;
+        Rand.SamplingMode = LotterySamplingMode.SoftCooldown;
+        Rand.CooldownHalfLifeDays = 10;
+        Rand.CooldownPenaltyStrength = 1;
         Experimental = new ExperimentalSettings();
     }
 }
@@ -208,6 +213,12 @@ public sealed class StartupSettings
     [JsonPropertyName("isAutoUpdateWithSilenceEndTime")] public string AutoUpdateWithSilenceEndTime { get; set; } = "00:00";
     [JsonPropertyName("isEnableNibMode")] public bool IsEnableNibMode { get; set; }
     [JsonPropertyName("isFoldAtStartup")] public bool IsFoldAtStartup { get; set; }
+}
+
+public sealed class DisplaySettings
+{
+    [JsonPropertyName("allDisplays")] public bool AllDisplays { get; set; } = true;
+    [JsonPropertyName("enabledDevices")] public List<string> EnabledDevices { get; set; } = new();
 }
 
 public sealed class AppearanceSettings
@@ -304,6 +315,37 @@ public sealed class InkToShapeSettings
 
 public sealed class RandSettings
 {
+    private LotterySamplingMode _samplingMode;
+    private double _halfLifeDays = 10, _penaltyStrength = 1;
     [JsonPropertyName("peopleCount")] public int PeopleCount { get; set; } = 60;
-    [JsonPropertyName("isNotRepeatName")] public bool IsNotRepeatName { get; set; }
+    [JsonPropertyName("isNotRepeatName")]
+    public bool IsNotRepeatName
+    {
+        get => SamplingMode == LotterySamplingMode.RoundWithoutReplacement;
+        set
+        {
+            if (value) _samplingMode = LotterySamplingMode.RoundWithoutReplacement;
+            else if (_samplingMode == LotterySamplingMode.RoundWithoutReplacement) _samplingMode = LotterySamplingMode.SoftCooldown;
+        }
+    }
+    [JsonPropertyName("samplingMode")]
+    public LotterySamplingMode SamplingMode
+    {
+        get => _samplingMode;
+        set => _samplingMode = Enum.IsDefined(value) ? value : LotterySamplingMode.SoftCooldown;
+    }
+    [JsonPropertyName("cooldownHalfLifeDays")]
+    public double CooldownHalfLifeDays
+    {
+        get => _halfLifeDays;
+        set => _halfLifeDays = double.IsFinite(value) ? Math.Clamp(value, .25, 3650) : 10;
+    }
+    [JsonPropertyName("cooldownPenaltyStrength")]
+    public double CooldownPenaltyStrength
+    {
+        get => _penaltyStrength;
+        set => _penaltyStrength = double.IsFinite(value) ? Math.Clamp(value, .1, 10) : 1;
+    }
 }
+
+public enum LotterySamplingMode { SoftCooldown, Uniform, RoundWithoutReplacement }

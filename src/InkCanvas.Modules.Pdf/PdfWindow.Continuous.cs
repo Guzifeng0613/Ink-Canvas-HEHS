@@ -111,7 +111,7 @@ public sealed partial class PdfWindow
 
     private void QueuePageRendering()
     {
-        if (_closed || !_viewHasLayout || _previewQueued) return;
+        if (_closed || !_idleResources.IsActive || !_viewHasLayout || _previewQueued) return;
         _previewQueued = true;
         DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
         {
@@ -122,7 +122,7 @@ public sealed partial class PdfWindow
 
     private async Task RenderPageAsync()
     {
-        if (_closed || !_viewHasLayout) return;
+        if (_closed || !_idleResources.IsActive || !_viewHasLayout) return;
         var visible = VisiblePages();
         if (visible.Length == 0) return;
         double area = visible.Sum(index => (double)_file.Pages[index].DipWidth * _file.Pages[index].DipHeight);
@@ -190,7 +190,7 @@ public sealed partial class PdfWindow
 
     private void DrawPage(CanvasControl sender, CanvasDrawEventArgs args)
     {
-        if (_closed || Controller is null) return;
+        if (_closed || _idleResources.IsReleased || Controller is null) return;
         var draw = args.DrawingSession;
         var document = DocumentView;
         foreach (int index in VisiblePages())

@@ -10,19 +10,33 @@ namespace InkCanvas.Platform.System;
 /// <summary>Reads view metadata from a running Office instance without selecting or editing content.</summary>
 internal static class OfficeScreenView
 {
-    internal static ScreenViewSnapshot Read(TrackedApplication kind, nint target, Rect client)
+    internal static ScreenViewSnapshot Read(TrackedApplication kind, nint target, Rect client, out string error)
     {
+        error = null;
         var owned = new List<object>();
         object Own(object value) { if (value is not null && Marshal.IsComObject(value)) owned.Add(value); return value; }
         nint pointer = 0;
         try
         {
-            dynamic window = Own(ReadNativeWindow(target, kind));
+            dynamic window = Own(ReadNativeWindow(target, kind, out var nativeBounds));
             dynamic app = null, presentation = null, view = null, slide = null;
             bool slideShow = false;
             bool nativeWindow = window is not null;
             bool verifiedApplication = nativeWindow;
-            if (nativeWindow) app = Own(window.Application);
+            if (nativeWindow)
+            {
+                app = Own(window.Application);
+                if (kind == TrackedApplication.PowerPoint)
+                {
+                    // Modern Office exposes both DocumentWindow and windowed SlideShowWindow
+                    // from mdiClass. IsFullScreen exists on a show even when its value is false.
+                    try { _ = Convert.ToInt32(window.IsFullScreen); slideShow = true; }
+                    catch (COMException) { }
+                    catch (MissingMemberException) { }
+                    catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { }
+                    if (slideShow && !nativeBounds.IsEmpty) client = ScreenContentReader.Intersection(client, nativeBounds);
+                }
+            }
             else
             {
                 if (kind == TrackedApplication.PowerPoint)
@@ -46,7 +60,10 @@ internal static class OfficeScreenView
                         dynamic show = Own(shows.Item(index));
                         dynamic candidate = Own(show.Presentation);
                         bool matches = false;
-                        try { matches = (long)show.HWND == target.ToInt64(); } catch (COMException) { }
+                        try { matches = Convert.ToInt64(show.HWND) == target.ToInt64(); }
+                        catch (COMException) { }
+                        catch (MissingMemberException) { }
+                        catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { }
                         // Several Office versions remove HWND from IDispatch. Resolve only
                         // screenClass windows in the same verified Office process in that case.
                         if (!matches && verifiedApplication)
@@ -106,7 +123,7 @@ internal static class OfficeScreenView
             return new ScreenViewSnapshot { ContextKey = key, Scale = pixelsPerPoint, Viewport = viewport,
                 ScrollPixels = new Vector2(viewport.Left, viewport.Top) - origin, HasScrollMetrics = true, HasZoomMetrics = true };
         }
-        catch { return null; }
+        catch (Exception ex) { error = ex.ToString(); return null; }
         finally
         {
             if (pointer != 0) Marshal.Release(pointer);
@@ -123,23 +140,25 @@ internal static class OfficeScreenView
         {
             NativeMethods.GetWindowThreadProcessId(root, out uint pid);
             if (pid != targetPid || root == target) return true;
-            object window = ReadNativeWindow(root, TrackedApplication.PowerPoint, includeHidden: true);
+            object window = ReadNativeWindow(root, TrackedApplication.PowerPoint, out var bounds, includeHidden: true);
             if (window is null) return true;
             try { app = ((dynamic)window).Application; }
             catch (COMException) { }
+            catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException) { }
             finally { Marshal.ReleaseComObject(window); }
             return app is null;
         }, 0);
         return app;
     }
 
-    private static object ReadNativeWindow(nint root, TrackedApplication kind, bool includeHidden = false)
+    private static object ReadNativeWindow(nint root, TrackedApplication kind, out Rect bounds, bool includeHidden = false)
     {
+        bounds = Rect.Empty;
         nint pane = 0; int largestArea = 0;
         EnumChildWindows(root, (window, _) =>
         {
             var name = new StringBuilder(128); GetClassNameW(window, name, name.Capacity);
-            bool matching = kind == TrackedApplication.Word ? name.ToString() == "_WwG" : name.ToString().StartsWith("paneClassDC", StringComparison.Ordinal);
+            bool matching = IsDocumentPane(kind, name.ToString());
             if (matching && (includeHidden || NativeMethods.IsWindowVisible(window)) && GetClientRect(window, out var rect))
             {
                 int area = (rect.Right - rect.Left) * (rect.Bottom - rect.Top);
@@ -148,9 +167,18 @@ internal static class OfficeScreenView
             return true;
         }, 0);
         if (pane == 0) return null;
+        if (GetClientRect(pane, out var client))
+        {
+            var origin = new NativeMethods.POINT();
+            ClientToScreen(pane, ref origin);
+            bounds = new Rect(origin.X, origin.Y, origin.X + client.Right, origin.Y + client.Bottom);
+        }
         var dispatch = new Guid("00020400-0000-0000-C000-000000000046");
         return AccessibleObjectFromWindow(pane, 0xfffffff0, ref dispatch, out object value) == 0 ? value : null;
     }
+
+    internal static bool IsDocumentPane(TrackedApplication kind, string name) => kind == TrackedApplication.Word
+        ? name == "_WwG" : name == "mdiClass" || name.StartsWith("paneClassDC", StringComparison.Ordinal);
 
     [DllImport("ole32.dll", CharSet = CharSet.Unicode)] private static extern int CLSIDFromProgID(string value, out Guid id);
     [DllImport("oleaut32.dll")] private static extern int GetActiveObject(ref Guid id, nint reserved, out nint value);
@@ -161,5 +189,6 @@ internal static class OfficeScreenView
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassNameW(nint window, StringBuilder name, int maximum);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowTextW(nint window, StringBuilder name, int maximum);
     [DllImport("user32.dll")] private static extern bool GetClientRect(nint window, out NativeMethods.RECT bounds);
+    [DllImport("user32.dll")] private static extern bool ClientToScreen(nint window, ref NativeMethods.POINT point);
     [DllImport("oleacc.dll")] private static extern int AccessibleObjectFromWindow(nint window, uint objectId, ref Guid id, [MarshalAs(UnmanagedType.IDispatch)] out object value);
 }

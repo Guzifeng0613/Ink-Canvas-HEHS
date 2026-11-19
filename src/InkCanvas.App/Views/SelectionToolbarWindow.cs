@@ -57,6 +57,7 @@ public sealed class SelectionToolbarWindow : Window
 
     public SelectionToolbar Toolbar { get; }
     public bool IsShown => _shown;
+    internal long HiddenSince { get; private set; } = Environment.TickCount64;
 
     private void OnXamlRootChanged(XamlRoot sender, XamlRootChangedEventArgs args) => QueueUpdate();
 
@@ -136,6 +137,7 @@ public sealed class SelectionToolbarWindow : Window
     {
         if (!_shown) return;
         _shown = false;
+        HiddenSince = Environment.TickCount64;
         Toolbar.ClosePanels();
         AppWindow.Hide();
     }

@@ -1,5 +1,6 @@
 ﻿using InkCanvas.App.Services;
 using InkCanvas.Controls.Animation;
+using InkCanvas.Controls.Lifecycle;
 using InkCanvas.Controls.Controls;
 using InkCanvas.Controls.Theming;
 using InkCanvas.Core.History;
@@ -105,6 +106,7 @@ public sealed class BoardWindow : Window
     private bool _isFullscreen;
     private bool _entrancePlayed;
     private bool _closed;
+    private readonly WindowIdleResources _idleResources;
     private bool _imagePicking;
     private CancellationTokenSource _imageImportCancellation;
     private float _viewScale = 1f;
@@ -204,6 +206,16 @@ public sealed class BoardWindow : Window
         };
 
         WindowChrome.MakeBorderless(this, topmost: true, resizable: true);
+        _idleResources = new WindowIdleResources(this, () =>
+        {
+            _surface.SuspendRendering();
+            _drawingLayers.SuspendRendering();
+        }, () =>
+        {
+            _surface.ResumeRendering();
+            _drawingLayers.ResumeRendering();
+            _paper.Invalidate();
+        });
         // No contact rings / press-and-hold dots while touch-writing on the board (same set as the overlay).
         WindowChrome.SuppressTouchFeedback(this);
         _windowedContent = WindowChrome.AddTitleBar(this, Title, _contentRoot, closeButton: true, minMax: true);
@@ -269,13 +281,19 @@ public sealed class BoardWindow : Window
         _penCell = MakeCell(GlyphPen, "墨迹", () => { SetTool(InkTool.Pen); ShowPenPalette(); }, 60, 22, midBorder);
         _eraserCell = MakeCell(GlyphEraser, "橡皮", ShowEraserPalette, 60, 22, midBorder);
         ToolTipService.SetToolTip(_eraserCell.Button, "选择面积擦、墨迹擦、套索擦和橡皮大小");
+        var clear = MakeCell(GlyphClear, "清屏", async () =>
+        {
+            DismissBoardFlyout();
+            await ConfirmClearCurrentPageAsync();
+        }, 60, 22, midBorder);
+        ToolTipService.SetToolTip(clear.Button, "清除当前页上的全部墨迹、图片和视频");
         _shapeCell = MakeCell(GlyphShape, "图形", () => { SetTool(InkTool.Shape); _shell?.OpenShapePicker(); }, 60, 22, midBorder);
         var image = MakeCell(GlyphImage, "插入图片", async () => await InsertImageAsync(), 60, 22, midBorder);
         _undoCell = MakeCell(GlyphUndo, "撤销", () => _board.Current.Undo(), 60, 22, midBorder);
         _redoCell = MakeCell(GlyphRedo, "重做", () => _board.Current.Redo(), 60, 22, midBorder);
         _moreCell = MakeCell(GlyphMore, "更多", ShowMoreFlyout, 60, 24, midBorder);
         var exitC = MakeCell(GlyphExit, "退出", ExitBoard, 60, 24, lastBorder, lastCorner);
-        foreach (var cell in new[] { _gestureCell, canvas, _selectCell, _penCell, _eraserCell, _shapeCell, image, _undoCell, _redoCell, _moreCell, exitC })
+        foreach (var cell in new[] { _gestureCell, canvas, _selectCell, _penCell, _eraserCell, clear, _shapeCell, image, _undoCell, _redoCell, _moreCell, exitC })
             center.Children.Add(cell.Button);
 
         _toolCells.Add((_selectCell, () => _board.Current.Tool == InkTool.Select));
@@ -667,7 +685,7 @@ public sealed class BoardWindow : Window
         if (_eraserFlyout is not null && ReferenceEquals(_activeBoardFlyout, _eraserFlyout)) { DismissBoardFlyout(); return; }
         SetTool(InkTool.Eraser);
         ApplyEraserSize();
-        var palette = new EraserPalette(CurrentController, _services.Settings.Canvas.EraserSize, _boardTheme, includeClear: true);
+        var palette = new EraserPalette(CurrentController, _services.Settings.Canvas.EraserSize, _boardTheme);
         palette.ModePicked += mode =>
         {
             _services.Settings.Canvas.EraserType = mode switch
@@ -690,7 +708,6 @@ public sealed class BoardWindow : Window
             ApplyEraserSize();
             _services.SaveSettings();
         };
-        palette.ClearRequested += async () => { DismissBoardFlyout(); await ConfirmClearCurrentPageAsync(); };
         var header = new PopupHeader("橡皮", _boardTheme);
         _eraserFlyout = new Flyout
         {
@@ -839,7 +856,6 @@ public sealed class BoardWindow : Window
         Button fileButton = null;
         fileButton = MakeExtraButton("", "文件", () => ShowBoardFlyout(BuildFileFlyout(), _moreCell.Button));
         extrasRow1.Children.Add(fileButton);
-        extrasRow1.Children.Add(MakeExtraButton(GlyphClear, "清屏", async () => { flyout.Hide(); await ConfirmClearCurrentPageAsync(); }));
         extrasRow2.Children.Add(MakeExtraButton("", "删除本页", () => { flyout.Hide(); DeleteCurrentPage(); }));
         extrasRow2.Children.Add(MakeExtraButton("", _isFullscreen ? "窗口模式" : "全屏", () => { flyout.Hide(); SetFullscreen(!_isFullscreen); }));
         Button canvasButton = null;
@@ -923,7 +939,8 @@ public sealed class BoardWindow : Window
 
     private Flyout BuildGestureFlyout()
     {
-        var panel = new BoardGesturePanel(_services.Settings.Gesture, _boardTheme);
+        var panel = new BoardGesturePanel(_services.Settings.Gesture, _boardTheme,
+            _services.BoardModeActive && _services.Settings.Gesture.AutoSwitchTwoFingerGesture);
         panel.Changed += () => { _services.ApplySettings(); _services.SaveSettings(); };
         return new Flyout { Content = panel, Placement = FlyoutPlacementMode.Top };
     }
@@ -1291,6 +1308,7 @@ public sealed class BoardWindow : Window
         var automation = _services.Settings.Automation;
         if (!automation.IsAutoSaveStrokesAtClear) return;
         if (_board.Current.Document.Count <= automation.MinimumAutomationStrokeNumber) return;
+        if (reason == "board-clear" && _shell is not null) _ = _shell.ScreenshotAsync();
         _services.AutoSave.SaveSnapshot(_board.Current.Document.Strokes, reason);
     }
 

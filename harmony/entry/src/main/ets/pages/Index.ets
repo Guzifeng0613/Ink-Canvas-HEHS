@@ -1449,13 +1449,7 @@ struct Index {
   @Builder
   SettingsStartup() {
     this.SettingSection('启动选项')
-    this.SettingInfo('HarmonyOS 无三方自更新/自启动通道：更新经应用市场；开机自启为唯一 not-ported 功能。')
-    this.SettingDeferred('自动检查更新', '无 HAP 自更新 API，请经应用市场更新。')
-    this.SettingDeferred('静默更新', '自更新不可用；静默时间窗策略仅保留配置值。')
-    this.SettingDeferred('静默更新起始/终止时间',
-      '当前值：' + this.settings.startup.isAutoUpdateWithSilenceStartTime + ' – ' +
-      this.settings.startup.isAutoUpdateWithSilenceEndTime + '（仅保留配置）。')
-    this.SettingDeferred('开机时运行', '无三方自启 API；替代路径：桌面快捷方式/服务卡片。')
+    this.SettingInfo('更新经应用市场（工具面板「检查更新」）；内置升级/静默安装/开机自启已按决策禁用（平台限制，不再迁移）。')
     this.SettingToggle('开机运行后收纳到侧边栏', this.settings.startup.isFoldAtStartup, (v: boolean) => {
       this.settings.startup.isFoldAtStartup = v;
       this.touchSettings();
@@ -1672,19 +1666,16 @@ struct Index {
       this.settings.behavior.isShowPPTNavigationSides = v;
       this.touchSettings();
     })
-    this.SettingInfo('WPS 支持：工具面板「PPT（WPS）」拉起 WPS 鸿蒙版（手机/Pad 包自适应）；未安装引导应用市场。放映控制待 WPS 官方开放。')
-    this.SettingDeferred('进入放映时自动批注', '无放映状态检测。')
-    this.SettingDeferred('放映模式双指手势', '放映专属手势门控尚未移植（与基线一致）。')
+    this.SettingInfo('WPS 支持：工具面板「PPT（WPS）」拉起 WPS 鸿蒙版（手机/Pad 包自适应）；未安装引导应用市场。')
+    this.SettingInfo('PPT 放映控制（放映状态联动/自动批注/放映手势门控/自动截屏/播放记忆）已按决策禁用（平台限制，不再迁移）。')
     this.SettingToggle('允许手指手势翻页', this.settings.behavior.isEnableFingerGestureSlideShowControl, (v: boolean) => {
       this.settings.behavior.isEnableFingerGestureSlideShowControl = v;
       this.touchSettings();
     })
-    this.SettingDeferred('自动幻灯片截屏', '无自动放映截屏。')
     this.SettingToggle('自动保存课件墨迹', this.settings.behavior.isAutoSaveStrokesInPowerPoint, (v: boolean) => {
       this.settings.behavior.isAutoSaveStrokesInPowerPoint = v;
       this.touchSettings();
     })
-    this.SettingDeferred('记忆上次播放位置 / 提示隐藏幻灯片 / 提示自动播放', '无 PPT 状态通知。')
     this.SettingToggle('选择时不清除墨迹（课件）', this.settings.behavior.isNoClearStrokeOnSelectWhenInPowerPoint, (v: boolean) => {
       this.settings.behavior.isNoClearStrokeOnSelectWhenInPowerPoint = v;
       this.settings.behavior.isShowStrokeOnSelectInPowerPoint = v;
@@ -1761,7 +1752,7 @@ struct Index {
       this.settings.advanced.isSecondConfimeWhenShutdownApp = v;
       this.touchSettings();
     })
-    this.SettingDeferred('阻止系统边缘手势', '无边缘手势抑制 API；沉浸式全屏下系统手势由系统决定。')
+    this.SettingInfo('边缘手势抑制已按决策禁用（平台限制）；沉浸式全屏下系统手势由系统管理。')
     this.SettingInfo('特殊屏幕与触摸参数按原 WPF 算法移植；请在实际触控屏与压感笔上复核（需真机验证）。')
   }
 
@@ -1769,19 +1760,7 @@ struct Index {
   SettingsAutomation() {
     this.SettingSection('自动选项')
     this.SettingInfo('无法获取其他应用前台状态：自动收纳/进程查杀类设置仅保留值。')
-    this.SettingDeferred('进入“希沃白板”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('自动收纳忽略桌面 EN 批注窗口', '窗口识别排除规则不可用。')
-    this.SettingDeferred('进入“希沃视频展台”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“希沃轻白板”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“希沃品课”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“鸿合白板”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“鸿合视频展台”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“文香白板”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“中原旧白板”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“微软 Whiteboard”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入 PPT 放映时自动收纳', '无放映状态检测；手动收纳可用（Alt+V）。')
-    this.SettingDeferred('自动查杀希沃“PPT 小工具”', '无进程查杀能力。')
-    this.SettingDeferred('自动查杀希沃白板 5', '无进程查杀能力。')
+    this.SettingInfo('自动收纳（前台识别）与进程查杀已按决策禁用（平台限制，不再迁移）；手动收纳可用（Alt+V 或浮条「隐藏」）。')
     this.SettingToggle('清屏时自动保存墨迹', this.settings.automation.isAutoSaveStrokesAtClear, (v: boolean) => {
       this.settings.automation.isAutoSaveStrokesAtClear = v;
       this.touchSettings();

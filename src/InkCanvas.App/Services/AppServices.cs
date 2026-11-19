@@ -35,6 +35,7 @@ public sealed class AppServices : IDisposable
         Ppt = new PptInteropService();
         AutoSave = new AutoSaveService(Settings.Automation);
         Lottery = new LotteryService();
+        LotteryMemory = new LotteryMemoryStore(Lottery, Store.Directory);
         ApplySettings();
     }
 
@@ -79,6 +80,7 @@ public sealed class AppServices : IDisposable
     public AutoSaveService AutoSave { get; }
 
     public LotteryService Lottery { get; }
+    public LotteryMemoryStore LotteryMemory { get; }
     public string ScreenTrackingStatus { get; internal set; } = "未启用屏幕内容跟随";
     public event Action SettingsApplied;
     public event Action ScreenTrackingResetRequested;
@@ -95,7 +97,9 @@ public sealed class AppServices : IDisposable
 
         Ppt.AllowWps = Settings.PowerPoint.IsSupportWPS;
         Lottery.PeopleCount = Settings.Rand.PeopleCount;
-        Lottery.NoRepeat = Settings.Rand.IsNotRepeatName;
+        Lottery.CooldownHalfLifeDays = Settings.Rand.CooldownHalfLifeDays;
+        Lottery.CooldownPenaltyStrength = Settings.Rand.CooldownPenaltyStrength;
+        Lottery.SamplingMode = Settings.Rand.SamplingMode;
         Core.Diagnostics.FileLog.Enabled = Settings.Advanced.IsLogEnabled;
         SettingsApplied?.Invoke();
     }
@@ -108,6 +112,7 @@ public sealed class AppServices : IDisposable
         controller.CurrentAttributes.TaperKind = taper;
         controller.CurrentAttributes.Nib = Enum.IsDefined(Settings.Canvas.PenNib) ? Settings.Canvas.PenNib : PenNib.Round;
         controller.CurrentAttributes.HighlighterAlpha = (byte)Math.Clamp(Settings.Canvas.InkAlpha, 20, 240);
+        controller.ShowPenCursor = Settings.Canvas.IsShowCursor;
         controller.EraserRadius = OriginalMenuCatalog.ToEraserRadius(Settings.Canvas.EraserSize);
         if (Settings.Canvas.EraserType == 1) controller.EraserMode = InkEraserMode.Area;
         else if (Settings.Canvas.EraserType == 2) controller.EraserMode = InkEraserMode.WholeStroke;
@@ -117,6 +122,13 @@ public sealed class AppServices : IDisposable
             Settings.Gesture.IsEnableTwoFingerZoom,
             Settings.Gesture.IsEnableTwoFingerTranslate,
             Settings.Gesture.IsEnableTwoFingerRotation);
+        if (BoardModeActive && Board.Pages.Contains(controller) && Settings.Gesture.AutoSwitchTwoFingerGesture)
+        {
+            controller.MultiTouchEnabled = false;
+            controller.ConfigureGestures(Settings.Gesture.IsEnableTwoFingerZoom, true, Settings.Gesture.IsEnableTwoFingerRotation);
+        }
+        if (ReferenceEquals(controller, OverlayInk) && PresentationActive && !Settings.PowerPoint.IsEnableTwoFingerGestureInPresentationMode)
+            controller.ConfigureGestures(false, false, false);
         controller.Palm.PalmContactThreshold = Math.Max(8, Settings.Advanced.FingerModeBoundsWidth);
         controller.GesturesTargetSelection = Settings.Gesture.IsEnableTwoFingerRotationOnSelection;
 
@@ -133,6 +145,8 @@ public sealed class AppServices : IDisposable
     }
 
     public void SaveSettings() => Store.Save(Settings);
+    public bool BoardModeActive { get; set; }
+    public bool PresentationActive { get; set; }
 
     /// <summary>Re-read settings from disk (used after the settings window edits them).</summary>
     public void Reload()
@@ -143,6 +157,7 @@ public sealed class AppServices : IDisposable
 
     public void Dispose()
     {
+        LotteryMemory.Dispose();
         Plugins.Dispose();
         Modules.Changed -= UpdateModuleStatus;
         Modules.Dispose();

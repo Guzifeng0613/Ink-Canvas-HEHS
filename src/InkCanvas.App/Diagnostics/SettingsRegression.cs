@@ -96,6 +96,16 @@ internal static class SettingsRegression
                 ("显示隐藏控制按钮", () => services.Settings.Appearance.IsShowHideControlButton),
                 ("显示左右切换按钮", () => services.Settings.Appearance.IsShowLRSwitchButton),
                 ("显示手指模式切换按钮", () => services.Settings.Appearance.IsShowModeFingerToggleSwitch),
+                ("显示画笔光标", () => services.Settings.Canvas.IsShowCursor),
+                ("在调色盘窗口中显示 启用笔尖模式 切换按钮", () => services.Settings.Appearance.IsEnableDisPlayNibModeToggler),
+                ("关闭软件时二次弹窗确认", () => services.Settings.Advanced.IsSecondConfimeWhenShutdownApp),
+                ("进入“希沃轻白板”时自动收纳", () => services.Settings.Automation.IsAutoFoldInEasiNote3C),
+                ("进入“鸿合视频展台”时自动收纳", () => services.Settings.Automation.IsAutoFoldInHiteCamera),
+                ("进入“文香白板”时自动收纳", () => services.Settings.Automation.IsAutoFoldInWxBoardMain),
+                ("进入“中原旧白板”时自动收纳", () => services.Settings.Automation.IsAutoFoldInOldZyBoard),
+                ("自动查杀希沃“PPT 小工具”", () => services.Settings.Automation.IsAutoKillPptService),
+                ("自动查杀 希沃白板5", () => services.Settings.Automation.IsAutoKillEasiNote),
+                ("切换到鼠标模式后自动清屏", () => services.Settings.Automation.IsAutoClearWhenExitingWritingMode),
             };
             foreach (var item in toggles)
             {
@@ -108,6 +118,34 @@ internal static class SettingsRegression
                 ((IToggleProvider)peer.GetPattern(PatternInterface.Toggle)).Toggle();
                 Check(item.Label + " restores", item.Get() == before);
             }
+            var autoUpdate = Find<ToggleSwitch>("自动检查更新");
+            bool updateBefore = autoUpdate.IsOn;
+            autoUpdate.IsOn = false;
+            Check("silent update disables with a visible reason", !Find<ToggleSwitch>("静默更新").IsEnabled
+                && !string.IsNullOrWhiteSpace(AutomationProperties.GetHelpText(Find<ToggleSwitch>("静默更新"))));
+            autoUpdate = Find<ToggleSwitch>("自动检查更新");
+            autoUpdate.IsOn = true;
+            Check("silent update enables when its prerequisite returns", Find<ToggleSwitch>("静默更新").IsEnabled);
+            Find<ToggleSwitch>("自动检查更新").IsOn = updateBefore;
+            Find<ToggleSwitch>("进入“希沃白板”时自动收纳").IsOn = false;
+            Find<ToggleSwitch>("进入“希沃轻白板”时自动收纳").IsOn = false;
+            Check("annotation exception requires a parent autofold rule", !Find<ToggleSwitch>("自动收纳忽略桌面EN批注窗口").IsEnabled);
+            Find<ToggleSwitch>("进入“希沃轻白板”时自动收纳").IsOn = true;
+            Check("annotation exception enables immediately", Find<ToggleSwitch>("自动收纳忽略桌面EN批注窗口").IsEnabled);
+            Find<ToggleSwitch>("进入“希沃轻白板”时自动收纳").IsOn = false;
+            string missingPath = Path.Combine(directory, "missing-cleanup-directory");
+            Find<TextBox>("墨迹、截图自动保存位置").Text = missingPath;
+            await Task.Delay(450);
+            Check("cleanup disables when saved directory is missing", !Find<ToggleSwitch>("定期自动删除超过保存时间的墨迹、截图文件").IsEnabled);
+            Directory.CreateDirectory(missingPath);
+            await Task.Delay(2200);
+            Check("cleanup enables when saved directory becomes available", Find<ToggleSwitch>("定期自动删除超过保存时间的墨迹、截图文件").IsEnabled);
+            Find<ToggleSwitch>("定期自动删除超过保存时间的墨迹、截图文件").IsOn = true;
+            var retention = Find<ComboBox>("保存时间设置（Days）");
+            retention.SelectedIndex = 3;
+            Check("retention days save through the real combo", services.Settings.Automation.AutoDelSavedFilesDaysThreshold == 7);
+            Find<ToggleSwitch>("定期自动删除超过保存时间的墨迹、截图文件").IsOn = false;
+            Check("retention editor disables when cleanup is off", !Find<ComboBox>("保存时间设置（Days）").IsEnabled);
             var showEraser = Find<ToggleSwitch>("显示橡皮按钮");
             showEraser.IsOn = false;
             Check("eraser visibility applies immediately", bar.Bar.GetToolButton(InkTool.Eraser).Visibility == Visibility.Collapsed);
@@ -172,6 +210,40 @@ internal static class SettingsRegression
             await Task.Delay(150);
             Check("reopening restores saved controls", Find<TextBox>("墨迹、截图自动保存位置").Text == lastPath
                 && Find<Slider>("浮动工具栏 UI 缩放 (%)").Value == 125 && Find<ComboBox>("橡皮模式").SelectedIndex == 0);
+            foreach (int themeIndex in new[] { 0, 1 })
+            {
+                Find<ComboBox>("颜色主题").SelectedIndex = themeIndex;
+                await Task.Delay(120);
+                foreach (int width in new[] { 1000, 640, 1280 })
+                {
+                    window.AppWindow.ResizeClient(new Windows.Graphics.SizeInt32(width, 760));
+                    await Task.Delay(100);
+                    foreach (string category in new[] { "启动选项", "画板选项", "手势选项", "显示器", "墨迹识别选项", "外观选项", "PPT 选项", "高级选项", "自动选项", "实验性设置", "模块与插件", "关于 Ink Canvas Artistry", "抽奖与点名" })
+                    {
+                        window.SelectCategory(category);
+                        ((FrameworkElement)window.Content).UpdateLayout();
+                        await Task.Delay(40);
+                        var rows = Descendants(window.Content).OfType<SettingsRow>().ToArray();
+                        Check("unavailable settings explain their prerequisite " + category, rows.All(row =>
+                            !Descendants(row.Editor).OfType<Control>().Any(control => !control.IsEnabled)
+                            || !string.IsNullOrWhiteSpace(row.Description)));
+                        var invalid = rows.Where(row => row.Children.OfType<FrameworkElement>().Any(child =>
+                        {
+                            var bounds = child.TransformToVisual(row).TransformBounds(new Windows.Foundation.Rect(0, 0, child.ActualWidth, child.ActualHeight));
+                            return bounds.Left < -1 || bounds.Top < -1 || bounds.Right > row.ActualWidth + 1 || bounds.Bottom > row.ActualHeight + 1;
+                        })).Select(row => row.Title).ToArray();
+                        checks.Add(new { check = "settings rows fit responsive page", themeIndex, width, category,
+                            passed = invalid.Length == 0, invalid, rows = rows.Length, stacked = rows.Count(row => row.IsStacked) });
+                        if (category == "外观选项")
+                        {
+                            Check("scale presets share the slider card " + themeIndex + " " + width, rows
+                                .Where(row => row.Title.Contains("UI 缩放")).All(row => Descendants(row).OfType<Button>().Count() == 5));
+                        }
+                        if (width is 640 or 1280 && category is "启动选项" or "外观选项" or "画板选项")
+                            await BoardWindowRegression.SaveVisual((FrameworkElement)window.Content, Path.Combine(directory, $"settings-{category}-{themeIndex}-{width}.png"));
+                    }
+                }
+            }
 
             void Open()
             {
@@ -184,7 +256,7 @@ internal static class SettingsRegression
                 T FindOnPage() => Descendants(window.Content).OfType<T>().SingleOrDefault(control => AutomationProperties.GetName(control) == label);
                 var result = FindOnPage();
                 if (result is not null) return result;
-                foreach (string category in new[] { "启动选项", "画板选项", "手势选项", "墨迹识别选项", "外观选项", "PPT 选项", "高级选项", "自动选项", "抽奖（移植附加）" })
+                foreach (string category in new[] { "启动选项", "画板选项", "手势选项", "墨迹识别选项", "外观选项", "PPT 选项", "高级选项", "自动选项", "抽奖与点名" })
                 {
                     window.SelectCategory(category);
                     ((FrameworkElement)window.Content).UpdateLayout();

@@ -8,7 +8,7 @@ using Microsoft.UI.Xaml.Media;
 
 namespace InkCanvas.App.Views;
 
-/// <summary>Guide and release notes with left navigation and system window chrome.</summary>
+/// <summary>Guide and release notes with left navigation and a shared WinUI title bar.</summary>
 public sealed class InfoWindow : Window
 {
     private static readonly FontFamily IconFont = new("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons");
@@ -39,7 +39,7 @@ public sealed class InfoWindow : Window
                 body.Children.Add(Paragraph(line));
         }
 
-        var workspace = new WindowWorkspace();
+        var workspace = new WindowWorkspace { IsTitleBarAutoPaddingEnabled = false };
         workspace.AddPage("版本更新", "", () => body);
         workspace.SelectPage("版本更新");
         FinishChrome(workspace, theme, 980, 680);
@@ -65,7 +65,7 @@ public sealed class InfoWindow : Window
         AddRow(rows, "Alt", "L", false, " ——  切换至单次直线绘制功能（Line）");
         AddRow(rows, "Shift", "Esc", true, " ——  退出 PPT 放映");
 
-        var workspace = new WindowWorkspace();
+        var workspace = new WindowWorkspace { IsTitleBarAutoPaddingEnabled = false };
         workspace.AddPage("快捷键", "", () => rows);
         workspace.AddPage("书写与选择", "", () => new StackPanel { Spacing = 16, Children =
         {
@@ -84,6 +84,7 @@ public sealed class InfoWindow : Window
         root.Children.Add(content);
         Content = root;
         WindowChrome.MakeStandard(this, widthDip, heightDip);
+        WindowFrame.Attach(this, root);
         _minSize = new MinSizeHook(this, 540, 360);
         WindowChrome.ApplyTheme(this, theme);
         ApplyPalette(theme);

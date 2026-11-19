@@ -457,6 +457,9 @@ public sealed class ShapePreview : UserControl
     private readonly System.Collections.Generic.List<Grid> _cells = new();
     private readonly SegmentedSelector _categories;
     private readonly Grid _categoryBodies = new();
+    private readonly bool[] _createdCategories = new bool[ShapeMenuCatalog.Categories.Length];
+    private readonly Brush _foreground;
+    private readonly ShapeMenuItem[] _items = ShapeMenuCatalog.Rows.SelectMany(row => row).ToArray();
     private int _selectedCategory;
     private Grid _pressedCell;
     private bool _holdFired;
@@ -470,10 +473,16 @@ public sealed class ShapePreview : UserControl
     /// <summary>Raised when the pin toggles auto-hide, so hosts can persist the state.</summary>
     public event Action AutoHideChanged;
 
-    public int ShapeCount => _cells.Count;
+    public int ShapeCount => _items.Length;
     public IReadOnlyList<Grid> VisibleCells => _cells.Where(cell => cell.Tag is ShapeMenuItem item
         && ShapeMenuCatalog.Categories[_selectedCategory].Rows.SelectMany(row => row).Contains(item)).ToArray();
-    public Grid GetCell(ShapeKind kind) => _cells.Single(cell => ((ShapeMenuItem)cell.Tag).Kind == kind);
+    public Grid GetCell(ShapeKind kind)
+    {
+        int index = Array.FindIndex(ShapeMenuCatalog.Categories,
+            category => category.Rows.SelectMany(row => row).Any(item => item.Kind == kind));
+        if (index >= 0) EnsureCategory(index);
+        return _cells.Single(cell => ((ShapeMenuItem)cell.Tag).Kind == kind);
+    }
 
     public void SelectCategoryFor(ShapeKind kind)
     {
@@ -485,6 +494,7 @@ public sealed class ShapePreview : UserControl
     public void SelectCategory(int index)
     {
         if (index < 0 || index >= ShapeMenuCatalog.Categories.Length) return;
+        EnsureCategory(index);
         _selectedCategory = index;
         for (int i = 0; i < _categoryBodies.Children.Count; i++)
             _categoryBodies.Children[i].Visibility = i == index ? Visibility.Visible : Visibility.Collapsed;
@@ -495,6 +505,7 @@ public sealed class ShapePreview : UserControl
     {
         _controller = controller;
         var fg = PopupBrushes.Foreground(theme);
+        _foreground = fg;
         bool dark = PopupBrushes.IsDark(theme);
         _holdTimer = DispatcherQueue.GetForCurrentThread().CreateTimer();
         _holdTimer.Interval = TimeSpan.FromMilliseconds(500);
@@ -509,7 +520,7 @@ public sealed class ShapePreview : UserControl
         for (int index = 0; index < ShapeMenuCatalog.Categories.Length; index++)
         {
             _categories.SetOptionHelp(index, ShapeMenuCatalog.Categories[index].Name + "图形");
-            _categoryBodies.Children.Add(BuildCategoryRows(ShapeMenuCatalog.Categories[index], fg));
+            _categoryBodies.Children.Add(new Border { Visibility = Visibility.Collapsed });
         }
         _categories.SelectedIndex = 0;
         _categories.SelectionChanged += () => SelectCategory(_categories.SelectedIndex);
@@ -553,6 +564,15 @@ public sealed class ShapePreview : UserControl
             _controller.ShapeSelectionChanged -= RefreshSelection;
             ResetPress();
         };
+    }
+
+    private void EnsureCategory(int index)
+    {
+        if (_createdCategories[index]) return;
+        _createdCategories[index] = true;
+        _categoryBodies.Children[index] = BuildCategoryRows(ShapeMenuCatalog.Categories[index], _foreground);
+        _categoryBodies.Children[index].Visibility = index == _selectedCategory ? Visibility.Visible : Visibility.Collapsed;
+        RefreshSelection();
     }
 
     private StackPanel BuildCategoryRows(ShapeMenuCategory category, Brush foreground)
@@ -624,7 +644,8 @@ public sealed class ShapePreview : UserControl
     /// <summary>Pick through the same entry point used by pointer release.</summary>
     public void SelectItem(int index, bool sticky = false)
     {
-        if (index < 0 || index >= _cells.Count || _cells[index].Tag is not ShapeMenuItem item) return;
+        if (index < 0 || index >= _items.Length) return;
+        var item = _items[index];
         SelectCategoryFor(item.Kind);
         _controller.SelectShape(item.Kind, sticky);
         RefreshSelection();
@@ -677,7 +698,7 @@ public sealed class ShapePreview : UserControl
     private void OnCellReleased(object sender, PointerRoutedEventArgs e)
     {
         if (sender is not Grid cell || !ReferenceEquals(_pressedCell, cell) || _pressedPointer != e.Pointer.PointerId) return;
-        int index = _cells.IndexOf(cell);
+        int index = Array.IndexOf(_items, (ShapeMenuItem)cell.Tag);
         bool sticky = _holdFired;
         // ReleasePointerCapture can synchronously raise PointerCaptureLost. Save the result first.
         ResetPress();

@@ -117,13 +117,13 @@ public sealed partial class PdfWindow
 
     private void RefreshThumbnails()
     {
-        if (!_split.IsPaneOpen) return;
+        if (!_split.IsPaneOpen || !_idleResources.IsActive) return;
         foreach (var item in _realizedThumbnails.Values) _ = LoadThumbnailAsync(item);
     }
 
     private async Task LoadThumbnailAsync(ThumbnailItem item)
     {
-        if (_closed || !_split.IsPaneOpen) return;
+        if (_closed || !_split.IsPaneOpen || !_idleResources.IsActive) return;
         item.Cancellation?.Cancel();
         var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_thumbnailCancellation.Token);
         item.Cancellation = cancellation;

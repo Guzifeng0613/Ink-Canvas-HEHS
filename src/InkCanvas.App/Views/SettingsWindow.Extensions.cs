@@ -8,17 +8,20 @@ public sealed partial class SettingsWindow
     {
         _searchIndexed = false;
         if (!_closed && _workspace?.SelectedPage == "模块与插件") QueueRebuild();
+        else if (!_closed) RefreshControls();
     });
 
     private void BuildExtensionsCategory()
     {
         _content.Children.Add(InfoRow("书写、选择、擦除和画布由主体维护。内置模块按依赖顺序启动，模块开关重启后生效。外部插件使用独立进程，可即时启用或停用。"));
+        AddSection("内置模块");
         if (_services.Modules.Status.Count == 0) _content.Children.Add(InfoRow("模块状态在主工具栏启动后显示。"));
         foreach (var module in _services.Modules.Status)
         {
             if (module.State == ExtensionState.NotInstalled)
             {
-                _content.Children.Add(InfoRow(module.Name + " · 未安装到此发行包 · 可从独立模块 ZIP 安装"));
+                _content.Children.Add(ToggleRow(module.Name + " · 内置模块", () => false, _ => { }, enabled: false,
+                    disabledReason: "此发行包未安装该模块，请将模块 ZIP 解压到 Modules 目录并重启。"));
                 continue;
             }
             _content.Children.Add(ToggleRow(module.Name + " · 内置模块", () => !_services.ExtensionPreferences.DisabledModules.Contains(module.Id), enabled =>
@@ -33,6 +36,7 @@ public sealed partial class SettingsWindow
                 }
             }, note: module.Id + " · " + module.Version + " · " + StateText(module.State) + (module.Error is null ? "" : "\n" + module.Error)));
         }
+        AddSection("外部插件");
         _content.Children.Add(InfoRow("将插件包解压到程序目录的 Plugins，或用户配置目录的 Plugins 子目录，重新启动后在此启用。每个包使用独立目录，包含 plugin.json、插件 DLL 和依赖。"));
         _content.Children.Add(ButtonRow("打开用户插件目录", "配置目录中的插件可与主体程序独立更新", () =>
         {
@@ -51,9 +55,12 @@ public sealed partial class SettingsWindow
                 _ = SetPluginEnabledAsync(plugin.Id, enabled);
             }, note: plugin.Id + " · " + plugin.Version + " · " + StateText(plugin.State) + (plugin.Error is null ? "" : "\n" + plugin.Error)));
         }
-        foreach (var command in _shell?.ExtensionCommands ?? _services.Plugins.Commands)
-            _content.Children.Add(ButtonRow(command.Title, command.Description ?? command.PluginId, async () =>
-            { if (_shell is not null) await _shell.ExecuteExtensionCommandAsync(command); }));
+        var commands = _shell?.ExtensionCommands ?? _services.Plugins.Commands;
+        if (commands.Any()) AddSection("插件功能");
+        foreach (var command in commands)
+            _content.Children.Add(Require(ButtonRow(command.Title, command.Description ?? command.PluginId, async () =>
+            { if (_shell is not null) await _shell.ExecuteExtensionCommandAsync(command); }, actionLabel: "运行"),
+                () => _shell is null ? "画布命令宿主未启动，请从主程序打开设置。" : null));
     }
     private async Task SetPluginEnabledAsync(string id, bool enabled)
     {

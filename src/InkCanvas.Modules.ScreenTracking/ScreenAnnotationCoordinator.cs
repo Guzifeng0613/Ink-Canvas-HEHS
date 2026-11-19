@@ -28,7 +28,7 @@ public sealed class ScreenAnnotationCoordinator : IDisposable, IScreenTrackingSe
         _reanchor = protect?.Invoke(Reanchor) ?? Reanchor;
         _memory = new ScreenAnnotationMemory(host.Controller, host.Images);
         _timer = DispatcherQueue.GetForCurrentThread().CreateTimer();
-        _timer.Interval = TimeSpan.FromMilliseconds(80);
+        _timer.Interval = TimeSpan.FromMilliseconds(25);
         var refresh = protect?.Invoke(Refresh) ?? Refresh;
         _timer.Tick += (_, _) => refresh();
         host.SettingsApplied += _configure;
@@ -66,6 +66,7 @@ public sealed class ScreenAnnotationCoordinator : IDisposable, IScreenTrackingSe
             _host.Status = "应用暂未响应检测，已暂时隐藏该页批注";
             return;
         }
+        if (ReferenceEquals(snapshot, _previous)) return;
         ApplySnapshot(snapshot);
     }
 
@@ -94,15 +95,22 @@ public sealed class ScreenAnnotationCoordinator : IDisposable, IScreenTrackingSe
             if (!snapshot.AlignmentReliable)
             {
                 presenter.SetScreenTrackingClip(null, suppressed: true);
+                _previous = null;
                 _host.Status = snapshot.Status;
                 return;
             }
             var origin = new Vector2(_host.Window.X, _host.Window.Y);
+            var previousView = _host.Controller.ViewTransform;
             if (!_memory.Apply(snapshot, settings, origin, _host.Window.DpiScale)) return;
+            bool animate = _previous?.ContextKey == snapshot.ContextKey
+                && _previous.WindowHandle == snapshot.WindowHandle && _previous.ObservationEpoch == snapshot.ObservationEpoch;
             Rect Local(Rect value) => new(value.Left - origin.X, value.Top - origin.Y, value.Right - origin.X, value.Bottom - origin.Y);
             var fixedRegions = _fixed.Update(_previous, snapshot);
             var masks = snapshot.Occlusions.Concat(settings.MaskFixedRegions ? fixedRegions : Array.Empty<Rect>()).Select(Local).ToArray();
             presenter.SetScreenTrackingClip(new ScreenInkClip(Local(snapshot.Viewport), masks));
+            double duration = snapshot.Application == TrackedApplication.Word && _previous is not null
+                && Math.Abs(snapshot.Scale - _previous.Scale) > .002f ? 32 : ScreenViewTransition.DurationMilliseconds;
+            presenter.TransitionScreenTrackingView(previousView, animate, duration);
             _previous = snapshot;
             _host.Status = $"{snapshot.Status} · 已记忆 {_memory.RememberedPages} 个页面";
         }

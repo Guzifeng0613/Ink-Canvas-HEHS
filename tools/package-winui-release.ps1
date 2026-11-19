@@ -31,3 +31,4 @@ Compress-Archive -LiteralPath $app -DestinationPath $archive
 $lines = Get-ChildItem -LiteralPath $outputRoot -Filter '*.zip' -File | Sort-Object Name | ForEach-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $_.Name }
 [IO.File]::WriteAllLines((Join-Path $outputRoot 'SHA256SUMS.txt'), $lines, [Text.UTF8Encoding]::new($false))
 Write-Output $archive
+& (Join-Path $PSScriptRoot 'prune-builds.ps1')

@@ -14,38 +14,54 @@ namespace InkCanvas.App.Services;
 internal sealed class ChromeBackdrop : SystemBackdrop
 {
     private readonly IntPtr _window;
+    private readonly bool _enableAcrylic;
     private bool _connected, _ownsLayeredStyle;
     private int _appliedAlpha = -1;
     private DesktopAcrylicController _controller;
     private SystemBackdropConfiguration _configuration;
     private SystemBackdropConfiguration _defaults;
     private int _theme;
+    private Windows.UI.Composition.Compositor _fallbackCompositor;
+    private Windows.UI.Composition.CompositionColorBrush _fallback;
 
-    public ChromeBackdrop(IntPtr window) => _window = window;
+    public ChromeBackdrop(IntPtr window, bool enableAcrylic = true)
+    {
+        _window = window;
+        _enableAcrylic = enableAcrylic;
+    }
 
     [DllImport("user32.dll")]
     private static extern bool SetLayeredWindowAttributes(IntPtr window, uint colorKey, byte alpha, uint flags);
 
-    public string State => _controller?.State.ToString() ?? "Disconnected";
+    public string State => _controller?.State.ToString() ?? (_fallback is null ? "Disconnected" : "Fallback");
 
     protected override void OnTargetConnected(ICompositionSupportsSystemBackdrop target, XamlRoot xamlRoot)
     {
+        // Initializes the configuration and subscribes to OS theme/high-contrast changes.
+        base.OnTargetConnected(target, xamlRoot);
         _connected = true;
         _defaults = GetDefaultSystemBackdropConfiguration(target, xamlRoot);
         _configuration = new SystemBackdropConfiguration();
         RefreshConfiguration();
-        if (!DesktopAcrylicController.IsSupported()) { UpdateOpacity(); return; }
-        _controller = new DesktopAcrylicController
+        if (_enableAcrylic && DesktopAcrylicController.IsSupported())
         {
-            Kind = DesktopAcrylicKind.Thin,
-            TintOpacity = 0,
-            LuminosityOpacity = 0,
-            TintColor = Microsoft.UI.Colors.Transparent,
-        };
-        _controller.SetSystemBackdropConfiguration(_configuration);
-        _controller.StateChanged += (_, _) => DispatcherQueue.TryEnqueue(UpdateOpacity);
+            try
+            {
+                _controller = new DesktopAcrylicController { Kind = DesktopAcrylicKind.Thin };
+                _controller.SetSystemBackdropConfiguration(_configuration);
+                ApplyColors();
+                if (!_controller.AddSystemBackdropTarget(target)) ReleaseController(target);
+                else _controller.StateChanged += OnStateChanged;
+            }
+            catch (COMException) { ReleaseController(target); }
+        }
+        if (_controller is null)
+        {
+            _fallbackCompositor = new Windows.UI.Composition.Compositor();
+            _fallback = _fallbackCompositor.CreateColorBrush();
+            target.SystemBackdrop = _fallback;
+        }
         ApplyColors();
-        _controller.AddSystemBackdropTarget(target);
         DispatcherQueue.TryEnqueue(UpdateOpacity);
     }
 
@@ -67,14 +83,30 @@ internal sealed class ChromeBackdrop : SystemBackdrop
 
     private void ApplyColors()
     {
-        if (_controller is null) return;
-        // Acrylic fallback is a solid material. Transparent black there produces gray/black
-        // chrome when transparency is disabled, during remote sessions or policy changes.
+        if (_configuration is null) return;
         bool dark = _configuration.Theme == SystemBackdropTheme.Dark;
-        _controller.FallbackColor = dark ? Windows.UI.Color.FromArgb(255, 31, 31, 31) : Microsoft.UI.Colors.White;
-        _controller.TintColor = Microsoft.UI.Colors.Transparent;
+        var themeColor = dark ? Windows.UI.Color.FromArgb(255, 31, 31, 31) : Microsoft.UI.Colors.White;
+        var color = _configuration.IsHighContrast ? _configuration.HighContrastBackgroundColor ?? themeColor : themeColor;
+        if (_fallback is not null) _fallback.Color = color;
+        if (_controller is null) return;
+        _controller.FallbackColor = color;
+        // Keep the tint color opaque and use the dedicated opacity properties to make
+        // the material clear. Transparent black tints produce grey surfaces on some DWM paths.
+        _controller.TintColor = color;
         _controller.TintOpacity = 0;
         _controller.LuminosityOpacity = 0;
+    }
+
+    private void OnStateChanged(ISystemBackdropController sender, object args)
+        => DispatcherQueue.TryEnqueue(UpdateOpacity);
+
+    private void ReleaseController(ICompositionSupportsSystemBackdrop target)
+    {
+        if (_controller is null) return;
+        _controller.StateChanged -= OnStateChanged;
+        _controller.RemoveSystemBackdropTarget(target);
+        _controller.Dispose();
+        _controller = null;
     }
 
     private void UpdateOpacity()
@@ -102,7 +134,12 @@ internal sealed class ChromeBackdrop : SystemBackdrop
     private void RefreshConfiguration()
     {
         if (_configuration is null || _defaults is null) return;
-        _configuration.Theme = _theme switch { 1 => SystemBackdropTheme.Light, 2 => SystemBackdropTheme.Dark, _ => _defaults.Theme };
+        _configuration.Theme = _theme switch
+        {
+            1 => SystemBackdropTheme.Light,
+            2 => SystemBackdropTheme.Dark,
+            _ => _defaults.Theme == SystemBackdropTheme.Dark ? SystemBackdropTheme.Dark : SystemBackdropTheme.Light,
+        };
         _configuration.IsHighContrast = _defaults.IsHighContrast;
         _configuration.HighContrastBackgroundColor = _defaults.HighContrastBackgroundColor;
         _configuration.IsInputActive = true;
@@ -118,10 +155,17 @@ internal sealed class ChromeBackdrop : SystemBackdrop
             _ownsLayeredStyle = false;
         }
         _appliedAlpha = -1;
-        _controller?.RemoveSystemBackdropTarget(target);
-        _controller?.Dispose();
-        _controller = null;
+        ReleaseController(target);
+        if (_fallback is not null)
+        {
+            target.SystemBackdrop = null;
+            _fallback.Dispose();
+            _fallback = null;
+            _fallbackCompositor.Dispose();
+            _fallbackCompositor = null;
+        }
         _configuration = null;
         _defaults = null;
+        base.OnTargetDisconnected(target);
     }
 }

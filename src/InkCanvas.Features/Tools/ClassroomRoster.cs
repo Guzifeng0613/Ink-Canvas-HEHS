@@ -4,6 +4,25 @@ namespace InkCanvas.Features.Tools;
 
 public static class ClassroomRoster
 {
+    public static IReadOnlyList<string> Load(string directory)
+    {
+        string path = Path.Combine(directory, "Names.txt");
+        if (!File.Exists(path)) return Array.Empty<string>();
+        var names = Decode(File.ReadAllBytes(path)).ReplaceLineEndings("\n").Split('\n').Select(name => name.Trim());
+        string rulesPath = Path.Combine(directory, "Replace.txt");
+        var rules = File.Exists(rulesPath) ? File.ReadAllLines(rulesPath) : Array.Empty<string>();
+        return names.Select(original =>
+        {
+            string name = original;
+            foreach (string rule in rules)
+            {
+                int split = rule.IndexOf("-->", StringComparison.Ordinal);
+                if (split >= 0 && name == rule[..split]) name = rule[(split + 3)..];
+            }
+            return name;
+        }).Where(name => !string.IsNullOrWhiteSpace(name)).ToArray();
+    }
+
     public static string Decode(byte[] bytes)
     {
         try

@@ -12,6 +12,18 @@ namespace InkCanvas.App.Services;
 /// </summary>
 public sealed class OverlayHost : IDisposable
 {
+    private Core.Settings.DisplaySettings _displaySettings = new();
+    private long _idleSince;
+    private bool _idleResourcesReleased;
+    public void ConfigureDisplays(Core.Settings.DisplaySettings settings)
+    {
+        _displaySettings = settings ?? new();
+        var screens = ScreenService.All();
+        Window.SetScreenLayout(screens);
+        Window.SetInputAreas(_displaySettings.AllDisplays ? null : screens
+            .Where(screen => (_displaySettings.EnabledDevices ?? new()).Contains(screen.DeviceName, StringComparer.OrdinalIgnoreCase))
+            .Select(screen => screen.Bounds));
+    }
     public OverlayHost(InkController controller)
     {
         var screen = ScreenService.Virtual;
@@ -51,6 +63,7 @@ public sealed class OverlayHost : IDisposable
         try
         {
             Window.SetBounds(screen.X, screen.Y, screen.Width, screen.Height);
+            ConfigureDisplays(_displaySettings);
             Controller.ViewTransform *= System.Numerics.Matrix3x2.CreateTranslation(
                 (oldX - screen.X) / Window.DpiScale, (oldY - screen.Y) / Window.DpiScale);
             Controller.ViewCenter = new(screen.Width / Window.DpiScale / 2, screen.Height / Window.DpiScale / 2);
@@ -68,6 +81,7 @@ public sealed class OverlayHost : IDisposable
 
     public void SetInteractionMode(bool clickThrough, bool inkVisible)
     {
+        if (inkVisible && !clickThrough) { _idleResourcesReleased = false; _idleSince = 0; }
         if (clickThrough || !inkVisible) Controller.CancelLassoErase();
         if (clickThrough || !inkVisible) Controller.HideEraserPreview();
         Window.ClickThrough = clickThrough;
@@ -76,6 +90,8 @@ public sealed class OverlayHost : IDisposable
 
     public void Show()
     {
+        _idleResourcesReleased = false;
+        _idleSince = 0;
         Window.Show();
         Presenter.Attach();
     }
@@ -85,6 +101,23 @@ public sealed class OverlayHost : IDisposable
         Controller.CancelLassoErase();
         Presenter.Suspend();
         Window.Hide();
+    }
+
+    internal bool TrimIdleResources(bool force = false)
+    {
+        if (Window.IsVisible && Presenter.InkVisible)
+        {
+            _idleSince = 0;
+            _idleResourcesReleased = false;
+            return false;
+        }
+        if (_idleResourcesReleased || Controller.HasActiveInteraction) return false;
+        if (_idleSince == 0) _idleSince = Environment.TickCount64;
+        if (!force && Environment.TickCount64 - _idleSince < 15_000) return false;
+        Presenter.ReleaseIdleResources();
+        Window.ReleasePixelBuffer();
+        _idleResourcesReleased = true;
+        return true;
     }
 
     /// <summary>

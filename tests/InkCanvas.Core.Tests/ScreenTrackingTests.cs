@@ -8,6 +8,7 @@ using InkCanvas.Features.Board;
 using InkCanvas.Features.Tools;
 using InkCanvas.Ink;
 using InkCanvas.Platform.Windows;
+using InkCanvas.Platform.System;
 using Xunit;
 
 namespace InkCanvas.Core.Tests;
@@ -137,6 +138,203 @@ public sealed class ScreenTrackingTests
     [InlineData(800, 50, 100, 800)]
     public void ScrollPatternPercentagesMapToPhysicalContentOffset(float viewport, double view, double scroll, float expected) =>
         Assert.Equal(expected, ScreenViewSnapshot.ScrollOffset(viewport, view, scroll));
+
+    [Theory]
+    [InlineData(0, 0, 1)]
+    [InlineData(-1920, 80, 1.5f)]
+    [InlineData(1920, -200, 2)]
+    public void WordZoomUsesTextPositionIncludingPaperRecentering(float ox, float oy, float dpi)
+    {
+        using var controller = new InkController();
+        var memory = new ScreenAnnotationMemory(controller, new BoardService(controller));
+        var alignment = new WordScrollAlignment();
+        var origin = new Vector2(ox, oy);
+        var viewport = new Rect(ox + 100, oy + 200, ox + 1100, oy + 1000);
+        var initial = View() with { Application = TrackedApplication.Word, Viewport = viewport, Scale = dpi };
+        var scroll = alignment.Update(Vector2.Zero, 1, null, new Vector2(0, 800), false).Scroll;
+        initial = initial with { ScrollPixels = scroll };
+        memory.Apply(initial, Options(), origin, dpi);
+        var glyphBefore = new Vector2(ox + 450, oy + 350);
+        var inkPoint = (glyphBefore - origin) / dpi;
+        var glyphAfter = new Vector2(ox + 390, oy + 390);
+        var viewportOrigin = new Vector2(viewport.Left, viewport.Top);
+        var movement = glyphAfter - viewportOrigin - (glyphBefore - viewportOrigin) * 1.5f;
+        var zoomed = alignment.Update(scroll, 1.5f, movement, new Vector2(0, 1300), true);
+        Assert.True(zoomed.Reliable);
+        memory.Apply(initial with { Scale = dpi * 1.5f, ScrollPixels = zoomed.Scroll }, Options(), origin, dpi);
+        Near(glyphAfter, Vector2.Transform(inkPoint, controller.ViewTransform) * dpi + origin);
+
+        var returnedMovement = glyphBefore - viewportOrigin - (glyphAfter - viewportOrigin) / 1.5f;
+        var returned = alignment.Update(zoomed.Scroll, 1 / 1.5f, returnedMovement, new Vector2(0, 800), true);
+        memory.Apply(initial with { ScrollPixels = returned.Scroll }, Options(), origin, dpi);
+        Near(glyphBefore, Vector2.Transform(inkPoint, controller.ViewTransform) * dpi + origin);
+    }
+
+    [Fact]
+    public void WordScrollbarFallbackPreservesCalibratedOffsetAcrossLongScrolls()
+    {
+        var alignment = new WordScrollAlignment();
+        alignment.Update(Vector2.Zero, 1, null, new Vector2(0, 1000), false);
+        var zoomed = alignment.Update(new Vector2(0, 1000), 1.5f, new Vector2(120, -60), new Vector2(0, 1700), true);
+        Near(new Vector2(-120, 1560), zoomed.Scroll);
+        var scrolled = alignment.Update(zoomed.Scroll, 1, null, new Vector2(0, 3200), true);
+        Near(new Vector2(-120, 3060), scrolled.Scroll);
+        Assert.True(scrolled.Reliable);
+        var observed = alignment.Update(scrolled.Scroll, 1, new Vector2(0, -30), new Vector2(0, 3250), true);
+        Near(new Vector2(-120, 3090), observed.Scroll);
+        var fallback = alignment.Update(observed.Scroll, 1, null, new Vector2(0, 3300), true);
+        Near(new Vector2(-120, 3140), fallback.Scroll);
+    }
+
+    [Fact]
+    public void WordUnobservedZoomCannotResetCalibrationUsingScrollbarPercentages()
+    {
+        var alignment = new WordScrollAlignment();
+        alignment.Update(Vector2.Zero, 1, null, new Vector2(0, 500), false);
+        var lost = alignment.Update(new Vector2(0, 500), 2, null, new Vector2(0, 1200), true);
+        Assert.False(lost.Reliable);
+        Assert.False(alignment.Update(lost.Scroll, 1, Vector2.Zero, new Vector2(0, 1200), true).Reliable);
+        alignment.Reset();
+        Assert.True(alignment.Update(Vector2.Zero, 1, null, new Vector2(0, 1200), false).Reliable);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(1.5f)]
+    [InlineData(2)]
+    public void ContinuousWordPinchUsesAnAbsoluteReferenceWithoutAccumulatingDrift(float dpi)
+    {
+        var reference = Enumerable.Range(0, 5).Select(i => new Rect(-1100 + i * 10, 150 + i * 95,
+            -1088 + i * 10, 170 + i * 95)).ToArray();
+        var pivot = new Vector2(-800, 430);
+        for (int frame = 0; frame <= 160; frame++)
+        {
+            float scale = 1 + .5f * MathF.Sin(frame * MathF.PI / 80);
+            var expected = Matrix3x2.CreateScale(scale, pivot) * Matrix3x2.CreateTranslation(frame < 160 ? frame / 4f : 0, 0);
+            var pairs = reference.Select(rect =>
+            {
+                var a = Vector2.Transform(new Vector2(rect.Left, rect.Top) * dpi, expected);
+                var b = Vector2.Transform(new Vector2(rect.Right, rect.Bottom) * dpi, expected);
+                return (new Rect(rect.Left * dpi, rect.Top * dpi, rect.Right * dpi, rect.Bottom * dpi),
+                    new Rect(MathF.Round(a.X), MathF.Round(a.Y), MathF.Round(b.X), MathF.Round(b.Y)));
+            }).ToArray();
+            Assert.True(TextAnchorAlignment.TryFit(pairs, out var actual));
+            foreach (var rect in reference)
+            {
+                var point = new Vector2(rect.Left, rect.Top) * dpi;
+                Assert.InRange(Vector2.Distance(Vector2.Transform(point, expected), Vector2.Transform(point, actual)), 0, 1.1f);
+            }
+        }
+    }
+
+    [Fact]
+    public void TextAlignmentToleratesAnOccludedOrReflowedCharacterAndRejectsIncoherentFrames()
+    {
+        var expected = Matrix3x2.CreateScale(1.2345f) * Matrix3x2.CreateTranslation(-140, 35);
+        var reference = Enumerable.Range(0, 5).Select(i => new Rect(300, 100 + i * 90, 315, 120 + i * 90)).ToArray();
+        var pairs = reference.Select(rect =>
+        {
+            var a = Vector2.Transform(new Vector2(rect.Left, rect.Top), expected);
+            return (rect, new Rect(a.X, a.Y, a.X + rect.Width * expected.M11, a.Y + rect.Height * expected.M11));
+        }).ToArray();
+        pairs[1].Item2 = new Rect(100, 150, 120, 175);
+        Assert.True(TextAnchorAlignment.TryFit(pairs, out var actual));
+        Assert.InRange(Math.Abs(actual.M11 - expected.M11), 0, .0001f);
+        Assert.True(TextAnchorAlignment.TryFit(new[] { pairs[0], pairs[2], pairs[3] }, out _));
+        pairs[2].Item2 = new Rect(400, 220, 420, 245);
+        pairs[3].Item2 = new Rect(750, 310, 770, 335);
+        Assert.False(TextAnchorAlignment.TryFit(pairs, out _));
+        Assert.False(TextAnchorAlignment.TryFit(new[] { pairs[0] }, out _));
+    }
+
+    [Fact]
+    public void ARecoveredAbsoluteReferenceRestoresWordAlignmentAfterTemporaryZoomGaps()
+    {
+        var alignment = new WordScrollAlignment();
+        alignment.Update(Vector2.Zero, 1, null, new Vector2(0, 500), false);
+        var lost = alignment.Update(new Vector2(0, 500), 1.2f, null, null, true);
+        Assert.False(lost.Reliable);
+        var expected = new Vector2(-75, 680);
+        var recovered = alignment.Update(lost.Scroll, 1, lost.Scroll - expected, new Vector2(0, 700), true, referenceAligned: true);
+        Assert.True(recovered.Reliable);
+        Near(expected, recovered.Scroll);
+        var next = alignment.Update(recovered.Scroll, 1, null, new Vector2(0, 730), true);
+        Near(new Vector2(-75, 710), next.Scroll);
+    }
+
+    [Fact]
+    public void RepeatedCharacterRangesCannotProduceANonFiniteZoom()
+    {
+        var repeated = (new Rect(300, 100, 312, 120), new Rect(350, 120, 368, 150));
+        var remote = (new Rect(300, 500, 312, 520), new Rect(350, 720, 368, 722));
+        Assert.False(TextAnchorAlignment.TryFit(new[] { repeated, repeated, repeated, repeated, remote }, out _));
+    }
+
+    [Theory]
+    [InlineData(.02f)]
+    [InlineData(50)]
+    public void WordZoomCanMoveBetweenTenAndFiveHundredPercent(float ratio)
+    {
+        var reference = new Rect(300, 100, 312, 120);
+        var second = new Rect(300, 500, 312, 520);
+        Rect Zoom(Rect rect) => new(rect.Left * ratio, rect.Top * ratio, rect.Right * ratio, rect.Bottom * ratio);
+        Assert.True(TextAnchorAlignment.TryFit(new[] { (reference, Zoom(reference)), (second, Zoom(second)) }, out var view));
+        Assert.InRange(Math.Abs(view.M11 - ratio), 0, .0001f);
+    }
+
+    [Fact]
+    public void TouchZoomTransitionSettlesWithinOneObservationInterval()
+    {
+        var transition = new ScreenViewTransition();
+        var view = Matrix3x2.Identity;
+        for (int frame = 0; frame < 30; frame++)
+        {
+            var next = Matrix3x2.CreateScale(1 + frame * .01f, new Vector2(400, 300));
+            transition.Retarget(view, next, frame * 25, true, 32);
+            var current = transition.Sample(frame * 25 + 24);
+            Assert.InRange(Math.Abs(current.M11 - next.M11), 0, .001f);
+            view = next;
+        }
+        Assert.Equal(view, transition.Sample(30 * 25 + 32));
+    }
+
+    [Fact]
+    public void ViewTransitionRetargetsContinuouslyAndRepeatedSamplesDoNotRestartIt()
+    {
+        var transition = new ScreenViewTransition();
+        var first = Matrix3x2.CreateTranslation(0, -100);
+        transition.Retarget(Matrix3x2.Identity, first, 0, true);
+        float position = transition.Sample(30).M32;
+        Assert.InRange(position, -99, -1);
+        var next = Matrix3x2.CreateScale(1.5f) * Matrix3x2.CreateTranslation(-40, -200);
+        transition.Retarget(first, next, 30, true);
+        Assert.Equal(position, transition.Current.M32);
+        transition.Retarget(next, next, 80, true);
+        var halfway = transition.Current;
+        Assert.InRange(halfway.M11, 1.01f, 1.49f);
+        Assert.InRange(halfway.M32, -199, position);
+        Assert.Equal(next, transition.Sample(130));
+        Assert.False(transition.IsActive);
+    }
+
+    [Fact]
+    public void PageSwitchInputAndExternalViewChangesEndTheTransitionExactly()
+    {
+        var transition = new ScreenViewTransition();
+        var target = Matrix3x2.CreateTranslation(0, -200);
+        transition.Retarget(Matrix3x2.Identity, target, 0, true);
+        transition.Sample(20);
+        transition.Reset(target);
+        Assert.Equal(target, transition.Current);
+        Assert.False(transition.IsActive);
+        transition.Retarget(target, Matrix3x2.Identity, 30, false);
+        Assert.Equal(Matrix3x2.Identity, transition.Sample(40));
+        transition.Retarget(Matrix3x2.Identity, target, 50, true);
+        var manual = Matrix3x2.CreateTranslation(100, 50);
+        transition.Retarget(manual, manual, 60, true);
+        Assert.False(transition.IsActive);
+        Assert.Equal(manual, transition.Current);
+    }
 
     [Theory]
     [InlineData(0)]

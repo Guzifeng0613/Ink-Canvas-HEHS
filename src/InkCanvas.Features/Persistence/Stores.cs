@@ -193,11 +193,23 @@ public sealed class AutoSaveService
         {
             string root = Settings.AutoSavedStrokesLocation;
             if (string.IsNullOrWhiteSpace(root) || !System.IO.Directory.Exists(root)) return 0;
+            root = Path.GetFullPath(root);
+            if (root.TrimEnd(Path.DirectorySeparatorChar) == Path.GetPathRoot(root)?.TrimEnd(Path.DirectorySeparatorChar)) return 0;
+            if ((File.GetAttributes(root) & FileAttributes.ReparsePoint) != 0) return 0;
             var cutoff = DateTime.Now.AddDays(-Math.Max(1, Settings.AutoDelSavedFilesDaysThreshold));
-            foreach (var file in System.IO.Directory.EnumerateFiles(root, "*" + InkFileStore.Extension, SearchOption.AllDirectories))
+            var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint };
+            foreach (var file in System.IO.Directory.EnumerateFiles(root, "*", options))
             {
                 try
                 {
+                    string extension = Path.GetExtension(file);
+                    bool snapshot = extension.Equals(InkFileStore.Extension, StringComparison.OrdinalIgnoreCase);
+                    string relative = Path.GetRelativePath(root, file);
+                    bool screenshot = extension.Equals(".png", StringComparison.OrdinalIgnoreCase)
+                        && (relative.StartsWith("Auto Saved - PPT Screenshots" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                            || relative.StartsWith("Screenshots" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                                && Path.GetFileName(file).StartsWith("Screenshot-", StringComparison.OrdinalIgnoreCase));
+                    if (!snapshot && !screenshot) continue;
                     if (File.GetLastWriteTime(file) < cutoff) { File.Delete(file); removed++; }
                 }
                 catch { /* individual file may be locked */ }

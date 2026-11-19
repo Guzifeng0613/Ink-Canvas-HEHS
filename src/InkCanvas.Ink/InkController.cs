@@ -291,6 +291,19 @@ public sealed partial class InkController : IDisposable
     }
 
     private OverlayPointer? _eraserPreviewPointer;
+    private bool _showPenCursor;
+    public bool ShowPenCursor
+    {
+        get => _showPenCursor;
+        set { if (_showPenCursor == value) return; _showPenCursor = value; EraserPreviewChanged?.Invoke(); }
+    }
+    public bool IsPenCursorVisible => ShowPenCursor && _eraserPreviewPointer is { Kind: not OverlayPointerKind.Touch }
+        && Tool is InkTool.Pen or InkTool.Highlighter && Playback is null;
+    public Rect PenCursorVisualBounds => IsPenCursorVisible && _eraserPreviewPointer is { } pointer
+        ? Rect.FromLTRB(pointer.X - PenCursorRadius - 3, pointer.Y - PenCursorRadius - 3,
+            pointer.X + PenCursorRadius + 3, pointer.Y + PenCursorRadius + 3) : Rect.Empty;
+    public float PenCursorRadius => MathF.Max(2, CurrentAttributes.BaseWidth * MathF.Sqrt(MathF.Abs(ViewTransform.GetDeterminant())) / 2);
+    public Vector2 PenCursorCenter => _eraserPreviewPointer is { } pointer ? new(pointer.X, pointer.Y) : Vector2.Zero;
     public event Action EraserPreviewChanged;
     public bool IsEraserPreviewVisible => _eraserPreviewPointer.HasValue && Playback is null
         && (_erasing ? _partialEraseGesture : Tool == InkTool.Eraser && EraserMode == InkEraserMode.Area);
@@ -317,7 +330,7 @@ public sealed partial class InkController : IDisposable
     public void HideEraserPreview(uint? pointerId = null)
     {
         if (_eraserPreviewPointer is not { } pointer || pointerId.HasValue && pointerId != pointer.Id) return;
-        bool visible = IsEraserPreviewVisible;
+        bool visible = IsEraserPreviewVisible || IsPenCursorVisible;
         _eraserPreviewPointer = null;
         if (visible) EraserPreviewChanged?.Invoke();
     }
@@ -328,7 +341,7 @@ public sealed partial class InkController : IDisposable
         bool moved = _eraserPreviewPointer is not { } previous
             || previous.Id != pointer.Id || previous.X != pointer.X || previous.Y != pointer.Y;
         _eraserPreviewPointer = pointer;
-        if (notify && moved && !_erasing && IsEraserPreviewVisible) EraserPreviewChanged?.Invoke();
+        if (notify && moved && !_erasing && (IsEraserPreviewVisible || IsPenCursorVisible)) EraserPreviewChanged?.Invoke();
     }
 
     private InkEraserMode _eraserMode = InkEraserMode.Area;
@@ -369,8 +382,8 @@ public sealed partial class InkController : IDisposable
         _manipulator.MaxScale = maximum;
     }
     public bool IsViewManipulating => _panPointerId is not null
-        || PanZoomEnabled && Tool == InkTool.Pan && _touches.Count >= 2
-        || !_selectionGesture && !MultiTouchEnabled && _touches.Count >= 2 && Tool is not (InkTool.Select or InkTool.Eraser);
+        || PanZoomEnabled && Tool == InkTool.Pan && TryGetTouchPair(out _, out _)
+        || !_selectionGesture && !MultiTouchEnabled && TryGetTouchPair(out _, out _) && Tool is not (InkTool.Select or InkTool.Eraser);
 
     public Vector2 ViewCenter { get; set; } = new(960, 540);
 
@@ -456,6 +469,7 @@ public sealed partial class InkController : IDisposable
     private List<InkStroke> _marqueeInitialStrokes;
     private List<ISelectionElement> _marqueeInitialElements;
     private bool _selectionGesture;
+    public bool IsSelectionGestureActive => _selectionGesture;
     private Matrix3x2 _selectionPreview = Matrix3x2.Identity;
     private bool DeferSelectionPoints => _selectionGesture || _activeHandle is SelectionHandle.Move or SelectionHandle.Rotate;
     private readonly HashSet<InkStroke> _previewSet = new();
@@ -533,8 +547,6 @@ public sealed partial class InkController : IDisposable
         _manipulator.AllowZoom = zoom;
         _manipulator.AllowTranslate = translate;
         _manipulator.AllowRotation = rotate;
-        _selectionManipulator.AllowZoom = zoom;
-        _selectionManipulator.AllowTranslate = translate;
     }
 
     // ---- input ------------------------------------------------------------
@@ -549,7 +561,7 @@ public sealed partial class InkController : IDisposable
             if (PanZoomEnabled && p.Kind == OverlayPointerKind.Touch)
             {
                 _touches[p.Id] = p;
-                if (_touches.Count >= 2 && TryGetTouchPair(out var a, out var b))
+                if (_touches.Count >= 2 && TryGetTouchPair(out var a, out var b, p.InputSurface))
                 {
                     _panPointerId = null;
                     _manipulator.Begin(new(a.X, a.Y), new(b.X, b.Y));
@@ -573,12 +585,20 @@ public sealed partial class InkController : IDisposable
             if (p.Kind == OverlayPointerKind.Touch)
             {
                 _touches[p.Id] = p;
-                if (_selectionGesture) return;
-                if (_touches.Count == 2 && !MultiTouchEnabled && HasSelection)
+                if (_selectionGesture)
+                {
+                    if (_selectionTouchPair is { } pair && pair.First == pair.Second && pair.First != p.Id
+                        && _touches.TryGetValue(pair.First, out var first) && first.InputSurface == p.InputSurface
+                        && SelectionFrame.HitTest(new Vector2(p.X, p.Y), ViewTransform) != SelectionHandle.None)
+                        BeginSelectionTouchPair(first, p);
+                    return;
+                }
+                if (HasSelection && !IsMarqueeSelecting
+                    && (_activeHandle == SelectionHandle.None || _touches.ContainsKey(_selectionPointerId))
+                    && TryGetSelectionTouchPair(out var a, out var b, p.InputSurface))
                 {
                     BeginSelectionGesture();
-                    _selectionManipulator.AllowRotation = GesturesTargetSelection && !CloneMode;
-                    if (TryGetTouchPair(out var a, out var b)) _selectionManipulator.Begin(ToWorld(a), ToWorld(b));
+                    BeginSelectionTouchPair(a, b);
                     return;
                 }
             }
@@ -601,11 +621,10 @@ public sealed partial class InkController : IDisposable
             // WRITING (gestures disabled); gestures run only when the mode is OFF. The second
             // finger then cancels partial touch ink and starts the gesture (first-contact
             // snapshot rollback on lift, MW_TouchEvents.cs:273-321).
-            if (_touches.Count == 2 && !MultiTouchEnabled)
+            if (!MultiTouchEnabled && TryGetTouchPair(out var a, out var b, p.InputSurface))
             {
-                CancelTouchInk();
-                if (TryGetTouchPair(out var a, out var b))
-                    _manipulator.Begin(new Vector2(a.X, a.Y), new Vector2(b.X, b.Y));
+                CancelTouchInk(p.InputSurface);
+                _manipulator.Begin(new Vector2(a.X, a.Y), new Vector2(b.X, b.Y));
                 Invalidated?.Invoke();
                 return;
             }
@@ -675,7 +694,7 @@ public sealed partial class InkController : IDisposable
             if (PanZoomEnabled && p.Kind == OverlayPointerKind.Touch && _touches.ContainsKey(p.Id))
             {
                 _touches[p.Id] = p;
-                if (_touches.Count >= 2 && TryGetTouchPair(out var a, out var b))
+                if (_touches.Count >= 2 && TryGetTouchPair(out var a, out var b, p.InputSurface))
                 {
                     var view = ViewTransform;
                     if (_manipulator.Update(new(a.X, a.Y), new(b.X, b.Y), ref view, new((a.X + b.X) / 2, (a.Y + b.Y) / 2), screenSpace: true))
@@ -700,11 +719,15 @@ public sealed partial class InkController : IDisposable
         {
             if (!_touches.ContainsKey(p.Id)) return;
             _touches[p.Id] = p;
-            if (TryGetTouchPair(out var a, out var b))
+            if (_selectionTouchPair is { } pair && (pair.First == p.Id || pair.Second == p.Id)
+                && _touches.TryGetValue(pair.First, out var a) && _touches.TryGetValue(pair.Second, out var b))
             {
-                var delta = Matrix3x2.Identity;
-                if (_selectionManipulator.Update(ToWorld(a), ToWorld(b), ref delta, ResolvePivot((ToWorld(a) + ToWorld(b)) / 2)))
-                    ApplySelectionGesture(delta);
+                var first = new Vector2(a.X, a.Y);
+                var second = new Vector2(b.X, b.Y);
+                var transform = _selectionManipulator.TransformFromStart(first, second);
+                if (transform == Matrix3x2.Identity) SetSelectionGestureTransform(_selectionTouchStartPreview);
+                else if (Matrix3x2.Invert(_viewAtDragStart, out var inverse))
+                    SetSelectionGestureTransform(_selectionTouchStartPreview * _viewAtDragStart * transform * inverse);
             }
             return;
         }
@@ -717,9 +740,8 @@ public sealed partial class InkController : IDisposable
         if (p.Kind == OverlayPointerKind.Touch && _touches.ContainsKey(p.Id))
         {
             _touches[p.Id] = p;
-            if (_touches.Count >= 2 && !MultiTouchEnabled && Tool != InkTool.Eraser)
+            if (!MultiTouchEnabled && Tool != InkTool.Eraser && TryGetTouchPair(out var ta, out var tb, p.InputSurface))
             {
-                if (!TryGetTouchPair(out var ta, out var tb)) return;
                 if (GesturesTargetSelection && Selection.Count > 0)
                 {
                     // Manipulate the selection rather than the whole view.
@@ -819,9 +841,12 @@ public sealed partial class InkController : IDisposable
         {
             OnPointerMove(p);
             _palm.OnUp(p); _touches.Remove(p.Id);
-            if (_touches.Count < 2)
+            if (_selectionTouchPair is { } pair && (pair.First == p.Id || pair.Second == p.Id))
             {
-                EndSelectionGesture();
+                if (TryGetSelectionTouchPair(out var a, out var b, p.InputSurface)) BeginSelectionTouchPair(a, b);
+                else if (_touches.TryGetValue(pair.First == p.Id ? pair.Second : pair.First, out var remaining))
+                    BeginSelectionTouchPair(remaining, remaining);
+                else EndSelectionGesture();
             }
             return;
         }
@@ -1587,7 +1612,18 @@ public sealed partial class InkController : IDisposable
     public void BeginSelectionGesture()
     {
         if (_selectionGesture || !HasSelection) return;
-        if (_activeHandle != SelectionHandle.None) EndSelectionDrag();
+        if (_activeHandle != SelectionHandle.None)
+        {
+            bool deferred = DeferSelectionPoints;
+            _selectionGesture = true;
+            _activeHandle = SelectionHandle.None;
+            if (_dragMoved && !deferred && _dragSnapshot is not null)
+            {
+                ApplySnapshot(_dragTargets, _dragSnapshot);
+                Document.Touch();
+            }
+            return;
+        }
         IsMarqueeSelecting = false; MarqueeBounds = Rect.Empty;
         _marqueeInitialStrokes = null; _marqueeInitialElements = null;
         _dragTargets = Selection.ToList(); _dragSnapshot = null;
@@ -1601,7 +1637,14 @@ public sealed partial class InkController : IDisposable
 
     public void ApplySelectionGesture(Matrix3x2 delta)
     {
-        if (delta == Matrix3x2.Identity || _dragTargets is null) return;
+        if (delta == Matrix3x2.Identity) return;
+        SetSelectionGestureTransform(_selectionPreview * delta);
+    }
+
+    private void SetSelectionGestureTransform(Matrix3x2 transform)
+    {
+        if (transform == _selectionPreview || _dragTargets is null) return;
+        _selectionPreview = transform;
         if (CloneMode && !_cloneDrag)
         {
             _dragTargets = InkStroke.CloneObjects(Selection);
@@ -1611,14 +1654,13 @@ public sealed partial class InkController : IDisposable
             _previewSet.Clear();
             _previewSet.UnionWith(_dragTargets);
             _dragMoved = true;
-            _selectionPreview *= delta;
             Document.AddRange(_dragTargets);
             foreach (var element in _dragElements) element.SetPresent(true);
         }
-        else _selectionPreview *= delta;
         _dragMoved = true;
         if (_previewSet.Count == 0) _previewSet.UnionWith(_dragTargets);
-        foreach (var element in _dragElements) element.Transform(delta);
+        for (int i = 0; i < _dragElements.Count; i++)
+            _dragElements[i].TransformFrom(_dragElementSnapshot[i], _selectionPreview);
         Invalidated?.Invoke();
     }
 
@@ -1626,6 +1668,7 @@ public sealed partial class InkController : IDisposable
     {
         if (!_selectionGesture) return;
         _selectionGesture = false;
+        _selectionTouchPair = null;
         _selectionManipulator.Reset();
         EndSelectionDrag(gesture: true);
     }
@@ -1759,12 +1802,12 @@ public sealed partial class InkController : IDisposable
         Invalidated?.Invoke();
     }
 
-    private void CancelTouchInk()
+    private void CancelTouchInk(long surface)
     {
         // Allocation-free: reuse a scratch list instead of LINQ Where(...).ToList() per gesture.
         _scratchIds.Clear();
         foreach (var id in _live.Keys)
-            if (_touches.ContainsKey(id)) _scratchIds.Add(id);
+            if (_touches.TryGetValue(id, out var touch) && touch.InputSurface == surface) _scratchIds.Add(id);
         foreach (var id in _scratchIds)
         {
             _live.Remove(id);
@@ -1777,15 +1820,15 @@ public sealed partial class InkController : IDisposable
     /// First two active touch contacts in enumeration order (what <c>_touches.Values.Take(2)</c>
     /// produced), without allocating an array or LINQ iterators on the per-move gesture path.
     /// </summary>
-    private bool TryGetTouchPair(out OverlayPointer a, out OverlayPointer b)
+    private bool TryGetTouchPair(out OverlayPointer a, out OverlayPointer b, long? surface = null)
     {
         a = default; b = default;
-        int n = 0;
-        foreach (var t in _touches.Values)
+        foreach (var first in _touches.Values)
         {
-            if (n == 0) a = t;
-            else { b = t; return true; }
-            n++;
+            if (surface.HasValue && first.InputSurface != surface.Value) continue;
+            foreach (var second in _touches.Values)
+                if (first.Id != second.Id && first.InputSurface == second.InputSurface)
+                { a = first; b = second; return true; }
         }
         return false;
     }

@@ -53,6 +53,8 @@ public sealed class PenPalette : UserControl
     private readonly SolidColorBrush _foreground = new(Microsoft.UI.Colors.Black);
     private readonly SolidColorBrush _swatchBorder = new(Windows.UI.Color.FromArgb(204, 0, 0, 0));
     private readonly Border _card;
+    private readonly StackPanel _options;
+    private ToggleSwitch _nibMode;
     public PopupHeader Header { get; }
     private FontIcon _themeGlyph;
     private TextBlock _themeText;
@@ -125,6 +127,7 @@ public sealed class PenPalette : UserControl
         };
 
         var panel = new StackPanel { Spacing = 10 };
+        _options = panel;
         panel.Children.Add(ChoiceRow("笔尖", _nib));
         if (highlighter)
         {
@@ -160,6 +163,15 @@ public sealed class PenPalette : UserControl
         Content = _card;
         ApplyChrome(1);
         UpdateAlphaAvailability();
+    }
+
+    public void ConfigureNibMode(bool visible, bool enabled, Action<bool> changed)
+    {
+        if (_nibMode is not null) _options.Children.Remove(_nibMode);
+        _nibMode = new ToggleSwitch { Header = "启用笔尖模式", IsOn = enabled, Visibility = visible ? Visibility.Visible : Visibility.Collapsed };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_nibMode, "启用笔尖模式");
+        _nibMode.Toggled += (_, _) => changed(_nibMode.IsOn);
+        _options.Children.Insert(0, _nibMode);
     }
 
     /// <summary>Fixed design size (DIP) so the host window can size itself without a rooted measure.</summary>

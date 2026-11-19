@@ -1,8 +1,12 @@
 ﻿using System.Text.Json;
 using InkCanvas.App.Services;
 using InkCanvas.App.Views;
+using InkCanvas.Controls.Controls;
+using InkCanvas.Core.Ink;
 using InkCanvas.Features.Board;
+using InkCanvas.Ink;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
@@ -18,12 +22,70 @@ internal static class BoardPopupRegression
         Directory.CreateDirectory(directory);
         var checks = new List<object>();
         using var services = new AppServices(Path.Combine(directory, "settings"));
+        services.Settings.Automation.MinimumAutomationStrokeNumber = int.MaxValue;
         var window = new BoardWindow(services);
         try
         {
             window.Activate();
             await Task.Delay(300);
             var root = (FrameworkElement)window.Content;
+            var main = new FloatingBarWindow();
+            main.Bar.Settings = services.Settings;
+            main.Configure(services.OverlayInk, null);
+            WindowChrome.ShowWithoutActivation(main);
+            try
+            {
+                await Task.Delay(100);
+                var mainButtons = Descendants(main.Bar).OfType<TouchIconButton>().ToArray();
+                checks.Add(new { check = "main toolbar consolidates image and clone entries",
+                    passed = mainButtons.All(button => button.Label is not ("插入图片" or "克隆")) });
+                var tools = new BarPanelWindow(main, main.Bar, BarPanelKind.More);
+                WindowChrome.ShowWithoutActivation(tools);
+                try
+                {
+                    await Task.Delay(100);
+                    var imageButtons = Descendants(tools.Content).OfType<TouchIconButton>().Where(button => button.Label == "插入图片").ToArray();
+                    checks.Add(new { check = "image insertion remains usable in tools menu",
+                        passed = imageButtons.Length == 1 && imageButtons[0].IsEnabled && imageButtons[0].Opacity == 1 });
+                }
+                finally { tools.Close(); }
+            }
+            finally { main.Close(); }
+
+            var clearButton = Descendants(root).OfType<Button>()
+                .Single(button => Descendants(button).OfType<TextBlock>().Any(text => text.Text == "清屏"));
+            var eraserButton = Descendants(root).OfType<Button>()
+                .Single(button => Descendants(button).OfType<TextBlock>().Any(text => text.Text == "橡皮"));
+            checks.Add(new { check = "board clear is a separate toolbar action",
+                passed = clearButton.Parent == eraserButton.Parent && clearButton.Width == eraserButton.Width
+                    && clearButton.Height == eraserButton.Height && AutomationProperties.GetItemStatus(clearButton) != "已选中" });
+            var stroke = new InkStroke(new());
+            stroke.AddPoint(100, 100); stroke.AddPoint(180, 150); stroke.Complete();
+            var original = stroke.Points.ToArray();
+            window.CurrentController.Document.Add(stroke);
+            window.CurrentController.Tool = InkTool.Select;
+            Invoke(clearButton);
+            await Task.Delay(100);
+            var dialog = VisualTreeHelper.GetOpenPopupsForXamlRoot(root.XamlRoot)
+                .SelectMany(popup => Descendants(popup.Child)).OfType<ContentDialog>().Single();
+            dialog.Hide();
+            await Task.Delay(100);
+            checks.Add(new { check = "canceling board clear preserves page and current tool",
+                passed = window.CurrentController.Document.Strokes.Contains(stroke) && window.CurrentController.Tool == InkTool.Select });
+            Invoke(clearButton);
+            await Task.Delay(100);
+            dialog = VisualTreeHelper.GetOpenPopupsForXamlRoot(root.XamlRoot)
+                .SelectMany(popup => Descendants(popup.Child)).OfType<ContentDialog>().Single();
+            Invoke(Descendants(dialog).OfType<Button>().Single(button => button.Name == "PrimaryButton"));
+            await Task.Delay(100);
+            checks.Add(new { check = "confirmed clear uses current page workflow",
+                passed = window.CurrentController.Document.Count == 0 && window.CurrentController.Tool == InkTool.Pen
+                    && window.CurrentController.History.CanUndo });
+            window.CurrentController.Undo();
+            checks.Add(new { check = "toolbar clear can be undone",
+                passed = window.CurrentController.Document.Strokes.Single().Points.SequenceEqual(original) });
+            window.CurrentController.Document.Clear();
+            window.CurrentController.History.Clear();
             foreach (var background in new[] { BoardBackground.White, BoardBackground.Black })
             foreach (double scale in new[] { 50d, 100d, 150d })
             {
@@ -31,12 +93,24 @@ internal static class BoardPopupRegression
                 services.Settings.Appearance.BlackboardScale = scale;
                 window.RefreshUiScale();
                 await Task.Delay(80);
+                var docks = window.DockSurfaces.Select(surface => surface.TransformToVisual(root).TransformBounds(
+                    new Windows.Foundation.Rect(0, 0, surface.ActualWidth, surface.ActualHeight))).ToArray();
+                bool dockFits = docks.All(bounds => bounds.Left >= -1 && bounds.Top >= -1
+                    && bounds.Right <= root.ActualWidth + 1 && bounds.Bottom <= root.ActualHeight + 1);
+                bool separateDocks = docks.SelectMany((bounds, index) => docks.Skip(index + 1).Select(other =>
+                    bounds.Right <= other.Left + 1 || other.Right <= bounds.Left + 1
+                    || bounds.Bottom <= other.Top + 1 || other.Bottom <= bounds.Top + 1)).All(separate => separate);
+                checks.Add(new { check = "board toolbar fits dedicated clear action", background = background.ToString(), scale,
+                    passed = dockFits && separateDocks });
+                if (scale == 100) await BoardWindowRegression.SaveVisual(window.DockSurfaces[1], Path.Combine(directory, $"toolbar-{background}.png"));
                 var more = Descendants(root).OfType<Button>().First(button => Descendants(button).OfType<TextBlock>().Any(text => text.Text == "更多"));
                 Invoke(more);
                 await Task.Delay(200);
                 var popup = VisualTreeHelper.GetOpenPopupsForXamlRoot(root.XamlRoot)
                     .Single(item => Descendants(item.Child).OfType<TextBlock>().Any(text => text.Text == "更多功能"));
                 var presenter = Descendants(popup.Child).OfType<FlyoutPresenter>().Single();
+                checks.Add(new { check = "more menu uses dedicated clear action",
+                    passed = !Descendants(presenter).OfType<TextBlock>().Any(text => text.Text == "清屏") });
                 string name = $"{background}-{scale}";
                 CheckSurface(presenter, name);
                 var view = (Viewbox)presenter.Content;

@@ -7,6 +7,7 @@ namespace InkCanvas.App.Services;
 
 public sealed partial class ShellController
 {
+    private bool _installingUpdate;
     private bool CanInstallUpdateSilently()
     {
         if (_exiting || _disposed || _board is not null || _documentWorkspace is not null || _settings is not null

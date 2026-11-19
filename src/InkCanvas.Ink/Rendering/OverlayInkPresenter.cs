@@ -3,6 +3,7 @@ using InkCanvas.Core.Imaging;
 using InkCanvas.Core.ScreenTracking;
 using InkCanvas.Core.Ink;
 using Microsoft.Graphics.Canvas;
+using Microsoft.UI.Dispatching;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices.WindowsRuntime;
@@ -61,6 +62,44 @@ public sealed class OverlayInkPresenter : IDisposable
     private bool _trackingSuppressed;
     private int _sceneUpdateDepth;
     private readonly HashSet<uint> _excludedPointers = new();
+    private readonly ScreenViewTransition _trackingTransition = new();
+    private DispatcherQueueTimer _trackingTimer;
+    private bool _lastTrackingAnimation;
+
+    public bool IsScreenTrackingAnimating => _trackingTransition.IsActive;
+    public Matrix3x2 DisplayedView => _trackingTransition.IsActive ? _trackingTransition.Current : _controller.ViewTransform;
+
+    public void TransitionScreenTrackingView(Matrix3x2 previousView, bool animate,
+        double durationMilliseconds = ScreenViewTransition.DurationMilliseconds)
+    {
+        _trackingTransition.Retarget(previousView, _controller.ViewTransform, Stopwatch.GetTimestamp() * 1000d / Stopwatch.Frequency,
+            animate && _attached && InkVisible && !_trackingSuppressed && !_controller.HasActiveInteraction && _controller.Playback is null,
+            durationMilliseconds);
+        if (_trackingTransition.IsActive) _trackingTimer?.Start();
+        else _trackingTimer?.Stop();
+        RequestRender();
+    }
+
+    public void FinishScreenTrackingTransition()
+    {
+        bool active = _trackingTransition.IsActive;
+        _trackingTimer?.Stop();
+        _trackingTransition.Reset(_controller.ViewTransform);
+        if (active) RequestRender();
+    }
+
+    private void OnScreenTrackingFrame(DispatcherQueueTimer timer, object args)
+    {
+        if (_controller.HasActiveInteraction || _controller.Playback is not null || !InkVisible
+            || _trackingSuppressed || _trackingTransition.Target != _controller.ViewTransform)
+        {
+            FinishScreenTrackingTransition();
+            return;
+        }
+        _trackingTransition.Sample(Stopwatch.GetTimestamp() * 1000d / Stopwatch.Frequency);
+        if (!_trackingTransition.IsActive) timer.Stop();
+        RequestRender();
+    }
 
     public void BeginSceneUpdate() => _sceneUpdateDepth++;
     public void EndSceneUpdate() { if (_sceneUpdateDepth > 0) _sceneUpdateDepth--; if (_sceneUpdateDepth == 0) RequestRender(); }
@@ -69,7 +108,9 @@ public sealed class OverlayInkPresenter : IDisposable
         if (_trackingSuppressed == suppressed && _trackingClip?.Viewport == clip?.Viewport
             && (_trackingClip?.Occlusions ?? Array.Empty<Rect>()).SequenceEqual(clip?.Occlusions ?? Array.Empty<Rect>())) return;
         _trackingClip = clip; _trackingSuppressed = suppressed;
-        _committedValid = false; RequestRender();
+        _committedValid = false;
+        if (clip is null || suppressed) FinishScreenTrackingTransition();
+        RequestRender();
     }
     private long _lastPresentTick;
     private bool MoveFrameDue => Stopwatch.GetElapsedTime(_lastPresentTick).TotalMilliseconds >= 1000d / 60;
@@ -135,7 +176,9 @@ public sealed class OverlayInkPresenter : IDisposable
         set
         {
             if (_inkVisible == value) return;
+            if (value) _window.EnsurePixelBuffer();
             _inkVisible = value;
+            FinishScreenTrackingTransition();
             if (!value) _controller.HideEraserPreview();
             RequestRender();
         }
@@ -150,6 +193,9 @@ public sealed class OverlayInkPresenter : IDisposable
     {
         if (_attached) return;
         _attached = true;
+        _trackingTimer = DispatcherQueue.GetForCurrentThread().CreateTimer();
+        _trackingTimer.Interval = TimeSpan.FromMilliseconds(16);
+        _trackingTimer.Tick += OnScreenTrackingFrame;
         _dotClock = new DotAnimationClock(_controller, RequestRender);
         _window.PointerDown += OnDown;
         _window.PointerMove += OnMove;
@@ -173,6 +219,9 @@ public sealed class OverlayInkPresenter : IDisposable
     {
         if (!_attached) return;
         _attached = false;
+        FinishScreenTrackingTransition();
+        _trackingTimer.Tick -= OnScreenTrackingFrame;
+        _trackingTimer = null;
         _dotClock?.Dispose();
         _dotClock = null;
         _window.PointerDown -= OnDown;
@@ -195,6 +244,7 @@ public sealed class OverlayInkPresenter : IDisposable
     {
         if (_trackingSuppressed || _trackingClip?.Contains(new Vector2(p.X, p.Y) * _window.DpiScale) == false)
         { _excludedPointers.Add(p.Id); return; }
+        FinishScreenTrackingTransition();
         NoteInput(p); _controller.OnPointerDown(p);
     }
     private void OnMove(OverlayPointer p) { if (_excludedPointers.Contains(p.Id)) return; NoteInput(p); _moveInput = true; try { _controller.OnPointerMove(p); } finally { _moveInput = false; } }
@@ -290,7 +340,7 @@ public sealed class OverlayInkPresenter : IDisposable
 
         if (!InkVisible || _trackingSuppressed || (_controller.Document.Count == 0 && !ImageSceneRenderer.Images(_controller).Any() && !_controller.LiveStrokes.Any()
             && !_controller.ShapePreview.Any() && _controller.ExtensionPreview.Count == 0 && !_controller.HasSelection && !_controller.IsMarqueeSelecting && !_controller.IsLassoErasing
-            && !_controller.IsEraserPreviewVisible))
+            && !_controller.IsEraserPreviewVisible && !_controller.IsPenCursorVisible))
         {
             // Keep alpha at one so the layered window remains hit-testable. The window's
             // WS_EX_TRANSPARENT style then routes desktop pointer input through in cursor mode.
@@ -365,7 +415,8 @@ public sealed class OverlayInkPresenter : IDisposable
 
     private void EnsureCommittedCache()
     {
-        bool viewChanged = _lastView != _controller.ViewTransform;
+        var view = OverlayTransform();
+        bool viewChanged = _lastView != view || _lastTrackingAnimation != _trackingTransition.IsActive;
         // During a selection drag this is the frozen restore image. The moving scene is
         // redrawn only inside LiveRegion, including the frozen and current object positions.
         bool previewChanged = !ReferenceEquals(_lastPreviewStrokes, _controller.PreviewStrokes);
@@ -385,7 +436,8 @@ public sealed class OverlayInkPresenter : IDisposable
             // remaining visually transparent. Stroke coordinates are DIPs; the target buffer
             // is physical pixels, so scale the view transform by the monitor DPI.
             session.Clear(Windows.UI.Color.FromArgb(1, 1, 1, 1));
-            _historyTiles.Draw(session, Scene, _controller, _window.Width, _window.Height, transformOverride: OverlayTransform());
+            _historyTiles.Draw(session, Scene, _controller, _window.Width, _window.Height, transformOverride: view,
+                reuseRaster: _trackingTransition.IsActive);
         }
         _committedTarget.GetPixelBytes(_committedPixelsBuffer);
         _trackingClip?.Apply(_committedPixels, _window.Width, _window.Height);
@@ -393,7 +445,8 @@ public sealed class OverlayInkPresenter : IDisposable
 
         _committedValid = true;
         _committedChanged = true;
-        _lastView = _controller.ViewTransform;
+        _lastView = view;
+        _lastTrackingAnimation = _trackingTransition.IsActive;
         _lastPreviewStrokes = _controller.PreviewStrokes;
         _lastPreviewTransform = _controller.SelectionPreviewTransform;
         _lastViewManipulation = _controller.IsViewManipulating;
@@ -414,7 +467,8 @@ public sealed class OverlayInkPresenter : IDisposable
                 .Union(CommittedInkLayer.TransformBounds(_controller.SelectionPreviewSourceBounds, _controller.SelectionPreviewTransform));
         if (_controller.Playback is { } playback)
             foreach (var s in playback.VisibleStrokes) world = world.Union(s.Bounds);
-        var adornment = _controller.SelectionVisualBounds.Union(_controller.LassoVisualBounds).Union(_controller.EraserVisualBounds);
+        var adornment = _controller.SelectionVisualBounds.Union(_controller.LassoVisualBounds).Union(_controller.EraserVisualBounds)
+            .Union(_controller.PenCursorVisualBounds);
         if (!adornment.IsEmpty && Matrix3x2.Invert(_controller.ViewTransform, out var inverse))
         {
             foreach (var p in new[] { new Vector2(adornment.Left, adornment.Top), new Vector2(adornment.Right, adornment.Top),
@@ -516,7 +570,7 @@ public sealed class OverlayInkPresenter : IDisposable
     }
 
     private Matrix3x2 OverlayTransform()
-        => _controller.ViewTransform * Matrix3x2.CreateScale(_window.DpiScale);
+        => DisplayedView * Matrix3x2.CreateScale(_window.DpiScale);
 
     public void Dispose()
     {
@@ -560,6 +614,15 @@ public sealed class OverlayInkPresenter : IDisposable
         Detach();
         ReleaseRenderBuffers();
         Scene.Strokes.InvalidateAll();
+        _frameIsHidden = false;
+        _frameDirty = false;
+        _liveW = _liveH = 0;
+    }
+
+    public void ReleaseIdleResources()
+    {
+        ReleaseRenderBuffers();
+        Scene.ReleaseResources();
         _frameIsHidden = false;
         _frameDirty = false;
         _liveW = _liveH = 0;

@@ -1,4 +1,5 @@
 using InkCanvas.Platform.Interop;
+using InkCanvas.Platform.System;
 using System.Runtime.InteropServices;
 
 namespace InkCanvas.Platform.Windows;
@@ -15,7 +16,10 @@ public readonly record struct OverlayPointer(
     OverlayPointerKind Kind,
     uint TimeMs,
     bool Shift = false,
-    bool Control = false);
+    bool Control = false)
+{
+    public long InputSurface { get; init; }
+}
 
 /// <summary>
 /// A borderless, topmost, <b>per-pixel transparent</b> overlay that receives pen/touch input.
@@ -51,6 +55,10 @@ public sealed class LayeredInkWindow : IDisposable
     private readonly Dictionary<uint, OverlayPointer> _activePointers = new();
     private OverlayPointer? _fallbackMouse;
     private bool _trackingMouseLeave;
+    private ScreenRect[] _inputAreas;
+    private readonly Dictionary<(IntPtr Device, uint Contact), uint> _legacyContacts = new();
+    private uint _nextLegacyId = 0x10000;
+    private ScreenInfo[] _screens = ScreenService.All().ToArray();
 
     private delegate IntPtr WndProcDelegate(IntPtr h, uint msg, IntPtr w, IntPtr l);
 
@@ -76,6 +84,21 @@ public sealed class LayeredInkWindow : IDisposable
     private const uint FEEDBACK_GESTURE_PRESSANDHOLD = 11;
 
     [DllImport("user32.dll")] private static extern bool RegisterTouchWindow(IntPtr h, uint flags);
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct TouchInput
+    {
+        public int X, Y;
+        public IntPtr Source;
+        public uint Id, Flags, Mask, Time;
+        public UIntPtr Extra;
+        public uint Width, Height;
+    }
+    [DllImport("user32.dll")] private static extern bool GetTouchInputInfo(IntPtr input, uint count, [Out] TouchInput[] contacts, int size);
+    [DllImport("user32.dll")] private static extern bool CloseTouchInputHandle(IntPtr input);
+    [DllImport("gdi32.dll")] private static extern IntPtr CreateRectRgn(int left, int top, int right, int bottom);
+    [DllImport("gdi32.dll")] private static extern int CombineRgn(IntPtr destination, IntPtr first, IntPtr second, int operation);
+    [DllImport("user32.dll")] private static extern int SetWindowRgn(IntPtr window, IntPtr region, bool redraw);
+    [DllImport("user32.dll")] private static extern IntPtr GetMessageExtraInfo();
     [DllImport("user32.dll")] private static extern bool SetWindowFeedbackSetting(
         IntPtr h, uint feedback, uint flags, uint size, ref int configuration);
     [DllImport("user32.dll", EntryPoint = "PeekMessageW")]
@@ -140,6 +163,11 @@ public sealed class LayeredInkWindow : IDisposable
 
         _screenDc = NativeMethods.GetDC(IntPtr.Zero);
         _memDc = NativeMethods.CreateCompatibleDC(_screenDc);
+        EnsurePixelBuffer();
+    }
+
+    private void CreatePixelBuffer(int width, int height)
+    {
         var bi = new NativeMethods.BITMAPINFO
         {
             biSize = Marshal.SizeOf<NativeMethods.BITMAPINFO>(),
@@ -149,10 +177,35 @@ public sealed class LayeredInkWindow : IDisposable
             biBitCount = 32,
             biCompression = 0,
         };
-        _dib = NativeMethods.CreateDIBSection(_screenDc, ref bi, 0, out _bits, IntPtr.Zero, 0);
-        _oldBitmap = NativeMethods.SelectObject(_memDc, _dib);
-        if (_bits == IntPtr.Zero)
+        var dib = NativeMethods.CreateDIBSection(_screenDc, ref bi, 0, out var bits, IntPtr.Zero, 0);
+        if (dib == IntPtr.Zero || bits == IntPtr.Zero)
+        {
+            if (dib != IntPtr.Zero) NativeMethods.DeleteObject(dib);
             throw new InvalidOperationException("CreateDIBSection failed");
+        }
+        var previous = NativeMethods.SelectObject(_memDc, dib);
+        if (_oldBitmap == IntPtr.Zero) _oldBitmap = previous;
+        if (_dib != IntPtr.Zero) NativeMethods.DeleteObject(_dib);
+        _dib = dib;
+        _bits = bits;
+    }
+
+    public long PixelBufferBytes => _dib == IntPtr.Zero ? 0 : (long)Width * Height * 4;
+
+    public void EnsurePixelBuffer()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_dib == IntPtr.Zero) CreatePixelBuffer(Width, Height);
+    }
+
+    /// <summary>Release the DIB of an inactive surface while Windows retains its last presented frame.</summary>
+    public bool ReleasePixelBuffer()
+    {
+        if (_disposed || _dib == IntPtr.Zero || IsVisible && !ClickThrough) return false;
+        NativeMethods.SelectObject(_memDc, _oldBitmap);
+        NativeMethods.DeleteObject(_dib);
+        _dib = _bits = IntPtr.Zero;
+        return true;
     }
 
     private void SuppressSystemInputFeedback()
@@ -184,7 +237,7 @@ public sealed class LayeredInkWindow : IDisposable
     public int Width { get; private set; }
     public int Height { get; private set; }
 
-    /// <summary>Logical DIPs per physical screen pixel on the monitor this overlay covers.</summary>
+    /// <summary>Stable physical pixels per canvas unit, shared across the desktop viewport.</summary>
     public float DpiScale { get; } = 1f;
 
     /// <summary>Writable premultiplied-BGRA surface, <c>Width*Height*4</c> bytes, top-down.</summary>
@@ -250,7 +303,37 @@ public sealed class LayeredInkWindow : IDisposable
         foreach (var pointer in _activePointers.Values.ToArray()) EndPointer(pointer.Id, false, canceled: true);
         if (_fallbackMouse is { } mouse) { _fallbackMouse = null; RaiseCanceled(mouse); }
         if (NativeMethods.GetCapture() == Handle) NativeMethods.ReleaseCapture();
+        _legacyContacts.Clear();
     }
+
+    public void SetScreenLayout(IEnumerable<ScreenInfo> screens) => _screens = screens.ToArray();
+
+    public void SetInputAreas(IEnumerable<ScreenRect> areas, bool force = false)
+    {
+        var updated = areas?.ToArray();
+        if (!force && (_inputAreas is null && updated is null || _inputAreas is not null && updated is not null && _inputAreas.SequenceEqual(updated))) return;
+        CancelInput();
+        IntPtr region = IntPtr.Zero;
+        if (updated is not null)
+        {
+            region = CreateRectRgn(0, 0, 0, 0);
+            foreach (var area in updated)
+            {
+                var part = CreateRectRgn(area.X - X, area.Y - Y, area.X + area.Width - X, area.Y + area.Height - Y);
+                CombineRgn(region, region, part, 2 /* RGN_OR */);
+                NativeMethods.DeleteObject(part);
+            }
+        }
+        if (SetWindowRgn(Handle, region, true) == 0)
+        {
+            if (region != IntPtr.Zero) NativeMethods.DeleteObject(region);
+            throw new InvalidOperationException("无法设置书写显示器范围。");
+        }
+        _inputAreas = updated;
+    }
+
+    public bool AllowsInput(float screenX, float screenY) => _inputAreas is null || _inputAreas.Any(area =>
+        screenX >= area.X && screenY >= area.Y && screenX < area.X + area.Width && screenY < area.Y + area.Height);
 
     /// <summary>Resize the physical viewport while retaining its coordinate scale for existing ink.</summary>
     public void SetBounds(int x, int y, int width, int height)
@@ -259,22 +342,9 @@ public sealed class LayeredInkWindow : IDisposable
         if (width <= 0 || height <= 0) throw new ArgumentOutOfRangeException(nameof(width));
         _ = checked(width * height * 4);
         CancelInput();
-        var bi = new NativeMethods.BITMAPINFO
-        {
-            biSize = Marshal.SizeOf<NativeMethods.BITMAPINFO>(), biWidth = width, biHeight = -height,
-            biPlanes = 1, biBitCount = 32, biCompression = 0,
-        };
-        var dib = NativeMethods.CreateDIBSection(_screenDc, ref bi, 0, out var bits, IntPtr.Zero, 0);
-        if (dib == IntPtr.Zero || bits == IntPtr.Zero)
-        {
-            if (dib != IntPtr.Zero) NativeMethods.DeleteObject(dib);
-            throw new InvalidOperationException("Cannot resize the annotation surface.");
-        }
-        NativeMethods.SelectObject(_memDc, dib);
-        NativeMethods.DeleteObject(_dib);
-        _dib = dib;
-        _bits = bits;
+        if (_dib != IntPtr.Zero) CreatePixelBuffer(width, height);
         X = x; Y = y; Width = width; Height = height;
+        if (_inputAreas is not null) SetInputAreas(_inputAreas, force: true);
         NativeMethods.SetWindowPos(_hwnd, IntPtr.Zero, x, y, width, height,
             NativeMethods.SWP_NOACTIVATE | 0x0004 /* SWP_NOZORDER */);
     }
@@ -282,6 +352,7 @@ public sealed class LayeredInkWindow : IDisposable
     public void Show()
     {
         if (IsVisible) return;
+        EnsurePixelBuffer();
         NativeMethods.ShowWindow(_hwnd, NativeMethods.SW_SHOWNOACTIVATE);
         IsVisible = true;
     }
@@ -296,7 +367,7 @@ public sealed class LayeredInkWindow : IDisposable
     /// <summary>Push the current pixel buffer to the screen with per-pixel alpha.</summary>
     public void Present()
     {
-        if (_disposed || _hwnd == IntPtr.Zero) return;
+        if (_disposed || _hwnd == IntPtr.Zero || _bits == IntPtr.Zero) return;
         var dst = new NativeMethods.POINT { X = X, Y = Y };
         var src = new NativeMethods.POINT { X = 0, Y = 0 };
         var size = new NativeMethods.SIZE { cx = Width, cy = Height };
@@ -332,6 +403,16 @@ public sealed class LayeredInkWindow : IDisposable
             case NativeMethods.WM_POINTERDOWN:
                 PointerMessageCount++; PointerDownCount++;
                 BeginPointer(w);
+                return IntPtr.Zero;
+            case 0x0240: // WM_TOUCH, supplied by legacy infrared digitizers.
+                try
+                {
+                    uint count = (uint)(w.ToInt64() & 0xFFFF);
+                    var contacts = new TouchInput[count];
+                    if (GetTouchInputInfo(l, count, contacts, Marshal.SizeOf<TouchInput>()))
+                        foreach (var contact in contacts) ProcessTouch(contact);
+                }
+                finally { CloseTouchInputHandle(l); }
                 return IntPtr.Zero;
             case NativeMethods.WM_POINTERUPDATE:
                 PointerMessageCount++; PointerMoveCount++;
@@ -393,11 +474,21 @@ public sealed class LayeredInkWindow : IDisposable
 
     private void RaiseMouse(Action<OverlayPointer> handler, IntPtr lParam, bool mouseDown, bool mouseUp = false)
     {
+        if ((GetMessageExtraInfo().ToInt64() & 0xFFFFFF00L) == 0xFF515700L) return;
         MouseMessageCount++;
         if (handler is null) return;
         int raw = lParam.ToInt32();
         short x = (short)(raw & 0xFFFF);
         short y = (short)((raw >> 16) & 0xFFFF);
+        if (!AllowsInput(X + x, Y + y))
+        {
+            if (_fallbackMouse is { } last)
+            {
+                _fallbackMouse = null; PointerUp?.Invoke(last);
+                if (NativeMethods.GetCapture() == Handle) NativeMethods.ReleaseCapture();
+            }
+            return;
+        }
         var sample = new OverlayPointer(1, x / DpiScale, y / DpiScale, 0.5f, 0, 0,
             OverlayPointerKind.Mouse, (uint)Environment.TickCount,
             NativeMethods.GetKeyState(0x10) < 0, NativeMethods.GetKeyState(0x11) < 0);
@@ -420,6 +511,7 @@ public sealed class LayeredInkWindow : IDisposable
     {
         uint id = (uint)(wParam.ToInt64() & 0xFFFF);
         if (!TryReadPointer(id, out var sample)) return;
+        if (!AllowsInput(X + sample.X * DpiScale, Y + sample.Y * DpiScale)) return;
         if (_activePointers.ContainsKey(id)) EndPointer(id, readCurrent: false, canceled: true);
         _activePointers[id] = sample;
         // Establish controller state before callbacks that can synchronously change focus
@@ -436,6 +528,9 @@ public sealed class LayeredInkWindow : IDisposable
     {
         uint id = (uint)(wParam.ToInt64() & 0xFFFF);
         if (!TryReadPointer(id, out var sample)) return;
+        if (_activePointers.TryGetValue(id, out var previous)) sample = sample with { InputSurface = previous.InputSurface };
+        if (!AllowsInput(X + sample.X * DpiScale, Y + sample.Y * DpiScale))
+        { EndPointer(id, readCurrent: false); return; }
         if (!_activePointers.ContainsKey(id))
         {
             if (sample.Kind != OverlayPointerKind.Touch) PointerHover?.Invoke(sample);
@@ -467,7 +562,8 @@ public sealed class LayeredInkWindow : IDisposable
     private void EndPointer(uint id, bool readCurrent, bool canceled = false)
     {
         if (!_activePointers.Remove(id, out var sample)) return;
-        if (readCurrent && TryReadPointer(id, out var current)) sample = current;
+        if (readCurrent && TryReadPointer(id, out var current) && AllowsInput(X + current.X * DpiScale, Y + current.Y * DpiScale))
+            sample = current with { InputSurface = sample.InputSurface };
         if (readCurrent && NativeMethods.GetPointerInfo(id, out var info) && (info.pointerFlags & 0x8000) != 0) canceled = true;
         PointerUpCount++;
         if (canceled) RaiseCanceled(sample);
@@ -486,6 +582,7 @@ public sealed class LayeredInkWindow : IDisposable
     {
         sample = default;
         if (!NativeMethods.GetPointerInfo(id, out var info)) return false;
+        var screen = ScreenAt(info.ptPixelLocation.X, info.ptPixelLocation.Y);
 
         float pressure = 0.5f, cw = 0, ch = 0;
         var kind = OverlayPointerKind.Mouse;
@@ -504,16 +601,56 @@ public sealed class LayeredInkWindow : IDisposable
             kind = OverlayPointerKind.Touch;
             if (NativeMethods.GetPointerTouchInfo(id, out var touch))
             {
-                cw = (touch.rcContact.Right - touch.rcContact.Left) / DpiScale;
-                ch = (touch.rcContact.Bottom - touch.rcContact.Top) / DpiScale;
+                cw = (float)((touch.rcContact.Right - touch.rcContact.Left) / screen.DpiScale);
+                ch = (float)((touch.rcContact.Bottom - touch.rcContact.Top) / screen.DpiScale);
                 pressure = touch.pressure == 0 ? 0.5f : Math.Clamp(touch.pressure / 1024f, 0f, 1f);
             }
         }
 
         var pt = info.ptPixelLocation;
         sample = new OverlayPointer(id, (pt.X - X) / DpiScale, (pt.Y - Y) / DpiScale,
-            pressure, cw, ch, kind, info.dwTime, NativeMethods.GetKeyState(0x10) < 0, NativeMethods.GetKeyState(0x11) < 0);
+            pressure, cw, ch, kind, info.dwTime, NativeMethods.GetKeyState(0x10) < 0, NativeMethods.GetKeyState(0x11) < 0)
+            { InputSurface = screen.Handle.ToInt64() };
         return true;
+    }
+
+    internal void ProcessTouch(TouchInput contact)
+    {
+        var key = (contact.Source, contact.Id);
+        float x = contact.X / 100f, y = contact.Y / 100f;
+        bool down = (contact.Flags & 2) != 0, up = (contact.Flags & 4) != 0;
+        if (down)
+        {
+            if (ClickThrough || !AllowsInput(x, y)) return;
+            if (_legacyContacts.Remove(key, out uint old)) EndPointer(old, false, canceled: true);
+            _legacyContacts[key] = ++_nextLegacyId;
+        }
+        if (!_legacyContacts.TryGetValue(key, out uint id)) return;
+        var screen = ScreenAt(x, y);
+        var sample = new OverlayPointer(id, (x - X) / DpiScale, (y - Y) / DpiScale, .5f,
+            (float)(contact.Width / 100d / screen.DpiScale), (float)(contact.Height / 100d / screen.DpiScale),
+            OverlayPointerKind.Touch, contact.Time) { InputSurface = screen.Handle.ToInt64() };
+        if (!down && _activePointers.TryGetValue(id, out var previous)) sample = sample with { InputSurface = previous.InputSurface };
+        if (up || !AllowsInput(x, y))
+        {
+            if (AllowsInput(x, y)) _activePointers[id] = sample;
+            _legacyContacts.Remove(key); EndPointer(id, false);
+        }
+        else
+        {
+            _activePointers[id] = sample;
+            if (down) { PointerDownCount++; PointerDown?.Invoke(sample); InputBegan?.Invoke(); }
+            else PointerMove?.Invoke(sample);
+        }
+        PointerMessageCount++;
+    }
+
+    private ScreenInfo ScreenAt(float x, float y)
+    {
+        foreach (var screen in _screens)
+            if (x >= screen.Bounds.X && y >= screen.Bounds.Y && x < screen.Bounds.X + screen.Bounds.Width
+                && y < screen.Bounds.Y + screen.Bounds.Height) return screen;
+        return ScreenService.FromRect(new((int)x, (int)y, 1, 1));
     }
 
     public void Dispose()
@@ -527,6 +664,7 @@ public sealed class LayeredInkWindow : IDisposable
             _memDc = IntPtr.Zero;
         }
         if (_dib != IntPtr.Zero) { NativeMethods.DeleteObject(_dib); _dib = IntPtr.Zero; }
+        _bits = IntPtr.Zero;
         if (_screenDc != IntPtr.Zero) { NativeMethods.ReleaseDC(IntPtr.Zero, _screenDc); _screenDc = IntPtr.Zero; }
         if (_hwnd != IntPtr.Zero) { NativeMethods.DestroyWindow(_hwnd); _hwnd = IntPtr.Zero; }
     }

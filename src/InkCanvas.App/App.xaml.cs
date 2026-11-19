@@ -22,6 +22,18 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        var lotteryCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--lotterycheck=", StringComparison.OrdinalIgnoreCase));
+        if (lotteryCheck is not null) { _ = Diagnostics.LotteryRegression.Run(lotteryCheck["--lotterycheck=".Length..]); return; }
+        var selectionTouchCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--selectiontouchcheck=", StringComparison.OrdinalIgnoreCase));
+        if (selectionTouchCheck is not null) { _ = Diagnostics.SelectionTouchRegression.Run(selectionTouchCheck["--selectiontouchcheck=".Length..]); return; }
+        var themeCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--themecheck=", StringComparison.OrdinalIgnoreCase));
+        if (themeCheck is not null) { _ = Diagnostics.ChromeThemeRegression.Run(themeCheck["--themecheck=".Length..]); return; }
+        var settingsFeatureCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--settingsfeaturescheck=", StringComparison.OrdinalIgnoreCase));
+        if (settingsFeatureCheck is not null) { _ = Diagnostics.SettingsFeatureRegression.Run(settingsFeatureCheck["--settingsfeaturescheck=".Length..]); return; }
+        var memoryCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--memorycheck=", StringComparison.OrdinalIgnoreCase));
+        if (memoryCheck is not null) { _ = Diagnostics.MemoryRegression.Run(memoryCheck[14..]); return; }
+        var shadowCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--shadowcheck=", StringComparison.OrdinalIgnoreCase));
+        if (shadowCheck is not null) { _ = Diagnostics.ShadowRegression.Run(shadowCheck[14..]); return; }
         var popupCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--popupcheck=", StringComparison.OrdinalIgnoreCase));
         if (popupCheck is not null) { _ = Diagnostics.PopupRegression.Run(popupCheck[13..]); return; }
         var mirrorCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--updatemirrorcheck=", StringComparison.OrdinalIgnoreCase));

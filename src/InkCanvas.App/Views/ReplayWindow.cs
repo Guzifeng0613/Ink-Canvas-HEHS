@@ -81,14 +81,16 @@ public sealed class ReplayWindow : Window
         FloatingBarWindow.EnableTransparency(this);
         WindowChrome.ApplyTheme(this, theme);
         WindowChrome.ClipToSurfaces(this, () => new[] { card });
-        double designWidth = card.DesiredSize.Width, designHeight = card.DesiredSize.Height;
-        bool placed = false;
+        bool placed = false, fitQueued = false;
         void Place()
         {
+            if (_closed) return;
+            card.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+            double designWidth = Math.Max(1, card.DesiredSize.Width), designHeight = Math.Max(1, card.DesiredSize.Height);
             var area = WindowChrome.GetWorkArea(this);
             double currentDpi = WindowChrome.GetDpiScale(this);
             double user = Math.Clamp(scalePercent, 50, 150) / 100;
-            user = Math.Min(user, Math.Min(area.Width / (designWidth * currentDpi), area.Height / (designHeight * currentDpi)));
+            user = Math.Min(user, Math.Min(Math.Max(1, area.Width - 16) / (designWidth * currentDpi), Math.Max(1, area.Height - 16) / (designHeight * currentDpi)));
             host.Width = designWidth * user;
             host.Height = designHeight * user;
             int width = (int)Math.Ceiling(host.Width * currentDpi), height = (int)Math.Ceiling(host.Height * currentDpi);
@@ -101,11 +103,19 @@ public sealed class ReplayWindow : Window
             WindowChrome.PlaceClient(this, fit.X, fit.Y, fit.Width, fit.Height);
         }
         _refreshPlacement = Place;
+        void QueueFit()
+        {
+            if (_closed || fitQueued) return;
+            fitQueued = true;
+            DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => { fitQueued = false; Place(); });
+        }
+        card.SizeChanged += (_, _) => QueueFit();
         host.Loaded += (_, _) =>
         {
             if (_trackedRoot is not null) _trackedRoot.Changed -= OnRootChanged;
             _trackedRoot = host.XamlRoot;
             _trackedRoot.Changed += OnRootChanged;
+            QueueFit();
         };
         WindowChrome.EnableDragMove(this, grip, onDragCompleted: Place);
         Place();

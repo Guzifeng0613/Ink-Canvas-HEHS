@@ -93,7 +93,9 @@ public static class PdfDiagnostics
             window.SetSidebarOpen(true); await Task.Delay(150);
             Check("sidebar expands without shifting the page outside viewport", window.SidebarOpen && Math.Abs(window.ViewportSize.X - expandedWidth) < 2);
             var windowSize = window.AppWindow.ClientSize;
-            window.AppWindow.ResizeClient(new Windows.Graphics.SizeInt32(620, 720)); await Task.Delay(150);
+            double windowDpi = ((FrameworkElement)window.Content).XamlRoot.RasterizationScale;
+            window.AppWindow.ResizeClient(new Windows.Graphics.SizeInt32((int)Math.Ceiling(620 * windowDpi),
+                (int)Math.Ceiling(720 * windowDpi))); await Task.Delay(150);
             Check("narrow window folds sidebar to preserve page width", !window.SidebarOpen && window.ViewportSize.X > 550);
             window.SetSidebarOpen(true); await Task.Delay(150);
             Check("narrow window uses overlay sidebar", window.SidebarOpen && window.ViewportSize.X > 550,
@@ -157,6 +159,22 @@ public static class PdfDiagnostics
             Check("preview cache remains bounded", window.PreviewCacheBytes <= 16 * 1024 * 1024 && window.VisiblePreviewBytes <= 104 * 1024 * 1024,
                 new { bytes = window.PreviewCacheBytes, visibleBytes = window.VisiblePreviewBytes, workingSet = Process.GetCurrentProcess().WorkingSet64 });
             await ScreenshotAsync(window, Path.Combine(directory, "pdf-window.png"));
+            long warmPreviewBytes = window.VisiblePreviewBytes;
+            var warmController = window.Controller;
+            var warmView = warmController.ViewTransform;
+            int warmUndo = warmController.History.UndoCount;
+            window.AppWindow.Hide();
+            Check("hidden PDF releases page rendering resources", window.ReleaseInactiveResources() && window.VisiblePreviewBytes == 0,
+                new { warmPreviewBytes, releasedBytes = warmPreviewBytes });
+            await Task.Delay(200);
+            Check("hidden PDF does not recreate page previews", window.VisiblePreviewBytes == 0);
+            var restoreTimer = Stopwatch.StartNew();
+            window.Activate();
+            for (int i = 0; i < 40 && window.VisiblePreviewBytes == 0; i++) await Task.Delay(50);
+            Check("restoring PDF preserves page ink undo and view", window.VisiblePreviewBytes > 0
+                && ReferenceEquals(window.Controller, warmController) && window.Controller.ViewTransform == warmView
+                && window.Controller.History.UndoCount == warmUndo,
+                new { milliseconds = restoreTimer.ElapsedMilliseconds, bytes = window.VisiblePreviewBytes });
             Check("window closes cleanly", await window.CloseAsync()); window = null;
             CreateFixture(Path.Combine(directory, "many-pages.pdf"), 160);
             using (var large = await PdfAnnotationFile.OpenAsync(Path.Combine(directory, "many-pages.pdf")))

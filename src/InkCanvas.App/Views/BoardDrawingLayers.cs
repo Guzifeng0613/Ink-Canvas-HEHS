@@ -22,6 +22,7 @@ internal sealed class BoardDrawingLayers : Canvas, IDisposable
     private readonly Dictionary<Guid, int> _indices = new();
     private InkController _controller;
     private InkSceneRenderer _scene = new() { ShowSelectionOutline = false };
+    private bool _suspended;
 
     public BoardDrawingLayers()
     {
@@ -101,8 +102,11 @@ internal sealed class BoardDrawingLayers : Canvas, IDisposable
             {
                 var run = new Run { Canvas = new CanvasControl { IsHitTestVisible = false,
                     ClearColor = Microsoft.UI.Colors.Transparent, Width = ActualWidth, Height = ActualHeight } };
-                run.Canvas.Draw += (sender, args) => run.Cache.Draw(args.DrawingSession, _scene, _controller,
-                    (float)ActualWidth, (float)ActualHeight, sender.Dpi, objectsOverride: run.Objects);
+                run.Canvas.Draw += (sender, args) =>
+                {
+                    if (!_suspended) run.Cache.Draw(args.DrawingSession, _scene, _controller,
+                        (float)ActualWidth, (float)ActualHeight, sender.Dpi, objectsOverride: run.Objects);
+                };
                 _runs.Add(run);
                 Children.Add(run.Canvas);
             }
@@ -118,7 +122,21 @@ internal sealed class BoardDrawingLayers : Canvas, IDisposable
 
     public void Invalidate()
     {
+        if (_suspended) return;
         foreach (var run in _runs) run.Canvas.Invalidate();
+    }
+
+    public void SuspendRendering()
+    {
+        _suspended = true;
+        foreach (var run in _runs) run.Cache.Dispose();
+        _scene.ReleaseResources();
+    }
+
+    public void ResumeRendering()
+    {
+        _suspended = false;
+        Invalidate();
     }
 
     private void ClearRuns()

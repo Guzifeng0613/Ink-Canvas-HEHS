@@ -1,5 +1,6 @@
 using System.Numerics;
 using InkCanvas.Controls.Controls;
+using InkCanvas.Controls.Lifecycle;
 using InkCanvas.Core.Ink;
 using InkCanvas.Core.Selection;
 using InkCanvas.Host.Contracts;
@@ -47,6 +48,7 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
     private readonly ListView _bookmarks = new() { SelectionMode = ListViewSelectionMode.Single, Visibility = Visibility.Collapsed };
     private readonly AutoSuggestBox _search = new() { PlaceholderText = "搜索文档文字", QueryIcon = new SymbolIcon(Symbol.Find), Margin = new Thickness(8) };
     private readonly DispatcherQueueTimer _detailTimer;
+    private readonly WindowIdleResources _idleResources;
     private readonly CancellationTokenSource _lifetime = new();
     private CancellationTokenSource _renderCancellation, _detailCancellation, _searchCancellation;
     private CanvasBitmap _detail;
@@ -148,6 +150,7 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
         _root.RequestedTheme = ElementTheme.Light;
         _detailTimer = DispatcherQueue.CreateTimer(); _detailTimer.Interval = TimeSpan.FromMilliseconds(170); _detailTimer.IsRepeating = false;
         _detailTimer.Tick += (_, _) => _ = RenderDetailAsync();
+        _idleResources = new WindowIdleResources(this, ReleaseInactiveRendering, RestoreRendering);
         _paper.Draw += DrawPage;
         _paper.CreateResources += (_, _) => { if (!_closed && _viewHasLayout) _ = RenderPageAsync(); };
         _viewport.SizeChanged += (_, _) =>
@@ -379,7 +382,7 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
 
     private async Task RenderDetailAsync()
     {
-        if (_closed || !_viewHasLayout || !_pagePreviews.ContainsKey(_pageIndex)) return;
+        if (_closed || !_idleResources.IsActive || !_viewHasLayout || !_pagePreviews.ContainsKey(_pageIndex)) return;
         var view = Controller.ViewTransform;
         if (Controller.IsViewManipulating) { _detailTimer.Start(); return; }
         if (!Matrix3x2.Invert(view, out var inverse)) return;

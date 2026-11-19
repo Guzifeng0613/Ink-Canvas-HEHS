@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using InkCanvas.App.Services;
 using InkCanvas.App.Views;
@@ -29,6 +30,7 @@ internal static class WorkspaceRegression
         using var shell = new ShellController(services);
         shell.Start();
         shell.StartInClickThrough();
+        bool cursorAvailable = NativeMethods.GetCursorPos(out var originalCursor);
         try
         {
             var bar = shell.OpenWindows.OfType<FloatingBarWindow>().Single();
@@ -42,6 +44,42 @@ internal static class WorkspaceRegression
                 shell.OpenSettings(); shell.OpenSettings();
                 await Task.Delay(160);
                 var settings = shell.OpenWindows.OfType<SettingsWindow>().Single();
+                watch.Stop();
+                Check("settings opens as a normal window " + i, settings.AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter { IsAlwaysOnTop: false }
+                    && !NativeMethods.HasExStyle(WindowChrome.GetHwnd(settings), NativeMethods.WS_EX_TOPMOST));
+                if (i == 0)
+                {
+                    var caption = WindowChrome.GetScreenBounds(settings, ((WindowFrame)settings.Content).Header);
+                    SetCursorPos(caption.X + 180, caption.Y + 24);
+                    MouseEvent(2, 0, 0, 0, UIntPtr.Zero);
+                    await Task.Delay(30);
+                    MouseEvent(4, 0, 0, 0, UIntPtr.Zero);
+                    await Task.Delay(80);
+                    NativeMethods.SetForegroundWindow(WindowChrome.GetHwnd(settings));
+                    shell.ToggleClickThrough();
+                    await Task.Delay(1100);
+                    caption = WindowChrome.GetScreenBounds(settings, ((WindowFrame)settings.Content).Header);
+                    var hit = GetAncestor(WindowFromPoint(new NativeMethods.POINT { X = caption.X + 30, Y = caption.Y + 24 }), 2);
+                    checks.Add(new { check = "normal settings title bar receives input above annotation", passed = hit == WindowChrome.GetHwnd(settings),
+                        hit = hit.ToInt64(), expected = WindowChrome.GetHwnd(settings).ToInt64(), foreground = NativeMethods.GetForegroundWindow().ToInt64(),
+                        overlay = shell.Overlay.Window.Handle.ToInt64(), overlayTopmost = shell.Overlay.Window.Topmost, caption });
+                    Check("maintenance keeps settings non-topmost", !NativeMethods.HasExStyle(WindowChrome.GetHwnd(settings), NativeMethods.WS_EX_TOPMOST));
+                    var other = new Window { Title = "Normal window order check", Content = new Grid() };
+                    WindowChrome.MakeStandard(other, 640, 400, topmost: false);
+                    other.Activate();
+                    NativeMethods.SetForegroundWindow(WindowChrome.GetHwnd(other));
+                    await Task.Delay(1100);
+                    Check("switching to another normal window keeps settings non-topmost", !NativeMethods.HasExStyle(WindowChrome.GetHwnd(settings), NativeMethods.WS_EX_TOPMOST)
+                        && shell.Overlay.Window.Topmost && NativeMethods.GetForegroundWindow() == WindowChrome.GetHwnd(other));
+                    settings.Activate();
+                    NativeMethods.SetForegroundWindow(WindowChrome.GetHwnd(settings));
+                    await Task.Delay(80);
+                    Check("reactivated settings receives input without becoming topmost", GetAncestor(WindowFromPoint(new NativeMethods.POINT
+                        { X = caption.X + 30, Y = caption.Y + 24 }), 2) == WindowChrome.GetHwnd(settings)
+                        && !NativeMethods.HasExStyle(WindowChrome.GetHwnd(settings), NativeMethods.WS_EX_TOPMOST));
+                    other.Close();
+                    shell.ToggleClickThrough();
+                }
                 Check("settings opens once and dispatcher remains responsive " + i, watch.ElapsedMilliseconds < 2000
                     && Descendants(settings.Content).OfType<NavigationView>().Count() == 1
                     && ClassroomWindowRegression.CheckNativeFrame(settings, extended: true));
@@ -65,11 +103,13 @@ internal static class WorkspaceRegression
                 }
                 settings.Close();
                 await Task.Delay(20);
+                Check("closing settings restores annotation surface ordering " + i, shell.Overlay.Window.Topmost);
             }
 
             var guide = InfoWindow.OpenGuide(1);
             guide.Activate(); await Task.Delay(160);
-            Check("guide uses left navigation and system frame", ClassroomWindowRegression.CheckNativeFrame(guide)
+            Check("guide uses shared WinUI title bar and left navigation", ClassroomWindowRegression.CheckNativeFrame(guide, extended: true)
+                && guide.Content is WindowFrame { Header.Title: "Ink Canvas Artistry 使用指南" }
                 && Descendants(guide.Content).OfType<WindowWorkspace>().Count() == 1);
             await BoardWindowRegression.SaveVisual((FrameworkElement)guide.Content, Path.Combine(directory, "guide.png"));
             guide.Close();
@@ -102,7 +142,8 @@ internal static class WorkspaceRegression
             Check("selection transform applies", Math.Abs(controller.SelectionRotationDegrees - 45) < .1);
             controller.Undo();
             Invoke(FindButton(toolbar.Content, "收起")); await Task.Delay(50);
-            Check("selection toolbar folds", toolbar.Toolbar.IsCollapsed && toolbar.AppWindow.ClientSize.Width < 100);
+            checks.Add(new { check = "selection toolbar folds", passed = toolbar.Toolbar.IsCollapsed && toolbar.AppWindow.ClientSize.Width < 100 * WindowChrome.GetDpiScale(toolbar),
+                collapsed = toolbar.Toolbar.IsCollapsed, width = toolbar.AppWindow.ClientSize.Width, dpiScale = WindowChrome.GetDpiScale(toolbar) });
             Invoke(FindButton(toolbar.Content, "展开")); await Task.Delay(50);
             Check("selection toolbar unfolds", !toolbar.Toolbar.IsCollapsed && toolbar.AppWindow.ClientSize.Width > 200);
             var work = WindowChrome.GetWorkArea(toolbar);
@@ -144,6 +185,19 @@ internal static class WorkspaceRegression
             Check("board menu remains near selected objects after unfolding", Math.Abs(menuBounds.X + menuBounds.Width / 2 - board.CurrentController.SelectionVisualBounds.Center.X) < 180
                 && menuBounds.Bottom <= boardRoot.ActualHeight && menuBounds.Right <= boardRoot.ActualWidth);
             await BoardWindowRegression.SaveVisual((FrameworkElement)board.Content, Path.Combine(directory, "board-selection.png"));
+            shell.OpenSettings();
+            await Task.Delay(1100);
+            var boardSettings = shell.OpenWindows.OfType<SettingsWindow>().Single();
+            NativeMethods.SetForegroundWindow(WindowChrome.GetHwnd(boardSettings));
+            await Task.Delay(100);
+            var boardCaption = WindowChrome.GetScreenBounds(boardSettings, ((WindowFrame)boardSettings.Content).Header);
+            var boardHit = GetAncestor(WindowFromPoint(new NativeMethods.POINT { X = boardCaption.X + 30, Y = boardCaption.Y + 24 }), 2);
+            checks.Add(new { check = "normal settings receives input above whiteboard", passed = boardHit == WindowChrome.GetHwnd(boardSettings)
+                && !NativeMethods.HasExStyle(WindowChrome.GetHwnd(boardSettings), NativeMethods.WS_EX_TOPMOST), hit = boardHit.ToInt64(),
+                expected = WindowChrome.GetHwnd(boardSettings).ToInt64(), foreground = NativeMethods.GetForegroundWindow().ToInt64(),
+                board = WindowChrome.GetHwnd(board).ToInt64(), boardTopmost = NativeMethods.HasExStyle(WindowChrome.GetHwnd(board), NativeMethods.WS_EX_TOPMOST) });
+            boardSettings.Close();
+            Check("closing settings restores whiteboard ordering", NativeMethods.HasExStyle(WindowChrome.GetHwnd(board), NativeMethods.WS_EX_TOPMOST));
             board.Close();
 
             void CheckPlacement(string name)
@@ -159,6 +213,7 @@ internal static class WorkspaceRegression
         catch (Exception ex) { checks.Add(new { check = "workspace regression exception", passed = false, error = ex.ToString() }); }
         finally
         {
+            if (cursorAvailable) SetCursorPos(originalCursor.X, originalCursor.Y);
             foreach (var window in shell.OpenWindows.ToArray()) window.Close();
             File.WriteAllText(Path.Combine(directory, "workspace.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
             Application.Current.Exit();
@@ -169,6 +224,10 @@ internal static class WorkspaceRegression
     private static Button FindButton(DependencyObject root, string name) => Descendants(root).OfType<Button>()
         .First(button => AutomationProperties.GetName(button) == name || button is TouchIconButton touch && touch.Label == name);
     private static void Invoke(Button button) => ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke();
+    [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(NativeMethods.POINT point);
+    [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr window, uint flags);
+    [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll", EntryPoint = "mouse_event")] private static extern void MouseEvent(uint flags, uint x, uint y, uint data, UIntPtr extra);
     private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
     {
         yield return parent;

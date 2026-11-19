@@ -18,6 +18,7 @@ public sealed class ScreenContentReader : IDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly AutoResetEvent _wake = new(false);
     private readonly Thread _thread;
+    private readonly Func<nint> _foregroundWindow;
     private ExperimentalSettings _settings = new();
     private ScreenViewSnapshot _latest;
     private long _lastSampleTicks;
@@ -32,6 +33,11 @@ public sealed class ScreenContentReader : IDisposable
     private Vector2 _estimatedScroll;
     private bool _hasEstimate;
     private bool _hasZoom, _alignmentLost;
+    private readonly WordScrollAlignment _wordScroll = new();
+    private float _wordAnchorScale;
+    private bool _wordAnchorPending;
+    private Vector2 _wordAnchorScroll, _wordAnchorOrigin;
+    private long _fastObservationUntil;
     private Rect _previousViewport;
     private int _requestedEpoch, _epoch;
     private readonly ContentPageVariants _variants = new();
@@ -42,11 +48,15 @@ public sealed class ScreenContentReader : IDisposable
     private bool _hadOfficeView;
 
     public ScreenViewSnapshot Latest => Volatile.Read(ref _latest);
+    public string LastOfficeError { get; private set; }
     public TimeSpan SampleAge => Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastSampleTicks));
     public int ResetAnchor() { int epoch = Interlocked.Increment(ref _requestedEpoch); _wake.Set(); return epoch; }
 
-    public ScreenContentReader()
+    public ScreenContentReader() : this(NativeMethods.GetForegroundWindow) { }
+
+    public ScreenContentReader(Func<nint> foregroundWindow)
     {
+        _foregroundWindow = foregroundWindow ?? throw new ArgumentNullException(nameof(foregroundWindow));
         _thread = new Thread(ReadLoop) { IsBackground = true, Name = "InkCanvas screen-content observer" };
         _thread.SetApartmentState(ApartmentState.MTA);
         _thread.Start();
@@ -84,7 +94,7 @@ public sealed class ScreenContentReader : IDisposable
                         WindowHandle = _target, Status = "正在等待应用重新提供正文信息" });
                     Interlocked.Exchange(ref _lastSampleTicks, Stopwatch.GetTimestamp());
                 }
-                _wake.WaitOne(100);
+                _wake.WaitOne(Stopwatch.GetTimestamp() < _fastObservationUntil ? 25 : 100);
             }
         }
         finally { ResetTarget(); Release(_automation); _wake.Dispose(); _stop.Dispose(); }
@@ -92,7 +102,7 @@ public sealed class ScreenContentReader : IDisposable
 
     private ScreenViewSnapshot ReadForeground(ExperimentalSettings settings)
     {
-        nint window = NativeMethods.GetForegroundWindow();
+        nint window = _foregroundWindow();
         NativeMethods.GetWindowThreadProcessId(window, out uint pid);
         if (pid == _ownPid) window = _target;
         var application = ApplicationFor(window);
@@ -133,14 +143,20 @@ public sealed class ScreenContentReader : IDisposable
             Vector2? officeScroll = null;
             if (application is TrackedApplication.Word or TrackedApplication.PowerPoint)
             {
-                var office = OfficeScreenView.Read(application, window, application == TrackedApplication.PowerPoint ? client : viewport);
+                var office = OfficeScreenView.Read(application, window, application == TrackedApplication.PowerPoint ? client : viewport, out var error);
+                LastOfficeError = error;
                 if (office is not null)
                 {
                     _hadOfficeView = true;
                     identity = office.ContextKey;
                     if (office.HasZoomMetrics) officeZoom = office.Scale;
                     if (office.HasScrollMetrics) officeScroll = office.ScrollPixels;
-                    if (!office.Viewport.IsEmpty) viewport = Intersection(viewport, office.Viewport);
+                    if (!office.Viewport.IsEmpty)
+                    {
+                        viewport = Intersection(viewport, office.Viewport);
+                        if (officeScroll.HasValue)
+                            officeScroll += new Vector2(viewport.Left - office.Viewport.Left, viewport.Top - office.Viewport.Top);
+                    }
                 }
                 else if (_hadOfficeView || application == TrackedApplication.PowerPoint)
                     return new ScreenViewSnapshot { Application = application, WindowHandle = window,
@@ -152,6 +168,8 @@ public sealed class ScreenContentReader : IDisposable
                 ClearTextAnchors(); _lastContext = identity;
                 _zoom = officeZoom ?? GetDpi(window) / 96f; _estimatedScroll = Vector2.Zero; _hasEstimate = false;
                 _alignmentLost = false; _hasZoom = officeZoom.HasValue; _previousViewport = viewport;
+                _wordScroll.Reset();
+                _wordAnchorScale = 0;
             }
             float previousZoom = _zoom;
             bool zoomKnown = officeZoom.HasValue;
@@ -162,7 +180,7 @@ public sealed class ScreenContentReader : IDisposable
                 finally { Release(transform); }
             }
 
-            var anchorMovement = MeasureTextAnchors(previousZoom, viewport, ref zoomKnown);
+            var anchorMovement = MeasureTextAnchors(previousZoom, viewport, application, ref zoomKnown, out var wordAnchorScroll);
             _hasZoom |= zoomKnown;
             bool scrollKnown = false, absoluteScroll = false;
             Vector2 scroll = _estimatedScroll;
@@ -180,22 +198,60 @@ public sealed class ScreenContentReader : IDisposable
                 finally { Release(scrollPattern); }
             }
             if (officeScroll.HasValue) { scroll = officeScroll.Value; scrollKnown = absoluteScroll = true; }
-            if (!scrollKnown && anchorMovement.HasValue)
+            if (application == TrackedApplication.Word && !scrollKnown && TryNativeScroll(window, viewport, out var wordNativeScroll))
+            { scroll = wordNativeScroll; scrollKnown = absoluteScroll = true; }
+            if (application == TrackedApplication.Word)
+            {
+                bool scrollJump = _wordScroll.HasScrollJump(absoluteScroll ? scroll : null, viewport.Height / 2);
+                if (scrollJump && Math.Abs(_zoom / previousZoom - 1) < .002f)
+                {
+                    // Word can keep old character rectangles alive after a page-sized jump.
+                    // Reacquire visible ranges against the confirmed scrollbar displacement.
+                    wordAnchorScroll = null;
+                    anchorMovement = null;
+                    _wordAnchorPending = false;
+                }
+                if (_hasEstimate && !wordAnchorScroll.HasValue && (Math.Abs(_zoom - previousZoom) > .002f || _wordAnchorPending && !scrollJump))
+                {
+                    // Keep the reference through a pinch's incomplete accessibility frames.
+                    // A confirmed page-sized scroll can instead replace ranges that left the screen.
+                    _zoom = previousZoom;
+                    _fastObservationUntil = Stopwatch.GetTimestamp() + Stopwatch.Frequency / 2;
+                    return null;
+                }
+                if (wordAnchorScroll.HasValue)
+                    anchorMovement = _estimatedScroll * (_zoom / previousZoom) - wordAnchorScroll.Value;
+                var aligned = _wordScroll.Update(_estimatedScroll, _zoom / previousZoom, anchorMovement,
+                    absoluteScroll ? scroll : null, _hasEstimate, referenceAligned: wordAnchorScroll.HasValue);
+                scroll = aligned.Scroll;
+                scrollKnown = aligned.HasMetrics;
+                _alignmentLost = !aligned.Reliable;
+            }
+            else if (!scrollKnown && anchorMovement.HasValue)
             {
                 scroll = _estimatedScroll * (_zoom / previousZoom) - anchorMovement.Value;
                 scrollKnown = true;
             }
-            if (!scrollKnown && TryNativeScroll(window, viewport, out var nativeScroll)) { scroll = nativeScroll; scrollKnown = absoluteScroll = true; }
-            if (absoluteScroll) _alignmentLost = false;
-            else if (!scrollKnown && _hasEstimate) _alignmentLost = true;
+            if (application != TrackedApplication.Word)
+            {
+                if (!scrollKnown && TryNativeScroll(window, viewport, out var nativeScroll)) { scroll = nativeScroll; scrollKnown = absoluteScroll = true; }
+                if (absoluteScroll) _alignmentLost = false;
+                else if (!scrollKnown && _hasEstimate) _alignmentLost = true;
+            }
             bool moving = Vector2.Distance(scroll, _estimatedScroll) > 2 || Math.Abs(_zoom - previousZoom) > .002f;
+            if (moving) _fastObservationUntil = Stopwatch.GetTimestamp() + Stopwatch.Frequency / 2;
             _estimatedScroll = scroll;
             _hasEstimate |= scrollKnown;
-            if (_textAnchors.Count == 0 || anchorMovement is null) RefreshTextAnchors(viewport);
-            else UpdateTextAnchorBounds();
+            if (_textAnchors.Count == 0 || anchorMovement is null)
+            {
+                RefreshTextAnchors(viewport, application == TrackedApplication.Word);
+                _wordAnchorScale = _zoom;
+                _wordAnchorScroll = scroll;
+                _wordAnchorOrigin = new Vector2(viewport.Left, viewport.Top);
+            }
             _previousViewport = viewport;
             var contentView = Matrix3x2.CreateScale(_zoom) * Matrix3x2.CreateTranslation(new Vector2(viewport.Left, viewport.Top) - scroll);
-            if (contextChanged || Math.Abs(_zoom - previousZoom) > .002f || Stopwatch.GetElapsedTime(_lastContentRead).TotalMilliseconds >= 600)
+            if (contextChanged || !moving && Stopwatch.GetElapsedTime(_lastContentRead).TotalMilliseconds >= 600)
             {
                 ReadContent(settings.PreserveUnchangedRegions, application is TrackedApplication.Edge or TrackedApplication.Word);
                 _stableRegionsView = contentView;
@@ -249,7 +305,7 @@ public sealed class ScreenContentReader : IDisposable
             {
                 var name = new StringBuilder(128); GetClassNameW(handle, name, name.Capacity);
                 string value = name.ToString();
-                if (NativeMethods.IsWindowVisible(handle) && (value == "_WwG" || value.StartsWith("paneClassDC", StringComparison.Ordinal)) && TryGetClientBounds(handle, out var bounds)
+                if (NativeMethods.IsWindowVisible(handle) && OfficeScreenView.IsDocumentPane(application, value) && TryGetClientBounds(handle, out var bounds)
                     && bounds.Width * bounds.Height > area) { child = handle; area = bounds.Width * bounds.Height; }
                 return true;
             }, 0);
@@ -294,15 +350,26 @@ public sealed class ScreenContentReader : IDisposable
         return $"{application}:{window}:{Hash(value)}";
     }
 
-    private Vector2? MeasureTextAnchors(float previousZoom, Rect viewport, ref bool zoomKnown)
+    private Vector2? MeasureTextAnchors(float previousZoom, Rect viewport, TrackedApplication application,
+        ref bool zoomKnown, out Vector2? wordScroll)
     {
+        wordScroll = null;
+        _wordAnchorPending = false;
         var offsets = new List<Vector2>();
         var zoomRatios = new List<float>();
+        var measurements = new List<(IUIAutomationTextRange Range, Rect PreviousBounds, Rect Bounds, double Font)>();
         foreach (var anchor in _textAnchors)
         {
             var rect = TextBounds(anchor.Range);
-            if (rect.IsEmpty) continue;
-            if (!zoomKnown && anchor.Font > 0 && anchor.Range.GetAttributeValue(40005) is double font && font > 0)
+            if (rect.IsEmpty)
+            {
+                measurements.Add((anchor.Range, anchor.Bounds, rect, anchor.Font));
+                continue;
+            }
+            double font = application == TrackedApplication.Word ? anchor.Font
+                : anchor.Range.GetAttributeValue(40005) is double size ? size : anchor.Font;
+            measurements.Add((anchor.Range, anchor.Bounds, rect, font));
+            if (!zoomKnown && anchor.Font > 0 && font > 0)
             {
                 float fontRatio = (float)(font / anchor.Font);
                 // Chromium may expose CSS font size while its physical glyph bounds change with zoom.
@@ -310,54 +377,70 @@ public sealed class ScreenContentReader : IDisposable
                 zoomRatios.Add(fontRatio);
             }
         }
+        if (application == TrackedApplication.Word && _wordAnchorScale > 0)
+        {
+            var pairs = measurements.Where(item => !item.Bounds.IsEmpty && item.Bounds.Top > viewport.Top + 2
+                && item.Bounds.Bottom < viewport.Bottom - 2).Select(item => (item.PreviousBounds, item.Bounds)).ToArray();
+            if (TextAnchorAlignment.TryFit(pairs, out var transform))
+            {
+                _zoom = _wordAnchorScale * transform.M11;
+                wordScroll = _wordAnchorScroll * transform.M11 + new Vector2(viewport.Left, viewport.Top)
+                    - _wordAnchorOrigin * transform.M11 - transform.Translation;
+                zoomKnown = true;
+            }
+            else _wordAnchorPending = pairs.Length >= 2;
+            // Word keeps an absolute reference through transient mismatches and successive zoom frames.
+            return null;
+        }
         if (zoomRatios.Count >= 2 && zoomRatios.Max() - zoomRatios.Min() < .02f && zoomRatios[0] is >= .25f and <= 4)
         {
             _zoom *= zoomRatios.Average(); zoomKnown = true;
         }
         float ratio = _zoom / previousZoom;
-        foreach (var anchor in _textAnchors)
+        _textAnchors.Clear();
+        foreach (var measurement in measurements)
         {
-            var current = TextBounds(anchor.Range);
-            if (current.IsEmpty) continue;
+            var current = measurement.Bounds;
+            if (current.IsEmpty) { Release(measurement.Range); continue; }
             // A stable character range follows content even when scroll percentages are absent.
-            offsets.Add(new Vector2(current.Left - viewport.Left - (anchor.Bounds.Left - _previousViewport.Left) * ratio,
-                current.Top - viewport.Top - (anchor.Bounds.Top - _previousViewport.Top) * ratio));
+            offsets.Add(new Vector2(current.Left - viewport.Left - (measurement.PreviousBounds.Left - _previousViewport.Left) * ratio,
+                current.Top - viewport.Top - (measurement.PreviousBounds.Top - _previousViewport.Top) * ratio));
+            // Keep the exact bounds used for this observation as the next observation's baseline.
+            _textAnchors.Add((measurement.Range, current, measurement.Font));
         }
         if (offsets.Count == 0) return null;
         var average = new Vector2(offsets.Average(point => point.X), offsets.Average(point => point.Y));
         return offsets.All(offset => Vector2.Distance(offset, average) < 4) ? average : null;
     }
 
-    private void RefreshTextAnchors(Rect viewport)
+    private void RefreshTextAnchors(Rect viewport, bool word)
     {
         ClearTextAnchors();
         var text = Pattern<IUIAutomationTextPattern>(_document, 10014);
         if (text is null) return;
         try
         {
-            foreach (float portion in new[] { .25f, .5f, .75f })
+            var positions = new List<Vector2>();
+            foreach (float portion in new[] { .15f, .3f, .5f, .7f, .85f })
+                positions.Add(new Vector2(viewport.Center.X, viewport.Top + viewport.Height * portion));
+            if (word)
             {
-                var range = text.RangeFromPoint(new tagPOINT { x = (int)viewport.Center.X, y = (int)(viewport.Top + viewport.Height * portion) });
+                positions.Add(new Vector2(viewport.Left + viewport.Width * .25f, viewport.Center.Y));
+                positions.Add(new Vector2(viewport.Left + viewport.Width * .75f, viewport.Center.Y));
+            }
+            foreach (var position in positions)
+            {
+                var range = text.RangeFromPoint(new tagPOINT { x = (int)position.X, y = (int)position.Y });
                 range.MoveEndpointByRange(TextPatternRangeEndpoint.TextPatternRangeEndpoint_End, range, TextPatternRangeEndpoint.TextPatternRangeEndpoint_Start);
                 range.MoveEndpointByUnit(TextPatternRangeEndpoint.TextPatternRangeEndpoint_End, TextUnit.TextUnit_Character, 1);
                 var bounds = TextBounds(range);
-                if (bounds.IsEmpty) { Release(range); continue; }
+                if (bounds.IsEmpty || _textAnchors.Any(anchor => anchor.Bounds == bounds)) { Release(range); continue; }
                 double font = range.GetAttributeValue(40005) is double size ? size : 0;
                 _textAnchors.Add((range, bounds, font));
             }
         }
         catch { ClearTextAnchors(); }
         finally { Release(text); }
-    }
-
-    private void UpdateTextAnchorBounds()
-    {
-        for (int index = _textAnchors.Count - 1; index >= 0; index--)
-        {
-            var anchor = _textAnchors[index]; var bounds = TextBounds(anchor.Range);
-            if (bounds.IsEmpty) { Release(anchor.Range); _textAnchors.RemoveAt(index); }
-            else _textAnchors[index] = (anchor.Range, bounds, anchor.Range.GetAttributeValue(40005) is double size ? size : anchor.Font);
-        }
     }
 
     private IReadOnlyList<ScreenRegionAnchor> ReadFixedCandidates(Rect viewport)

@@ -48,7 +48,9 @@ public sealed class BoardPenPalette : UserControl
             NotifySettingsChanged();
         };
         Add(options, Text("书写笔迹", 12), 0, 0);
-        Add(options, Toggle("笔尖模式", settings.Startup.IsEnableNibMode, value => settings.Startup.IsEnableNibMode = value), 0, 1);
+        var nibMode = Toggle("笔尖模式", settings.Startup.IsEnableNibMode, value => settings.Startup.IsEnableNibMode = value);
+        nibMode.Visibility = settings.Appearance.IsEnableDisPlayNibModeToggler ? Visibility.Visible : Visibility.Collapsed;
+        Add(options, nibMode, 0, 1);
         var width = new Slider { Minimum = 1, Maximum = 30, StepFrequency = 1,
             Value = Math.Clamp(settings.Canvas.InkWidth * 2, 1, 30), Width = 106, MinHeight = 0, Height = 28 };
         AutomationProperties.SetName(width, "画笔粗细");

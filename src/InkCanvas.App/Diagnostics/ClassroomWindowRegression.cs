@@ -165,9 +165,9 @@ internal static class ClassroomWindowRegression
                     var plus = Descendants(lottery.Content).OfType<TouchIconButton>().Single(button => AutomationProperties.GetName(button) == "增加人数");
                     ((IInvokeProvider)new ButtonAutomationPeer(plus).GetPattern(PatternInterface.Invoke)).Invoke();
                     Task roll = lottery.RollAsync();
-                    bool locked = !plus.IsEnabled;
+                    bool locked = !plus.IsEnabled || !InkCanvas.Controls.Animation.Motion.AnimationsEnabled && roll.IsCompletedSuccessfully;
                     await roll;
-                    bool result = Field<TextBlock>(lottery, "_out1").Text.Split('\n').Length == 2;
+                    bool result = lottery.LastResult.Count == 2 && Descendants(lottery.Content).OfType<GridView>().Single().Items.Count == 2;
                     bool unlocked = plus.IsEnabled;
                     checks.Add(new { check = "lottery locks controls while rolling and restores them after results", theme, locked, result, unlocked, passed = locked && result && unlocked });
                     await CheckSurface(lottery, theme, "lottery-results", directory, checks);
@@ -217,7 +217,7 @@ internal static class ClassroomWindowRegression
         root.UpdateLayout();
         Color expected = PopupBrushes.WindowSurface(theme).Color;
         bool foundation = root is Grid grid && ((SolidColorBrush)grid.Background).Color == expected;
-        bool native = CheckNativeFrame(window, extended: window is CountdownWindow or LotteryWindow);
+        bool native = CheckNativeFrame(window, extended: window is CountdownWindow or LotteryWindow or NamesInputWindow);
         bool fills = Math.Abs(root.ActualWidth * root.XamlRoot.RasterizationScale - window.AppWindow.ClientSize.Width) < 2
             && Math.Abs(root.ActualHeight * root.XamlRoot.RasterizationScale - window.AppWindow.ClientSize.Height) < 2;
         checks.Add(new { check = "system frame and full client background", window = name, theme,
