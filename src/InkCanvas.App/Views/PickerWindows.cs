@@ -29,9 +29,12 @@ public sealed class PenPaletteWindow : Window
     private bool _closed;
     private bool _live;
     private bool _designRefreshPending;
+    public bool IsDetached { get; private set; }
+    public bool IsHighlighter { get; }
 
     public PenPaletteWindow(InkController controller, bool highlighter, int theme, double scalePercent = 100)
     {
+        IsHighlighter = highlighter;
         Title = highlighter ? "荧光笔" : "墨迹选项";
 
         _palette = new PenPalette(highlighter) { Controller = controller };
@@ -67,6 +70,7 @@ public sealed class PenPaletteWindow : Window
         WindowChrome.ClipToSurfaces(this, () => new[] { _palette.CardSurface });
         WindowChrome.ApplyTheme(this, theme);
         WindowChrome.PlaceDip(this, 100, 100, _designW * UserScale, _designH * UserScale);
+        WindowChrome.EnableDragMove(this, _palette.Header, Detach, onDragCompleted: RefreshDisplayPlacement);
         _palette.RefreshFromController();
         WireDismissal();
         scroll.Loaded += (_, _) => { _live = true; AttachDpiTracking(); };
@@ -107,6 +111,16 @@ public sealed class PenPaletteWindow : Window
     public Action AttributesChanged { get => _palette.AttributesChanged; set => _palette.AttributesChanged = value; }
     public int HighlighterAlpha { get => _palette.HighlighterAlpha; set => _palette.HighlighterAlpha = value; }
     public bool LightColorScheme { get => _palette.LightColorScheme; set => _palette.LightColorScheme = value; }
+
+    internal void Detach()
+    {
+        IsDetached = true;
+        _hasBarPosition = false;
+        _getAnchor = null;
+        _detachAnchor?.Invoke();
+        _detachAnchor = null;
+        _palette.Header.IsPinned = true;
+    }
 
     public void RefreshFromController() => _palette.RefreshFromController();
 
@@ -196,7 +210,9 @@ public sealed class PenPaletteWindow : Window
     private void ResizeAtCurrentPosition()
     {
         var pos = WindowChrome.GetClientPosition(this);
-        PlaceFitted(pos.X, pos.Y);
+        var work = WindowChrome.GetWorkArea(this);
+        var (w, h) = PhysicalSize();
+        PlaceFitted(Math.Clamp(pos.X, work.X, work.X + work.Width - w), Math.Clamp(pos.Y, work.Y, work.Y + work.Height - h));
     }
 
     private void AttachDpiTracking()
@@ -240,6 +256,7 @@ public sealed class PenPaletteWindow : Window
 
     private void Reanchor()
     {
+        if (IsDetached) return;
         double dpi = PopupDpiScale;
         var (w, h) = PhysicalSize();
         int gap = (int)Math.Ceiling(8 * dpi);
@@ -278,6 +295,7 @@ public sealed class ShapePickerWindow : Window
     private double _lastDpiScale = 1;
     private bool _closed;
     private bool _designRefreshPending;
+    public bool IsDetached { get; private set; }
 
     public ShapePickerWindow(InkController controller, Action onPicked, int theme,
         double scalePercent = 100, bool boardMode = false)
@@ -333,6 +351,7 @@ public sealed class ShapePickerWindow : Window
         WindowChrome.ClipToSurfaces(this, () => new[] { (Border)_preview.Content });
         WindowChrome.ApplyTheme(this, theme);
         WindowChrome.PlaceDip(this, 100, 100, _designW * UserScale, _designH * UserScale);
+        WindowChrome.EnableDragMove(this, _preview.Header, Detach, onDragCompleted: RefreshDisplayPlacement);
         WireDismissal();
         scroll.Loaded += (_, _) => AttachDpiTracking();
         ((Border)_preview.Content).SizeChanged += (_, _) =>
@@ -370,6 +389,16 @@ public sealed class ShapePickerWindow : Window
     {
         get => _preview.AutoHide;
         set { _preview.AutoHide = value; _lastAutoHide = value; }
+    }
+
+    internal void Detach()
+    {
+        IsDetached = true;
+        _hasBarPosition = false;
+        _getAnchor = null;
+        _detachAnchor?.Invoke();
+        _detachAnchor = null;
+        _preview.Header.IsPinned = true;
     }
 
     /// <summary>Live-resize with the floating-bar / blackboard scale setting (WPF ApplyScaling).</summary>
@@ -412,7 +441,9 @@ public sealed class ShapePickerWindow : Window
     private void ResizeAtCurrentPosition()
     {
         var pos = WindowChrome.GetClientPosition(this);
-        PlaceFitted(pos.X, pos.Y);
+        var work = WindowChrome.GetWorkArea(this);
+        var (w, h) = PhysicalSize();
+        PlaceFitted(Math.Clamp(pos.X, work.X, work.X + work.Width - w), Math.Clamp(pos.Y, work.Y, work.Y + work.Height - h));
     }
 
     private void AttachDpiTracking()
@@ -451,6 +482,7 @@ public sealed class ShapePickerWindow : Window
 
     private void Reanchor()
     {
+        if (IsDetached) return;
         double dpi = PopupDpiScale;
         var (w, h) = PhysicalSize();
         int gap = (int)Math.Ceiling(8 * dpi);

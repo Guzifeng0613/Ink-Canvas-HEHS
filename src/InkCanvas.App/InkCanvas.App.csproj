@@ -16,7 +16,7 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>false</SelfContained>
     <ApplicationIcon>Assets\InkCanvas.ico</ApplicationIcon>
-    <Version>3.6.0</Version>
+    <Version>3.7.0</Version>
     <Product>Ink Canvas (WinUI 3)</Product>
     <IncludeScreenTrackingModule Condition="'$(IncludeScreenTrackingModule)' == ''">true</IncludeScreenTrackingModule>
     <IncludePdfModule Condition="'$(IncludePdfModule)' == ''">true</IncludePdfModule>
@@ -97,6 +97,9 @@
       <_PdfLicenses Include="$(_PdfOutput)Licenses\*.txt" Condition="'$(IncludePdfModule)' == 'true'" />
       <_PdfFiles Include="$(_PdfOutput)Clipper2Lib.dll" Condition="'$(IncludePdfModule)' == 'true'" />
       <_GeometryFiles Include="$(_GeometryOutput)InkCanvas.Modules.AnalyticGeometry.dll;$(_GeometryOutput)InkCanvas.Modules.AnalyticGeometry.deps.json;$(_GeometryOutput)InkCanvas.AnalyticGeometry.dll;$(_GeometryOutput)module.json" Condition="'$(IncludeAnalyticGeometryModule)' == 'true'" />
+      <_GeometryFiles Include="$(_GeometryOutput)AngouriMath.dll;$(_GeometryOutput)Antlr4.Runtime.Standard.dll;$(_GeometryOutput)GenericTensor.dll;$(_GeometryOutput)HonkSharp.dll;$(_GeometryOutput)Numbers.dll;$(_GeometryOutput)PdfSharp.dll;$(_GeometryOutput)PdfSharp.Shared.dll;$(_GeometryOutput)PdfSharp.System.dll;$(_GeometryOutput)PdfSharp.Cryptography.dll;$(_GeometryOutput)Microsoft.Extensions.Logging.Abstractions.dll;$(_GeometryOutput)Microsoft.Extensions.DependencyInjection.Abstractions.dll;$(_GeometryOutput)System.Security.Cryptography.Pkcs.dll" Condition="'$(IncludeAnalyticGeometryModule)' == 'true'" />
+      <_GeometryLicenses Include="$(_GeometryOutput)Licenses\*.txt" Condition="'$(IncludeAnalyticGeometryModule)' == 'true'" />
+      <_GeometryFiles Include="$(_GeometryOutput)Jint.dll;$(_GeometryOutput)Acornima.dll" Condition="'$(IncludeAnalyticGeometryModule)' == 'true'" />
     </ItemGroup>
     <Copy SourceFiles="@(_ModuleFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.screen-tracking\" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_WorkerFiles)" DestinationFolder="$(OutDir)PluginHost\" SkipUnchangedFiles="true" />
@@ -104,12 +107,14 @@
     <Copy SourceFiles="@(_PdfFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.pdf\" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_PdfLicenses)" DestinationFolder="$(OutDir)Modules\inkcanvas.pdf\Licenses\" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_GeometryFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.analytic-geometry\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_GeometryLicenses)" DestinationFolder="$(OutDir)Modules\inkcanvas.analytic-geometry\Licenses\" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_ModuleFiles)" DestinationFolder="$(PublishDir)Modules\inkcanvas.screen-tracking\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
     <Copy SourceFiles="@(_WorkerFiles)" DestinationFolder="$(PublishDir)PluginHost\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
     <Copy SourceFiles="@(_UpdaterFiles)" DestinationFolder="$(PublishDir)UpdateHost\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
     <Copy SourceFiles="@(_PdfFiles)" DestinationFolder="$(PublishDir)Modules\inkcanvas.pdf\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
     <Copy SourceFiles="@(_PdfLicenses)" DestinationFolder="$(PublishDir)Modules\inkcanvas.pdf\Licenses\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
     <Copy SourceFiles="@(_GeometryFiles)" DestinationFolder="$(PublishDir)Modules\inkcanvas.analytic-geometry\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
+    <Copy SourceFiles="@(_GeometryLicenses)" DestinationFolder="$(PublishDir)Modules\inkcanvas.analytic-geometry\Licenses\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
   </Target>
   <!--
     The self-contained Windows App SDK runtime payload ships components this app never uses:

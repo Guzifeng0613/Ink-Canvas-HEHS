@@ -15,28 +15,15 @@ namespace InkCanvas.Controls.Animation;
 /// </summary>
 public static class Motion
 {
-    private static bool? _cachedEnabled;
-    private static DateTime _cachedAt;
+    private static readonly Lazy<Windows.UI.ViewManagement.UISettings> Settings = new(() => new());
 
-    /// <summary>System "show animations" preference, re-read at most once every 5 s.</summary>
+    /// <summary>Read the current system preference so disabling animations takes effect immediately.</summary>
     public static bool AnimationsEnabled
     {
         get
         {
-            var now = DateTime.UtcNow;
-            if (_cachedEnabled is null || (now - _cachedAt).TotalSeconds > 5)
-            {
-                try
-                {
-                    _cachedEnabled = new Windows.UI.ViewManagement.UISettings().AnimationsEnabled;
-                }
-                catch
-                {
-                    _cachedEnabled = true;
-                }
-                _cachedAt = now;
-            }
-            return _cachedEnabled.Value;
+            try { return Settings.Value.AnimationsEnabled; }
+            catch { return true; }
         }
     }
 

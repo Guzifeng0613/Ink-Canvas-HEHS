@@ -15,6 +15,7 @@ public enum TaperKind
     SoftPen = 4,
     Natural = 5,
     Calligraphy = 6,
+    InkWash = 7,
 }
 
 /// <summary>
@@ -55,7 +56,7 @@ public abstract class TaperProfile
     {
         TaperKind.None => new NoneTaper(),
         TaperKind.Velocity => new VelocityTaper(),
-        TaperKind.SmoothPen or TaperKind.SoftPen or TaperKind.Natural or TaperKind.Calligraphy => new SimulatedPressureTaper(kind),
+        TaperKind.SmoothPen or TaperKind.SoftPen or TaperKind.Natural or TaperKind.Calligraphy or TaperKind.InkWash => new SimulatedPressureTaper(kind),
         _ => new TailTaper(),
     };
 }

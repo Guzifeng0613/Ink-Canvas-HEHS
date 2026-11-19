@@ -14,7 +14,7 @@ public static class StrokeGeometry
     /// Adjacent capsules overlap at their round caps; they are grouped once, so translucent ink
     /// is composited once per stroke even when the centerline crosses itself.
     /// </summary>
-    public static Vector2[][] BuildUnionContours(InkStroke stroke)
+    public static Vector2[][] BuildUnionContours(InkStroke stroke, float widthScale = 1)
     {
         if (stroke is null) throw new ArgumentNullException(nameof(stroke));
         var points = stroke.Points;
@@ -22,7 +22,7 @@ public static class StrokeGeometry
         var nib = stroke.Attributes.NibTransform;
         if (points.Count == 1)
         {
-            var contour = Circle(Vector2.Zero, MathF.Max(points[0].Width, 0.5f) * 0.5f, 24);
+            var contour = Circle(Vector2.Zero, MathF.Max(points[0].Width, 0.5f) * 0.5f * widthScale, 24);
             for (int i = 0; i < contour.Length; i++) contour[i] = points[0].Position + Vector2.TransformNormal(contour[i], nib);
             return new[] { NormalizeWinding(contour) };
         }
@@ -31,8 +31,8 @@ public static class StrokeGeometry
         for (int i = 1; i < points.Count; i++)
         {
             result[i - 1] = BuildSegmentOutline(
-                points[i - 1].Position, MathF.Max(points[i - 1].Width, 0.5f) * 0.5f,
-                points[i].Position, MathF.Max(points[i].Width, 0.5f) * 0.5f, nib);
+                points[i - 1].Position, MathF.Max(points[i - 1].Width, 0.5f) * 0.5f * widthScale,
+                points[i].Position, MathF.Max(points[i].Width, 0.5f) * 0.5f * widthScale, nib);
         }
         return result;
     }

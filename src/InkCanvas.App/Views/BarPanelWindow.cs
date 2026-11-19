@@ -33,6 +33,7 @@ internal sealed class BarPanelWindow : Window
     private bool _hasBarPosition;
     private bool _closed;
     private bool _sizeFitPending;
+    internal bool IsDetached { get; private set; }
 
     public BarPanelWindow(FloatingBarWindow owner, FloatingBar bar, bool isMore)
         : this(owner, bar, isMore ? BarPanelKind.More : BarPanelKind.Gesture) { }
@@ -74,6 +75,8 @@ internal sealed class BarPanelWindow : Window
         FloatingBarWindow.EnableTransparency(this);
         WindowChrome.ClipToSurfaces(this, () => new[] { _host });
         ApplyChrome();
+        WindowChrome.EnableDragMove(this, _title, Detach,
+            onDragCompleted: () => PlaceAboveBar(_barX, _barY, _barW));
         _bar.ThemeRefreshed += ApplyChrome;
 
         TransientWindowDismissal.Attach(this, () => WindowChrome.GetHwnd(_owner), () => !_title.IsPinned,
@@ -111,6 +114,7 @@ internal sealed class BarPanelWindow : Window
     }
 
     public bool IsMore => _isMore;
+    internal void Detach() { IsDetached = true; _title.IsPinned = true; }
     internal void DismissOnInput() { if (!_title.IsPinned && !_closed) Close(); }
 
     private void ApplyChrome()
@@ -166,7 +170,9 @@ internal sealed class BarPanelWindow : Window
     public void PlaceAboveBar(int barX, int barY, int barW)
     {
         _barX = barX; _barY = barY; _barW = barW; _hasBarPosition = true;
-        var anchor = WindowChrome.GetScreenBounds(_owner, _bar.GetPanelButton(_kind));
+        var location = WindowChrome.GetClientPosition(this);
+        var anchor = IsDetached ? new Windows.Graphics.RectInt32(location.X, location.Y, AppWindow.Size.Width, AppWindow.Size.Height)
+            : WindowChrome.GetScreenBounds(_owner, _bar.GetPanelButton(_kind));
         var work = WindowChrome.GetWorkArea(anchor);
         double dpi = WindowChrome.GetDpiScale(anchor);
         double user = _owner.UserScale;
@@ -180,7 +186,9 @@ internal sealed class BarPanelWindow : Window
         int w = (int)Math.Ceiling(_designW * user * dpi);
         int h = (int)Math.Ceiling(_designH * user * dpi);
         int gap = (int)Math.Ceiling(4 * S * dpi);
-        var position = WindowChrome.GetPopupPosition(anchor, w, h, gap);
+        var position = IsDetached
+            ? new Windows.Graphics.PointInt32(Math.Clamp(anchor.X, work.X, work.X + work.Width - w), Math.Clamp(anchor.Y, work.Y, work.Y + work.Height - h))
+            : WindowChrome.GetPopupPosition(anchor, w, h, gap);
         WindowChrome.PlaceClient(this, position.X, position.Y, w, h);
         WindowChrome.EnsureAbove(this);
     }

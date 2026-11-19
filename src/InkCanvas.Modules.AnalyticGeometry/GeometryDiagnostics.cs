@@ -51,7 +51,7 @@ public static class GeometryDiagnostics
             for (int i = 0; i < 30; i++) window.SetDefinition(new PlotDefinition { Formula = "y=a*sin(x)+b", A = i / 10d, B = i / 20d });
             await window.CalculateAsync();
             Check("rapid parameter changes keep the latest generation", window.CurrentMesh.Paths.Count > 0 && watch.ElapsedMilliseconds < 3000, new { elapsed = watch.ElapsedMilliseconds, calculation = window.LastCalculationMilliseconds, window.CompletedGeneration });
-            var selector = Descendants(window.Content).OfType<InkCanvas.Controls.Controls.SegmentedSelector>().Single(); selector.SelectedIndex = 1; await Task.Delay(200);
+            var selector = Descendants(window.Content).OfType<InkCanvas.Controls.Controls.SegmentedSelector>().First(); selector.SelectedIndex = 1; await Task.Delay(200);
             if (window.Handwriting.RecognitionAvailable)
             {
                 var ink = window.Handwriting.Controller; uint id = 100;
@@ -74,6 +74,7 @@ public static class GeometryDiagnostics
             await ScreenshotAsync(window, Path.Combine(directory, "analytic-geometry.png"));
             window.Close(); window = null;
             Check("closing editor clears temporary canvas preview", target.Controller.ExtensionPreview.Count == 0);
+            await WorkbenchDiagnostics.RunAsync(host, directory);
         }
         catch (Exception ex) { checks.Add(new { check = "geometry runtime exception", pass = false, detail = ex.ToString() }); }
         finally

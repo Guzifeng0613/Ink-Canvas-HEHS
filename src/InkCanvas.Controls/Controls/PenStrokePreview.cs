@@ -13,7 +13,7 @@ public sealed class PenStrokePreview : UserControl
 {
     private readonly Canvas _surface = new() { Height = 80, IsHitTestVisible = false };
     private readonly Path _checks = new();
-    private readonly Path _ink = new();
+    private readonly List<Path> _ink = new();
     private StrokeAttributes _attributes = new();
     private double _previewHeight = 80;
     private bool _showChecks = true;
@@ -37,7 +37,6 @@ public sealed class PenStrokePreview : UserControl
     public PenStrokePreview()
     {
         _surface.Children.Add(_checks);
-        _surface.Children.Add(_ink);
         Content = new Border { CornerRadius = new CornerRadius(5), Child = _surface };
         AutomationProperties.SetName(this, "笔触预览");
         SizeChanged += (_, _) => Render();
@@ -86,17 +85,20 @@ public sealed class PenStrokePreview : UserControl
             previous = point;
         }
         Stroke.Complete();
-        var geometry = new PathGeometry { FillRule = FillRule.Nonzero };
-        foreach (var contour in StrokeGeometry.BuildUnionContours(Stroke))
+        var layers = InkBrush.Layers(Stroke);
+        while (_ink.Count < layers.Length)
         {
-            var figure = new PathFigure { StartPoint = new Point(contour[0].X, contour[0].Y), IsClosed = true, IsFilled = true };
-            var segment = new PolyLineSegment();
-            for (int i = 1; i < contour.Length; i++) segment.Points.Add(new Point(contour[i].X, contour[i].Y));
-            figure.Segments.Add(segment);
-            geometry.Figures.Add(figure);
+            var path = new Path();
+            _ink.Add(path); _surface.Children.Add(path);
         }
-        _ink.Data = geometry;
-        var color = Stroke.Attributes.EffectiveColor;
-        _ink.Fill = new SolidColorBrush(Windows.UI.Color.FromArgb(color.A, color.R, color.G, color.B));
+        for (int layer = 0; layer < _ink.Count; layer++)
+        {
+            var path = _ink[layer];
+            path.Visibility = layer < layers.Length ? Visibility.Visible : Visibility.Collapsed;
+            if (layer >= layers.Length) continue;
+            path.Data = PenStyleIcon.CreateGeometry(Stroke, layers[layer].WidthScale);
+            var color = layers[layer].Color(Stroke.Attributes.EffectiveColor);
+            path.Fill = new SolidColorBrush(Windows.UI.Color.FromArgb(color.A, color.R, color.G, color.B));
+        }
     }
 }

@@ -12,7 +12,7 @@ namespace InkCanvas.Ink.Rendering;
 /// </summary>
 public sealed class StrokeRenderer : IDisposable
 {
-    private sealed record Entry(InkStroke Stroke, long Version, Matrix3x2 Nib, int PointCount, CanvasGeometry Geometry, LinkedListNode<Guid> Node);
+    private sealed record Entry(InkStroke Stroke, long Version, Matrix3x2 Nib, int PointCount, CanvasGeometry[] Geometry, LinkedListNode<Guid> Node);
     private readonly Dictionary<Guid, Entry> _cache = new();
     private readonly LinkedList<Guid> _usage = new();
     private const int MaxCachedPoints = 100_000;
@@ -25,7 +25,7 @@ public sealed class StrokeRenderer : IDisposable
         public long Version;
         public Matrix3x2 Nib;
         public int Count, StableSegments;
-        public readonly List<CanvasGeometry> Chunks = new();
+        public List<CanvasGeometry>[] Chunks;
     }
     private readonly Dictionary<Guid, LiveEntry> _liveCache = new();
     public int CachedGeometryCount => _cache.Count;
@@ -38,11 +38,12 @@ public sealed class StrokeRenderer : IDisposable
         if (stroke is null || stroke.Count == 0) return;
 
         var color = stroke.Attributes.EffectiveColor;
-        var winColor = Windows.UI.Color.FromArgb(color.A, color.R, color.G, color.B);
+        var layers = InkBrush.Layers(stroke);
 
         bool fromCache = stroke.IsCompleted && _cache.TryGetValue(stroke.Id, out var cached)
-            && ReferenceEquals(cached.Stroke, stroke) && cached.Version == stroke.GeometryVersion && cached.Nib == stroke.Attributes.NibTransform;
-        CanvasGeometry geometry;
+            && ReferenceEquals(cached.Stroke, stroke) && cached.Version == stroke.GeometryVersion && cached.Nib == stroke.Attributes.NibTransform
+            && cached.Geometry.Length == layers.Length;
+        CanvasGeometry[] geometry;
         if (fromCache)
         {
             var entry = _cache[stroke.Id];
@@ -57,16 +58,17 @@ public sealed class StrokeRenderer : IDisposable
                 ? BuildLiveGeometry(session, stroke) : BuildGeometry(session, stroke);
             GeometryBuildCount++;
         }
-        if (geometry is null) return;
+        if (geometry.Length == 0) return;
         if (stroke.IsCompleted) RemoveLive(stroke.Id);
 
         bool storedInCache = false;
-        if (!fromCache && stroke.IsCompleted && stroke.Count <= MaxCachedPoints)
+        int cachedPoints = stroke.Count * layers.Length;
+        if (!fromCache && stroke.IsCompleted && cachedPoints <= MaxCachedPoints)
         {
-            while (_usage.First is not null && (_cachedPoints + stroke.Count > MaxCachedPoints || _cache.Count >= 2048))
+            while (_usage.First is not null && (_cachedPoints + cachedPoints > MaxCachedPoints || _cache.Count >= 2048))
                 Remove(_usage.First.Value);
-            _cache[stroke.Id] = new Entry(stroke, stroke.GeometryVersion, stroke.Attributes.NibTransform, stroke.Count, geometry, _usage.AddLast(stroke.Id));
-            _cachedPoints += stroke.Count;
+            _cache[stroke.Id] = new Entry(stroke, stroke.GeometryVersion, stroke.Attributes.NibTransform, cachedPoints, geometry, _usage.AddLast(stroke.Id));
+            _cachedPoints += cachedPoints;
             storedInCache = true;
         }
 
@@ -74,45 +76,68 @@ public sealed class StrokeRenderer : IDisposable
         try
         {
             session.Transform = transform;
-            session.FillGeometry(geometry, winColor);
+            for (int layer = 0; layer < geometry.Length; layer++)
+            {
+                var tint = layers[layer].Color(color);
+                if (geometry[layer] is not null)
+                    session.FillGeometry(geometry[layer], Windows.UI.Color.FromArgb(tint.A, tint.R, tint.G, tint.B));
+            }
         }
         finally
         {
             session.Transform = previous;
-            if (!fromCache && !storedInCache) geometry.Dispose();
+            if (!fromCache && !storedInCache) foreach (var path in geometry) path.Dispose();
         }
     }
 
-    private CanvasGeometry BuildLiveGeometry(CanvasDrawingSession session, InkStroke stroke)
+    private CanvasGeometry[] BuildLiveGeometry(CanvasDrawingSession session, InkStroke stroke)
     {
+        var layers = InkBrush.Layers(stroke);
         if (_liveCache.TryGetValue(stroke.Id, out var entry)
             && (!ReferenceEquals(entry.Stroke, stroke) || stroke.Count < entry.Count
-                || entry.Nib != stroke.Attributes.NibTransform || stroke.GeometryVersion - entry.Version != stroke.Count - entry.Count))
+                || entry.Nib != stroke.Attributes.NibTransform || entry.Chunks.Length != layers.Length
+                || stroke.GeometryVersion - entry.Version != stroke.Count - entry.Count))
         { RemoveLive(stroke.Id); entry = null; }
         if (entry is null)
         {
             if (_liveCache.Count >= 16) RemoveLive(_liveCache.Keys.First());
-            _liveCache[stroke.Id] = entry = new LiveEntry { Stroke = stroke, Nib = stroke.Attributes.NibTransform };
+            _liveCache[stroke.Id] = entry = new LiveEntry { Stroke = stroke, Nib = stroke.Attributes.NibTransform,
+                Chunks = Enumerable.Range(0, layers.Length).Select(_ => new List<CanvasGeometry>()).ToArray() };
         }
         // Tail taper can revise the last ten points; only freeze complete chunks behind that window.
         int stable = Math.Max(0, stroke.StablePointCount - 1);
         while (stable - entry.StableSegments >= 64)
         {
-            entry.Chunks.Add(BuildGeometry(session, stroke, entry.StableSegments, 64));
+            for (int layer = 0; layer < layers.Length; layer++)
+                entry.Chunks[layer].Add(BuildLayerGeometry(session, stroke, layers[layer].WidthScale, entry.StableSegments, 64));
             entry.StableSegments += 64;
         }
         entry.Count = stroke.Count; entry.Version = stroke.GeometryVersion;
-        var tail = BuildGeometry(session, stroke, entry.StableSegments);
-        if (entry.Chunks.Count == 0) return tail;
-        var parts = new CanvasGeometry[entry.Chunks.Count + (tail is null ? 0 : 1)];
-        entry.Chunks.CopyTo(parts);
-        if (tail is not null) parts[^1] = tail;
-        // Fill the entire group once so crossings keep the original highlighter opacity.
-        try { return CanvasGeometry.CreateGroup(session, parts, CanvasFilledRegionDetermination.Winding); }
-        finally { tail?.Dispose(); }
+        var geometry = new CanvasGeometry[layers.Length];
+        for (int layer = 0; layer < layers.Length; layer++)
+        {
+            var tail = BuildLayerGeometry(session, stroke, layers[layer].WidthScale, entry.StableSegments);
+            var chunks = entry.Chunks[layer];
+            if (chunks.Count == 0) { geometry[layer] = tail; continue; }
+            var parts = new CanvasGeometry[chunks.Count + (tail is null ? 0 : 1)];
+            chunks.CopyTo(parts);
+            if (tail is not null) parts[^1] = tail;
+            // Composite each layer once, including self-crossings and chunk boundaries.
+            try { geometry[layer] = CanvasGeometry.CreateGroup(session, parts, CanvasFilledRegionDetermination.Winding); }
+            finally { tail?.Dispose(); }
+        }
+        return geometry;
     }
 
-    private CanvasGeometry BuildGeometry(CanvasDrawingSession session, InkStroke stroke, int firstSegment = 0, int segmentCount = int.MaxValue)
+    private CanvasGeometry[] BuildGeometry(CanvasDrawingSession session, InkStroke stroke)
+    {
+        var layers = InkBrush.Layers(stroke);
+        var result = new CanvasGeometry[layers.Length];
+        for (int layer = 0; layer < layers.Length; layer++) result[layer] = BuildLayerGeometry(session, stroke, layers[layer].WidthScale);
+        return result;
+    }
+
+    private CanvasGeometry BuildLayerGeometry(CanvasDrawingSession session, InkStroke stroke, float widthScale, int firstSegment = 0, int segmentCount = int.MaxValue)
     {
         if (stroke.Count == 0) return null;
         int endSegment = Math.Max(1, stroke.Count - 1);
@@ -130,8 +155,8 @@ public sealed class StrokeRenderer : IDisposable
         {
             var start = stroke.Points[segment];
             var end = stroke.Points[Math.Min(segment + 1, stroke.Count - 1)];
-            int count = StrokeGeometry.WriteSegmentOutline(start.Position, MathF.Max(start.Width, 0.5f) * 0.5f,
-                end.Position, MathF.Max(end.Width, 0.5f) * 0.5f, scratch, nib);
+            int count = StrokeGeometry.WriteSegmentOutline(start.Position, MathF.Max(start.Width, 0.5f) * 0.5f * widthScale,
+                end.Position, MathF.Max(end.Width, 0.5f) * 0.5f * widthScale, scratch, nib);
             var outline = scratch[..count];
             if (outline.Length < 3) continue;
             builder.BeginFigure(outline[0]);
@@ -168,12 +193,12 @@ public sealed class StrokeRenderer : IDisposable
         if (!_cache.Remove(id, out var entry)) return;
         _usage.Remove(entry.Node);
         _cachedPoints -= entry.PointCount;
-        entry.Geometry.Dispose();
+        foreach (var geometry in entry.Geometry) geometry.Dispose();
     }
 
     public void InvalidateAll()
     {
-        foreach (var entry in _cache.Values) entry.Geometry.Dispose();
+        foreach (var entry in _cache.Values) foreach (var geometry in entry.Geometry) geometry.Dispose();
         _cache.Clear();
         _usage.Clear();
         _cachedPoints = 0;
@@ -191,7 +216,7 @@ public sealed class StrokeRenderer : IDisposable
     private void RemoveLive(Guid id)
     {
         if (!_liveCache.Remove(id, out var entry)) return;
-        foreach (var geometry in entry.Chunks) geometry.Dispose();
+        foreach (var chunks in entry.Chunks) foreach (var geometry in chunks) geometry.Dispose();
     }
 
     public void Dispose() => InvalidateAll();

@@ -86,11 +86,12 @@ public sealed class FloatingBarWindow : Window
         };
         Closed += (_, _) =>
         {
+            _bar.FinishMainCollapseAnimation();
             if (_trackedXamlRoot is not null) _trackedXamlRoot.Changed -= OnXamlRootChanged;
             _bar.LayoutUpdated -= OnBarLayoutUpdated;
             _bar.PanelRequested -= OnPanelRequested;
             _bar.SwitchSideRequested -= SwitchSide;
-            ClosePanels();
+            ClosePanels(includeDetached: true);
             CloseFoldHandles();
         };
     }
@@ -139,6 +140,7 @@ public sealed class FloatingBarWindow : Window
         _isFolded = folded;
         if (folded)
         {
+            _bar.FinishMainCollapseAnimation();
             ClosePanels();
             CloseFoldHandles();
             AppWindow.Hide();
@@ -206,8 +208,9 @@ public sealed class FloatingBarWindow : Window
     {
         double userScale = UserScale;
         var (widthDip, heightDip) = _bar.ComputeLayoutSize();
+        var expanded = _bar.ComputeLayoutSize(expanded: true);
         var work = WindowChrome.GetWorkArea(this);
-        userScale = Math.Min(userScale, Math.Min(work.Width / (widthDip * dpiScale), work.Height / (heightDip * dpiScale)));
+        userScale = Math.Min(userScale, Math.Min(work.Width / (expanded.Width * dpiScale), work.Height / (heightDip * dpiScale)));
         // Viewbox measures the design at its natural size before scaling. RenderTransform
         // scales after layout, so small windows clip the bar before the transform is applied.
         _scaledBar.Width = widthDip * userScale;
@@ -231,6 +234,7 @@ public sealed class FloatingBarWindow : Window
 
     private int _lastButtons = -1, _lastSeparators = -1;
     private bool _lastExpanded, _lastCollapsed;
+    private double _lastMainExpansion = -1;
 
     private void OnBarLayoutUpdated(object sender, object e)
     {
@@ -238,11 +242,14 @@ public sealed class FloatingBarWindow : Window
         var (buttons, separators) = _bar.CountVisibleItems();
         bool expanded = _bar.IsExpanded;
         bool collapsed = _bar.IsMainCollapsed;
-        if (buttons == _lastButtons && separators == _lastSeparators && expanded == _lastExpanded && collapsed == _lastCollapsed) return;
+        double mainExpansion = _bar.MainExpansion;
+        if (buttons == _lastButtons && separators == _lastSeparators && expanded == _lastExpanded && collapsed == _lastCollapsed
+            && mainExpansion == _lastMainExpansion) return;
         _lastButtons = buttons;
         _lastSeparators = separators;
         _lastExpanded = expanded;
         _lastCollapsed = collapsed;
+        _lastMainExpansion = mainExpansion;
         // Refit in place: keep the left/top edge so the primary buttons never shift; a smiley
         // collapse shrinks the window from the RIGHT only.
         double dpi = WindowChrome.GetDpiScale(this);
@@ -258,10 +265,10 @@ public sealed class FloatingBarWindow : Window
     {
         if (!open)
         {
-            if (_panels.TryGetValue(kind, out var closing)) closing.Close();
+            if (_panels.TryGetValue(kind, out var closing)) closing.DismissOnInput();
             return;
         }
-        foreach (var other in _panels.Where(pair => pair.Key != kind).Select(pair => pair.Value).ToArray()) other.Close();
+        foreach (var other in _panels.Where(pair => pair.Key != kind).Select(pair => pair.Value).ToArray()) other.DismissOnInput();
         if (!_panels.TryGetValue(kind, out var panel))
         {
             panel = new BarPanelWindow(this, _bar, kind);
@@ -283,12 +290,13 @@ public sealed class FloatingBarWindow : Window
     internal void EnsureHandlesAbove(IntPtr overlay = default)
     {
         foreach (var h in _foldHandles) WindowChrome.EnsureAbove(h, overlay);
+        foreach (var panel in _panels.Values) WindowChrome.EnsureAbove(panel, overlay);
     }
 
-    internal void ClosePanels()
+    internal void ClosePanels(bool includeDetached = false)
     {
-        foreach (var panel in _panels.Values.ToArray()) panel.Close();
-        _panels.Clear();
+        foreach (var panel in _panels.Values.ToArray())
+            if (includeDetached || !panel.IsDetached) panel.Close();
     }
 
     internal void DismissPanelsOnInput()

@@ -38,7 +38,7 @@ public static class OriginalMenuCatalog
     public static IReadOnlyList<string> PenStyles { get; } = Array.AsReadOnly(new[]
     {
         "点集笔锋", "速率笔锋", "关闭笔锋",
-        "平滑硬笔", "柔和压感", "自然笔锋", "书法笔锋",
+        "平滑硬笔", "柔和压感", "自然笔锋", "书法笔锋", "水墨笔锋",
     });
 
     public static TaperKind ToTaperKind(int style) => style switch
@@ -49,6 +49,7 @@ public static class OriginalMenuCatalog
         4 => TaperKind.SoftPen,
         5 => TaperKind.Natural,
         6 => TaperKind.Calligraphy,
+        7 => TaperKind.InkWash,
         _ => TaperKind.Tail,
     };
 
@@ -60,6 +61,7 @@ public static class OriginalMenuCatalog
         TaperKind.SoftPen => 4,
         TaperKind.Natural => 5,
         TaperKind.Calligraphy => 6,
+        TaperKind.InkWash => 7,
         _ => 0,
     };
 
@@ -73,7 +75,7 @@ public static class OriginalMenuCatalog
 
     public static IReadOnlyList<string> EraserModes { get; } = Array.AsReadOnly(new[]
     {
-        "图标切换", "面积擦", "线条擦",
+        "图标切换", "面积擦", "线条擦", "套索擦",
     });
 
     public static IReadOnlyList<int> AutoDeleteDays { get; } = Array.AsReadOnly(new[]

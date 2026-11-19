@@ -19,6 +19,7 @@ public sealed class PopupHeader : Grid
     public PopupHeader(string title, int theme, bool canPin = true)
     {
         MinHeight = 40;
+        Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
         Padding = new Thickness(12, 2, 4, 2);
         ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         ColumnDefinitions.Add(new() { Width = GridLength.Auto });

@@ -42,6 +42,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private ReplayWindow _replay;
     private InfoWindow _guide;
     private PenPaletteWindow _palette;
+    private readonly List<PenPaletteWindow> _detachedPalettes = new();
     private ShapePickerWindow _shapePicker;
     private PptNavigationWindow _pptBottomLeft, _pptBottomRight, _pptSideLeft, _pptSideRight;
     private bool _lastSlideShowState;
@@ -146,7 +147,9 @@ public sealed partial class ShellController : IShellActions, IDisposable
             Overlay.ConfigureDisplays(Services.Settings.Display);
             _bar?.RefreshDisplayPlacement();
             _palette?.RefreshDisplayPlacement();
+            foreach (var palette in _detachedPalettes) palette.RefreshDisplayPlacement();
             _shapePicker?.RefreshDisplayPlacement();
+            if (_board is not null) foreach (var panel in _board.ToolPanels) panel.Fit();
             _replay?.RefreshDisplayPlacement();
             foreach (var window in OpenWindows)
                 if (window is SettingsWindow or CountdownWindow or LotteryWindow or InfoWindow or ReplayWindow
@@ -178,6 +181,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
             if (_replay is not null) yield return _replay;
             if (_guide is not null) yield return _guide;
             if (_palette is not null) yield return _palette;
+            foreach (var palette in _detachedPalettes) yield return palette;
             if (_shapePicker is not null) yield return _shapePicker;
         }
     }
@@ -259,11 +263,10 @@ public sealed partial class ShellController : IShellActions, IDisposable
             },
             draw: () =>
             {
-                if (_board is not null) { ActiveController.Tool = InkTool.Pen; _board.ShowPenPalette(); }
-                else if (DocumentActive) OpenPenPalette(false);
-                else if (Overlay.ClickThrough) ToggleClickThrough();
-                else if (_palette is not null) { _palette.Close(); _palette = null; }
-                else OpenPenPalette(false);
+                bool active = ActiveController.Tool == InkTool.Pen && (DocumentActive || _board is not null || !Overlay.ClickThrough);
+                if (!DocumentActive && _board is null && Overlay.ClickThrough) ToggleClickThrough();
+                ActiveController.Tool = InkTool.Pen;
+                if (active) OpenPenPalette(false);
             });
 
         _pollTimer.Start();
@@ -344,6 +347,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
 
     private void BindBoardController(InkController controller)
     {
+        if (!ReferenceEquals(controller, _boundBoardController)) CloseDetachedPalettes();
         if (_boundBoardController is not null)
         {
             _boundBoardController.ToolChanged -= OnControllerToolChanged;
@@ -543,7 +547,10 @@ public sealed partial class ShellController : IShellActions, IDisposable
         if (_pptSideLeft is not null) WindowChrome.EnsureAbove(_pptSideLeft, Overlay.Window.Handle);
         if (_pptSideRight is not null) WindowChrome.EnsureAbove(_pptSideRight, Overlay.Window.Handle);
         if (_palette is not null) WindowChrome.EnsureAbove(_palette, Overlay.Window.Handle);
+        foreach (var palette in _detachedPalettes) WindowChrome.EnsureAbove(palette, Overlay.Window.Handle);
         if (_shapePicker is not null) WindowChrome.EnsureAbove(_shapePicker, Overlay.Window.Handle);
+        if (_board is not null)
+            foreach (var panel in _board.ToolPanels) WindowChrome.EnsureAbove(panel, Overlay.Window.Handle);
         foreach (var window in _documentWindows) if (!ReferenceEquals(window, _documentWorkspace?.Window) && window.AppWindow.IsVisible) WindowChrome.EnsureAbove(window, Overlay.Window.Handle);
         UpdateSettingsDrawingOrder();
     }
@@ -624,6 +631,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
 
     public void ToggleBoard()
     {
+        CloseDetachedPalettes();
         _imageImportCancellation?.Cancel();
         _selectionToolbar?.Hide();
         _replay?.Close();
@@ -714,8 +722,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
             {
                 if (_exiting) return;
                 _bar?.ClosePanels();
-                _palette?.Close();
-                _shapePicker?.Close();
+                _palette?.DismissOnOverlayInput();
+                _shapePicker?.DismissOnOverlayInput();
                 var window = new SettingsWindow(Services, Updater, this, RosterDirectory);
                 _settings = window;
                 ShowRequestedSettingsPage(window);
@@ -791,6 +799,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
             ? Services.Settings.Appearance.BlackboardScale
             : Services.Settings.Appearance.FloatingBarScale;
         _palette?.ApplyScale(menuScale);
+        foreach (var palette in _detachedPalettes) palette.ApplyScale(menuScale);
         _shapePicker?.ApplyScale(menuScale);
         _board?.RefreshUiScale();
         _bar?.Bar.RefreshSettingsVisuals();
@@ -1036,6 +1045,14 @@ public sealed partial class ShellController : IShellActions, IDisposable
             _board.ShowPenPalette(); return;
         }
         // WPF MW_FloatBarIcons.cs:721-731: clicking the same pen button toggles the palette closed.
+        var detachedPalette = _detachedPalettes.FirstOrDefault(window => window.IsHighlighter == highlighter);
+        if (detachedPalette is not null) { WindowChrome.EnsureAbove(detachedPalette); return; }
+        if (_palette?.IsDetached == true)
+        {
+            if (_paletteHighlighter == highlighter) { WindowChrome.EnsureAbove(_palette); return; }
+            _detachedPalettes.Add(_palette);
+            _palette = null;
+        }
         if (_palette is not null && _paletteHighlighter == highlighter) { _palette.Close(); _palette = null; return; }
         if (_palette is not null) { _palette.Close(); _palette = null; }
         _paletteHighlighter = highlighter;
@@ -1070,12 +1087,17 @@ public sealed partial class ShellController : IShellActions, IDisposable
                 Services.ApplySettings();
                 Services.SaveSettings();
             },
-            AttributesChanged = () => _bar?.Bar.RefreshSelection(),
+            AttributesChanged = () => { Services.RememberToolOptions(controller); _bar?.Bar.RefreshSelection(); },
         };
         NotifyWindowOpened(_palette);
         _palette.ConfigureNibMode(Services.Settings.Appearance.IsEnableDisPlayNibModeToggler, Services.Settings.Startup.IsEnableNibMode,
             value => { Services.Settings.Startup.IsEnableNibMode = value; Services.ApplySettings(); Services.SaveSettings(); });
-        _palette.Closed += (_, _) => _palette = null;
+        var openedPalette = _palette;
+        _palette.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_palette, openedPalette)) _palette = null;
+            _detachedPalettes.Remove(openedPalette);
+        };
         WindowChrome.ShowWithoutActivation(_palette);
         if (_board is not null || _bar is not null)
         {
@@ -1086,15 +1108,26 @@ public sealed partial class ShellController : IShellActions, IDisposable
         WindowChrome.EnsureAbove(_palette);
     }
 
+    private void CloseDetachedPalettes()
+    {
+        foreach (var palette in _detachedPalettes.ToArray()) palette.Close();
+    }
+
     public void OpenShapePicker()
     {
-        if (_shapePicker is not null) { _shapePicker.Close(); _shapePicker = null; }
+        if (_shapePicker is not null)
+        {
+            if (_shapePicker.IsDetached) WindowChrome.EnsureAbove(_shapePicker);
+            else _shapePicker.Close();
+            return;
+        }
         _shapePicker = new ShapePickerWindow(ActiveController,
-            () => _bar?.Bar.RefreshSelection(), EffectiveTheme,
+            () => { Services.RememberToolOptions(ActiveController); _bar?.Bar.RefreshSelection(); }, EffectiveTheme,
             _board is not null ? Services.Settings.Appearance.BlackboardScale : Services.Settings.Appearance.FloatingBarScale,
             boardMode: _board is not null);
         NotifyWindowOpened(_shapePicker);
-        _shapePicker.Closed += (_, _) => _shapePicker = null;
+        var openedPicker = _shapePicker;
+        _shapePicker.Closed += (_, _) => { if (ReferenceEquals(_shapePicker, openedPicker)) _shapePicker = null; };
         WindowChrome.ShowWithoutActivation(_shapePicker);
         if (_board is not null || _bar is not null)
         {
@@ -1266,6 +1299,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
     public void Dispose()
     {
         if (_disposed) return; _disposed = true;
+        foreach (var palette in _detachedPalettes.ToArray()) palette.Close();
         _imageImportCancellation?.Cancel();
         Services.Plugins.Changed -= OnPluginsChanged;
         Services.SettingsApplied -= ApplyDocumentSettings;

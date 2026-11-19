@@ -22,6 +22,8 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        var toolbarAnimationCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--toolbaranimationcheck=", StringComparison.OrdinalIgnoreCase));
+        if (toolbarAnimationCheck is not null) { _ = Diagnostics.ToolbarAnimationRegression.Run(toolbarAnimationCheck["--toolbaranimationcheck=".Length..]); return; }
         var lotteryCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--lotterycheck=", StringComparison.OrdinalIgnoreCase));
         if (lotteryCheck is not null) { _ = Diagnostics.LotteryRegression.Run(lotteryCheck["--lotterycheck=".Length..]); return; }
         var selectionTouchCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--selectiontouchcheck=", StringComparison.OrdinalIgnoreCase));

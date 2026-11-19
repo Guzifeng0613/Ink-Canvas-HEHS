@@ -356,7 +356,13 @@ public sealed partial class SettingsWindow : Window
                     }));
                 AddSection("书写与笔尖");
                 _content.Children.Add(ComboRow("笔迹风格", OriginalMenuCatalog.PenStyles,
-                    () => S.Canvas.InkStyle, i => S.Canvas.InkStyle = i));
+                    () => S.Canvas.InkStyle, i => S.Canvas.InkStyle = i, index => new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal, Spacing = 12,
+                        Children = { new PenStyleIcon(index) { Width = 64, Height = 26, Foreground = PopupBrushes.Foreground(BrushTheme) },
+                            new TextBlock { Text = OriginalMenuCatalog.PenStyles[index], Foreground = PopupBrushes.Foreground(BrushTheme),
+                                VerticalAlignment = VerticalAlignment.Center } },
+                    }));
                 _content.Children.Add(ComboRow("笔尖", OriginalMenuCatalog.PenNibs,
                     () => (int)S.Canvas.PenNib, i => S.Canvas.PenNib = (InkCanvas.Core.Ink.PenNib)i));
                 _content.Children.Add(SliderRow("画笔粗细（原菜单 1–30；设置值为菜单值的一半）",
@@ -766,7 +772,7 @@ public sealed partial class SettingsWindow : Window
         return RequireSetting(header, card);
     }
 
-    private UIElement ComboRow(string header, IReadOnlyList<string> options, Func<int> get, Action<int> set)
+    private UIElement ComboRow(string header, IReadOnlyList<string> options, Func<int> get, Action<int> set, Func<int, UIElement> optionContent = null)
     {
         var combo = new ComboBox
         {
@@ -774,7 +780,16 @@ public sealed partial class SettingsWindow : Window
             MinWidth = 0,
             MinHeight = 40,
         };
-        foreach (string option in options) combo.Items.Add(option);
+        for (int index = 0; index < options.Count; index++)
+        {
+            if (optionContent is null) combo.Items.Add(options[index]);
+            else
+            {
+                var item = new ComboBoxItem { Content = optionContent(index) };
+                AutomationProperties.SetName(item, options[index]);
+                combo.Items.Add(item);
+            }
+        }
         // Set the index after items are present and before subscribing: WinUI otherwise
         // coerces it back to -1, and the initial change must not commit.
         combo.SelectedIndex = Math.Clamp(get(), 0, options.Count - 1);

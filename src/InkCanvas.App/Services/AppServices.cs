@@ -109,6 +109,10 @@ public sealed class AppServices : IDisposable
         var taper = OriginalMenuCatalog.ToTaperKind(Settings.Canvas.InkStyle);
         controller.ConfigurePenWidths((float)Math.Clamp(Settings.Canvas.InkWidth, .5, 60),
             (float)Math.Clamp(Settings.Canvas.HighlighterWidth ?? Settings.Canvas.InkWidth, .5, 60));
+        controller.ConfigurePenColors(Settings.Canvas.PenColor is uint pen ? InkColor.FromPackedArgb(pen) : null,
+            Settings.Canvas.HighlighterColor is uint highlighter ? InkColor.FromPackedArgb(highlighter) : null);
+        if (Settings.Canvas.ShapeKind is { } shape && Enum.IsDefined(shape) && controller.ShapeKind != shape)
+            controller.ShapeKind = shape;
         controller.CurrentAttributes.TaperKind = taper;
         controller.CurrentAttributes.Nib = Enum.IsDefined(Settings.Canvas.PenNib) ? Settings.Canvas.PenNib : PenNib.Round;
         controller.CurrentAttributes.HighlighterAlpha = (byte)Math.Clamp(Settings.Canvas.InkAlpha, 20, 240);
@@ -116,6 +120,7 @@ public sealed class AppServices : IDisposable
         controller.EraserRadius = OriginalMenuCatalog.ToEraserRadius(Settings.Canvas.EraserSize);
         if (Settings.Canvas.EraserType == 1) controller.EraserMode = InkEraserMode.Area;
         else if (Settings.Canvas.EraserType == 2) controller.EraserMode = InkEraserMode.WholeStroke;
+        else if (Settings.Canvas.EraserType == 3) controller.EraserMode = InkEraserMode.Lasso;
         controller.RecognizeShapes = Settings.InkToShape.IsInkToShapeEnabled;
         controller.MultiTouchEnabled = Settings.Gesture.IsEnableMultiTouchMode;
         controller.ConfigureGestures(
@@ -145,6 +150,15 @@ public sealed class AppServices : IDisposable
     }
 
     public void SaveSettings() => Store.Save(Settings);
+
+    public void RememberToolOptions(InkController controller)
+    {
+        if (controller.Tool == InkTool.Highlighter) Settings.Canvas.HighlighterColor = controller.CurrentAttributes.Color.PackedArgb;
+        else if (controller.Tool == InkTool.Pen) Settings.Canvas.PenColor = controller.CurrentAttributes.Color.PackedArgb;
+        if (controller.Tool == InkTool.Shape) Settings.Canvas.ShapeKind = controller.ShapeKind;
+        ApplySettings();
+        SaveSettings();
+    }
     public bool BoardModeActive { get; set; }
     public bool PresentationActive { get; set; }
 

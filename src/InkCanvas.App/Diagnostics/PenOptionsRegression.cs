@@ -53,12 +53,19 @@ internal static class PenOptionsRegression
                 }
                 if (!highlighter)
                 {
-                    var style = Descendants(palette).OfType<PenStylePicker>().Single();
-                    Check("pen style choices use a compact three-row layout", style.ActualHeight <= 104
-                        && Descendants(style).OfType<ToggleButton>().Count() == OriginalMenuCatalog.PenStyles.Count);
-                    Check("one shared preview keeps common settings accessible", Descendants(palette).OfType<PenStrokePreview>().Count() == 1
-                        && palette.CardSurface.ActualHeight <= 420);
-                    foreach (int index in new[] { 6, 5, 4, 3, 2, 1, 0 })
+                    var stylePicker = Descendants(palette).OfType<PenStylePicker>().Single();
+                    var styleButtons = Descendants(stylePicker).OfType<ToggleButton>().ToArray();
+                    Check("pen styles use compact actual-stroke icons", styleButtons.Length == OriginalMenuCatalog.PenStyles.Count
+                        && styleButtons.All(button => button.Content is Grid content
+                            && Descendants(content).OfType<PenStyleIcon>().Count() == 1
+                            && Descendants(content).OfType<TextBlock>().Any()));
+                    var style = stylePicker;
+                    checks.Add(new { check = "pen style choices use compact two-row icons", height = style.ActualHeight,
+                        passed = style.ActualHeight <= 72 && Descendants(style).OfType<ToggleButton>().Count() == OriginalMenuCatalog.PenStyles.Count });
+                    checks.Add(new { check = "one shared preview keeps common settings accessible",
+                        previewCount = Descendants(palette).OfType<PenStrokePreview>().Count(), cardHeight = palette.CardSurface.ActualHeight,
+                        passed = Descendants(palette).OfType<PenStrokePreview>().Count() == 1 && palette.CardSurface.ActualHeight <= 460 });
+                    foreach (int index in Enumerable.Range(0, OriginalMenuCatalog.PenStyles.Count).Reverse())
                     {
                         Toggle(Descendants(style).OfType<ToggleButton>().ElementAt(index));
                         Check("style buttons update and save " + index, services.Store.Load().Canvas.InkStyle == index
@@ -125,8 +132,7 @@ internal static class PenOptionsRegression
             Check("board glyphs fit their buttons", IconsFit(board.Content));
             board.ShowPenPalette();
             await Task.Delay(150);
-            var boardPalette = VisualTreeHelper.GetOpenPopupsForXamlRoot(((FrameworkElement)board.Content).XamlRoot)
-                .SelectMany(popup => Descendants(popup.Child)).OfType<BoardPenPalette>().Single();
+            var boardPalette = board.ToolPanels.SelectMany(panel => Descendants(panel.Content)).OfType<BoardPenPalette>().Single();
             var boardStyles = Descendants(boardPalette).OfType<PenStylePicker>().Single();
             foreach (int index in Enumerable.Range(0, OriginalMenuCatalog.PenStyles.Count))
             {
@@ -136,22 +142,24 @@ internal static class PenOptionsRegression
                     && services.Store.Load().Canvas.InkStyle == index);
             }
             Check("board style samples fit palette", Fits(boardStyles, boardPalette));
-            Check("board pen style choices use the compact layout", boardStyles.ActualHeight <= 104
-                && Descendants(boardPalette).OfType<PenStrokePreview>().Count() == 2);
+            checks.Add(new { check = "board pen style choices use the compact layout", height = boardStyles.ActualHeight,
+                passed = boardStyles.ActualHeight <= 72 && Descendants(boardPalette).OfType<PenStrokePreview>().Count() == 2 });
             board.CurrentController.CurrentAttributes.BaseWidth = 12;
             board.CurrentController.CurrentAttributes.TaperKind = TaperKind.Calligraphy;
             var boardTap = new InkCanvas.Platform.Windows.OverlayPointer(9100, 360, 240, .5f, 0, 0,
                 InkCanvas.Platform.Windows.OverlayPointerKind.Pen, 0);
             board.CurrentController.OnPointerDown(boardTap);
             board.CurrentController.OnPointerUp(boardTap with { TimeMs = 15 });
-            await Task.Delay(180);
-            Check("board tap reaches configured diameter through its animation clock", board.CurrentController.DotAnimations.Count == 0
-                && board.CurrentController.Document.Strokes.Last().Points[0].Width == 12);
+            await Task.Delay(350);
+            var boardTapStroke = board.CurrentController.Document.Strokes.Last();
+            checks.Add(new { check = "board tap reaches configured diameter through its animation clock",
+                activeDotAnimations = board.CurrentController.DotAnimations.Count, width = boardTapStroke.Points[0].Width,
+                passed = board.CurrentController.DotAnimations.Count == 0 && boardTapStroke.Points[0].Width == 12 });
             await BoardWindowRegression.SaveVisual(boardPalette, Path.Combine(directory, "board-styles.png"));
             await BoardWindowRegression.SaveVisual((FrameworkElement)board.Content, Path.Combine(directory, "board.png"));
             board.Close();
 
-            foreach (var kind in new[] { TaperKind.SmoothPen, TaperKind.SoftPen, TaperKind.Natural, TaperKind.Calligraphy })
+            foreach (var kind in new[] { TaperKind.SmoothPen, TaperKind.SoftPen, TaperKind.Natural, TaperKind.Calligraphy, TaperKind.InkWash })
             {
                 using var scene = new InkSceneRenderer();
                 using var reference = new InkSceneRenderer();

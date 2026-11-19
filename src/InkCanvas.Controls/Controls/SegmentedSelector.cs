@@ -44,7 +44,13 @@ public sealed class SegmentedSelector : UserControl
         Content = row;
     }
 
-    public void SetOptionContent(int index, UIElement content) => _buttons[index].Content = content;
+    public void SetOptionContent(int index, UIElement content, double minHeight = 0)
+    {
+        _buttons[index].Content = content;
+        if (minHeight <= 0) return;
+        _buttons[index].MinHeight = minHeight;
+        _buttons[index].Padding = new Thickness(0);
+    }
     public void SetOptionHelp(int index, string text)
     {
         AutomationProperties.SetHelpText(_buttons[index], text);

@@ -183,6 +183,22 @@ internal static class SettingsRegression
             var alpha = Find<Slider>("荧光笔透明度");
             alpha.Value = 180;
             Check("highlighter alpha applies", services.OverlayInk.CurrentAttributes.HighlighterAlpha == 180);
+            window.SelectCategory("画板选项");
+            var penStyles = Find<ComboBox>("笔迹风格");
+            penStyles.SelectedIndex = 7;
+            penStyles.IsDropDownOpen = true;
+            await Task.Delay(100);
+            bool inkWashIconVisible = VisualTreeHelper.GetOpenPopupsForXamlRoot(((FrameworkElement)window.Content).XamlRoot)
+                .SelectMany(popup => Descendants(popup.Child)).OfType<PenStyleIcon>()
+                .Any(icon => AutomationProperties.GetName(icon) == "水墨笔锋");
+            penStyles.IsDropDownOpen = false;
+            checks.Add(new { check = "ink wash setting shows its icon and applies", selectedIndex = penStyles.SelectedIndex,
+                persistedIndex = services.Settings.Canvas.InkStyle, liveStyle = services.OverlayInk.CurrentAttributes.TaperKind.ToString(),
+                hasIcon = inkWashIconVisible,
+                passed = penStyles.SelectedIndex == 7 && services.Settings.Canvas.InkStyle == 7
+                    && services.OverlayInk.CurrentAttributes.TaperKind == InkCanvas.Core.Ink.TaperKind.InkWash
+                    && inkWashIconVisible });
+            penStyles.SelectedIndex = 0;
             var path = Find<TextBox>("墨迹、截图自动保存位置");
             path.Text = Path.Combine(directory, "typed-path");
             await Task.Delay(450);
@@ -208,8 +224,11 @@ internal static class SettingsRegression
             Check("all edited values persist", persisted == JsonSerializer.Serialize(services.Settings));
             Open();
             await Task.Delay(150);
-            Check("reopening restores saved controls", Find<TextBox>("墨迹、截图自动保存位置").Text == lastPath
-                && Find<Slider>("浮动工具栏 UI 缩放 (%)").Value == 125 && Find<ComboBox>("橡皮模式").SelectedIndex == 0);
+            var restoredEraserMode = Find<ComboBox>("橡皮模式").SelectedIndex;
+            checks.Add(new { check = "reopening restores saved controls", lastPathRestored = Find<TextBox>("墨迹、截图自动保存位置").Text == lastPath,
+                toolbarScale = Find<Slider>("浮动工具栏 UI 缩放 (%)").Value, eraserMode = restoredEraserMode,
+                passed = Find<TextBox>("墨迹、截图自动保存位置").Text == lastPath
+                    && Find<Slider>("浮动工具栏 UI 缩放 (%)").Value == 125 && restoredEraserMode == 3 });
             foreach (int themeIndex in new[] { 0, 1 })
             {
                 Find<ComboBox>("颜色主题").SelectedIndex = themeIndex;

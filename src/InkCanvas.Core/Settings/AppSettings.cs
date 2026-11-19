@@ -112,6 +112,9 @@ public sealed class AppSettings
         Canvas.IsShowCursor = false;
         Canvas.InkStyle = 0;
         Canvas.PenNib = Ink.PenNib.Round;
+        Canvas.PenColor = null;
+        Canvas.HighlighterColor = null;
+        Canvas.ShapeKind = null;
         Canvas.EraserSize = 1;
         Canvas.EraserType = 0;
         Canvas.HideStrokeWhenSelecting = false;
@@ -171,10 +174,16 @@ public sealed class CanvasSettings
     /// <summary>Persisted pen-style index, mapped by <see cref="OriginalMenuCatalog.ToTaperKind"/>.</summary>
     [JsonPropertyName("inkStyle")] public int InkStyle { get; set; }
     [JsonPropertyName("penNib")] public Ink.PenNib PenNib { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonPropertyName("penColor")] public uint? PenColor { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonPropertyName("highlighterColor")] public uint? HighlighterColor { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonPropertyName("shapeKind")] public Shapes.ShapeKind? ShapeKind { get; set; }
 
     [JsonPropertyName("eraserSize")] public int EraserSize { get; set; } = 2;
 
-    /// <summary>0 = toggle by icon, 1 = area eraser, 2 = stroke eraser.</summary>
+    /// <summary>0 = legacy default, 1 = area eraser, 2 = stroke eraser, 3 = lasso eraser.</summary>
     [JsonPropertyName("eraserType")] public int EraserType { get; set; }
 
     [JsonPropertyName("hideStrokeWhenSelecting")] public bool HideStrokeWhenSelecting { get; set; } = true;

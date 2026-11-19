@@ -106,20 +106,19 @@ internal static class BoardPopupRegression
                 var more = Descendants(root).OfType<Button>().First(button => Descendants(button).OfType<TextBlock>().Any(text => text.Text == "更多"));
                 Invoke(more);
                 await Task.Delay(200);
-                var popup = VisualTreeHelper.GetOpenPopupsForXamlRoot(root.XamlRoot)
-                    .Single(item => Descendants(item.Child).OfType<TextBlock>().Any(text => text.Text == "更多功能"));
-                var presenter = Descendants(popup.Child).OfType<FlyoutPresenter>().Single();
+                var popup = MorePanel();
+                var presenter = (FrameworkElement)popup.Content;
                 checks.Add(new { check = "more menu uses dedicated clear action",
                     passed = !Descendants(presenter).OfType<TextBlock>().Any(text => text.Text == "清屏") });
                 string name = $"{background}-{scale}";
-                CheckSurface(presenter, name);
-                var view = (Viewbox)presenter.Content;
+                CheckSurface(popup, name);
+                var view = (Viewbox)((Border)popup.Content).Child;
                 bool previewAvailable = await BoardWindowRegression.SaveVisual((FrameworkElement)view.Child, Path.Combine(directory, $"{name}.png"));
                 checks.Add(new { check = "more menu preview", name, available = previewAvailable });
                 services.Settings.Appearance.BlackboardScale = scale == 150 ? 50 : 150;
                 window.RefreshUiScale();
                 await Task.Delay(120);
-                CheckSurface(presenter, name + " after scale change");
+                CheckSurface(popup, name + " after scale change");
                 Invoke(more);
                 await Task.Delay(80);
             }
@@ -130,9 +129,8 @@ internal static class BoardPopupRegression
             var moreButton = Descendants(root).OfType<Button>().First(button => Descendants(button).OfType<TextBlock>().Any(text => text.Text == "更多"));
             Invoke(moreButton);
             await Task.Delay(120);
-            var active = VisualTreeHelper.GetOpenPopupsForXamlRoot(root.XamlRoot)
-                .Single(item => Descendants(item.Child).OfType<TextBlock>().Any(text => text.Text == "更多功能"));
-            var windowMode = Descendants(active.Child).OfType<Button>()
+            var active = MorePanel();
+            var windowMode = Descendants(active.Content).OfType<Button>()
                 .Single(button => Descendants(button).OfType<TextBlock>().Any(text => text.Text == "窗口模式"));
             Invoke(windowMode);
             await Task.Delay(120);
@@ -141,26 +139,21 @@ internal static class BoardPopupRegression
             await Task.Delay(120);
             Invoke(moreButton);
             await Task.Delay(120);
-            active = VisualTreeHelper.GetOpenPopupsForXamlRoot(root.XamlRoot)
-                .Single(item => Descendants(item.Child).OfType<TextBlock>().Any(text => text.Text == "更多功能"));
-            var activePresenter = Descendants(active.Child).OfType<FlyoutPresenter>().Single();
-            CheckSurface(activePresenter, "small window");
+            active = MorePanel();
+            CheckSurface(active, "small window");
             window.AppWindow.Resize(new Windows.Graphics.SizeInt32(920, 760));
             await Task.Delay(120);
             // WinUI may dismiss an anchored flyout when its owner resizes. Reopening must
             // measure the new viewport instead of reusing dimensions from the closed popup.
-            active = VisualTreeHelper.GetOpenPopupsForXamlRoot(root.XamlRoot)
-                .SingleOrDefault(item => Descendants(item.Child).OfType<TextBlock>().Any(text => text.Text == "更多功能"));
+            active = window.ToolPanels.SingleOrDefault(item => Descendants(item.Content).OfType<TextBlock>().Any(text => text.Text == "更多功能"));
             if (active is null)
             {
                 Invoke(moreButton);
                 await Task.Delay(120);
-                active = VisualTreeHelper.GetOpenPopupsForXamlRoot(root.XamlRoot)
-                    .Single(item => Descendants(item.Child).OfType<TextBlock>().Any(text => text.Text == "更多功能"));
+                active = MorePanel();
             }
-            activePresenter = Descendants(active.Child).OfType<FlyoutPresenter>().Single();
-            CheckSurface(activePresenter, "menu fits after owner resize");
-            var paper = Descendants(active.Child).OfType<Button>()
+            CheckSurface(active, "menu fits after owner resize");
+            var paper = Descendants(active.Content).OfType<Button>()
                 .Single(button => Descendants(button).OfType<TextBlock>().Any(text => text.Text == "画布纸型"));
             Invoke(paper);
             await Task.Delay(120);
@@ -176,12 +169,15 @@ internal static class BoardPopupRegression
             Application.Current.Exit();
         }
 
-        void CheckSurface(FlyoutPresenter presenter, string name)
+        ToolOptionsWindow MorePanel() => window.ToolPanels.Single(item => Descendants(item.Content).OfType<TextBlock>().Any(text => text.Text == "更多功能"));
+
+        void CheckSurface(ToolOptionsWindow panel, string name)
         {
-            var view = (Viewbox)presenter.Content;
+            var presenter = (Border)panel.Content;
+            var view = (Viewbox)presenter.Child;
             var surface = (Border)view.Child;
-            var bounds = WindowChrome.GetScreenBounds(window, surface);
-            var outer = WindowChrome.GetScreenBounds(window, presenter);
+            var bounds = WindowChrome.GetScreenBounds(panel, surface);
+            var outer = WindowChrome.GetScreenBounds(panel, presenter);
             bool exactSize = outer.Width > 0 && outer.Height > 0 && Math.Abs(outer.X - bounds.X) <= 1 && Math.Abs(outer.Y - bounds.Y) <= 1
                 && Math.Abs(outer.Width - bounds.Width) <= 2 && Math.Abs(outer.Height - bounds.Height) <= 2;
             bool buttonsFit = Descendants(surface).OfType<Button>().All(button =>

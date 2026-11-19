@@ -16,13 +16,13 @@ public sealed class GeometryModule : IApplicationModule
 
 internal sealed class GeometryService(ICanvasToolsHost host) : IAnalyticGeometryService, IDisposable
 {
-    private GeometryWindow _window;
+    private GeometryWorkbenchWindow _window;
     private bool _disposed;
     public void Open()
     {
         if (_disposed) return;
         if (_window is not null) { _window.Activate(); return; }
-        var window = new GeometryWindow(host); _window = window;
+        var window = new GeometryWorkbenchWindow(host); _window = window;
         window.Closed += (_, _) => { if (ReferenceEquals(_window, window)) _window = null; };
         window.Activate();
     }

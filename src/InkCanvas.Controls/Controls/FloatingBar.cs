@@ -8,6 +8,8 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
 using InkCanvas.Extensibility;
+using System.Diagnostics;
+using Microsoft.UI.Dispatching;
 
 namespace InkCanvas.Controls.Controls;
 
@@ -77,7 +79,7 @@ public sealed class FloatingBar : UserControl
 
     private readonly StackPanel _primary = new() { Orientation = Orientation.Horizontal, Spacing = 0 };
     private readonly StackPanel _canvasControls = new() { Orientation = Orientation.Horizontal, Spacing = 0 };
-    private readonly StackPanel _barRow = new() { Orientation = Orientation.Horizontal, Spacing = PartGap };
+    private readonly StackPanel _barRow = new() { Orientation = Orientation.Horizontal, Spacing = 0 };
     private readonly StackPanel _moreRows = new() { Orientation = Orientation.Vertical, Spacing = 0 };
     private readonly StackPanel _gestureRows = new() { Orientation = Orientation.Vertical, Spacing = GestureRowSpacing };
     private readonly Border _mainHost, _dragHandle, _gestureBorder, _pptExitBorder;
@@ -94,6 +96,11 @@ public sealed class FloatingBar : UserControl
 
     private bool _pptMode;
     private bool _mainCollapsed;
+    private DispatcherQueueTimer _collapseTimer;
+    private long _collapseStarted;
+    private double _collapseFrom, _collapseDuration, _expandedMainWidth;
+    public double MainExpansion { get; private set; } = 1;
+    public bool IsMainCollapseAnimating => _collapseTimer?.IsRunning == true;
     private bool _moreOpen, _gestureOpen, _eraserOpen;
     private InkController _controller;
     private int _theme = 1;
@@ -122,11 +129,14 @@ public sealed class FloatingBar : UserControl
         ToolTipService.SetToolTip(_dragHandle, "拖动移动工具栏；点击收起/展开主工具栏");
 
         _mainHost = MakePart(_primary, double.NaN, PartH);
+        _mainHost.Margin = new Thickness(PartGap, 0, 0, 0);
         _mainHost.Padding = new Thickness(2 * S, MainPadV, 2 * S, MainPadV);
         _primary.Margin = new Thickness(2 * S, 0, 2 * S, 0);
 
         _gestureBorder = MakePart(null, PartH, PartH);
+        _gestureBorder.Margin = new Thickness(PartGap, 0, 0, 0);
         _pptExitBorder = MakePart(BuildPptExitIcon(), PptExitW, PartH);
+        _pptExitBorder.Margin = new Thickness(PartGap, 0, 0, 0);
         // Slideshow-only plate (WPF): Poll only calls SetPptModeVisible on state CHANGES,
         // so the initial state must be collapsed here or the plate leaks into normal mode.
         _pptExitBorder.Visibility = Visibility.Collapsed;
@@ -152,6 +162,7 @@ public sealed class FloatingBar : UserControl
         };
 
         Loaded += (_, _) => Motion.PlayEntrance(this);
+        Unloaded += (_, _) => FinishMainCollapseAnimation();
         ActualThemeChanged += (_, _) => ApplyThemeBrushes();
     }
 
@@ -231,7 +242,7 @@ public sealed class FloatingBar : UserControl
             {
                 InkEraserMode.Area => 1,
                 InkEraserMode.WholeStroke => 2,
-                _ => 0,
+                _ => 3,
             };
             Controller.EraserMode = mode;
             Controller.EraserRadius = OriginalMenuCatalog.ToEraserRadius(Cfg.Canvas.EraserSize);
@@ -273,13 +284,14 @@ public sealed class FloatingBar : UserControl
     /// Natural size of the bar row only (the popups live in their own window). Measured
     /// child-by-child so a rooted window cannot feed its constrained size back in.
     /// </summary>
-    public (double Width, double Height) ComputeLayoutSize()
+    public (double Width, double Height) ComputeLayoutSize(bool expanded = false)
     {
         double primary = MeasureRow(_primary);
         double mainWidth = primary + 2 * (MainPadH + PartBorder);
         double rowWidth = PartH; // drag handle always present
-        if (_mainHost.Visibility == Visibility.Visible) rowWidth += PartGap + mainWidth;
-        if (_gestureBorder.Visibility == Visibility.Visible) rowWidth += PartGap + PartH;
+        double progress = expanded ? 1 : MainExpansion;
+        if (expanded || _mainHost.Visibility == Visibility.Visible) rowWidth += progress * (PartGap + mainWidth);
+        if (expanded ? ShouldShowGesture : _gestureBorder.Visibility == Visibility.Visible) rowWidth += progress * (PartGap + PartH);
         if (_pptExitBorder.Visibility == Visibility.Visible) rowWidth += PartGap + PptExitW;
         return (rowWidth, PartH);
     }
@@ -372,6 +384,7 @@ public sealed class FloatingBar : UserControl
     /// <summary>Build the buttons once the controller and shell are available.</summary>
     public void Build()
     {
+        FinishMainCollapseAnimation();
         _primary.Children.Clear();
         _canvasControls.Children.Clear();
         _moreRows.Children.Clear();
@@ -391,29 +404,38 @@ public sealed class FloatingBar : UserControl
         });
         _cursorButton.Margin = new Thickness(-PartGap, 0, -PartGap, 0);
 
-        _penButton = AddPrimary(Glyphs.PenWpf, "批注", "批注（点击打开墨迹选项）— 快捷键 Alt+D", () =>
+        _penButton = AddPrimary(Glyphs.PenWpf, "批注", "批注（选中后再次点击打开选项）— 快捷键 Alt+D", () =>
         {
+            bool active = !ClickThroughActive && Controller?.Tool == InkTool.Pen;
             SetTool(InkTool.Pen);
-            Shell?.OpenPenPalette(false);
+            if (active) Shell?.OpenPenPalette(false);
         });
         // The port splits WPF's unified 墨迹选项 palette, so the highlighter gets its own entry.
-        _highlighterButton = AddPrimary(Glyphs.HighlightWpf, "荧光笔", "荧光笔（点击打开颜色与不透明度）", () =>
+        _highlighterButton = AddPrimary(Glyphs.HighlightWpf, "荧光笔", "荧光笔（选中后再次点击打开选项）", () =>
         {
+            bool active = !ClickThroughActive && Controller?.Tool == InkTool.Highlighter;
             SetTool(InkTool.Highlighter);
-            Shell?.OpenPenPalette(true);
+            if (active) Shell?.OpenPenPalette(true);
         });
         _highlighterButton.IconFont = "ms-appx:///Assets/SegoeMDL2Assets.ttf#Segoe MDL2 Assets";
         _clearButton = AddPrimary(Glyphs.Delete, "清空", "清空（有选中时删除选中墨迹）— 快捷键 Ctrl+E", ClearOrDeleteSelection);
 
         _primary.Children.Add(_canvasControls);
-        _eraserButton = AddPrimary(_canvasControls, Glyphs.Eraser, "橡皮", "橡皮（点击选择擦除方式和大小）— 快捷键 Alt+E", () =>
+        _eraserButton = AddPrimary(_canvasControls, Glyphs.Eraser, "橡皮", "橡皮（选中后再次点击打开选项）— 快捷键 Alt+E", () =>
         {
+            bool active = !ClickThroughActive && Controller?.Tool == InkTool.Eraser;
             SetTool(InkTool.Eraser);
+            if (!active) return;
             _eraserOpen = !_eraserOpen;
             PanelRequested?.Invoke(BarPanelKind.Eraser, _eraserOpen);
         });
         _selectButton = AddComposite(_canvasControls, Glyphs.SelectWpf, Glyphs.SelectOverlay, 10 * S, "选择", "选择 — 快捷键 Alt+S", () => SetTool(InkTool.Select));
-        _shapeButton = AddPrimary(_canvasControls, Glyphs.ShapesWpf, "图形", "图形", () => Shell?.OpenShapePicker());
+        _shapeButton = AddPrimary(_canvasControls, Glyphs.ShapesWpf, "图形", "图形（选中后再次点击打开选项）", () =>
+        {
+            bool active = !ClickThroughActive && Controller?.Tool == InkTool.Shape;
+            SetTool(InkTool.Shape);
+            if (active) Shell?.OpenShapePicker();
+        });
         _undoButton = AddPrimary(_canvasControls, Glyphs.Undo, "撤销", "撤销 — 快捷键 Ctrl+Z", () => { if (Controller?.History.CanUndo == true) Controller.Undo(); });
         _redoButton = AddPrimary(_canvasControls, Glyphs.Redo, "重做", "重做 — 快捷键 Ctrl+Y", () => { if (Controller?.History.CanRedo == true) Controller.Redo(); });
         _clearMouseButton = AddComposite(_canvasControls, Glyphs.Cursor, Glyphs.Delete, 12 * S, "清并鼠", "清空并进入鼠标模式", () =>
@@ -777,13 +799,14 @@ public sealed class FloatingBar : UserControl
         if (Controller is null) return;
         if (ClickThroughActive) Shell?.ToggleClickThrough();
         _mainCollapsed = false;
-        _mainHost.Visibility = Visibility.Visible;
+        FinishMainCollapseAnimation();
         Controller.Tool = tool;
         RefreshSelection();
     }
 
     public void RefreshSelection()
     {
+        if (IsMainCollapseAnimating) FinishMainCollapseAnimation();
         var tool = Controller?.Tool ?? InkTool.Pen;
         bool ink = !ClickThroughActive;
         if (_penButton is not null) _penButton.IsSelected = ink && tool == InkTool.Pen;
@@ -807,10 +830,11 @@ public sealed class FloatingBar : UserControl
         if (_redoButton is not null) _redoButton.Opacity = Controller?.History.CanRedo == true ? 1 : 0.35;
     }
 
+    private bool ShouldShowGesture => !ClickThroughActive && !_pptMode && Cfg.Appearance.IsShowModeFingerToggleSwitch;
+
     private void RefreshGestureBorderVisibility()
     {
-        bool show = !ClickThroughActive && !_pptMode && !_mainCollapsed
-            && Cfg.Appearance.IsShowModeFingerToggleSwitch
+        bool show = ShouldShowGesture && (!_mainCollapsed || IsMainCollapseAnimating)
             && _mainHost.Visibility == Visibility.Visible;
         _gestureBorder.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -838,10 +862,65 @@ public sealed class FloatingBar : UserControl
     private void ToggleMainCollapsed()
     {
         _mainCollapsed = !_mainCollapsed;
-        _mainHost.Visibility = _mainCollapsed ? Visibility.Collapsed : Visibility.Visible;
         if (_mainCollapsed) ClosePanels();
+        if (!IsLoaded || !Motion.AnimationsEnabled)
+        {
+            FinishMainCollapseAnimation();
+            return;
+        }
+        _collapseTimer ??= CreateCollapseTimer();
+        _collapseTimer.Stop();
+        _collapseFrom = MainExpansion;
+        _collapseStarted = Stopwatch.GetTimestamp();
+        _collapseDuration = Motion.Normal.TotalMilliseconds * Math.Abs((_mainCollapsed ? 0 : 1) - _collapseFrom);
+        if (_collapseDuration <= 0) { FinishMainCollapseAnimation(); return; }
+        _expandedMainWidth = MeasureRow(_primary) + 2 * (MainPadH + PartBorder);
+        _primary.Width = MeasureRow(_primary);
+        _primary.HorizontalAlignment = HorizontalAlignment.Left;
+        _mainHost.Visibility = Visibility.Visible;
+        _mainHost.IsHitTestVisible = _gestureBorder.IsHitTestVisible = false;
+        _collapseTimer.Start();
         RefreshGestureBorderVisibility();
-        // No LayoutChanged: the host window refits in place (left edge fixed) via CountVisibleItems.
+        ApplyMainExpansion(_collapseFrom);
+    }
+
+    private DispatcherQueueTimer CreateCollapseTimer()
+    {
+        var timer = DispatcherQueue.CreateTimer();
+        timer.Interval = TimeSpan.FromMilliseconds(16);
+        timer.Tick += (_, _) =>
+        {
+            if (!Motion.AnimationsEnabled) { FinishMainCollapseAnimation(); return; }
+            double progress = Math.Clamp(Stopwatch.GetElapsedTime(_collapseStarted).TotalMilliseconds / _collapseDuration, 0, 1);
+            double eased = 1 - Math.Pow(1 - progress, 3);
+            ApplyMainExpansion(_collapseFrom + ((_mainCollapsed ? 0 : 1) - _collapseFrom) * eased);
+            if (progress >= 1) FinishMainCollapseAnimation();
+        };
+        return timer;
+    }
+
+    private void ApplyMainExpansion(double progress)
+    {
+        MainExpansion = progress;
+        double mainWidth = _expandedMainWidth * progress, gestureWidth = PartH * progress;
+        _mainHost.Width = mainWidth;
+        _gestureBorder.Width = gestureWidth;
+        _mainHost.Margin = _gestureBorder.Margin = new Thickness(PartGap * progress, 0, 0, 0);
+        _mainHost.Clip = new RectangleGeometry { Rect = new(0, 0, mainWidth, PartH) };
+        _gestureBorder.Clip = new RectangleGeometry { Rect = new(0, 0, gestureWidth, PartH) };
+    }
+
+    public void FinishMainCollapseAnimation()
+    {
+        _collapseTimer?.Stop();
+        MainExpansion = _mainCollapsed ? 0 : 1;
+        _mainHost.Visibility = _mainCollapsed ? Visibility.Collapsed : Visibility.Visible;
+        _mainHost.Width = _primary.Width = double.NaN;
+        _gestureBorder.Width = PartH;
+        _mainHost.Margin = _gestureBorder.Margin = new Thickness(PartGap, 0, 0, 0);
+        _mainHost.Clip = _gestureBorder.Clip = null;
+        _mainHost.IsHitTestVisible = _gestureBorder.IsHitTestVisible = true;
+        RefreshGestureBorderVisibility();
     }
 
     /// <summary>

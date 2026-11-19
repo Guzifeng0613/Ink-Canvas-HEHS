@@ -73,6 +73,7 @@ public sealed class PenPalette : UserControl
         _nib.SelectionChanged += () =>
         {
             if (Controller is null || _suppress || _nib.SelectedIndex < 0) return;
+            Controller.Tool = _highlighter ? InkTool.Highlighter : InkTool.Pen;
             Controller.CurrentAttributes.Nib = (PenNib)_nib.SelectedIndex;
             PenNibChanged?.Invoke(Controller.CurrentAttributes.Nib);
             AttributesChanged?.Invoke();
@@ -83,6 +84,7 @@ public sealed class PenPalette : UserControl
         _style.SelectionChanged += () =>
         {
             if (Controller is null || _suppress || _style.SelectedIndex < 0) return;
+            Controller.Tool = _highlighter ? InkTool.Highlighter : InkTool.Pen;
             Controller.CurrentAttributes.TaperKind = OriginalMenuCatalog.ToTaperKind(_style.SelectedIndex);
             InkStyleChanged?.Invoke(_style.SelectedIndex);
             AttributesChanged?.Invoke();
@@ -101,6 +103,7 @@ public sealed class PenPalette : UserControl
             }
 
             double stored = OriginalMenuCatalog.ToStoredPenWidth(snapped);
+            Controller.Tool = _highlighter ? InkTool.Highlighter : InkTool.Pen;
             // 原菜单读数显示菜单刻度 1–30（WPF 绑定 Slider.Value），持久化值为其一半。
             _widthValue.Text = snapped.ToString("0");
             Controller.CurrentAttributes.BaseWidth = (float)stored;
@@ -120,13 +123,14 @@ public sealed class PenPalette : UserControl
                 return;
             }
             _highlighterAlpha = snapped;
+            Controller.Tool = InkTool.Highlighter;
             _alphaValue.Text = snapped.ToString();
             InkAlphaChanged.Invoke(snapped);
             AttributesChanged?.Invoke();
             UpdatePreview();
         };
 
-        var panel = new StackPanel { Spacing = 10 };
+        var panel = new StackPanel { Spacing = 4 };
         _options = panel;
         panel.Children.Add(ChoiceRow("笔尖", _nib));
         if (highlighter)
@@ -183,7 +187,7 @@ public sealed class PenPalette : UserControl
     /// </summary>
     public double DesignHeightDip =>
         27 + 2 + 24 + (_highlighter ? 3 : 2) * RowHeight + 4 * 10 + 60 + SwatchCell * 2
-        + (!_highlighter ? 3 * RowHeight + 4 : _alphaAvailability.Visibility == Visibility.Visible ? 10 + 32 : 0);
+        + (!_highlighter ? 2 * RowHeight + 2 : _alphaAvailability.Visibility == Visibility.Visible ? 10 + 32 : 0);
 
     /// <summary>Apply the exact WPF popup palette for the window theme (0/1/2), fixed at open.</summary>
     public void ApplyChrome(int theme)
@@ -314,6 +318,7 @@ public sealed class PenPalette : UserControl
             cell.Click += (_, _) =>
             {
                 if (Controller is null || _suppress) return;
+                Controller.Tool = _highlighter ? InkTool.Highlighter : InkTool.Pen;
                 Controller.CurrentAttributes.Color = GetSwatchColor(swatch);
                 AttributesChanged?.Invoke();
                 UpdatePreview();

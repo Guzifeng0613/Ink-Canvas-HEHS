@@ -17,6 +17,9 @@ public sealed class WritingStyleTests
     [InlineData(TaperKind.Calligraphy, 3f, 24)]
     [InlineData(TaperKind.Calligraphy, 12f, 120)]
     [InlineData(TaperKind.Calligraphy, 30f, 24)]
+    [InlineData(TaperKind.InkWash, 3f, 24)]
+    [InlineData(TaperKind.InkWash, 12f, 120)]
+    [InlineData(TaperKind.InkWash, 30f, 24)]
     public void PausingThenStartingSlowlyDoesNotLeaveAWiderStartingDot(TaperKind kind, float width, int pauseSamples)
     {
         foreach (var nib in new[] { PenNib.Round, PenNib.Ellipse45 })
@@ -35,6 +38,7 @@ public sealed class WritingStyleTests
     [Theory]
     [InlineData(TaperKind.Natural)]
     [InlineData(TaperKind.Calligraphy)]
+    [InlineData(TaperKind.InkWash)]
     public void StationaryStartupJitterDoesNotAccumulateAFullWidthHead(TaperKind kind)
     {
         var stroke = new InkStroke(new StrokeAttributes { TaperKind = kind, BaseWidth = 12 });
@@ -46,6 +50,7 @@ public sealed class WritingStyleTests
     [Theory]
     [InlineData(TaperKind.Natural)]
     [InlineData(TaperKind.Calligraphy)]
+    [InlineData(TaperKind.InkWash)]
     public void IntentionalTapRemainsVisibleWithTheSmoothStartingWidth(TaperKind kind)
     {
         using var controller = new InkController { RecognizeShapes = false };
@@ -67,6 +72,7 @@ public sealed class WritingStyleTests
     [InlineData(TaperKind.SoftPen)]
     [InlineData(TaperKind.Natural)]
     [InlineData(TaperKind.Calligraphy)]
+    [InlineData(TaperKind.InkWash)]
     public void CompletionPreservesTheLastLivePointsAndOutline(TaperKind style)
     {
         var stroke = Draw(style);
@@ -212,6 +218,21 @@ public sealed class WritingStyleTests
     }
 
     [Fact]
+    public void InkWashUsesTwoBoundedLayersAndKeepsHighlighterSingleLayer()
+    {
+        var wash = new InkStroke(new StrokeAttributes { TaperKind = TaperKind.InkWash, BaseWidth = 12 });
+        for (int i = 0; i < 3000; i++) wash.AddPoint(i * 1.5f, 100 + MathF.Sin(i * .03f) * 24, .5f, i * 8);
+        var layers = InkBrush.Layers(wash);
+        Assert.Equal(2, layers.Length);
+        Assert.Equal(1, layers[0].WidthScale);
+        Assert.True(layers[0].Opacity < layers[1].Opacity);
+        Assert.True(layers[1].WidthScale < layers[0].WidthScale);
+        Assert.Equal(2, InkBrush.Layers(wash.Clone()).Length);
+        var highlighter = new InkStroke(new StrokeAttributes { TaperKind = TaperKind.InkWash, IsHighlighter = true });
+        Assert.Equal(1, InkBrush.Layers(highlighter).Length);
+    }
+
+    [Fact]
     public void PointerTimesKeepMillisecondPrecisionAfterLongSystemUptime()
     {
         using var controller = new InkController { RecognizeShapes = false };
@@ -226,7 +247,7 @@ public sealed class WritingStyleTests
         Assert.Equal(160, stroke.Points[^1].TimeMs);
     }
 
-    private static IEnumerable<TaperKind> NewStyles() => new[] { TaperKind.SmoothPen, TaperKind.SoftPen, TaperKind.Natural, TaperKind.Calligraphy };
+    private static IEnumerable<TaperKind> NewStyles() => new[] { TaperKind.SmoothPen, TaperKind.SoftPen, TaperKind.Natural, TaperKind.Calligraphy, TaperKind.InkWash };
     private static InkStroke Draw(TaperKind kind, int interval = 8)
     {
         var stroke = new InkStroke(new StrokeAttributes { TaperKind = kind, BaseWidth = 8 });

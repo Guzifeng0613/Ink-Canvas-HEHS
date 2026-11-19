@@ -1,4 +1,4 @@
-﻿using InkCanvas.App.Services;
+using InkCanvas.App.Services;
 using InkCanvas.Controls.Animation;
 using InkCanvas.Controls.Lifecycle;
 using InkCanvas.Controls.Controls;
@@ -79,6 +79,8 @@ public sealed class BoardWindow : Window
     private FlyoutBase _activeBoardFlyout;
     private PopupHeader _activeBoardHeader;
     private Flyout _inkOptionsFlyout, _moreFlyout, _gestureFlyout, _eraserFlyout;
+    private readonly Dictionary<FlyoutBase, ToolOptionsWindow> _toolPanels = new();
+    internal IEnumerable<ToolOptionsWindow> ToolPanels => _toolPanels.Values;
     public event Action CanvasInputBegan;
     private readonly List<ToolCell> _allCells = new();
     private readonly List<(ToolCell Cell, Func<bool> Active)> _toolCells = new();
@@ -278,8 +280,8 @@ public sealed class BoardWindow : Window
         ToolTipService.SetToolTip(canvas.Button, "点击切换黑板/白板；长按选择纸型、缩放与网格间距");
         _selectCell = MakeCell(GlyphSelect, "选择", SelectOrSelectAll, 60, 22, midBorder,
             badge: GlyphSelectBadge, badgeSize: 14);
-        _penCell = MakeCell(GlyphPen, "墨迹", () => { SetTool(InkTool.Pen); ShowPenPalette(); }, 60, 22, midBorder);
-        _eraserCell = MakeCell(GlyphEraser, "橡皮", ShowEraserPalette, 60, 22, midBorder);
+        _penCell = MakeCell(GlyphPen, "墨迹", () => ActivateToolOptions(InkTool.Pen, ShowPenPalette), 60, 22, midBorder);
+        _eraserCell = MakeCell(GlyphEraser, "橡皮", () => ActivateToolOptions(InkTool.Eraser, ShowEraserPalette), 60, 22, midBorder);
         ToolTipService.SetToolTip(_eraserCell.Button, "选择面积擦、墨迹擦、套索擦和橡皮大小");
         var clear = MakeCell(GlyphClear, "清屏", async () =>
         {
@@ -287,7 +289,7 @@ public sealed class BoardWindow : Window
             await ConfirmClearCurrentPageAsync();
         }, 60, 22, midBorder);
         ToolTipService.SetToolTip(clear.Button, "清除当前页上的全部墨迹、图片和视频");
-        _shapeCell = MakeCell(GlyphShape, "图形", () => { SetTool(InkTool.Shape); _shell?.OpenShapePicker(); }, 60, 22, midBorder);
+        _shapeCell = MakeCell(GlyphShape, "图形", () => ActivateToolOptions(InkTool.Shape, () => _shell?.OpenShapePicker()), 60, 22, midBorder);
         var image = MakeCell(GlyphImage, "插入图片", async () => await InsertImageAsync(), 60, 22, midBorder);
         _undoCell = MakeCell(GlyphUndo, "撤销", () => _board.Current.Undo(), 60, 22, midBorder);
         _redoCell = MakeCell(GlyphRedo, "重做", () => _board.Current.Redo(), 60, 22, midBorder);
@@ -533,11 +535,13 @@ public sealed class BoardWindow : Window
 
     public void ShowPenPalette()
     {
+        if (ShowDetachedPanel(_inkOptionsFlyout)) return;
         if (_inkOptionsFlyout is not null && ReferenceEquals(_activeBoardFlyout, _inkOptionsFlyout)) { DismissBoardFlyout(); return; }
         var palette = new BoardPenPalette(CurrentController, _services.Settings, _boardTheme);
+        var flyout = new Flyout { Content = palette, Placement = FlyoutPlacementMode.Top };
         palette.SettingsChanged += () => { _services.ApplySettings(); _services.SaveSettings(); };
-        palette.ColorPicked += () => { if (!palette.Header.IsPinned) DismissBoardFlyout(); };
-        _inkOptionsFlyout = new Flyout { Content = palette, Placement = FlyoutPlacementMode.Top };
+        palette.ColorPicked += () => { _services.RememberToolOptions(CurrentController); HideBoardFlyout(flyout); };
+        _inkOptionsFlyout = flyout;
         ShowBoardFlyout(_inkOptionsFlyout, _penCell.Button);
     }
 
@@ -545,6 +549,35 @@ public sealed class BoardWindow : Window
     {
         DismissBoardFlyout();
         _activeBoardFlyout = flyout;
+        if (flyout is Flyout { Content: FrameworkElement panelContent } panelFlyout)
+        {
+            var header = panelContent switch
+            {
+                BoardPenPalette palette => palette.Header,
+                BoardGesturePanel gestures => gestures.Header,
+                Border { Child: StackPanel panel } => panel.Children.OfType<PopupHeader>().FirstOrDefault(),
+                _ => null,
+            };
+            if (header is not null)
+            {
+                _activeBoardHeader = header;
+                panelFlyout.Content = null;
+                var window = new ToolOptionsWindow(this, panelContent, header, () => WindowChrome.GetScreenBounds(this, anchor),
+                    () => _services.Settings.Appearance.BlackboardScale / 100.0, _boardTheme);
+                _toolPanels.Add(flyout, window);
+                SizeChangedEventHandler fit = (_, _) => { DispatcherQueue.TryEnqueue(window.Fit); };
+                _contentRoot.SizeChanged += fit;
+                _dock.SizeChanged += fit;
+                window.Closed += (_, _) =>
+                {
+                    _contentRoot.SizeChanged -= fit;
+                    _dock.SizeChanged -= fit;
+                    _toolPanels.Remove(flyout);
+                    ClearFlyoutReferences(flyout);
+                };
+                return;
+            }
+        }
         flyout.OverlayInputPassThroughElement = _contentRoot;
         flyout.ShowMode = FlyoutShowMode.Transient;
         if (flyout is Flyout card)
@@ -620,14 +653,50 @@ public sealed class BoardWindow : Window
     }
     private void DismissBoardFlyout()
     {
-        var current = _activeBoardFlyout; _activeBoardFlyout = null; _activeBoardHeader = null;
+        var current = _activeBoardFlyout;
+        if (current is null) return;
+        if (_toolPanels.TryGetValue(current, out var window))
+        {
+            if (!window.IsPinned) window.Close();
+            return;
+        }
+        ClearFlyoutReferences(current);
+        current.Hide();
+    }
+
+    private void ClearFlyoutReferences(FlyoutBase current)
+    {
+        if (ReferenceEquals(_activeBoardFlyout, current)) { _activeBoardFlyout = null; _activeBoardHeader = null; }
         if (ReferenceEquals(_inkOptionsFlyout, current)) _inkOptionsFlyout = null;
         if (ReferenceEquals(_moreFlyout, current)) _moreFlyout = null;
         if (ReferenceEquals(_gestureFlyout, current)) _gestureFlyout = null;
         if (ReferenceEquals(_eraserFlyout, current)) _eraserFlyout = null;
-        current?.Hide();
     }
-    private void OnCanvasInputBegan()
+
+    private bool ShowDetachedPanel(FlyoutBase flyout)
+    {
+        if (flyout is null || !_toolPanels.TryGetValue(flyout, out var window) || !window.IsPinned) return false;
+        WindowChrome.ShowWithoutActivation(window);
+        WindowChrome.EnsureAbove(window);
+        return true;
+    }
+
+    private void ActivateToolOptions(InkTool tool, Action open)
+    {
+        bool active = CurrentController.Tool == tool || tool == InkTool.Pen && CurrentController.Tool == InkTool.Highlighter;
+        if (active) open();
+        else SetTool(tool);
+    }
+
+    private void HideBoardFlyout(FlyoutBase flyout)
+    {
+        if (_toolPanels.TryGetValue(flyout, out var window))
+        {
+            if (!window.IsPinned) window.Close();
+        }
+        else flyout.Hide();
+    }
+    internal void OnCanvasInputBegan()
     {
         if (_activeBoardHeader?.IsPinned != true) DismissBoardFlyout();
         _surface.Focus(FocusState.Programmatic); CanvasInputBegan?.Invoke();
@@ -682,24 +751,27 @@ public sealed class BoardWindow : Window
 
     public void ShowEraserPalette()
     {
+        if (ShowDetachedPanel(_eraserFlyout)) return;
         if (_eraserFlyout is not null && ReferenceEquals(_activeBoardFlyout, _eraserFlyout)) { DismissBoardFlyout(); return; }
         SetTool(InkTool.Eraser);
         ApplyEraserSize();
         var palette = new EraserPalette(CurrentController, _services.Settings.Canvas.EraserSize, _boardTheme);
+        var header = new PopupHeader("橡皮", _boardTheme);
+        var flyout = new Flyout { Placement = FlyoutPlacementMode.Top };
         palette.ModePicked += mode =>
         {
             _services.Settings.Canvas.EraserType = mode switch
             {
                 InkEraserMode.Area => 1,
                 InkEraserMode.WholeStroke => 2,
-                _ => 0,
+                _ => 3,
             };
             CurrentController.EraserMode = mode;
             _services.ApplySettings();
             ApplyEraserSize();
             _services.SaveSettings();
             SetTool(InkTool.Eraser);
-            if (_activeBoardHeader?.IsPinned != true) DismissBoardFlyout();
+            HideBoardFlyout(flyout);
         };
         palette.SizePicked += size =>
         {
@@ -708,13 +780,9 @@ public sealed class BoardWindow : Window
             ApplyEraserSize();
             _services.SaveSettings();
         };
-        var header = new PopupHeader("橡皮", _boardTheme);
-        _eraserFlyout = new Flyout
-        {
-            Content = new Border { Background = _barBg, BorderBrush = InkCanvas.Controls.Theming.PopupBrushes.ToolPanelBorder(_boardTheme), BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8), Child = new StackPanel { Children = { header, palette } } },
-            Placement = FlyoutPlacementMode.Top,
-        };
+        flyout.Content = new Border { Background = _barBg, BorderBrush = InkCanvas.Controls.Theming.PopupBrushes.ToolPanelBorder(_boardTheme), BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8), Child = new StackPanel { Children = { header, palette } } };
+        _eraserFlyout = flyout;
         ShowBoardFlyout(_eraserFlyout, _eraserCell.Button);
     }
 
@@ -747,12 +815,14 @@ public sealed class BoardWindow : Window
 
     private void ShowMoreFlyout()
     {
+        if (ShowDetachedPanel(_moreFlyout)) return;
         if (_moreFlyout is not null && ReferenceEquals(_activeBoardFlyout, _moreFlyout)) { DismissBoardFlyout(); return; }
         _moreFlyout = BuildMoreFlyout(); ShowBoardFlyout(_moreFlyout, _moreCell.Button);
     }
 
     private void ShowGestureFlyout()
     {
+        if (ShowDetachedPanel(_gestureFlyout)) return;
         if (_gestureFlyout is not null && ReferenceEquals(_activeBoardFlyout, _gestureFlyout)) { DismissBoardFlyout(); return; }
         _gestureFlyout = BuildGestureFlyout(); ShowBoardFlyout(_gestureFlyout, _gestureCell.Button);
     }
@@ -773,15 +843,15 @@ public sealed class BoardWindow : Window
         grid.RowSpacing = 6;
         var items = new (string Glyph, string Label, Action Click, bool Badge)[]
         {
-            ("", "倒计时", () => { flyout.Hide(); _shell?.OpenTimer(); }, false),
-            ("", "随机抽选", () => { flyout.Hide(); _shell?.OpenLottery(); }, false),
-            ("", "单次抽选", () => { flyout.Hide(); _shell?.OpenLotteryQuick(); }, true),
-            ("", "保存墨迹", async () => { flyout.Hide(); await SavePageAsync(); }, false),
-            ("", "打开墨迹", async () => { flyout.Hide(); await OpenPageAsync(); }, false),
-            ("", "播放墨迹", () => { flyout.Hide(); _shell?.OpenReplay(); }, false),
-            ("", "截屏", async () => { flyout.Hide(); if (_shell is not null) await _shell.ScreenshotAsync(); }, false),
-            ("", "指南", () => { flyout.Hide(); _shell?.OpenGuide(); }, false),
-            ("", "设置", () => { flyout.Hide(); _shell?.OpenSettings(); }, false),
+            ("", "倒计时", () => { HideBoardFlyout(flyout); _shell?.OpenTimer(); }, false),
+            ("", "随机抽选", () => { HideBoardFlyout(flyout); _shell?.OpenLottery(); }, false),
+            ("", "单次抽选", () => { HideBoardFlyout(flyout); _shell?.OpenLotteryQuick(); }, true),
+            ("", "保存墨迹", async () => { HideBoardFlyout(flyout); await SavePageAsync(); }, false),
+            ("", "打开墨迹", async () => { HideBoardFlyout(flyout); await OpenPageAsync(); }, false),
+            ("", "播放墨迹", () => { HideBoardFlyout(flyout); _shell?.OpenReplay(); }, false),
+            ("", "截屏", async () => { HideBoardFlyout(flyout); if (_shell is not null) await _shell.ScreenshotAsync(); }, false),
+            ("", "指南", () => { HideBoardFlyout(flyout); _shell?.OpenGuide(); }, false),
+            ("", "设置", () => { HideBoardFlyout(flyout); _shell?.OpenSettings(); }, false),
         };
         for (int i = 0; i < items.Length; i++)
         {
@@ -834,7 +904,7 @@ public sealed class BoardWindow : Window
         var launcherRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 6) };
         launcherRow.Children.Add(MakeLauncherButton("", "视频展台", async () =>
         {
-            flyout.Hide();
+            HideBoardFlyout(flyout);
             // Original BoardLaunchEasiCamera_Click first switched back from board mode.
             if (_shell is not null) _shell.ToggleBoard();
             await Task.Delay(120);
@@ -844,7 +914,7 @@ public sealed class BoardWindow : Window
         launcherRow.Children.Add(new Border { Width = 1, Height = 25, Margin = new Thickness(4, 0, 4, 0), Background = _barFg, Opacity = 0.6, VerticalAlignment = VerticalAlignment.Center });
         launcherRow.Children.Add(MakeLauncherButton("", "Desmos", () =>
         {
-            flyout.Hide();
+            HideBoardFlyout(flyout);
             if (_shell is not null) _shell.ToggleBoard();
             Platform.System.SoftwareLauncher.LaunchDesmos();
         }));
@@ -852,12 +922,12 @@ public sealed class BoardWindow : Window
         // Port additions beyond WPF, relocated out of the center strip.
         var extrasRow1 = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2 };
         var extrasRow2 = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Margin = new Thickness(0, 2, 0, 6) };
-        extrasRow1.Children.Add(MakeExtraButton("", "插入视频", async () => { flyout.Hide(); await InsertMediaAsync(); }));
+        extrasRow1.Children.Add(MakeExtraButton("", "插入视频", async () => { HideBoardFlyout(flyout); await InsertMediaAsync(); }));
         Button fileButton = null;
         fileButton = MakeExtraButton("", "文件", () => ShowBoardFlyout(BuildFileFlyout(), _moreCell.Button));
         extrasRow1.Children.Add(fileButton);
-        extrasRow2.Children.Add(MakeExtraButton("", "删除本页", () => { flyout.Hide(); DeleteCurrentPage(); }));
-        extrasRow2.Children.Add(MakeExtraButton("", _isFullscreen ? "窗口模式" : "全屏", () => { flyout.Hide(); SetFullscreen(!_isFullscreen); }));
+        extrasRow2.Children.Add(MakeExtraButton("", "删除本页", () => { HideBoardFlyout(flyout); DeleteCurrentPage(); }));
+        extrasRow2.Children.Add(MakeExtraButton("", _isFullscreen ? "窗口模式" : "全屏", () => { HideBoardFlyout(flyout); SetFullscreen(!_isFullscreen); }));
         Button canvasButton = null;
         canvasButton = MakeExtraButton(GlyphCanvas, "画布纸型", () => ShowBoardFlyout(BuildCanvasFlyout(), _moreCell.Button));
         extrasRow2.Children.Add(canvasButton);
@@ -871,10 +941,10 @@ public sealed class BoardWindow : Window
         panel.Children.Add(extrasRow1);
         panel.Children.Add(extrasRow2);
         var navigation = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2 };
-        navigation.Children.Add(MakeExtraButton(Glyphs.GestureTranslate, "单指拖动", () => { flyout.Hide(); SetTool(InkTool.Pan); }));
+        navigation.Children.Add(MakeExtraButton(Glyphs.GestureTranslate, "单指拖动", () => { HideBoardFlyout(flyout); SetTool(InkTool.Pan); }));
         navigation.Children.Add(MakeExtraButton(Glyphs.Restart, "复位画布", () =>
         {
-            flyout.Hide(); CurrentController.ViewTransform = Matrix3x2.Identity; CurrentController.Document.Touch();
+            HideBoardFlyout(flyout); CurrentController.ViewTransform = Matrix3x2.Identity; CurrentController.Document.Touch();
         }));
         panel.Children.Add(navigation);
         if (_shell is not null)
@@ -882,7 +952,7 @@ public sealed class BoardWindow : Window
         {
             var extensionRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2 };
             foreach (var command in commands)
-                extensionRow.Children.Add(MakeExtraButton(Glyphs.ShapesWpf, command.Title, async () => { flyout.Hide(); await _shell.ExecuteExtensionCommandAsync(command); }));
+                extensionRow.Children.Add(MakeExtraButton(Glyphs.ShapesWpf, command.Title, async () => { HideBoardFlyout(flyout); await _shell.ExecuteExtensionCommandAsync(command); }));
             panel.Children.Add(extensionRow);
         }
 
@@ -1207,7 +1277,11 @@ public sealed class BoardWindow : Window
     /// this from OnSettingsChanged so the 画板 UI 缩放 slider live-applies while the board is open.
     /// The 55-DIP bottom row keeps its proportions at 100%.
     /// </summary>
-    public void RefreshUiScale() => ApplyBoardScale();
+    public void RefreshUiScale()
+    {
+        ApplyBoardScale();
+        foreach (var panel in _toolPanels.Values) panel.Fit();
+    }
 
     private void RefreshBackground()
     {
@@ -1240,9 +1314,10 @@ public sealed class BoardWindow : Window
         _selectionPanel.Child = BuildSelectionPanelContent();
         UpdateToolHighlight();
 
-        if (dark && IsBlackLike(_board.Current.CurrentAttributes.Color))
+        bool savedColor = CurrentController.Tool == InkTool.Highlighter ? _services.Settings.Canvas.HighlighterColor.HasValue : _services.Settings.Canvas.PenColor.HasValue;
+        if (!savedColor && dark && IsBlackLike(_board.Current.CurrentAttributes.Color))
             _board.Current.CurrentAttributes.Color = InkColor.Opaque(245, 245, 245);
-        else if (!dark && IsWhiteLike(_board.Current.CurrentAttributes.Color))
+        else if (!savedColor && !dark && IsWhiteLike(_board.Current.CurrentAttributes.Color))
             _board.Current.CurrentAttributes.Color = InkColor.Opaque(20, 20, 20);
         _paper.Invalidate();
     }
@@ -1349,6 +1424,7 @@ public sealed class BoardWindow : Window
     private void BindPage()
     {
         _imageImportCancellation?.Cancel();
+        foreach (var window in _toolPanels.Values.ToArray()) window.Close();
         DismissBoardFlyout();
         _boundController?.CancelLassoErase();
         FinishSelectionPointers();
@@ -1610,6 +1686,7 @@ public sealed class BoardWindow : Window
 
     private void OnClosed(object sender, WindowEventArgs args)
     {
+        foreach (var window in _toolPanels.Values.ToArray()) window.Close();
         CurrentController.EndPlayback();
         _closed = true;
         _imageImportCancellation?.Cancel();
@@ -1796,6 +1873,8 @@ public sealed class BoardWindow : Window
         => WindowChrome.GetScreenBounds(this, (tool switch
         {
             InkTool.Highlighter => _penCell,
+            InkTool.Eraser => _eraserCell,
+            InkTool.Select => _selectCell,
             InkTool.Shape => _shapeCell,
             _ => _penCell,
         }).Button);

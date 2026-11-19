@@ -16,6 +16,7 @@ internal static class WritingPerformance
         Directory.CreateDirectory(directory);
         var results = new List<object>();
         foreach (int background in new[] { 0, 240 })
+        foreach (TaperKind style in new[] { TaperKind.Natural, TaperKind.Calligraphy, TaperKind.InkWash })
         {
             using var controller = new InkController { RecognizeShapes = false };
             for (int i = 0; i < background; i++)
@@ -28,6 +29,7 @@ internal static class WritingPerformance
             using var committed = new CommittedInkLayer();
             using var target = new CanvasRenderTarget(CanvasDevice.GetSharedDevice(), 1280, 720, 96);
             var sample = new OverlayPointer(9900, 20, 300, .5f, 0, 0, OverlayPointerKind.Pen, 0);
+            controller.CurrentAttributes.TaperKind = style;
             controller.OnPointerDown(sample);
             var frames = new List<double>();
             long allocated = GC.GetAllocatedBytesForCurrentThread();
@@ -50,11 +52,12 @@ internal static class WritingPerformance
                 frames.Add(watch.Elapsed.TotalMilliseconds);
             }
             total.Stop(); frames.Sort();
-            results.Add(new { backgroundStrokes = background, frames = frames.Count, points = controller.LiveStrokes.Single().Count,
+            results.Add(new { brush = style.ToString(), backgroundStrokes = background, frames = frames.Count, points = controller.LiveStrokes.Single().Count,
                 totalMs = total.Elapsed.TotalMilliseconds, medianMs = frames[frames.Count / 2], p95Ms = frames[(int)(frames.Count * .95)],
                 allocatedBytes = GC.GetAllocatedBytesForCurrentThread() - allocated, geometryBuilds = scene.Strokes.GeometryBuildCount,
                 committedStrokeDraws = committed.CommittedStrokeDraws, segmentBuilds = scene.Strokes.SegmentBuildCount });
         }
         File.WriteAllText(Path.Combine(directory, "writing.json"), JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
+        Microsoft.UI.Xaml.Application.Current.Exit();
     }
 }

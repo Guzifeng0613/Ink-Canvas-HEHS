@@ -188,7 +188,11 @@ public sealed class PdfAnnotationFile : IDisposable
         PdfDictionary Appearance(IReadOnlyList<InkStroke> strokes, PdfPageGeometry geometry)
         {
             var content = new StringBuilder("q\n"); var states = new PdfDictionary(document);
-            foreach (var alpha in strokes.Select(stroke => stroke.Attributes.EffectiveColor.A).Distinct())
+            var alphas = new HashSet<byte>();
+            foreach (var stroke in strokes)
+            foreach (var layer in InkBrush.Layers(stroke))
+                alphas.Add(layer.Color(stroke.Attributes.EffectiveColor).A);
+            foreach (var alpha in alphas)
             {
                 var gs = new PdfDictionary(document); gs.Elements.SetName("/Type", "/ExtGState");
                 gs.Elements.SetReal("/ca", alpha / 255d); gs.Elements.SetReal("/CA", alpha / 255d);
@@ -196,9 +200,10 @@ public sealed class PdfAnnotationFile : IDisposable
             }
             Span<Vector2> contour = stackalloc Vector2[26];
             foreach (var stroke in strokes.OrderBy(stroke => stroke.LayerOrder ?? long.MaxValue))
+            foreach (var layer in InkBrush.Layers(stroke))
             {
                 token.ThrowIfCancellationRequested();
-                var color = stroke.Attributes.EffectiveColor;
+                var color = layer.Color(stroke.Attributes.EffectiveColor);
                 content.Append('/').Append("GS").Append(color.A).Append(" gs\n").Append(Number(color.R / 255d)).Append(' ').Append(Number(color.G / 255d)).Append(' ').Append(Number(color.B / 255d)).Append(" rg\n");
                 var points = stroke.Points; var nib = stroke.Attributes.NibTransform;
                 if (points.Count == 0) continue;
@@ -212,7 +217,8 @@ public sealed class PdfAnnotationFile : IDisposable
                     for (int segment = batch; segment < end; segment++)
                     {
                         var first = points[segment]; var last = points[Math.Min(segment + 1, points.Count - 1)];
-                        int length = StrokeGeometry.WriteSegmentOutline(first.Position, MathF.Max(first.Width, .5f) / 2, last.Position, MathF.Max(last.Width, .5f) / 2, contour, nib);
+                        int length = StrokeGeometry.WriteSegmentOutline(first.Position, MathF.Max(first.Width, .5f) / 2 * layer.WidthScale,
+                            last.Position, MathF.Max(last.Width, .5f) / 2 * layer.WidthScale, contour, nib);
                         var path = new Path64(length);
                         for (int p = 0; p < length; p++) path.Add(new Point64(Math.Round(contour[p].X * 10000d), Math.Round(contour[p].Y * 10000d)));
                         paths.Add(path);

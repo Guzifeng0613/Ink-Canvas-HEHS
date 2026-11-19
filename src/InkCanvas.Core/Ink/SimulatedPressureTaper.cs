@@ -14,7 +14,7 @@ internal sealed class SimulatedPressureTaper : TaperProfile
 
     public SimulatedPressureTaper(TaperKind kind) => _kind = kind;
     public override TaperKind Kind => _kind;
-    public override int StablePointCount(int count) => _kind is TaperKind.Natural or TaperKind.Calligraphy ? _stable : count;
+    public override int StablePointCount(int count) => _kind is TaperKind.Natural or TaperKind.Calligraphy or TaperKind.InkWash ? _stable : count;
 
     public override void Apply(Span<InkPoint> points, int tipIndex, float baseWidth)
     {
@@ -42,9 +42,10 @@ internal sealed class SimulatedPressureTaper : TaperProfile
             TaperKind.SmoothPen => .82f + .18f * pressure,
             TaperKind.SoftPen => .42f + .66f * MathF.Pow(pressure, .85f),
             TaperKind.Calligraphy => .24f + 1.05f * MathF.Pow(pressure, 1.25f),
+            TaperKind.InkWash => .18f + 1.22f * pressure * pressure,
             _ => .38f + .72f * pressure,
         };
-        if (_kind == TaperKind.Calligraphy && tipIndex > 1)
+        if (_kind is TaperKind.Calligraphy or TaperKind.InkWash && tipIndex > 1)
         {
             var a = points[tipIndex - 1].Position - points[tipIndex - 2].Position;
             var b = current.Position - points[tipIndex - 1].Position;
@@ -52,6 +53,12 @@ internal sealed class SimulatedPressureTaper : TaperProfile
             {
                 float turn = (1 - Vector2.Dot(Vector2.Normalize(a), Vector2.Normalize(b))) * .5f;
                 ratio *= 1 + .18f * turn;
+                if (_kind == TaperKind.InkWash)
+                {
+                    // A fixed brush angle gives horizontal and descending strokes different fullness.
+                    float direction = MathF.Abs((b.X + b.Y) / MathF.Sqrt(2 * b.LengthSquared()));
+                    ratio *= .72f + .28f * direction;
+                }
             }
         }
         float response = elapsed > 0 && elapsed <= 200 ? 1 - MathF.Exp(-elapsed / 22) : 1;
@@ -63,7 +70,7 @@ internal sealed class SimulatedPressureTaper : TaperProfile
             return;
         }
 
-        float tipRatio = _kind == TaperKind.Calligraphy ? .09f : .18f;
+        float tipRatio = _kind is TaperKind.Calligraphy or TaperKind.InkWash ? .09f : .18f;
         float headLength = MathF.Max(5, baseWidth * 1.6f);
         // Pausing or jittering inside the starting contact must not inflate the head.
         // Grow it from the actual distance away from the first point.
@@ -73,7 +80,7 @@ internal sealed class SimulatedPressureTaper : TaperProfile
         int slot = tipIndex % _widths.Length;
         _widths[slot] = baseWidth * _ratio * head;
         _distances[slot] = _distance;
-        float tailLength = MathF.Max(10, baseWidth * (_kind == TaperKind.Calligraphy ? 4 : 2.5f));
+        float tailLength = MathF.Max(10, baseWidth * (_kind is TaperKind.Calligraphy or TaperKind.InkWash ? 4 : 2.5f));
         int first = Math.Max(_stable, tipIndex - _widths.Length + 1);
         for (int index = first; index <= tipIndex; index++)
         {

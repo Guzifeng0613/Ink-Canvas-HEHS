@@ -24,7 +24,7 @@ public sealed class InkStroke
     {
         Attributes = attributes ?? throw new ArgumentNullException(nameof(attributes));
         _taper = TaperProfile.Create(attributes.EffectiveTaper);
-        if (attributes.EffectiveTaper is >= TaperKind.SmoothPen and <= TaperKind.Calligraphy) _filter = new OneEuroFilter();
+        if (attributes.EffectiveTaper is >= TaperKind.SmoothPen and <= TaperKind.InkWash) _filter = new OneEuroFilter();
     }
 
     public Guid Id { get; init; } = Guid.NewGuid();
@@ -82,9 +82,10 @@ public sealed class InkStroke
         get => _taper.Kind;
         set
         {
-            if (_taper.Kind == value) return;
+            if (_taper.Kind == value) { Attributes.TaperKind = value; return; }
             _taper = TaperProfile.Create(value);
-            _filter = value is >= TaperKind.SmoothPen and <= TaperKind.Calligraphy ? new OneEuroFilter() : null;
+            Attributes.TaperKind = value;
+            _filter = value is >= TaperKind.SmoothPen and <= TaperKind.InkWash ? new OneEuroFilter() : null;
             // Re-evaluate from scratch only for an already-finished stroke (e.g. a settings
             // change applied to history). Live strokes never take this path.
             if (IsCompleted) RebuildWidths();

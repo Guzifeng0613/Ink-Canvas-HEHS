@@ -94,6 +94,30 @@ public sealed class PdfDocumentTests
         Assert.Equal(original.Attributes.Nib, loaded.Attributes.Nib); Assert.Equal(original.Attributes.HighlighterAlpha, loaded.Attributes.HighlighterAlpha);
         Assert.Equal(StrokeGeometry.BuildOutline(original), StrokeGeometry.BuildOutline(loaded));
     }
+
+    [Fact]
+    public async Task WatercolorStrokeAppearanceAndStyleSurvivePdfSave()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "inkcanvas-pdf-watercolor-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            string source = Path.Combine(root, "source.pdf"), saved = Path.Combine(root, "saved.pdf");
+            CreateFixture(source);
+            var attributes = new StrokeAttributes { BaseWidth = 15, Color = InkColor.Red, TaperKind = TaperKind.InkWash };
+            var stroke = new InkStroke(attributes);
+            for (int point = 0; point < 240; point++) stroke.AddPoint(100 + point, 120 + MathF.Sin(point / 25f) * 40, .6f, 1000 + point * 4);
+            stroke.Complete();
+            using (var session = await PdfAnnotationFile.OpenAsync(source))
+                await session.SaveAsync(saved, new Dictionary<int, IReadOnlyList<InkStroke>> { [0] = new[] { stroke } });
+            using var reopened = await PdfAnnotationFile.OpenAsync(saved);
+            var restored = Assert.Single(reopened.GetInk(0));
+            Assert.Equal(TaperKind.InkWash, restored.TaperKind);
+            Assert.Equal(stroke.Points, restored.Points);
+            Assert.Equal(InkBrush.Layers(stroke).ToArray(), InkBrush.Layers(restored).ToArray());
+        }
+        finally { Directory.Delete(root, true); }
+    }
     [Fact]
     public async Task SavingPreservesOriginalPagesTextBookmarksOtherAnnotationsAndEditableInk()
     {

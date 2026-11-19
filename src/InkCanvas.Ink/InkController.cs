@@ -159,6 +159,8 @@ public sealed partial class InkController : IDisposable
             _tool = value;
             if (_configuredPenWidth.HasValue)
                 CurrentAttributes.BaseWidth = value == InkTool.Highlighter ? _configuredHighlighterWidth : _configuredPenWidth.Value;
+            var color = value == InkTool.Highlighter ? _highlighterColor : _penColor;
+            if (color.HasValue) CurrentAttributes.Color = color.Value;
             _panPointerId = null;
             CancelLassoErase();
             if (previous == InkTool.Eraser && _erasing) EndErase();
@@ -182,6 +184,15 @@ public sealed partial class InkController : IDisposable
     public event Action ToolChanged;
     private float? _configuredPenWidth;
     private float _configuredHighlighterWidth;
+    private InkColor? _penColor, _highlighterColor;
+
+    public void ConfigurePenColors(InkColor? pen, InkColor? highlighter)
+    {
+        _penColor = pen;
+        _highlighterColor = highlighter;
+        var color = Tool == InkTool.Highlighter ? highlighter : pen;
+        if (color.HasValue) CurrentAttributes.Color = color.Value;
+    }
 
     public void ConfigurePenWidths(float pen, float highlighter)
     {
@@ -959,7 +970,7 @@ public sealed partial class InkController : IDisposable
         var attrs = CurrentAttributes.Clone();
         attrs.IsHighlighter = Tool == InkTool.Highlighter;
         var stroke = new InkStroke(attrs);
-        bool relativeTime = attrs.EffectiveTaper is >= TaperKind.SmoothPen and <= TaperKind.Calligraphy;
+        bool relativeTime = attrs.EffectiveTaper is >= TaperKind.SmoothPen and <= TaperKind.InkWash;
         if (relativeTime) _strokeStartTimes[p.Id] = p.TimeMs;
         stroke.AddPoint(world.X, world.Y, p.Pressure, relativeTime ? 0 : p.TimeMs);
         _live[p.Id] = stroke;

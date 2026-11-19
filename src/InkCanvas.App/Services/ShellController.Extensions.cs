@@ -16,7 +16,7 @@ public sealed partial class ShellController
             if (Services.Modules.HasExport<Host.Contracts.IPdfWorkspaceService>()) commands.AddRange(new[] {
             new ExtensionCommand("inkcanvas.pdf", "open", "打开 PDF", "查看 PDF 并将墨迹批注保存到文件"),
             new ExtensionCommand("inkcanvas.pdf", "import", "PDF 导入画板", "选择 PDF 页码并导入新画板页") });
-            if (Services.Modules.HasExport<Host.Contracts.IAnalyticGeometryService>()) commands.Add(new ExtensionCommand("inkcanvas.analytic-geometry", "open", "解析几何", "公式绘图、手写输入和可编辑形状"));
+            if (Services.Modules.HasExport<Host.Contracts.IAnalyticGeometryService>()) commands.Add(new ExtensionCommand("inkcanvas.analytic-geometry", "open", "解析几何", "数学工作区、代数计算、二维与三维联动作图"));
             return commands;
         }
     }
