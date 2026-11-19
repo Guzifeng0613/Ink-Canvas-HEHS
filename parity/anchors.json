@@ -118,6 +118,14 @@
       "csharp": "src/InkCanvas.Core/Selection/SelectionGeometry.cs"
     },
     {
+      "arkts": "harmony/core/src/main/ets/pdf/PdfInkCodec.ts",
+      "csharp": "src/InkCanvas.Pdf/PdfInkCodec.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/pdf/PdfLayout.ts",
+      "csharp": "src/InkCanvas.Pdf/PdfPageGeometry.cs"
+    },
+    {
       "arkts": "harmony/core/src/main/ets/persistence/BoardPackCodec.ts",
       "csharp": "src/InkCanvas.Features/Board/BoardService.cs"
     },

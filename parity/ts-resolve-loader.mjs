@@ -10,6 +10,9 @@ export async function resolve(specifier, context, nextResolve) {
   if (specifier === '@inkcanvas/core') {
     return { url: pathToFileURL(resolvePath(ROOT, 'parity/node/core-shim.ts')).href, shortCircuit: true };
   }
+  if (specifier === '@kit.ArkTS') {
+    return { url: pathToFileURL(resolvePath(ROOT, 'parity/node/arkts-shim.mjs')).href, shortCircuit: true };
+  }
   if ((specifier.startsWith('./') || specifier.startsWith('../')) && context.parentURL) {
     let target;
     try {

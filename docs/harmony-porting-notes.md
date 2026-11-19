@@ -87,7 +87,16 @@
 
 **仍待补（下轮）**：G6 落点圆点动画状态（ConfirmTap 收拢已移植，动画计时/渲染未建）；G9 控制器级回放融合（独立回放窗可用）；G14 选区装饰细节（小对象边柄隐藏/旋转角度气泡）。
 
-**已补齐（2026-11-19 缺口轮 12，D1 克隆层号 + D7 解析几何内核；576 向量全绿 + BUILD SUCCESSFUL）**：
+**已补齐（2026-11-19 缺口轮 12b，D8 纯逻辑；592 向量全绿 + BUILD SUCCESSFUL）**：
+- **D8 PDF 纯逻辑四件**（core/pdf，zlib 外壳两端解耦——Node 用 node:zlib/真机用 @ohos.zlib）：
+  - `PdfPageGeometry`：CropBox/UserUnit/旋转 ↔ 96DIP 双向映射（ToPdf/FromPdf 四旋向）；pdf-layout 10 向量（几何 4 + 页码范围 5 + 连续布局 1）。
+  - `parsePdfPageRange`：1 基范围（中文逗号/去重/容量有界/中文错误）。
+  - `PdfContinuousLayout`：页垂直居中排布 + NearestPage 二分/HitTest/VisiblePages。
+  - `PdfInkCodec`：PDF 注释内无损二进制墨迹（ICK2 魔数/小端/float32 单精度往返/16 字节 GUID 域/LayerOrder int64/ShapeSource 文本限长/点数预算）——pdf-ink-codec 6 向量往返逐字段一致。
+  - 向量运行器：`@kit.ArkTS` shim（parity/node/arkts-shim.mjs，TextEncoder.encodeInto/TextDecoder.decodeToString → Node）。
+- **D8 待调研**：PDF Kit 注释写回 API 能力（调研 18 号报告进行中）——决定 PdfAnnotationFile（打开/提取/保存回/外观流）在真机侧的可行路径。
+
+**已补齐（2026-11-19 缺口轮 12，D1 克隆层号 + D7 解析几何内核）**：
 - **D1 SetCloneLayerOrder**：两处克隆路径（拖拽/双指手势）副本按源对象 z 序领取连续新层号（C# SetCloneLayerOrder 语义）。
 - **D7 解析几何内核**（features/analytic，三个模块 + VectorGen AnalyticVectors 生成器——**C# 项目级 oracle 双向跑**）：
   - `MathExpression`：有界算术文法（4096 限长/512 节点/48 深度），归一（上标/NFKC/数学符号/π/θ）、隐式乘法、多字母变量积、pi/e、21 个数值函数、^ 右结合、错误消息带位置——14 向量。

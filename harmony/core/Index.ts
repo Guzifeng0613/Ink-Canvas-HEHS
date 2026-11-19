@@ -73,6 +73,10 @@ export type { ReplayFrameProbeResult } from './src/main/ets/replay/InkReplaySess
 export type { ReplayVisibleResult } from './src/main/ets/replay/InkReplaySession';
 export { blendOver } from './src/main/ets/imaging/PixelCompositing';
 export { compressTargetSize } from './src/main/ets/imaging/CompressMath';
+export { PdfPageGeometry, PdfContinuousLayout, parsePdfPageRange, pdfGeometryProbe, pdfRangeProbe, pdfLayoutProbe } from './src/main/ets/pdf/PdfLayout';
+export { encodePdfInk, decodePdfInkSummary, PDF_INK_MAXIMUM_POINTS } from './src/main/ets/pdf/PdfInkCodec';
+export type { PdfPoint } from './src/main/ets/pdf/PdfLayout';
+export type { PdfInkSummary } from './src/main/ets/pdf/PdfInkCodec';
 export { svgLength, svgResolveSize } from './src/main/ets/imaging/SvgSize';
 export type { SvgSize } from './src/main/ets/imaging/SvgSize';
 export type { CompressTarget } from './src/main/ets/imaging/CompressMath';
