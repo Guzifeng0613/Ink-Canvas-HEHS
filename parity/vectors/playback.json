@@ -1,0 +1,20 @@
+{
+  "id": "playback",
+  "entry": "harmony/ink/src/main/ets/InkPlayback.ts",
+  "cases": [
+    {
+      "id": "seek-visible-counts",
+      "fn": "playbackProbe",
+      "input": [[3, 2, 1], [0, 10, 36, 50, 72, 100]],
+      "expected": { "Counts": [0, 1, 2, 2, 3, 3], "DurationMs": 72 },
+      "tolerance": 1e-9
+    },
+    {
+      "id": "single-stroke",
+      "fn": "playbackProbe",
+      "input": [[5], [0, 24, 60, 59]],
+      "expected": { "Counts": [0, 1, 1, 1], "DurationMs": 60 },
+      "tolerance": 1e-9
+    }
+  ]
+}

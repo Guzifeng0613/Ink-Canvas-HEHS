@@ -56,7 +56,7 @@ import type { ShapeKind, StrokePointInput, AppSettings, AdvancedTouchInput, Matr
 import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground, renderMatrix4Values, applyReplaceRules, lotteryDisplayName, lotteryFlicker, lotteryDrawUnique, lotterySplitGroups, appendTransform, transformedBounds, snapshotGeometry, recordTransform, BoardSelectionElement } from '@inkcanvas/features';
 import type { CoursewarePageFile } from '@inkcanvas/features';
 import type { BoardAsset, ElementGeometry } from '@inkcanvas/features';
-import { ReplayClock, InkReplaySession } from '@inkcanvas/core';
+import { ReplayClock } from '@inkcanvas/core';
 import { picker, fileIo } from '@kit.CoreFileKit';
 import { KeyCode } from '@kit.InputKit';
 import { promptAction, matrix4 } from '@kit.ArkUI';
@@ -216,7 +216,8 @@ struct Index {
   private lotteryTimer: number = -1;
   private replayTimer: number = -1;
   private replayClock: ReplayClock | null = null;
-  private replaySession: InkReplaySession | null = null;
+  // G6 落点成形动画驱动（16ms 帧步进；动画清空后自停）。
+  private dotTimer: number = -1;
   private settings: AppSettings = createDefaultSettings();
   private autoSave: AutoSaveService | null = null;
   private board: BoardDocument = new BoardDocument();
@@ -528,14 +529,12 @@ struct Index {
         this.handleTouch(event);
       })
 
-      if (this.controller.IsLassoErasing) {
-        Canvas(this.lassoContext)
-          .width('100%')
-          .height('100%')
-          .hitTestBehavior(HitTestMode.None)
-          .onReady(() => { this.drawLassoOverlay(); })
-      }
-
+      // 常驻覆盖层画布（套索路径 / 落点动画预览；不参与命中测试）。
+      Canvas(this.lassoContext)
+        .width('100%')
+        .height('100%')
+        .hitTestBehavior(HitTestMode.None)
+        .onReady(() => { this.drawLassoOverlay(); })
       // G3 选区工具条（ArkTS 差异化紧凑形态；位置走 placeToolbar 候选评分）。
       if (this.selectionToolbarOpen) {
         Row({ space: 6 }) {
@@ -2179,6 +2178,45 @@ struct Index {
     context.setLineDash([]);
   }
 
+  // G6 落点成形动画：覆盖层画 Preview 首点（世界→视图，半径随过渡宽度）。
+  private drawDotAnimations(): void {
+    const animations = this.controller.DotAnimations;
+    if (animations.length === 0) {
+      return;
+    }
+    const context = this.lassoContext;
+    const view = this.controller.ViewTransform;
+    for (let i = 0; i < animations.length; i++) {
+      const preview = animations[i].Preview;
+      if (preview.Count === 0) {
+        continue;
+      }
+      const p = preview.Points[0];
+      const screen = transformPointByMatrix(view, p.X, p.Y);
+      const scale = Math.sqrt(Math.abs(view.M11 * view.M22 - view.M12 * view.M21));
+      const radius = Math.max(0.5, p.Width / 2) * Math.max(0.1, scale);
+      context.beginPath();
+      context.arc(screen.X, screen.Y, radius, 0, Math.PI * 2);
+      const packed = preview.Attributes.Color.packedArgb();
+      context.fillStyle = '#' + (packed >>> 0).toString(16).padStart(8, '0');
+      context.fill();
+    }
+  }
+
+  private ensureDotTimer(): void {
+    if (this.dotTimer >= 0 || this.controller.DotAnimations.length === 0) {
+      return;
+    }
+    this.dotTimer = setInterval(() => {
+      this.controller.AdvanceDotAnimations(16);
+      if (this.controller.DotAnimations.length === 0 && this.dotTimer >= 0) {
+        clearInterval(this.dotTimer);
+        this.dotTimer = -1;
+      }
+      this.refreshScene();
+    }, 16);
+  }
+
   private drawBoardGrid(): void {
     const spacing = this.board.GridSpacing;
     const width = this.windowWidth;
@@ -2563,12 +2601,15 @@ struct Index {
   }
 
   private openReplay(): void {
-    const strokes = this.controller.Document.Strokes;
-    if (strokes.length === 0) {
+    // G9：回放融合到控制器（display-only Playback；源笔画与历史不动）。
+    if (!this.controller.BeginPlayback()) {
       return;
     }
-    this.replaySession = new InkReplaySession(strokes, 12);
-    this.replayClock = new ReplayClock(this.replaySession.DurationMs);
+    const playback = this.controller.Playback;
+    if (playback === null) {
+      return;
+    }
+    this.replayClock = new ReplayClock(playback.DurationMs);
     this.replayClock.Speed = this.replaySpeed;
     this.replayOpen = true;
     this.replayPlaying = false;
@@ -2596,6 +2637,7 @@ struct Index {
         return;
       }
       this.replayClock.advance(33);
+      this.controller.SeekPlayback(this.replayClock.ElapsedMs);
       this.replayProgress = this.replayClock.Progress;
       this.replayPlaying = this.replayClock.IsPlaying;
       this.refreshScene();
@@ -2614,8 +2656,8 @@ struct Index {
 
   private closeReplay(): void {
     this.stopReplayTimer();
+    this.controller.EndPlayback();
     this.replayOpen = false;
-    this.replaySession = null;
     this.replayClock = null;
     this.refreshScene();
   }
@@ -2763,8 +2805,18 @@ struct Index {
     }
     const committed: SceneStrokeInput[] = [];
     let strokes = this.controller.Document.Strokes;
-    if (this.replayOpen && this.replaySession !== null && this.replayClock !== null) {
-      strokes = this.replaySession.visibleAt(this.replayClock.ElapsedMs);
+    // G9：画布内回放期间只画 Playback 可见前缀（源笔画隐藏、历史不动）。
+    if (this.replayOpen && this.controller.Playback !== null) {
+      strokes = this.controller.Playback.VisibleStrokes;
+    } else if (this.controller.DotAnimations.length > 0) {
+      // G6：成形动画期间跳过已提交圆点，由覆盖层画过渡预览。
+      const visible: InkStroke[] = [];
+      for (let i = 0; i < strokes.length; i++) {
+        if (!this.controller.IsAnimatingDot(strokes[i])) {
+          visible.push(strokes[i]);
+        }
+      }
+      strokes = visible;
     }
     // 鼠标模式墨迹可见性（C# ShellController.ToggleClickThrough 语义）：
     // 课件内看 behavior.isShowStrokeOnSelectInPowerPoint，否则看 canvas.hideStrokeWhenSelecting。
@@ -2796,6 +2848,8 @@ struct Index {
     }
     this.renderer.render(buildScene(committed, active, selection, matrixToArray(this.controller.ViewTransform)), Invalidation.full());
     this.drawLassoOverlay();
+    this.drawDotAnimations();
+    this.ensureDotTimer();
   }
 
   private async openCourseware(): Promise<void> {

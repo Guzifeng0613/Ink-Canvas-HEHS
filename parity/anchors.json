@@ -151,6 +151,10 @@
     },
     {
       "arkts": "harmony/core/src/main/ets/selection/SelectionGeometry.ts",
+      "csharp": "src/InkCanvas.Core/Selection/SelectionFrame.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/selection/SelectionGeometry.ts",
       "csharp": "src/InkCanvas.Core/Selection/SelectionGeometry.cs"
     },
     {
@@ -236,6 +240,14 @@
     {
       "arkts": "harmony/ink/src/main/ets/InkController.ts",
       "csharp": "src/InkCanvas.Ink/InkController.cs"
+    },
+    {
+      "arkts": "harmony/ink/src/main/ets/InkDotAnimation.ts",
+      "csharp": "src/InkCanvas.Ink/InkDotAnimation.cs"
+    },
+    {
+      "arkts": "harmony/ink/src/main/ets/InkPlayback.ts",
+      "csharp": "src/InkCanvas.Ink/InkPlayback.cs"
     },
     {
       "arkts": "harmony/ink/src/main/ets/Renderer.ts",

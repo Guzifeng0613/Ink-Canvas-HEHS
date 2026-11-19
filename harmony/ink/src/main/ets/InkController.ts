@@ -82,6 +82,8 @@ import {
   ControllerOptions
 } from './ControllerTypes';
 import type { ISelectionElement, ElementSnapshot } from './ControllerTypes';
+import { InkDotAnimation } from './InkDotAnimation';
+import { InkPlayback } from './InkPlayback';
 import type {
   ShapeAttributesInput,
   VoidCallback,
@@ -591,6 +593,8 @@ export class InkController {
   }
 
   set Tool(value: InkTool) {
+    // C#：切工具（含同值设置）先结束画布内回放。
+    this.EndPlayback();
     if (this._tool === value) {
       return;
     }
@@ -694,6 +698,8 @@ export class InkController {
 
   /** 切换目标文档（画板页/课件页/批注）：清空历史与活动状态，避免跨文档撤销污染。 */
   BindDocument(doc: InkDocument): void {
+    this.EndPlayback();
+    this.FinishDotAnimations();
     this.Document = doc;
     this.History.clear();
     this.ClearSelection();
@@ -834,6 +840,10 @@ export class InkController {
   // ---- 指针路由 ----------------------------------------------------------
 
   onPointerDown(p: PointerSample): void {
+    // G9：画布内回放期间拒绝新输入（C# 语义）。
+    if (this.Playback !== null) {
+      return;
+    }
     this.Palm.onDown(p.Id, p.Kind, p.ContactWidth, p.ContactHeight);
 
     if (this._tool === InkTool.Pan) {
@@ -1273,7 +1283,113 @@ export class InkController {
     const worldCenter = transformPointByMatrix(inverse, centerX, centerY);
     const dot = new InkStroke(stroke.Attributes.clone());
     dot.restorePoints([new InkPoint(worldCenter.X, worldCenter.Y, first.Pressure, stroke.Attributes.BaseWidth, first.TimeMs)]);
+    // G6：确有收拢（多点/位移/宽度差）时记录 120ms 成形动画（C# InkDotAnimation(dot, stroke)：
+    // 源=最终圆点、临时=原始笔画，向最终持久宽度过渡）。
+    const firstDx = first.X - worldCenter.X;
+    const firstDy = first.Y - worldCenter.Y;
+    const firstWidth = Math.max(0.5, first.Width);
+    const targetWidth = Math.max(0.5, stroke.Attributes.BaseWidth);
+    if (stroke.Count > 1 || firstDx * firstDx + firstDy * firstDy > 0.001
+      || Math.abs(firstWidth - targetWidth) > 0.001) {
+      this._dotAnimations.push(new InkDotAnimation(dot, stroke));
+      this.DotAnimationVersion += 1;
+    }
     return dot;
+  }
+
+  // ---- G9 画布内回放（C# Playback/BeginPlayback/SeekPlayback/EndPlayback） ----------------
+  // display-only：源笔画与历史不动；期间拒绝新输入，切工具/换文档自动结束。
+
+  Playback: InkPlayback | null = null;
+  PlaybackChanged: VoidCallback | null = null;
+
+  BeginPlayback(): boolean {
+    this.EndPlayback();
+    this.FinishDotAnimations();
+    if (this._liveIds.length > 0 || this._lassoErasing || this._erasing) {
+      return false;
+    }
+    const source: InkStroke[] = [];
+    const strokes = this.Document.Strokes;
+    for (let i = 0; i < strokes.length; i++) {
+      if (this.Selection.length === 0 || this.Selection.indexOf(strokes[i]) >= 0) {
+        source.push(strokes[i]);
+      }
+    }
+    if (source.length === 0) {
+      return false;
+    }
+    this.Playback = new InkPlayback(source);
+    if (this.PlaybackChanged !== null) {
+      this.PlaybackChanged();
+    }
+    this.invalidate();
+    return true;
+  }
+
+  SeekPlayback(elapsedMs: number): void {
+    if (this.Playback === null) {
+      return;
+    }
+    this.Playback.seek(elapsedMs);
+    this.invalidate();
+  }
+
+  EndPlayback(): void {
+    if (this.Playback === null) {
+      return;
+    }
+    this.Playback = null;
+    if (this.PlaybackChanged !== null) {
+      this.PlaybackChanged();
+    }
+    this.invalidate();
+  }
+
+  // ---- G6 落点动画状态（C# DotAnimations/AdvanceDotAnimations/FinishDotAnimations） -------
+
+  private _dotAnimations: InkDotAnimation[] = [];
+  DotAnimationVersion: number = 0;
+  DotAnimationChanged: VoidCallback | null = null;
+
+  get DotAnimations(): InkDotAnimation[] {
+    return this._dotAnimations;
+  }
+
+  IsAnimatingDot(stroke: InkStroke): boolean {
+    for (let i = 0; i < this._dotAnimations.length; i++) {
+      if (this._dotAnimations[i].Source === stroke) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  AdvanceDotAnimations(milliseconds: number): void {
+    if (this._dotAnimations.length === 0 || !Number.isFinite(milliseconds) || milliseconds <= 0) {
+      return;
+    }
+    for (let index = this._dotAnimations.length - 1; index >= 0; index--) {
+      const animation = this._dotAnimations[index];
+      if (animation.advance(milliseconds)) {
+        this._dotAnimations.splice(index, 1);
+        this.DotAnimationVersion += 1;
+      }
+    }
+    if (this.DotAnimationChanged !== null) {
+      this.DotAnimationChanged();
+    }
+  }
+
+  FinishDotAnimations(): void {
+    if (this._dotAnimations.length === 0) {
+      return;
+    }
+    this._dotAnimations = [];
+    this.DotAnimationVersion += 1;
+    if (this.DotAnimationChanged !== null) {
+      this.DotAnimationChanged();
+    }
   }
 
   // ---- 视图 --------------------------------------------------------------

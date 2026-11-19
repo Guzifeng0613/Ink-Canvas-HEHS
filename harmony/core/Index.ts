@@ -52,6 +52,7 @@ export {
   selectionDragMatrix,
   rotateHandlePosition
 } from './src/main/ets/selection/SelectionGeometry';
+export { visibleResizeHandles, visibleHandlesForFrame } from './src/main/ets/selection/SelectionGeometry';
 export type { BoundsInput } from './src/main/ets/selection/SelectionGeometry';
 export { placeToolbar, boardDockLayout } from './src/main/ets/selection/LayoutHelpers';
 export type { BoardDockLayoutResult } from './src/main/ets/selection/LayoutHelpers';

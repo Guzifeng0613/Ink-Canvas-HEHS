@@ -73,11 +73,13 @@
       "status": "ported",
       "csharp": [
         "src/InkCanvas.Core/Replay/ReplayClock.cs",
-        "src/InkCanvas.Core/Replay/InkReplaySession.cs"
+        "src/InkCanvas.Core/Replay/InkReplaySession.cs",
+        "src/InkCanvas.Ink/InkPlayback.cs"
       ],
       "arkts": [
         "harmony/core/src/main/ets/replay/ReplayClock.ts",
-        "harmony/core/src/main/ets/replay/InkReplaySession.ts"
+        "harmony/core/src/main/ets/replay/InkReplaySession.ts",
+        "harmony/ink/src/main/ets/InkPlayback.ts"
       ],
       "vectors": [
         "parity/vectors/replay-clock.json",
@@ -86,7 +88,7 @@
       "tests": [
         "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
       ],
-      "notes": "回放时钟与会话（Phase A）；Phase A 完成（黄金向量）"
+      "notes": "回放时钟/会话 + G9 画布内回放融合（InkPlayback display-only：控制器 Begin/Seek/EndPlayback，期间拒输入、切工具/换文档自动结束；源笔画与历史不动；playback 2 向量）。"
     },
     {
       "id": "ink-selection",
@@ -109,7 +111,7 @@
       "tests": [
         "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
       ],
-      "notes": "命中/缩放/旋转/平移 + G2 元素选区桥（ISelectionElement 注入：图片/视频参与框选/点击/删除/克隆/双指/套索，SetPresent z 序恢复，board-selection-element 6 向量）+ G3 命令（Recolor/ScaleWidth/RestoreWidth/TransformSelectionUndoable）+ 选区工具条（placeToolbar 放置，克隆/9 色/粗细/删除/取消）。"
+      "notes": "命中/缩放/旋转/平移 + G2 元素选区桥（ISelectionElement 注入：图片/视频参与框选/点击/删除/克隆/双指/套索，SetPresent z 序恢复，board-selection-element 6 向量）+ G3 命令（Recolor/ScaleWidth/RestoreWidth/TransformSelectionUndoable）+ 选区工具条（placeToolbar 放置，克隆/9 色/粗细/删除/取消）。 G14：visibleResizeHandles（短/薄对象省略边柄，selection-handles 5 向量；渲染/命中接线为待办）。"
     },
     {
       "id": "ink-shape-generator",
@@ -200,15 +202,17 @@
     },
     {
       "id": "ink-taper-causal",
-      "name": "因果增量笔锋（None/Tail/Velocity）",
+      "name": "因果增量笔锋（None/Tail/Velocity/模拟压感×4）",
       "phase": "A",
       "status": "ported",
       "csharp": [
         "src/InkCanvas.Core/Ink/TaperProfile.cs",
-        "src/InkCanvas.Core/Ink/InkStroke.cs"
+        "src/InkCanvas.Core/Ink/InkStroke.cs",
+        "src/InkCanvas.Ink/InkDotAnimation.cs"
       ],
       "arkts": [
-        "harmony/core/src/main/ets/ink/TaperProfile.ts"
+        "harmony/core/src/main/ets/ink/TaperProfile.ts",
+        "harmony/ink/src/main/ets/InkDotAnimation.ts"
       ],
       "vectors": [
         "parity/vectors/taper-tail.json",
@@ -217,7 +221,7 @@
       "tests": [
         "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
       ],
-      "notes": "因果增量笔锋（None/Tail/Velocity）（Phase A）；Phase A 完成（黄金向量）"
+      "notes": "TaperKind 0..6 + SimulatedPressureTaper/OneEuroFilter/StablePointCount（向量互认）+ G6 落点：ConfirmTap 屏幕容差收拢 + InkDotAnimation 120ms 成形动画（dot-animation 3 向量；entry 覆盖层驱动 16ms 帧步进）。"
     },
     {
       "id": "ink-touch-classifier",
@@ -668,7 +672,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "回放窗口（Phase D）"
+      "notes": "回放控制条 + G9 融合：进度/速度驱动 controller.SeekPlayback，画布只画 Playback 可见前缀。"
     },
     {
       "id": "ui-floating-bar",

@@ -87,6 +87,11 @@
 
 **仍待补（下轮）**：G6 落点圆点动画状态（ConfirmTap 收拢已移植，动画计时/渲染未建）；G9 控制器级回放融合（独立回放窗可用）；G14 选区装饰细节（小对象边柄隐藏/旋转角度气泡）。
 
+**已补齐（2026-11-19 缺口轮 8，G6/G9/G14 纯逻辑；510 向量全绿 + BUILD SUCCESSFUL）——G1–G17 至此全部落地**：
+- **G6 落点动画**：ink `InkDotAnimation`（120ms、smoothstep 缓动、向最终持久宽度过渡；构造 InkDotAnimation(dot, stroke)，dot-animation 3 向量）+ 控制器 DotAnimations/DotAnimationVersion/IsAnimatingDot/AdvanceDotAnimations/FinishDotAnimations + ConfirmTap 记录（多点/位移/宽度差条件）+ entry 常驻覆盖层画预览、16ms 帧步进自停。
+- **G9 回放融合**：ink `InkPlayback`（display-only，InkReplaySession 克隆驱动，playback 2 向量）+ 控制器 Begin/Seek/EndPlayback（期间拒绝输入、切工具/换文档自动结束）+ entry 回放条驱动 SeekPlayback、画布只画可见前缀（源笔画与历史不动）。
+- **G14（纯逻辑）**：core `visibleResizeHandles`（短/薄对象省略边中点柄，Transform*view 法向长度；selection-handles 5 向量）。渲染层接线（覆盖层用可见柄集 + 旋转箭头/角度气泡）为待办。
+
 **已补齐（2026-11-19 缺口轮 7，G2/G3/G7/G11/G17；500 向量全绿 + BUILD SUCCESSFUL）**：
 - **G2 元素选区桥**：ink 层 ISelectionElement/ElementSnapshot 契约 + 控制器 GetSelectableElements/SelectedElements 全路径接线（框选相交、点击优先命中、Ctrl/Shift 增减、删除 SetPresent+逆序 z 序恢复、克隆 Duplicate、双指手势实时 Transform、拖拽步进 delta、套索 IntersectsFrame、pruneSelection、选区 AABB 含元素框）；features BoardSelectionElement（z 序恢复/共享字节克隆/BoardElementMath 管线，6 向量）；entry 画板页注入图片+视频。features 新增 @inkcanvas/ink 依赖（分层允许）。
 - **G3 选区命令 + 工具条**：RecolorSelection/ScaleSelectionWidth/RestoreSelectionWidth（ChangeSelectionAttributes 单撤销）/TransformSelectionUndoable（含元素）；选区工具条（placeToolbar 候选评分放置：克隆开关/9 色/B±/恢复/删除/取消，ArkTS 差异化紧凑形态）。

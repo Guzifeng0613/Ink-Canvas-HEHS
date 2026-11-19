@@ -1,0 +1,36 @@
+{
+  "id": "dot-animation",
+  "entry": "harmony/ink/src/main/ets/InkDotAnimation.ts",
+  "cases": [
+    {
+      "id": "grow-width-only",
+      "fn": "dotAnimationProbe",
+      "input": [[100, 100, 6], [[100, 100, 0.5, 2]], [40, 40, 40]],
+      "expected": [
+        [100, 100, 3.037037037037037],
+        [100, 100, 4.962962962962963],
+        [100, 100, 6]
+      ],
+      "tolerance": 1e-9
+    },
+    {
+      "id": "move-and-grow",
+      "fn": "dotAnimationProbe",
+      "input": [[110, 104, 5], [[100, 100, 0.5, 2]], [60, 60]],
+      "expected": [
+        [105, 102, 3.5],
+        [110, 104, 5]
+      ],
+      "tolerance": 1e-9
+    },
+    {
+      "id": "multi-point-provisional-uses-first",
+      "fn": "dotAnimationProbe",
+      "input": [[100, 100, 6], [[100, 100, 0.5, 2], [101, 100.5, 0.5, 2.5]], [120]],
+      "expected": [
+        [100, 100, 6]
+      ],
+      "tolerance": 1e-9
+    }
+  ]
+}
