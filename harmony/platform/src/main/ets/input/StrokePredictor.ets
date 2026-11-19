@@ -9,8 +9,10 @@
 // 失败并 SIGABRT 闪退，且早于任何 canIUse/try-catch 执行。因此这里必须使用常量动态
 // import()：编译期照常打入依赖树，运行期才解析 HSP；加载失败走 catch 永久降级，不崩溃。
 // import type 仅在编译期提供类型，产物中擦除，不产生运行时 HSP 依赖。
+// 注意：动态 import() 的 .then 回调参数 ns 由编译器推断为该模块的命名空间类型（非 any），
+// 不可改标 ESObject——ESObject 上的方法调用返回 any 会触发 arkts-no-any-unknown。
 import type { PointPredictor } from '@kit.Penkit';
-import { BusinessError } from '@kit.BasicServicesKit';
+import type { BusinessError } from '@kit.BasicServicesKit';
 import { hasSysCap, SYSCAP_STYLUS_HANDWRITE } from '../compat/Capabilities';
 
 export interface PredictedPoint {
@@ -27,24 +29,27 @@ export class StrokePredictor {
     this.ensureLoaded();
   }
 
-  get isReady(): boolean {
-    return this.predictor !== null;
-  }
-
   // 异步预热 Pen Kit：能力缺失或 HSP 加载失败时永久标记不可用，之后不再重试。
   private ensureLoaded(): void {
     if (this.loading || this.unavailable || this.predictor !== null) {
       return;
     }
-    if (!hasSysCap(SYSCAP_STYLUS_HANDWRITE)) {
+    try {
+      if (!hasSysCap(SYSCAP_STYLUS_HANDWRITE)) {
+        this.unavailable = true;
+        return;
+      }
+    } catch (e) {
+      void e;
       this.unavailable = true;
       return;
     }
     this.loading = true;
-    import('@kit.Penkit').then((ns) => {
+    import('@kit.Penkit').then((ns): void => {
       this.predictor = new ns.PointPredictor();
       this.loading = false;
-    }).catch((error: BusinessError) => {
+    }).catch((error: BusinessError): void => {
+      void error;
       // 设备未安装 Pen Kit HSP（典型为模拟器）：静默降级，预测功能整体不可用。
       this.loading = false;
       this.unavailable = true;
@@ -70,6 +75,7 @@ export class StrokePredictor {
       }
       return { X: px, Y: py };
     } catch (e) {
+      void e;
       return null;
     }
   }

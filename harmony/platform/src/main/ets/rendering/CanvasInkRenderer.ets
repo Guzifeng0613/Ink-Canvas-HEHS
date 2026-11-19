@@ -49,14 +49,27 @@ export class CanvasInkRenderer implements InkRenderer {
   }
 
   // 更新本帧预测段（世界坐标）。传空数组等价于本帧不绘制预测。
-  setPrediction(pointsWorld: number[], colorPacked: number, widthVp: number): void {
+  // 入口自防御：点列必须为偶数个坐标对且全部有限、线宽为正；任一不满足直接丢弃，
+  // 避免 NaN/Infinity 脏盒把局部帧降级为全屏重绘或画出发散路径。
+  setPrediction(pointsWorld: number[], colorPacked: number, widthWorld: number): void {
+    if (pointsWorld.length < 4 || pointsWorld.length % 2 !== 0 || widthWorld <= 0) {
+      this.clearPrediction();
+      return;
+    }
+    for (let i = 0; i < pointsWorld.length; i++) {
+      if (!Number.isFinite(pointsWorld[i])) {
+        this.clearPrediction();
+        return;
+      }
+    }
     this.prediction = pointsWorld;
     this.predictionColor = colorPacked;
-    this.predictionWidth = widthVp;
+    this.predictionWidth = widthWorld;
   }
 
   clearPrediction(): void {
     this.prediction = [];
+    this.predictionColor = 0;
     this.predictionWidth = 0;
   }
 
@@ -68,16 +81,20 @@ export class CanvasInkRenderer implements InkRenderer {
     this.committedLayer.clearRect(0, 0, widthVp, heightVp);
     this.active.setTransform(1, 0, 0, 1, 0, 0);
     this.active.clearRect(0, 0, widthVp, heightVp);
-    // 尺寸变化必须重建离屏画布（位图尺寸不可变），所有缓存状态作废。
+    // 活动层位图已被无条件清空，其脏盒/预测段状态必须同步复位（同尺寸回调也会走到这里），
+    // 否则下一局部帧按已失效的旧脏盒清屏，造成盒与位图状态不自洽。
+    this.prevActiveBox = null;
+    this.prevSelectionVisible = false;
+    this.prevPredictionBox = null;
+    this.prediction = [];
+    this.predictionColor = 0;
+    this.predictionWidth = 0;
+    // 尺寸变化必须重建离屏画布（位图尺寸不可变），离屏缓存状态作废。
     if (sizeChanged || this.offscreen === null) {
       this.destroyOffscreen();
       this.cacheDirty = true;
       this.cachedView = null;
       this.cachedSignatures = [];
-      this.prevActiveBox = null;
-      this.prevSelectionVisible = false;
-      this.prevPredictionBox = null;
-      this.prediction = [];
     }
   }
 
@@ -182,6 +199,11 @@ export class CanvasInkRenderer implements InkRenderer {
   }
 
   private renderActiveLayer(scene: InkScene, v: number[], forceFull: boolean): void {
+    // 自防御：没有活体笔画时预测段不允许存在（切工具/Dispose/切文档等路径宿主可能漏清）。
+    // 清空后上一帧预测盒仍并入下方脏盒，残留像素会被擦除而不会被重画。
+    if (scene.Active === null) {
+      this.clearPrediction();
+    }
     const selectionVisible = scene.Selection !== null;
     const selectionToggled = selectionVisible !== this.prevSelectionVisible;
     const activeBox = scene.Active !== null
@@ -250,9 +272,7 @@ export class CanvasInkRenderer implements InkRenderer {
         this.drawCommands(this.active, [scene.Active], false);
         this.drawPrediction(v);
         this.active.restore();
-      } else {
-        // 无活体笔画但仍有预测段（理论上仅边界时序），在同一裁剪盒内补画。
-        this.drawPrediction(v);
+        // Active===null 时入口已 clearPrediction，预测段不再补画，避免无活体笔画的残留重绘。
       }
     }
 
@@ -286,7 +306,7 @@ export class CanvasInkRenderer implements InkRenderer {
         maxY = y;
       }
     }
-    if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
       return null;
     }
     // 线宽一半作为额外填充，避免圆角线帽被裁掉。

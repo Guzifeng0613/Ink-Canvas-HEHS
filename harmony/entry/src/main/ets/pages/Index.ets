@@ -2235,10 +2235,16 @@ struct Index {
     );
   }
 
-  // 手写笔手势（双击 doubleTap / 轻捏 squeeze）工具轮转：画笔 → 区域橡皮 → 套索 → 回到画笔。
+  // 手写笔手势（双击 doubleTap / 轻捏 squeeze）工具轮转：画笔类（铅笔/荧光笔/形状/漫游）
+  // → 区域橡皮 → 选择 → 回到铅笔。荧光笔/整笔擦/套索擦等不在环内，经 else 分支先进入区域橡皮，
+  // 随后沿环回到铅笔，不存在死循环或不可达状态。
   // 轮转直接复用现有 handleAction(id)，完整沿用其工具状态、面板与 UI 逻辑，不另写一套切换；
   // 当前工具状态取自 controller.Tool（与工具栏选中态同源）。
   private rotateToolByStylusGesture(): void {
+    // 切工具瞬间活体笔画即将提交/已不存在，先清预测段，避免旧颜色旧宽度的临时段残留到新工具帧。
+    if (this.renderer !== null) {
+      this.renderer.clearPrediction();
+    }
     const tool = this.controller.Tool;
     let nextId: string;
     if (tool === InkTool.Select) {
@@ -2948,9 +2954,13 @@ struct Index {
     const width = last.Width > 0 ? last.Width : active.Attributes.BaseWidth;
     this.renderer.setPrediction(
       [last.X, last.Y, world.X, world.Y],
-      active.Attributes.Color.packedArgb(),
+      // 与本体同管线：荧光笔经 effectiveColor 套 HighlighterAlpha，避免预测段比落墨更浓。
+      active.Attributes.effectiveColor().packedArgb(),
       width
     );
+    // onPointerMove 的同步出帧发生在 setPrediction 之前，这里补一帧让预测段当帧上屏，
+    // 否则预测恒滞后一个采样、且抬笔前最后一段会被 Up 分支直接清掉而永不显示。
+    this.refreshScene();
   }
 
   // 画板元素拖拽路由：Select/Pan 工具下，Down 命中图片则接管该指针；Move 平移；Up/Cancel 记撤销。

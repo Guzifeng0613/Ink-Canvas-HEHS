@@ -13,7 +13,7 @@
 // 普通对象/接口变量，因此动态导入的模块命名空间以 ESObject 持有，on/off 均经该命名空间直接调用，
 // 不做 namespace → interface 的断言。
 import type { stylusInteraction } from '@kit.Penkit';
-import { BusinessError } from '@kit.BasicServicesKit';
+import type { BusinessError } from '@kit.BasicServicesKit';
 import { hasSysCap, SYSCAP_STYLUS_SERVICE } from '../compat/Capabilities';
 
 // 事件类型与 SDK 声明一致：DoubleTapEvent / SqueezeEvent 均只含 timestamp（ms，距系统启动）。
@@ -80,8 +80,16 @@ export class StylusBinding {
       return;
     }
     if (type === 'doubleTap') {
+      // 库防御：同类型重复 on 时先按旧引用摘除 native 回调，避免字段覆盖后旧监听泄漏。
+      // penkitNs 尚在加载时旧回调从未注册，无需 off，加载完成后只会注册最新引用。
+      if (this.doubleTapReceiver !== null) {
+        this.detach('doubleTap', this.doubleTapReceiver);
+      }
       this.doubleTapReceiver = cb as StylusDoubleTapCallback;
     } else {
+      if (this.squeezeReceiver !== null) {
+        this.detach('squeeze', this.squeezeReceiver);
+      }
       this.squeezeReceiver = cb as StylusSqueezeCallback;
     }
     void loadInteraction().then((api: ESObject | null): void => {
