@@ -29,7 +29,8 @@ import {
   isTablet,
   is2in1,
   breakpointForWidth,
-  isFullLayout
+  isFullLayout,
+  StrokePredictor
 } from '@inkcanvas/platform';
 import {
   FloatingBar,
@@ -208,6 +209,7 @@ struct Index {
   private blurEnabled: boolean = false;
   private symbolIcons: boolean = true;
   private renderer: CanvasInkRenderer | null = null;
+  private strokePredictor: StrokePredictor = new StrokePredictor();
   private controller: InkController = new InkController();
   private annotateDocument: InkDocument = new InkDocument();
   private pdfSource: PdfPageSource = new PdfPageSource();
@@ -2842,16 +2844,57 @@ struct Index {
       if (this.routeBoardImageDrag(event.type, touch.id, touch.x, touch.y)) {
         continue;
       }
+      // Down/Up/Cancel 在派发给控制器之前清空预测段：Invalidated 是同步回调，
+      // 若先派发，提交帧会把上一帧残留的预测段又画回活动层且之后无帧清除。
       if (event.type === TouchType.Down) {
+        if (this.renderer !== null) {
+          this.renderer.clearPrediction();
+        }
         this.controller.onPointerDown(sample);
       } else if (event.type === TouchType.Move) {
         this.controller.onPointerMove(sample);
+        this.updateStrokePrediction(event, isStylus);
       } else if (event.type === TouchType.Up) {
+        if (this.renderer !== null) {
+          this.renderer.clearPrediction();
+        }
         this.controller.onPointerUp(sample);
       } else if (event.type === TouchType.Cancel) {
+        if (this.renderer !== null) {
+          this.renderer.clearPrediction();
+        }
         this.controller.onPointerCanceled(sample);
       }
     }
+  }
+
+  // Pen Kit 报点预测：仅手写笔在铅笔/荧光笔书写时，把“最后真实点 → 预测点”的临时段
+  // 交给活动层渲染，用于抵消触控采样到上屏的链路延迟。预测点永远不进入 InkDocument、
+  // 活体笔画、离屏缓存与持久化；其余工具/通道一律立即清空，保证手指与鼠标路径零变化。
+  // 仅在 TouchType.Move 后调用（Down/Up/Cancel 已在派发到控制器前清空）。
+  private updateStrokePrediction(event: TouchEvent, isStylus: boolean): void {
+    if (this.renderer === null) {
+      return;
+    }
+    if (!isStylus
+      || (this.controller.Tool !== InkTool.Pen && this.controller.Tool !== InkTool.Highlighter)) {
+      this.renderer.clearPrediction();
+      return;
+    }
+    const predicted = this.strokePredictor.predict(event);
+    const active = this.controller.ActiveStroke;
+    if (predicted === null || active === null || active.Count === 0) {
+      this.renderer.clearPrediction();
+      return;
+    }
+    const last = active.Points[active.Count - 1];
+    const world = this.controller.toWorld(predicted.X, predicted.Y);
+    const width = last.Width > 0 ? last.Width : active.Attributes.BaseWidth;
+    this.renderer.setPrediction(
+      [last.X, last.Y, world.X, world.Y],
+      active.Attributes.Color.packedArgb(),
+      width
+    );
   }
 
   // 画板元素拖拽路由：Select/Pan 工具下，Down 命中图片则接管该指针；Move 平移；Up/Cancel 记撤销。

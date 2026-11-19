@@ -35,9 +35,29 @@ export class CanvasInkRenderer implements InkRenderer {
   private prevActiveBox: number[] | null = null;
   private prevSelectionVisible: boolean = false;
 
+  // Pen Kit 报点预测临时段：世界坐标扁平点列 [x0,y0,x1,y1,...]。
+  // 只存在于活动层，每帧由宿主用最新 TouchEvent 整体替换；绝不进入 OffscreenCanvas 离屏缓存、
+  // InkDocument 或任何持久化。抬笔/取消/能力不可用时宿主调用 clearPrediction 清空。
+  private prediction: number[] = [];
+  private predictionColor: number = 0;
+  private predictionWidth: number = 0;
+  private prevPredictionBox: number[] | null = null;
+
   constructor(committed: CanvasRenderingContext2D, active: CanvasRenderingContext2D) {
     this.committedLayer = committed;
     this.active = active;
+  }
+
+  // 更新本帧预测段（世界坐标）。传空数组等价于本帧不绘制预测。
+  setPrediction(pointsWorld: number[], colorPacked: number, widthVp: number): void {
+    this.prediction = pointsWorld;
+    this.predictionColor = colorPacked;
+    this.predictionWidth = widthVp;
+  }
+
+  clearPrediction(): void {
+    this.prediction = [];
+    this.predictionWidth = 0;
   }
 
   resize(widthVp: number, heightVp: number): void {
@@ -56,6 +76,8 @@ export class CanvasInkRenderer implements InkRenderer {
       this.cachedSignatures = [];
       this.prevActiveBox = null;
       this.prevSelectionVisible = false;
+      this.prevPredictionBox = null;
+      this.prediction = [];
     }
   }
 
@@ -162,9 +184,14 @@ export class CanvasInkRenderer implements InkRenderer {
   private renderActiveLayer(scene: InkScene, v: number[], forceFull: boolean): void {
     const selectionVisible = scene.Selection !== null;
     const selectionToggled = selectionVisible !== this.prevSelectionVisible;
-    const currBox = scene.Active !== null
+    const activeBox = scene.Active !== null
       ? CanvasInkRenderer.commandBox(scene.Active, WORLD_BOX_PADDING_VP)
       : null;
+    const currPredictionBox = this.predictionAabb();
+    // 当前帧活动层总脏盒 = 活体笔画盒 ∪ 预测段盒。
+    const currBox = activeBox === null
+      ? currPredictionBox
+      : (currPredictionBox === null ? activeBox : CanvasInkRenderer.unionBox(activeBox, currPredictionBox));
     const fullRedraw = forceFull || selectionVisible || selectionToggled;
 
     if (fullRedraw) {
@@ -174,6 +201,7 @@ export class CanvasInkRenderer implements InkRenderer {
       if (scene.Active !== null) {
         this.drawCommands(this.active, [scene.Active], false);
       }
+      this.drawPrediction(v);
       if (scene.Selection !== null) {
         this.drawSelection(scene);
       }
@@ -186,9 +214,18 @@ export class CanvasInkRenderer implements InkRenderer {
       } else if (this.prevActiveBox !== null) {
         dirtyWorld = this.prevActiveBox.slice();
       }
+      // 上一帧预测段所在区域也必须纳入清除/重绘范围，避免预测线拖影。
+      if (dirtyWorld === null) {
+        if (this.prevPredictionBox !== null) {
+          dirtyWorld = this.prevPredictionBox.slice();
+        }
+      } else if (this.prevPredictionBox !== null) {
+        dirtyWorld = CanvasInkRenderer.unionBox(dirtyWorld, this.prevPredictionBox);
+      }
       if (dirtyWorld === null) {
         // 前后帧均无活动笔画：上层保持空位图，无需任何绘制。
         this.prevActiveBox = null;
+        this.prevPredictionBox = null;
         this.prevSelectionVisible = selectionVisible;
         return;
       }
@@ -211,12 +248,71 @@ export class CanvasInkRenderer implements InkRenderer {
           this.active.clip();
         }
         this.drawCommands(this.active, [scene.Active], false);
+        this.drawPrediction(v);
         this.active.restore();
+      } else {
+        // 无活体笔画但仍有预测段（理论上仅边界时序），在同一裁剪盒内补画。
+        this.drawPrediction(v);
       }
     }
 
-    this.prevActiveBox = currBox;
+    this.prevActiveBox = activeBox;
+    this.prevPredictionBox = currPredictionBox;
     this.prevSelectionVisible = selectionVisible;
+  }
+
+  // 预测段世界坐标轴对齐包围盒；点数不足（不足一条线段）时返回 null。
+  private predictionAabb(): number[] | null {
+    if (this.prediction.length < 4) {
+      return null;
+    }
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    for (let i = 0; i + 1 < this.prediction.length; i += 2) {
+      const x = this.prediction[i];
+      const y = this.prediction[i + 1];
+      if (x < minX) {
+        minX = x;
+      }
+      if (y < minY) {
+        minY = y;
+      }
+      if (x > maxX) {
+        maxX = x;
+      }
+      if (y > maxY) {
+        maxY = y;
+      }
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
+      return null;
+    }
+    // 线宽一半作为额外填充，避免圆角线帽被裁掉。
+    const pad = WORLD_BOX_PADDING_VP + this.predictionWidth * 0.5;
+    return [minX - pad, minY - pad, maxX + pad, maxY + pad];
+  }
+
+  // 在活动层按当前视图矩阵描边预测段；调用方已设置好 transform（局部分支已 clip 到脏盒）。
+  private drawPrediction(v: number[]): void {
+    if (this.prediction.length < 4 || this.predictionWidth <= 0) {
+      return;
+    }
+    const context = this.active;
+    context.save();
+    context.setTransform(v[0], v[1], v[2], v[3], v[4], v[5]);
+    context.strokeStyle = CanvasInkRenderer.cssColor(this.predictionColor);
+    context.lineWidth = this.predictionWidth;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.beginPath();
+    context.moveTo(this.prediction[0], this.prediction[1]);
+    for (let i = 2; i + 1 < this.prediction.length; i += 2) {
+      context.lineTo(this.prediction[i], this.prediction[i + 1]);
+    }
+    context.stroke();
+    context.restore();
   }
 
   private ensureOffscreen(): void {
