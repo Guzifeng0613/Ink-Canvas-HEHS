@@ -11,11 +11,20 @@ public enum TaperKind
     /// <summary>Width driven by drawing speed (fast = thinner).</summary>
     Velocity = 2,
 
+    /// <summary>ArkTS baseline-evolution slot; C# falls back to <see cref="TailTaper"/> for now.</summary>
+    SmoothPen = 3,
+
+    /// <summary>ArkTS baseline-evolution slot; C# falls back to <see cref="TailTaper"/> for now.</summary>
+    SoftPen = 4,
+
     /// <summary>
     /// Test-build feel profile: pressure and real elapsed time drive width, combined with a
     /// distance-based head/tail nib taper. Never enters the original three-mode vectors.
     /// </summary>
-    Natural = 3,
+    Natural = 5,
+
+    /// <summary>ArkTS baseline-evolution slot; C# falls back to <see cref="TailTaper"/> for now.</summary>
+    Calligraphy = 6,
 }
 
 /// <summary>

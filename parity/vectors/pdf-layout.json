@@ -1,0 +1,234 @@
+{
+  "id": "pdf-layout",
+  "entry": "harmony/core/src/main/ets/pdf/PdfLayout.ts",
+  "cases": [
+    {
+      "id": "geometry-portrait-identity",
+      "fn": "pdfGeometryProbe",
+      "input": [
+        0,
+        0,
+        612,
+        792,
+        0,
+        1
+      ],
+      "expected": {
+        "DipWidth": 816,
+        "DipHeight": 1056,
+        "ToPdf": [
+          72,
+          756
+        ],
+        "FromPdf": [
+          96,
+          48
+        ]
+      },
+      "tolerance": 1e-06
+    },
+    {
+      "id": "geometry-landscape-rotation-90",
+      "fn": "pdfGeometryProbe",
+      "input": [
+        0,
+        0,
+        612,
+        792,
+        90,
+        1
+      ],
+      "expected": {
+        "DipWidth": 1056,
+        "DipHeight": 816,
+        "ToPdf": [
+          36,
+          72
+        ],
+        "FromPdf": [
+          1008,
+          96
+        ]
+      },
+      "tolerance": 1e-06
+    },
+    {
+      "id": "geometry-rotation-180",
+      "fn": "pdfGeometryProbe",
+      "input": [
+        0,
+        0,
+        612,
+        792,
+        180,
+        1
+      ],
+      "expected": {
+        "DipWidth": 816,
+        "DipHeight": 1056,
+        "ToPdf": [
+          540,
+          36
+        ],
+        "FromPdf": [
+          720,
+          1008
+        ]
+      },
+      "tolerance": 1e-06
+    },
+    {
+      "id": "geometry-user-unit-2",
+      "fn": "pdfGeometryProbe",
+      "input": [
+        0,
+        0,
+        306,
+        396,
+        0,
+        2
+      ],
+      "expected": {
+        "DipWidth": 816,
+        "DipHeight": 1056,
+        "ToPdf": [
+          36,
+          378
+        ],
+        "FromPdf": [
+          192,
+          96
+        ]
+      },
+      "tolerance": 1e-06
+    },
+    {
+      "id": "range-basic",
+      "fn": "pdfRangeProbe",
+      "input": [
+        "1-3,5",
+        10,
+        5
+      ],
+      "expected": [
+        0,
+        1,
+        2,
+        4
+      ],
+      "tolerance": 0
+    },
+    {
+      "id": "range-chinese-comma-dup",
+      "fn": "pdfRangeProbe",
+      "input": [
+        "2，2-3",
+        10,
+        5
+      ],
+      "expected": [
+        1,
+        2
+      ],
+      "tolerance": 0
+    },
+    {
+      "id": "range-over-capacity",
+      "fn": "pdfRangeProbe",
+      "input": [
+        "1-9",
+        10,
+        5
+      ],
+      "expected": "ERROR:所选页数超过画板剩余容量。",
+      "tolerance": 0
+    },
+    {
+      "id": "range-beyond-page-count",
+      "fn": "pdfRangeProbe",
+      "input": [
+        "11",
+        10,
+        5
+      ],
+      "expected": "ERROR:页码范围无效，请输入 1-5,8 这样的范围。",
+      "tolerance": 0
+    },
+    {
+      "id": "range-empty",
+      "fn": "pdfRangeProbe",
+      "input": [
+        ",,",
+        10,
+        5
+      ],
+      "expected": "ERROR:请至少选择一页。",
+      "tolerance": 0
+    },
+    {
+      "id": "layout-three-pages",
+      "fn": "pdfLayoutProbe",
+      "input": [
+        [
+          [
+            612,
+            792
+          ],
+          [
+            612,
+            400
+          ],
+          [
+            300,
+            200
+          ]
+        ],
+        24,
+        [
+          "nearest:1000",
+          "hit:306,500",
+          "hit:5,5",
+          "visible:0,500",
+          "visible:1100,2400"
+        ]
+      ],
+      "expected": {
+        "Width": 816,
+        "Height": 1904.0,
+        "Pages": [
+          [
+            0,
+            0,
+            816,
+            1056
+          ],
+          [
+            0,
+            1080,
+            816,
+            1613.3333333333333
+          ],
+          [
+            208,
+            1637.3333333333333,
+            608,
+            1904
+          ]
+        ],
+        "Ops": [
+          0,
+          0,
+          0,
+          [
+            0
+          ],
+          [
+            1,
+            2
+          ]
+        ]
+      },
+      "tolerance": 0.0001
+    }
+  ]
+}

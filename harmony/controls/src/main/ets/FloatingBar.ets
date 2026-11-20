@@ -130,6 +130,9 @@ export struct FloatingBar {
           this.ButtonCell(button)
         }
       }, (button: FloatingBarButton) => button.Id)
+      if (this.showEraserButton) {
+        this.ExtraCell('eraserLasso', '套索', 'lasso')
+      }
       if (this.showFingerToggle) {
         this.ExtraCell('fingerMode', '手指', 'hand_tap')
       }

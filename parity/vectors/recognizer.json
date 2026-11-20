@@ -1574,6 +1574,223 @@
         "corners": []
       },
       "tolerance": 0.0001
+    },
+    {
+      "id": "recognize-line-jitter-hold",
+      "fn": "recognize",
+      "input": [
+        [
+          {
+            "X": 100,
+            "Y": 100
+          },
+          {
+            "X": 130,
+            "Y": 100
+          },
+          {
+            "X": 160,
+            "Y": 100
+          },
+          {
+            "X": 190,
+            "Y": 100
+          },
+          {
+            "X": 220,
+            "Y": 100
+          },
+          {
+            "X": 250,
+            "Y": 100
+          },
+          {
+            "X": 280,
+            "Y": 100
+          },
+          {
+            "X": 281,
+            "Y": 99.4
+          },
+          {
+            "X": 280.2,
+            "Y": 100.6
+          },
+          {
+            "X": 280.8,
+            "Y": 100.2
+          },
+          {
+            "X": 280.1,
+            "Y": 99.8
+          }
+        ]
+      ],
+      "expected": {
+        "kind": 1,
+        "centerX": 222.9182,
+        "centerY": 100,
+        "radiusX": 0,
+        "radiusY": 0,
+        "confidence": 0.9979178,
+        "corners": [
+          {
+            "X": 281,
+            "Y": 100
+          },
+          {
+            "X": 100,
+            "Y": 100
+          }
+        ]
+      },
+      "tolerance": 0.002
+    },
+    {
+      "id": "reject-hook",
+      "fn": "recognize",
+      "input": [
+        [
+          {
+            "X": 100,
+            "Y": 100
+          },
+          {
+            "X": 140,
+            "Y": 100
+          },
+          {
+            "X": 180,
+            "Y": 100
+          },
+          {
+            "X": 220,
+            "Y": 100
+          },
+          {
+            "X": 260,
+            "Y": 100
+          },
+          {
+            "X": 270,
+            "Y": 100
+          },
+          {
+            "X": 277,
+            "Y": 95
+          },
+          {
+            "X": 280,
+            "Y": 88
+          }
+        ]
+      ],
+      "expected": {
+        "kind": 0,
+        "centerX": 0,
+        "centerY": 0,
+        "radiusX": 0,
+        "radiusY": 0,
+        "confidence": 0,
+        "corners": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "reject-back-over",
+      "fn": "recognize",
+      "input": [
+        [
+          {
+            "X": 100,
+            "Y": 100
+          },
+          {
+            "X": 140,
+            "Y": 100
+          },
+          {
+            "X": 180,
+            "Y": 100
+          },
+          {
+            "X": 220,
+            "Y": 100
+          },
+          {
+            "X": 260,
+            "Y": 100
+          },
+          {
+            "X": 220,
+            "Y": 100
+          },
+          {
+            "X": 180,
+            "Y": 100
+          },
+          {
+            "X": 120,
+            "Y": 100
+          }
+        ]
+      ],
+      "expected": {
+        "kind": 0,
+        "centerX": 0,
+        "centerY": 0,
+        "radiusX": 0,
+        "radiusY": 0,
+        "confidence": 0,
+        "corners": []
+      },
+      "tolerance": 0.0001
+    },
+    {
+      "id": "reject-multi-stroke-line",
+      "fn": "recognizeStrokes",
+      "input": [
+        [
+          [
+            {
+              "X": 100,
+              "Y": 100
+            },
+            {
+              "X": 140,
+              "Y": 100
+            },
+            {
+              "X": 180,
+              "Y": 100
+            }
+          ],
+          [
+            {
+              "X": 180,
+              "Y": 100
+            },
+            {
+              "X": 220,
+              "Y": 100
+            },
+            {
+              "X": 260,
+              "Y": 100
+            }
+          ]
+        ]
+      ],
+      "expected": {
+        "kind": 0,
+        "centerX": 0,
+        "centerY": 0,
+        "radiusX": 0,
+        "radiusY": 0,
+        "confidence": 0,
+        "corners": []
+      },
+      "tolerance": 0.0001
     }
   ]
 }

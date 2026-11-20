@@ -35,7 +35,7 @@ public static class OriginalMenuCatalog
 
     public static IReadOnlyList<string> PenStyles { get; } = Array.AsReadOnly(new[]
     {
-        "点集笔锋", "速率笔锋", "关闭笔锋", "自然笔锋（测试）",
+        "点集笔锋", "速率笔锋", "关闭笔锋", "平滑硬笔", "柔和压感", "自然笔锋", "书法笔锋",
     });
 
     public static IReadOnlyList<string> EraserSizes { get; } = Array.AsReadOnly(new[]

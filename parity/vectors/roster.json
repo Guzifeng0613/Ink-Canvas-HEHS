@@ -1,0 +1,55 @@
+{
+  "id": "roster",
+  "entry": "harmony/features/src/main/ets/tools/ClassroomRoster.ts",
+  "cases": [
+    {
+      "id": "one-per-line",
+      "fn": "rosterProbe",
+      "input": ["张三\n李四\n\n王五\n"],
+      "expected": { "Names": ["张三", "李四", "王五"], "FieldCounts": [1, 1, 1] },
+      "tolerance": 0
+    },
+    {
+      "id": "csv-name-column",
+      "fn": "rosterProbe",
+      "input": ["序号,姓名,分数\n1,张三,90\n2,李四,85"],
+      "expected": { "Names": ["张三", "李四"], "FieldCounts": [3, 3, 3] },
+      "tolerance": 0
+    },
+    {
+      "id": "csv-english-name-column",
+      "fn": "rosterProbe",
+      "input": ["id,Name,score\n1,Alice,90\n2,Bob,85"],
+      "expected": { "Names": ["Alice", "Bob"], "FieldCounts": [3, 3, 3] },
+      "tolerance": 0
+    },
+    {
+      "id": "csv-no-header-first-column",
+      "fn": "rosterProbe",
+      "input": ["张三,90\n李四,85"],
+      "expected": { "Names": ["张三", "李四"], "FieldCounts": [2, 2] },
+      "tolerance": 0
+    },
+    {
+      "id": "tsv-with-bom",
+      "fn": "rosterProbe",
+      "input": ["﻿姓名\t班级\n张三\t1班\n李四\t2班"],
+      "expected": { "Names": ["张三", "李四"], "FieldCounts": [2, 2, 2] },
+      "tolerance": 0
+    },
+    {
+      "id": "quoted-escape",
+      "fn": "rosterProbe",
+      "input": ["姓名\n\"张,三\"\n\"He said \"\"hi\"\"\""],
+      "expected": { "Names": ["张,三", "He said \"hi\""], "FieldCounts": [1, 1, 1] },
+      "tolerance": 0
+    },
+    {
+      "id": "empty",
+      "fn": "rosterProbe",
+      "input": ["\n\n  \n"],
+      "expected": { "Names": [], "FieldCounts": [] },
+      "tolerance": 0
+    }
+  ]
+}

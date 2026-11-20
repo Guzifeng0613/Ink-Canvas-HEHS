@@ -427,6 +427,39 @@
         "isNotRepeatName"
       ],
       "additionalProperties": false
+    },
+    "experimental": {
+      "type": "object",
+      "description": "Experimental screen-content tracking (PascalCase keys)",
+      "properties": {
+        "ScreenContentTracking": {
+          "type": "boolean"
+        },
+        "FollowScroll": {
+          "type": "boolean"
+        },
+        "FollowZoom": {
+          "type": "boolean"
+        },
+        "MaskFixedRegions": {
+          "type": "boolean"
+        },
+        "RememberPages": {
+          "type": "boolean"
+        },
+        "PreserveUnchangedRegions": {
+          "type": "boolean"
+        },
+        "Word": {
+          "type": "boolean"
+        },
+        "PowerPoint": {
+          "type": "boolean"
+        },
+        "Edge": {
+          "type": "boolean"
+        }
+      }
     }
   },
   "required": [

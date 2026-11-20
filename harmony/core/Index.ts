@@ -1,12 +1,15 @@
 export const MODULE: string = 'core';
+export { toTaperKind, toPenStyle, toEraserRadius, menuCatalogProbe, PEN_NIBS, PEN_STYLES, ERASER_SIZES, ERASER_MODES, AUTO_DELETE_DAYS, THEME_OPTIONS, PEN_WIDTH_MINIMUM, PEN_WIDTH_MAXIMUM, HIGHLIGHTER_WIDTH_MAXIMUM, PEN_WIDTH_STEP, HIGHLIGHTER_ALPHA_MINIMUM, HIGHLIGHTER_ALPHA_MAXIMUM, HIGHLIGHTER_ALPHA_STEP } from './src/main/ets/settings/OriginalMenuCatalog';
+export { resetToRecommendation } from './src/main/ets/settings/AppSettings';
 export { InkPoint } from './src/main/ets/ink/InkPoint';
 export { InkColor, packArgb, unpackArgb, withAlphaArgb } from './src/main/ets/ink/InkColor';
 export { StrokeAttributes, TaperKind, PenNib, strokeAttributesEffective } from './src/main/ets/ink/StrokeAttributes';
 export type { StrokeAttributesInput } from './src/main/ets/ink/StrokeAttributes';
-export { effectiveWidths, applyTaperAt } from './src/main/ets/ink/TaperProfile';
+export { effectiveWidths, applyTaperAt, createTaperProfile, TaperProfile, NoneTaperProfile, VelocityTaperProfile, TailTaperProfile, SimulatedPressureTaperProfile } from './src/main/ets/ink/TaperProfile';
 export type { TaperOptionsInput } from './src/main/ets/ink/TaperProfile';
-export { InkStroke, Rect, SelectionFrameState, strokeBounds, setTaperAndWidths } from './src/main/ets/ink/InkStroke';
-export type { StrokePointInput } from './src/main/ets/ink/InkStroke';
+export { OneEuroFilter } from './src/main/ets/ink/OneEuroFilter';
+export { InkStroke, Rect, SelectionFrameState, strokeBounds, setTaperAndWidths, strokeTaperProbe } from './src/main/ets/ink/InkStroke';
+export type { StrokePointInput, StrokeTaperSampleInput, StrokeTaperProbeResult, ShapeSourceData } from './src/main/ets/ink/InkStroke';
 export { InkDocument } from './src/main/ets/ink/InkDocument';
 export {
   buildSegmentOutline,
@@ -49,7 +52,12 @@ export {
   selectionDragMatrix,
   rotateHandlePosition
 } from './src/main/ets/selection/SelectionGeometry';
+export { visibleResizeHandles, visibleHandlesForFrame } from './src/main/ets/selection/SelectionGeometry';
 export type { BoundsInput } from './src/main/ets/selection/SelectionGeometry';
+export { placeToolbar, boardDockLayout } from './src/main/ets/selection/LayoutHelpers';
+export type { BoardDockLayoutResult } from './src/main/ets/selection/LayoutHelpers';
+export { LassoGeometry } from './src/main/ets/selection/LassoGeometry';
+export type { LassoPoint } from './src/main/ets/selection/LassoGeometry';
 export { TwoFingerManipulator, simulateTwoFinger } from './src/main/ets/ink/TwoFingerManipulator';
 export type { TwoFingerOptionsInput, TwoFingerSample, TwoFingerUpdate, TwoFingerSimResult } from './src/main/ets/ink/TwoFingerManipulator';
 export { MatrixTransformCenterPointOptions, resolvePivot } from './src/main/ets/ink/MatrixTransformCenter';
@@ -65,6 +73,12 @@ export type { ReplayFrameProbeResult } from './src/main/ets/replay/InkReplaySess
 export type { ReplayVisibleResult } from './src/main/ets/replay/InkReplaySession';
 export { blendOver } from './src/main/ets/imaging/PixelCompositing';
 export { compressTargetSize } from './src/main/ets/imaging/CompressMath';
+export { PdfPageGeometry, PdfContinuousLayout, parsePdfPageRange, pdfGeometryProbe, pdfRangeProbe, pdfLayoutProbe } from './src/main/ets/pdf/PdfLayout';
+export { encodePdfInk, decodePdfInkSummary, PDF_INK_MAXIMUM_POINTS } from './src/main/ets/pdf/PdfInkCodec';
+export type { PdfPoint } from './src/main/ets/pdf/PdfLayout';
+export type { PdfInkSummary } from './src/main/ets/pdf/PdfInkCodec';
+export { svgLength, svgResolveSize } from './src/main/ets/imaging/SvgSize';
+export type { SvgSize } from './src/main/ets/imaging/SvgSize';
 export type { CompressTarget } from './src/main/ets/imaging/CompressMath';
 export { AppTheme, getMainWindowTheme, getBoardTheme } from './src/main/ets/theming/ThemeResolver';
 export { AppVersion, parseVersion, compareVersions } from './src/main/ets/versioning/AppVersion';

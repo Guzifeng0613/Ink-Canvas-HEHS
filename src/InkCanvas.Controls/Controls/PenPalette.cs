@@ -53,7 +53,7 @@ public sealed class PenPalette : UserControl
             {
                 1 => TaperKind.Velocity,
                 2 => TaperKind.None,
-                3 => TaperKind.Natural,
+                5 => TaperKind.Natural,
                 _ => TaperKind.Tail,
             };
             InkStyleChanged?.Invoke(_style.SelectedIndex);

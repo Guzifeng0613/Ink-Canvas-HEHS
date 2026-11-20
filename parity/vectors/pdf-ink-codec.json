@@ -1,0 +1,311 @@
+{
+  "id": "pdf-ink-codec",
+  "entry": "harmony/core/src/main/ets/pdf/PdfInkCodec.ts",
+  "cases": [
+    {
+      "id": "roundtrip-single-stroke",
+      "fn": "pdfInkRoundtripProbe",
+      "input": [
+        [
+          {
+            "points": [
+              [
+                10,
+                20,
+                0.5,
+                2.5,
+                0
+              ],
+              [
+                30,
+                40,
+                0.7,
+                2.5,
+                16
+              ]
+            ],
+            "color": 4279312947,
+            "baseWidth": 2.5,
+            "isHighlighter": false,
+            "highlighterAlpha": 140,
+            "taperKind": 1,
+            "nib": 0,
+            "nibRotation": 0.0,
+            "objectFrame": null,
+            "layerOrder": 5
+          }
+        ]
+      ],
+      "expected": {
+        "Strokes": 1,
+        "LayerOrder": 5,
+        "FirstPoint": [
+          10,
+          20,
+          0.5,
+          2.5,
+          0
+        ],
+        "LastPoint": [
+          30,
+          40,
+          0.7,
+          2.5,
+          16
+        ],
+        "IsHighlighter": false,
+        "HighlighterAlpha": 140,
+        "TaperKind": 1,
+        "Nib": 0,
+        "NibRotation": 0.0
+      },
+      "tolerance": 1e-06
+    },
+    {
+      "id": "roundtrip-layer-order-and-nib",
+      "fn": "pdfInkRoundtripProbe",
+      "input": [
+        [
+          {
+            "points": [
+              [
+                0,
+                0,
+                0.5,
+                3,
+                0
+              ]
+            ],
+            "color": 4278190080,
+            "baseWidth": 3,
+            "isHighlighter": false,
+            "highlighterAlpha": 96,
+            "taperKind": 3,
+            "nib": 1,
+            "nibRotation": 0.5,
+            "objectFrame": [
+              1,
+              2,
+              3,
+              4,
+              1,
+              0,
+              0,
+              1,
+              5,
+              6
+            ],
+            "layerOrder": 7
+          }
+        ]
+      ],
+      "expected": {
+        "Strokes": 1,
+        "FirstPoint": [
+          0,
+          0,
+          0.5,
+          3,
+          0
+        ],
+        "LastPoint": [
+          0,
+          0,
+          0.5,
+          3,
+          0
+        ],
+        "LayerOrder": 7,
+        "IsHighlighter": false,
+        "HighlighterAlpha": 96,
+        "TaperKind": 3,
+        "Nib": 1,
+        "NibRotation": 0.5,
+        "ObjectFrame": [
+          1,
+          2,
+          3,
+          4,
+          1,
+          0,
+          0,
+          1,
+          5,
+          6
+        ]
+      },
+      "tolerance": 1e-06
+    },
+    {
+      "id": "roundtrip-shape-source",
+      "fn": "pdfInkRoundtripProbe",
+      "input": [
+        [
+          {
+            "points": [
+              [
+                5,
+                5,
+                0.5,
+                2,
+                0
+              ]
+            ],
+            "color": 4280313024,
+            "baseWidth": 2,
+            "isHighlighter": true,
+            "highlighterAlpha": 200,
+            "taperKind": 2,
+            "nib": 0,
+            "nibRotation": 0,
+            "objectFrame": null,
+            "layerOrder": 0,
+            "groupId": "1234567890abcdef1234567890abcdef",
+            "provider": "analytic",
+            "definition": "y=a*x^2"
+          }
+        ]
+      ],
+      "expected": {
+        "Strokes": 1,
+        "FirstPoint": [
+          5,
+          5,
+          0.5,
+          2,
+          0
+        ],
+        "LastPoint": [
+          5,
+          5,
+          0.5,
+          2,
+          0
+        ],
+        "LayerOrder": 0,
+        "IsHighlighter": true,
+        "HighlighterAlpha": 200,
+        "TaperKind": 2,
+        "Nib": 0,
+        "NibRotation": 0,
+        "ShapeSourceGroup": "g1234567890abcdef1234567890abcdef",
+        "ShapeSourceProvider": "analytic",
+        "ShapeSourceDefinition": "y=a*x^2"
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "roundtrip-two-strokes",
+      "fn": "pdfInkRoundtripProbe",
+      "input": [
+        [
+          {
+            "points": [
+              [
+                1,
+                2,
+                0.5,
+                2,
+                0
+              ],
+              [
+                3,
+                4,
+                0.5,
+                2,
+                10
+              ]
+            ],
+            "color": 4278190080,
+            "baseWidth": 2,
+            "isHighlighter": false,
+            "highlighterAlpha": 96,
+            "taperKind": 1,
+            "nib": 0,
+            "nibRotation": 0,
+            "objectFrame": null,
+            "layerOrder": 3
+          },
+          {
+            "points": [
+              [
+                9,
+                9,
+                0.5,
+                4,
+                0
+              ]
+            ],
+            "color": 4294901760,
+            "baseWidth": 4,
+            "isHighlighter": false,
+            "highlighterAlpha": 96,
+            "taperKind": 1,
+            "nib": 0,
+            "nibRotation": 0,
+            "objectFrame": null,
+            "layerOrder": 8
+          }
+        ]
+      ],
+      "expected": {
+        "Strokes": 2,
+        "FirstPoint": [
+          1,
+          2,
+          0.5,
+          2,
+          0
+        ],
+        "LastPoint": [
+          3,
+          4,
+          0.5,
+          2,
+          10
+        ],
+        "LayerOrder": 3,
+        "IsHighlighter": false,
+        "HighlighterAlpha": 96,
+        "TaperKind": 1,
+        "Nib": 0,
+        "NibRotation": 0,
+        "SecondLayerOrder": 8,
+        "SecondColor": 4294901760,
+        "SecondFirstPoint": [
+          9,
+          9,
+          0.5,
+          4,
+          0
+        ]
+      },
+      "tolerance": 1e-06
+    },
+    {
+      "id": "reject-empty-strokes",
+      "fn": "pdfInkRoundtripProbe",
+      "input": [
+        []
+      ],
+      "expected": {
+        "Strokes": 0
+      },
+      "tolerance": 0
+    },
+    {
+      "id": "decode-garbage-magic",
+      "fn": "pdfInkDecodeGarbageProbe",
+      "input": [
+        [
+          1,
+          2,
+          3,
+          4
+        ]
+      ],
+      "expected": "ERROR:Unsupported PDF ink metadata.",
+      "tolerance": 0
+    }
+  ]
+}

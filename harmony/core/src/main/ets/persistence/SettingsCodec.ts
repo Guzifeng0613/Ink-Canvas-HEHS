@@ -4,6 +4,7 @@
 import { createDefaultSettings } from '../settings/AppSettings';
 import type {
   AdvancedSettings,
+  ExperimentalSettings,
   AppearanceSettings,
   AppSettings,
   AutomationSettings,
@@ -19,6 +20,9 @@ const BOOL = 0;
 const INT = 1;
 const NUM = 2;
 const STR = 3;
+// 可空数值：读取接受 number/null（缺失/非法回落 null）；写出时 null 省略
+// （对应 C# JsonIgnore(WhenWritingNull)，如 highlighterWidth）。
+const NUM_NULL = 4;
 
 class FieldDef {
   key: string;
@@ -116,6 +120,7 @@ const DEF_BEHAVIOR = new SectionDef('behavior', [
 
 const DEF_CANVAS = new SectionDef('canvas', [
   new FieldDef('inkWidth', NUM),
+  new FieldDef('highlighterWidth', NUM_NULL),
   new FieldDef('inkAlpha', INT),
   new FieldDef('isCompressPicturesUploaded', BOOL),
   new FieldDef('isShowCursor', BOOL),
@@ -155,6 +160,19 @@ const DEF_RAND = new SectionDef('randSettings', [
   new FieldDef('isNotRepeatName', BOOL)
 ]);
 
+// 基线演进：experimental 组（ScreenTracking）；键名 PascalCase（C# 默认序列化名，读取大小写不敏感）。
+const DEF_EXPERIMENTAL = new SectionDef('experimental', [
+  new FieldDef('ScreenContentTracking', BOOL),
+  new FieldDef('FollowScroll', BOOL),
+  new FieldDef('FollowZoom', BOOL),
+  new FieldDef('MaskFixedRegions', BOOL),
+  new FieldDef('RememberPages', BOOL),
+  new FieldDef('PreserveUnchangedRegions', BOOL),
+  new FieldDef('Word', BOOL),
+  new FieldDef('PowerPoint', BOOL),
+  new FieldDef('Edge', BOOL)
+]);
+
 function asDict(value: Object): Record<string, Object> {
   return value as Record<string, Object>;
 }
@@ -174,6 +192,13 @@ function getField(obj: Object, key: string): Object | null {
 function coerce(value: Object, kind: number, fallback: Object): Object {
   if (kind === BOOL) {
     return typeof value === 'boolean' ? value : fallback;
+  }
+  if (kind === NUM_NULL) {
+    if (value === null) {
+      return null;
+    }
+    const nullable = Number(value);
+    return isFinite(nullable) ? nullable : fallback;
   }
   if (kind === INT || kind === NUM) {
     const n = Number(value);
@@ -202,6 +227,13 @@ function readSection(root: Object, def: SectionDef, defaults: Object): Object {
       }
     }
   }
+  // 可空字段为 null 时键不存在（对应 C# JsonIgnore(WhenWritingNull) 的序列化形态）。
+  for (let i = 0; i < def.fields.length; i++) {
+    const field = def.fields[i];
+    if (field.kind === NUM_NULL && out[field.key] === null) {
+      delete out[field.key];
+    }
+  }
   return out;
 }
 
@@ -209,7 +241,15 @@ function pickSection(section: Object, def: SectionDef): Object {
   const src = asDict(section);
   const dst: Record<string, Object> = {};
   for (let i = 0; i < def.fields.length; i++) {
-    dst[def.fields[i].key] = src[def.fields[i].key];
+    const field = def.fields[i];
+    const value = src[field.key];
+    if (field.kind === NUM_NULL) {
+      if (value !== null && value !== undefined) {
+        dst[field.key] = value;
+      }
+      continue;
+    }
+    dst[field.key] = value;
   }
   return dst;
 }
@@ -234,6 +274,7 @@ export function parseSettings(json: string): AppSettings {
   result.inkToShape = readSection(root, DEF_INK_TO_SHAPE, result.inkToShape) as InkToShapeSettings;
   result.startup = readSection(root, DEF_STARTUP, result.startup) as StartupSettings;
   result.randSettings = readSection(root, DEF_RAND, result.randSettings) as RandSettings;
+  result.experimental = readSection(root, DEF_EXPERIMENTAL, result.experimental) as ExperimentalSettings;
   return result;
 }
 
@@ -248,6 +289,7 @@ export function stringifySettings(settings: AppSettings): string {
   out['inkToShape'] = pickSection(settings.inkToShape as Object, DEF_INK_TO_SHAPE);
   out['startup'] = pickSection(settings.startup as Object, DEF_STARTUP);
   out['randSettings'] = pickSection(settings.randSettings as Object, DEF_RAND);
+  out['experimental'] = pickSection(settings.experimental as Object, DEF_EXPERIMENTAL);
   return JSON.stringify(out);
 }
 

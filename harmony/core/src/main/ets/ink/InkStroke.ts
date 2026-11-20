@@ -1,7 +1,8 @@
 // @parity src/InkCanvas.Core/Ink/InkStroke.cs
 import { InkPoint } from './InkPoint';
 import { StrokeAttributes, TaperKind } from './StrokeAttributes';
-import { applyTaperAt } from './TaperProfile';
+import { TaperProfile, createTaperProfile } from './TaperProfile';
+import { OneEuroFilter } from './OneEuroFilter';
 import { Matrix3x2, matrixFromArray } from '../math/Matrix3x2';
 
 // Rect：LTRB，与 C# 语义一致（IsEmpty 包含退化矩形）。
@@ -87,14 +88,30 @@ export class InkStroke {
   Attributes: StrokeAttributes;
   IsCompleted: boolean = false;
   IsRecognizedShape: boolean = false;
+  // 基线演进：图层序（null = 未分层，按文档序）与形状来源（可选中形状共享的公式数据）。
+  LayerOrder: number | null = null;
+  ShapeSource: ShapeSourceData | null = null;
   private points: InkPoint[] = [];
   private cachedBounds: Rect | null = null;
   private objectFrame: SelectionFrameState | null = null;
+  // 基线演进：有状态笔锋实例 + 模拟压感笔锋（SmoothPen..Calligraphy）的 OneEuroFilter。
+  private taper: TaperProfile;
+  private filter: OneEuroFilter | null = null;
+  private geometryVersion: number = 0;
 
   constructor(attributes: StrokeAttributes) {
     this.Attributes = attributes;
     this.Id = 'stroke-' + nextStrokeId;
     nextStrokeId += 1;
+    this.taper = createTaperProfile(attributes.effectiveTaper());
+    if (this.isSimulatedPressureKind(attributes.effectiveTaper())) {
+      this.filter = new OneEuroFilter();
+    }
+  }
+
+  private isSimulatedPressureKind(kind: TaperKind): boolean {
+    return kind === TaperKind.SmoothPen || kind === TaperKind.SoftPen
+      || kind === TaperKind.Natural || kind === TaperKind.Calligraphy;
   }
 
   get Points(): InkPoint[] {
@@ -105,30 +122,46 @@ export class InkStroke {
     return this.points.length;
   }
 
+  // 宽度不会再被后续采样改变的前缀点数（撤销/回放可安全复用的前缀）。
+  get StablePointCount(): number {
+    return this.IsCompleted ? this.Count : this.taper.StablePointCount(this.Count);
+  }
+
+  // 仅当点位置或宽度变化时递增；渲染缓存可据此保留未触碰的墨迹。
+  get GeometryVersion(): number {
+    return this.geometryVersion;
+  }
+
   get TaperKind(): TaperKind {
-    return this.Attributes.TaperKind;
+    return this.taper.Kind;
   }
 
   set TaperKind(value: TaperKind) {
-    if (this.Attributes.TaperKind === value) {
+    if (this.taper.Kind === value) {
       return;
     }
+    // 与 C# 一致：替换笔锋实例（重建用全新状态）；同步 Attributes 以保持存档格式一致。
     this.Attributes.TaperKind = value;
+    this.taper = createTaperProfile(value);
+    this.filter = this.isSimulatedPressureKind(value) ? new OneEuroFilter() : null;
+    // 仅对已完成笔画从头重算（如设置变更作用于历史）；书写中的笔画不走此路径。
     if (this.IsCompleted) {
       this.rebuildWidths();
     }
   }
 
   addPoint(x: number, y: number, pressure: number = 0.5, timeMs: number = 0): void {
+    if (this.filter !== null) {
+      const filtered = this.filter.update(x, y, timeMs);
+      x = filtered.X;
+      y = filtered.Y;
+    }
+    // 宽度从 0 开始，让笔锋的单调 settle 规则可以抬升。
     this.points.push(new InkPoint(x, y, pressure, 0, timeMs));
-    applyTaperAt(
-      this.points,
-      this.points.length - 1,
-      this.Attributes.BaseWidth,
-      this.Attributes.effectiveTaper()
-    );
+    this.taper.Apply(this.points, this.points.length - 1, this.Attributes.BaseWidth);
     this.cachedBounds = null;
     this.objectFrame = null;
+    this.geometryVersion++;
   }
 
   complete(): void {
@@ -140,9 +173,10 @@ export class InkStroke {
       this.points[i].Width = 0;
     }
     for (let tip = 0; tip < this.points.length; tip++) {
-      applyTaperAt(this.points, tip, this.Attributes.BaseWidth, this.Attributes.TaperKind);
+      this.taper.Apply(this.points, tip, this.Attributes.BaseWidth);
     }
     this.cachedBounds = null;
+    this.geometryVersion++;
   }
 
   restorePoints(points: InkPoint[]): void {
@@ -152,6 +186,7 @@ export class InkStroke {
     }
     this.points = copy;
     this.cachedBounds = null;
+    this.geometryVersion++;
   }
 
   exportObjectFrame(): number[] | null {
@@ -189,6 +224,7 @@ export class InkStroke {
     this.points = copy;
     this.cachedBounds = null;
     this.objectFrame = null;
+    this.geometryVersion++;
   }
 
   bounds(): Rect {
@@ -258,12 +294,25 @@ export class InkStroke {
     copy.Id = this.Id;
     copy.IsRecognizedShape = this.IsRecognizedShape;
     copy.IsCompleted = this.IsCompleted;
+    copy.LayerOrder = this.LayerOrder;
+    copy.ShapeSource = this.ShapeSource === null ? null : {
+      GroupId: this.ShapeSource.GroupId,
+      Provider: this.ShapeSource.Provider,
+      Definition: this.ShapeSource.Definition
+    };
     copy.restorePoints(this.points);
     if (this.objectFrame !== null) {
       copy.objectFrame = new SelectionFrameState(this.objectFrame.Bounds, this.objectFrame.Transform);
     }
     return copy;
   }
+}
+
+/** C# ShapeSource record：提供方所有的形状公式数据（同一可选形状的各轮廓共享 GroupId）。 */
+export interface ShapeSourceData {
+  GroupId: string;
+  Provider: string;
+  Definition: string;
 }
 
 export interface StrokePointInput {
@@ -297,4 +346,42 @@ export function setTaperAndWidths(points: StrokePointInput[], baseWidth: number,
     widths.push(stroke.Points[i].Width);
   }
   return widths;
+}
+
+// 确定性向量入口：InkStroke 全链路（OneEuroFilter 位置滤波 → 状态化笔锋 → StablePointCount）。
+export interface StrokeTaperSampleInput {
+  X: number;
+  Y: number;
+  TimeMs: number;
+}
+
+export interface StrokeTaperProbeResult {
+  widths: number[];
+  stable: number[];
+  x: number[];
+  y: number[];
+}
+
+export function strokeTaperProbe(
+  baseWidth: number,
+  samples: StrokeTaperSampleInput[],
+  kind: number
+): StrokeTaperProbeResult {
+  const attributes = new StrokeAttributes();
+  attributes.BaseWidth = baseWidth;
+  attributes.TaperKind = kind as TaperKind;
+  const stroke = new InkStroke(attributes);
+  const widths: number[] = [];
+  const stable: number[] = [];
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (let i = 0; i < samples.length; i++) {
+    stroke.addPoint(samples[i].X, samples[i].Y, 0.5, samples[i].TimeMs);
+    const last = stroke.Points[stroke.Count - 1];
+    widths.push(last.Width);
+    stable.push(stroke.StablePointCount);
+    xs.push(last.X);
+    ys.push(last.Y);
+  }
+  return { widths, stable, x: xs, y: ys };
 }

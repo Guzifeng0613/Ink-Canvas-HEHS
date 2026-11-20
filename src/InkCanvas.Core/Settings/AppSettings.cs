@@ -34,8 +34,8 @@ public sealed class CanvasSettings
     [JsonPropertyName("isCompressPicturesUploaded")] public bool IsCompressPicturesUploaded { get; set; }
     [JsonPropertyName("isShowCursor")] public bool IsShowCursor { get; set; }
 
-    /// <summary>0 = nib taper, 1 = velocity taper, 2 = uniform, 3 = natural (pressure + real-time speed). Maps to <see cref="Ink.TaperKind"/>.</summary>
-    [JsonPropertyName("inkStyle")] public int InkStyle { get; set; } = 3;
+    /// <summary>0 = nib taper, 1 = velocity taper, 2 = uniform, 3 = smooth pen, 4 = soft pen, 5 = natural (pressure + real-time speed), 6 = calligraphy. Maps to <see cref="Ink.TaperKind"/>.</summary>
+    [JsonPropertyName("inkStyle")] public int InkStyle { get; set; }
 
     [JsonPropertyName("eraserSize")] public int EraserSize { get; set; } = 2;
 

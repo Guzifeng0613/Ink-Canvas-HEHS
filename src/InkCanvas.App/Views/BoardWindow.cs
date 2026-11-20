@@ -273,7 +273,7 @@ public sealed class BoardWindow : Window
         }
         flyout.Items.Add(thin);
         var taper = new MenuFlyoutSubItem { Text = "笔锋" };
-        foreach (var style in new[] { ("点集笔锋", TaperKind.Tail), ("关闭笔锋", TaperKind.None), ("速率笔锋", TaperKind.Velocity), ("自然笔锋（测试）", TaperKind.Natural) })
+        foreach (var style in new[] { ("点集笔锋", TaperKind.Tail), ("关闭笔锋", TaperKind.None), ("速率笔锋", TaperKind.Velocity), ("平滑硬笔", TaperKind.SmoothPen), ("柔和压感", TaperKind.SoftPen), ("自然笔锋", TaperKind.Natural), ("书法笔锋", TaperKind.Calligraphy) })
         {
             var item = new MenuFlyoutItem { Text = style.Item1 };
             item.Click += (_, _) => _board.Current.CurrentAttributes.TaperKind = style.Item2;

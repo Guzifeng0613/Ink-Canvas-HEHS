@@ -43,7 +43,7 @@ public sealed class InkController : IDisposable
     {
         Color = InkColor.Black,
         BaseWidth = 2.5f,
-        TaperKind = TaperKind.Natural,
+        TaperKind = TaperKind.Tail,
     };
 
     public InkTool Tool { get; set; } = InkTool.Pen;

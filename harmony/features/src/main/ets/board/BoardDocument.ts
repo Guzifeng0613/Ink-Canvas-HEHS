@@ -5,6 +5,7 @@ import {
   InkPoint,
   InkColor,
   StrokeAttributes,
+  PenNib,
   parseBoardPack,
   stringifyBoardPack,
   parseIcink,
@@ -34,6 +35,11 @@ export interface BoardAsset {
   Top: number;
   Width: number;
   Height: number;
+  LayerOrder: number | null;
+  Opacity?: number;
+  PosterData?: string;
+  NaturalWidth?: number;
+  NaturalHeight?: number;
   Transform: number[] | null;
 }
 
@@ -55,6 +61,11 @@ function assetSummary(asset: BoardAsset): BoardAssetSummary {
     Top: asset.Top,
     Width: asset.Width,
     Height: asset.Height,
+    LayerOrder: asset.LayerOrder,
+    Opacity: asset.Opacity,
+    PosterData: asset.PosterData,
+    NaturalWidth: asset.NaturalWidth,
+    NaturalHeight: asset.NaturalHeight,
     Transform: asset.Transform
   };
 }
@@ -69,6 +80,11 @@ function assetFromSummary(summary: BoardAssetSummary): BoardAsset {
     Top: summary.Top,
     Width: summary.Width,
     Height: summary.Height,
+    LayerOrder: summary.LayerOrder,
+    Opacity: summary.Opacity,
+    PosterData: summary.PosterData,
+    NaturalWidth: summary.NaturalWidth,
+    NaturalHeight: summary.NaturalHeight,
     Transform: summary.Transform
   };
 }
@@ -85,6 +101,14 @@ function strokeSummary(stroke: InkStroke): BoardStrokeSummary {
     Highlighter: stroke.Attributes.IsHighlighter,
     HighlighterAlpha: stroke.Attributes.HighlighterAlpha,
     Taper: stroke.Attributes.TaperKind,
+    Nib: stroke.Attributes.Nib,
+    NibRotation: stroke.Attributes.NibRotation,
+    LayerOrder: stroke.LayerOrder,
+    ShapeSource: stroke.ShapeSource === null ? null : {
+      GroupId: stroke.ShapeSource.GroupId,
+      Provider: stroke.ShapeSource.Provider,
+      Definition: stroke.ShapeSource.Definition
+    },
     Shape: stroke.IsRecognizedShape,
     ObjectFrame: stroke.exportObjectFrame(),
     Points: points
@@ -98,8 +122,16 @@ function strokeFromSummary(summary: BoardStrokeSummary): InkStroke {
   attributes.IsHighlighter = summary.Highlighter;
   attributes.HighlighterAlpha = summary.HighlighterAlpha;
   attributes.TaperKind = summary.Taper;
+  attributes.Nib = summary.Nib === 1 ? PenNib.Ellipse45 : PenNib.Round;
+  attributes.NibRotation = summary.NibRotation;
   const stroke = new InkStroke(attributes);
   stroke.IsRecognizedShape = summary.Shape;
+  stroke.LayerOrder = summary.LayerOrder;
+  stroke.ShapeSource = summary.ShapeSource === null ? null : {
+    GroupId: summary.ShapeSource.GroupId,
+    Provider: summary.ShapeSource.Provider,
+    Definition: summary.ShapeSource.Definition
+  };
   const points: InkPoint[] = [];
   for (let i = 0; i < summary.Points.length; i++) {
     const row = summary.Points[i];
@@ -150,6 +182,129 @@ export class BoardDocument {
 
   navigate(delta: number): void {
     this.CurrentIndex = Math.min(Math.max(this.CurrentIndex + delta, 0), this.Pages.length - 1);
+  }
+
+  // D6（C# InsertPagesAfterCurrent）：当前页后批量插入独立页（各自墨迹+图片，无媒体），
+  // 导航到第一插入页；不记撤销（导入语义）。页数超上限/重复引用拒绝。
+  insertPagesAfterCurrent(pages: { Strokes: InkStroke[]; Images: BoardAsset[] }[]): boolean {
+    if (pages.length === 0 || this.Pages.length + pages.length > BoardDocument.MAX_PAGES) {
+      return false;
+    }
+    const insertion = this.CurrentIndex + 1;
+    for (let i = 0; i < pages.length; i++) {
+      const page = new BoardPage();
+      page.Document.addRange(pages[i].Strokes);
+      for (let j = 0; j < pages[i].Images.length; j++) {
+        page.Images.push(pages[i].Images[j]);
+      }
+      this.Pages.splice(insertion + i, 0, page);
+    }
+    this.CurrentIndex = insertion;
+    return true;
+  }
+
+  // 原子清空当前页（C# ClearCurrentPage）：墨迹+图片+视频一并清空，一个页内撤销单元整体恢复。
+  // 注：单控制器架构下墨迹撤销栈在翻页时清空（BindDocument），此页内单元走 BoardPage.History。
+  clearCurrentPage(): boolean {
+    const page = this.Current;
+    const strokes = page.Document.Strokes.slice();
+    const images = page.Images.slice();
+    const media = page.Media.slice();
+    if (strokes.length + images.length + media.length === 0) {
+      return false;
+    }
+    const apply = (): void => {
+      page.Document.clear();
+      page.Images.length = 0;
+      page.Media.length = 0;
+    };
+    const revert = (): void => {
+      page.Document.addRange(strokes);
+      page.Images.length = 0;
+      for (let i = 0; i < images.length; i++) {
+        page.Images.push(images[i]);
+      }
+      page.Media.length = 0;
+      for (let i = 0; i < media.length; i++) {
+        page.Media.push(media[i]);
+      }
+    };
+    apply();
+    page.History.push({ name: 'clear board page', redo: apply, undo: revert });
+    return true;
+  }
+
+  // 衍至新页（C# CloneSelectionToNewPage）：选中墨迹/图片/视频克隆到新页（共享字节、新 Id），
+  // 单撤销单元记在新页 History；翻页携带绘制状态由单控制器天然成立（属性跨页保持）。
+  cloneSelectionToNewPage(strokes: InkStroke[], imageIds: string[], mediaIds: string[], idPrefix: string): boolean {
+    if (this.Pages.length >= BoardDocument.MAX_PAGES) {
+      return false;
+    }
+    if (strokes.length + imageIds.length + mediaIds.length === 0) {
+      return false;
+    }
+    const clones: InkStroke[] = [];
+    for (let i = 0; i < strokes.length; i++) {
+      clones.push(strokes[i].clone());
+    }
+    const source = this.Current;
+    const images: BoardAsset[] = [];
+    for (let i = 0; i < imageIds.length; i++) {
+      for (let j = 0; j < source.Images.length; j++) {
+        if (source.Images[j].Id === imageIds[i]) {
+          images.push(this.cloneAsset(source.Images[j], idPrefix + '-img-' + i));
+          break;
+        }
+      }
+    }
+    const media: BoardAsset[] = [];
+    for (let i = 0; i < mediaIds.length; i++) {
+      for (let j = 0; j < source.Media.length; j++) {
+        if (source.Media[j].Id === mediaIds[i]) {
+          media.push(this.cloneAsset(source.Media[j], idPrefix + '-media-' + i));
+          break;
+        }
+      }
+    }
+    if (clones.length + images.length + media.length === 0) {
+      return false;
+    }
+    if (!this.addPage()) {
+      return false;
+    }
+    const page = this.Current;
+    const apply = (): void => {
+      page.Document.addRange(clones);
+      for (let i = 0; i < images.length; i++) {
+        page.Images.push(images[i]);
+      }
+      for (let i = 0; i < media.length; i++) {
+        page.Media.push(media[i]);
+      }
+    };
+    const revert = (): void => {
+      page.Document.removeAll(clones);
+      page.Images = page.Images.filter((asset: BoardAsset): boolean => images.indexOf(asset) < 0);
+      page.Media = page.Media.filter((asset: BoardAsset): boolean => media.indexOf(asset) < 0);
+    };
+    apply();
+    page.History.push({ name: 'clone selection to page', redo: apply, undo: revert });
+    return true;
+  }
+
+  private cloneAsset(asset: BoardAsset, newId: string): BoardAsset {
+    return {
+      Id: newId,
+      Name: asset.Name,
+      Data: asset.Data,
+      ContentType: asset.ContentType,
+      Left: asset.Left,
+      Top: asset.Top,
+      Width: asset.Width,
+      Height: asset.Height,
+      LayerOrder: asset.LayerOrder,
+      Transform: asset.Transform === null ? null : asset.Transform.slice()
+    };
   }
 
   toPack(indices: number[]): BoardPackSummary {
@@ -255,6 +410,25 @@ export class BoardDocument {
   }
 }
 
+export function cloneBoardAsset(asset: BoardAsset, newId: string): BoardAsset {
+  return {
+    Id: newId,
+    Name: asset.Name,
+    Data: asset.Data,
+    ContentType: asset.ContentType,
+    Left: asset.Left,
+    Top: asset.Top,
+    Width: asset.Width,
+    Height: asset.Height,
+    LayerOrder: asset.LayerOrder,
+    Opacity: asset.Opacity,
+    PosterData: asset.PosterData,
+    NaturalWidth: asset.NaturalWidth,
+    NaturalHeight: asset.NaturalHeight,
+    Transform: asset.Transform === null ? null : asset.Transform.slice()
+  };
+}
+
 export interface BoardDocumentSummary {
   Pages: number;
   Current: number;
@@ -314,4 +488,70 @@ export function boardDocumentSummary(board: BoardDocument): BoardDocumentSummary
     CurrentImages: board.Current.Images.length,
     CurrentMedia: board.Current.Media.length
   };
+}
+
+export interface BoardPageCounts {
+  pages: number;
+  current: number;
+  strokes: number;
+  images: number;
+  media: number;
+}
+
+// 确定性向量入口：loadJson 后按序执行 ops，返回每步结果。
+// op：'counts' 当前页计数；'clear' 原子清空；'undo'/'redo' 当前页 History；
+// 'clone:<笔画索引表>|<图片Id表>|<视频Id表>' 衍至新页（Id 前缀 'v'）。
+export function boardPageOpsProbe(text: string, ops: string[]): Object[] {
+  const board = new BoardDocument();
+  board.loadJson(text);
+  const results: Object[] = [];
+  for (let i = 0; i < ops.length; i++) {
+    const op = ops[i];
+    if (op === 'counts') {
+      results.push({
+        pages: board.Pages.length,
+        current: board.CurrentIndex,
+        strokes: board.Current.Document.Count,
+        images: board.Current.Images.length,
+        media: board.Current.Media.length
+      } as BoardPageCounts);
+    } else if (op === 'clear') {
+      results.push(board.clearCurrentPage());
+    } else if (op === 'undo') {
+      results.push(board.Current.History.undo());
+    } else if (op === 'redo') {
+      results.push(board.Current.History.redo());
+    } else if (op.startsWith('insertpages:')) {
+      const count = Number(op.substring('insertpages:'.length));
+      const pages: { Strokes: InkStroke[]; Images: BoardAsset[] }[] = [];
+      for (let j = 0; j < count; j++) {
+        const stroke = new InkStroke(new StrokeAttributes());
+        stroke.restorePoints([new InkPoint(50 + j, 60, 0.5, 2.5, 0)]);
+        stroke.complete();
+        pages.push({ Strokes: [stroke], Images: [] });
+      }
+      results.push(board.insertPagesAfterCurrent(pages));
+    } else if (op.startsWith('clone:')) {
+      const parts = op.substring(6).split('|');
+      const indexText = parts.length > 0 ? parts[0] : '';
+      const imageText = parts.length > 1 ? parts[1] : '';
+      const mediaText = parts.length > 2 ? parts[2] : '';
+      const indexes: number[] = [];
+      const indexParts = indexText.length > 0 ? indexText.split(',') : [];
+      for (let j = 0; j < indexParts.length; j++) {
+        indexes.push(Number(indexParts[j]));
+      }
+      const strokes: InkStroke[] = [];
+      for (let j = 0; j < indexes.length; j++) {
+        const stroke = board.Current.Document.Strokes[indexes[j]];
+        if (stroke !== undefined) {
+          strokes.push(stroke);
+        }
+      }
+      const imageIds = imageText.length > 0 ? imageText.split(',') : [];
+      const mediaIds = mediaText.length > 0 ? mediaText.split(',') : [];
+      results.push(board.cloneSelectionToNewPage(strokes, imageIds, mediaIds, 'v'));
+    }
+  }
+  return results;
 }

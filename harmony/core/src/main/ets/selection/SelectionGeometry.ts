@@ -196,3 +196,39 @@ export function selectionDragMatrix(
 export function rotateHandlePosition(bounds: BoundsInput): Point2 {
   return rotateHandlePositionRect(toRect(bounds));
 }
+
+// @parity src/InkCanvas.Core/Selection/SelectionFrame.cs（VisibleResizeHandles）
+// G14：短/薄对象省略重叠的边中点柄（保持主体可拖）。宽/高为框经 Transform*view 的
+// 线性变换后的实际尺寸。规则：Top/Bottom 在 width<48 或 height<24 时省略；
+// Left/Right 在 height<48 或 width<24 时省略；角柄与旋转柄始终显示。
+export function visibleResizeHandles(
+  width: number,
+  height: number
+): number[] {
+  const result: number[] = [];
+  result.push(SelectionHandle.TopLeft);
+  result.push(SelectionHandle.TopRight);
+  result.push(SelectionHandle.BottomRight);
+  result.push(SelectionHandle.BottomLeft);
+  result.push(SelectionHandle.Rotate);
+  if (!(width < 48 || height < 24)) {
+    result.push(SelectionHandle.Top);
+    result.push(SelectionHandle.Bottom);
+  }
+  if (!(height < 48 || width < 24)) {
+    result.push(SelectionHandle.Left);
+    result.push(SelectionHandle.Right);
+  }
+  return result;
+}
+
+// 确定性向量入口：框尺寸 + 变换 → 可见柄集合（变换后的法向长度）。
+export function visibleHandlesForFrame(
+  boundsWidth: number,
+  boundsHeight: number,
+  m11: number, m12: number, m21: number, m22: number
+): number[] {
+  const width = Math.sqrt(m11 * boundsWidth * (m11 * boundsWidth) + m12 * boundsWidth * (m12 * boundsWidth));
+  const height = Math.sqrt(m21 * boundsHeight * (m21 * boundsHeight) + m22 * boundsHeight * (m22 * boundsHeight));
+  return visibleResizeHandles(width, height).sort((a: number, b: number): number => a - b);
+}

@@ -3,7 +3,8 @@
 import { InkColor } from '../ink/InkColor';
 import { InkPoint } from '../ink/InkPoint';
 import { InkStroke } from '../ink/InkStroke';
-import { StrokeAttributes, TaperKind } from '../ink/StrokeAttributes';
+import { StrokeAttributes, TaperKind, PenNib } from '../ink/StrokeAttributes';
+import type { ShapeSourceData } from '../ink/InkStroke';
 
 export interface IcinkPointRow {
   X: number;
@@ -19,6 +20,11 @@ export interface IcinkStrokeSummary {
   Highlighter: boolean;
   HighlighterAlpha: number;
   Taper: number;
+  Nib: number;
+  NibRotation: number;
+  // 基线演进：图层序（null 也写出）与形状来源公式（对象或 null）。
+  LayerOrder: number | null;
+  ShapeSource: ShapeSourceData | null;
   Shape: boolean;
   ObjectFrame: number[] | null;
   Points: number[][];
@@ -59,8 +65,27 @@ export function parseIcink(text: string): InkStroke[] {
     attributes.IsHighlighter = bool(dict['Highlighter'], false);
     attributes.HighlighterAlpha = num(dict['HighlighterAlpha'], 96);
     attributes.TaperKind = num(dict['Taper'], 0) as TaperKind;
+    // Nib 缺省 Round(0)、NibRotation 缺省 0（与 C# StrokeFile 默认一致；越界回落）。
+    const nibValue = num(dict['Nib'], 0);
+    attributes.Nib = (nibValue === 1 ? 1 : 0) as PenNib;
+    const nibRotationValue = num(dict['NibRotation'], 0);
+    attributes.NibRotation = isFinite(nibRotationValue) ? nibRotationValue : 0;
     const stroke = new InkStroke(attributes);
     stroke.IsRecognizedShape = bool(dict['Shape'], false);
+    // LayerOrder：number 或 null（缺失/null 均为 null——未分层）。
+    const layerValue = dict['LayerOrder'];
+    stroke.LayerOrder = typeof layerValue === 'number' && isFinite(layerValue) ? layerValue : null;
+    // ShapeSource：{GroupId, Provider, Definition} 对象或 null。
+    const sourceValue = dict['ShapeSource'];
+    if (sourceValue !== null && typeof sourceValue === 'object' && !Array.isArray(sourceValue)) {
+      const sourceDict = asDict(sourceValue);
+      const groupId = sourceDict['GroupId'];
+      const provider = sourceDict['Provider'];
+      const definition = sourceDict['Definition'];
+      if (typeof groupId === 'string' && typeof provider === 'string' && typeof definition === 'string') {
+        stroke.ShapeSource = { GroupId: groupId, Provider: provider, Definition: definition };
+      }
+    }
     const points: InkPoint[] = [];
     const rawPoints = dict['Points'];
     if (Array.isArray(rawPoints)) {
@@ -105,6 +130,14 @@ function summaryOf(stroke: InkStroke): IcinkStrokeSummary {
     Highlighter: stroke.Attributes.IsHighlighter,
     HighlighterAlpha: stroke.Attributes.HighlighterAlpha,
     Taper: stroke.Attributes.TaperKind,
+    Nib: stroke.Attributes.Nib,
+    NibRotation: stroke.Attributes.NibRotation,
+    LayerOrder: stroke.LayerOrder,
+    ShapeSource: stroke.ShapeSource === null ? null : {
+      GroupId: stroke.ShapeSource.GroupId,
+      Provider: stroke.ShapeSource.Provider,
+      Definition: stroke.ShapeSource.Definition
+    },
     Shape: stroke.IsRecognizedShape,
     ObjectFrame: stroke.exportObjectFrame(),
     Points: points
