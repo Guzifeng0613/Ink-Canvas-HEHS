@@ -35,6 +35,11 @@ export interface BoardAsset {
   Top: number;
   Width: number;
   Height: number;
+  LayerOrder: number | null;
+  Opacity?: number;
+  PosterData?: string;
+  NaturalWidth?: number;
+  NaturalHeight?: number;
   Transform: number[] | null;
 }
 
@@ -56,6 +61,11 @@ function assetSummary(asset: BoardAsset): BoardAssetSummary {
     Top: asset.Top,
     Width: asset.Width,
     Height: asset.Height,
+    LayerOrder: asset.LayerOrder,
+    Opacity: asset.Opacity,
+    PosterData: asset.PosterData,
+    NaturalWidth: asset.NaturalWidth,
+    NaturalHeight: asset.NaturalHeight,
     Transform: asset.Transform
   };
 }
@@ -70,6 +80,11 @@ function assetFromSummary(summary: BoardAssetSummary): BoardAsset {
     Top: summary.Top,
     Width: summary.Width,
     Height: summary.Height,
+    LayerOrder: summary.LayerOrder,
+    Opacity: summary.Opacity,
+    PosterData: summary.PosterData,
+    NaturalWidth: summary.NaturalWidth,
+    NaturalHeight: summary.NaturalHeight,
     Transform: summary.Transform
   };
 }
@@ -88,6 +103,12 @@ function strokeSummary(stroke: InkStroke): BoardStrokeSummary {
     Taper: stroke.Attributes.TaperKind,
     Nib: stroke.Attributes.Nib,
     NibRotation: stroke.Attributes.NibRotation,
+    LayerOrder: stroke.LayerOrder,
+    ShapeSource: stroke.ShapeSource === null ? null : {
+      GroupId: stroke.ShapeSource.GroupId,
+      Provider: stroke.ShapeSource.Provider,
+      Definition: stroke.ShapeSource.Definition
+    },
     Shape: stroke.IsRecognizedShape,
     ObjectFrame: stroke.exportObjectFrame(),
     Points: points
@@ -105,6 +126,12 @@ function strokeFromSummary(summary: BoardStrokeSummary): InkStroke {
   attributes.NibRotation = summary.NibRotation;
   const stroke = new InkStroke(attributes);
   stroke.IsRecognizedShape = summary.Shape;
+  stroke.LayerOrder = summary.LayerOrder;
+  stroke.ShapeSource = summary.ShapeSource === null ? null : {
+    GroupId: summary.ShapeSource.GroupId,
+    Provider: summary.ShapeSource.Provider,
+    Definition: summary.ShapeSource.Definition
+  };
   const points: InkPoint[] = [];
   for (let i = 0; i < summary.Points.length; i++) {
     const row = summary.Points[i];
@@ -155,6 +182,25 @@ export class BoardDocument {
 
   navigate(delta: number): void {
     this.CurrentIndex = Math.min(Math.max(this.CurrentIndex + delta, 0), this.Pages.length - 1);
+  }
+
+  // D6（C# InsertPagesAfterCurrent）：当前页后批量插入独立页（各自墨迹+图片，无媒体），
+  // 导航到第一插入页；不记撤销（导入语义）。页数超上限/重复引用拒绝。
+  insertPagesAfterCurrent(pages: { Strokes: InkStroke[]; Images: BoardAsset[] }[]): boolean {
+    if (pages.length === 0 || this.Pages.length + pages.length > BoardDocument.MAX_PAGES) {
+      return false;
+    }
+    const insertion = this.CurrentIndex + 1;
+    for (let i = 0; i < pages.length; i++) {
+      const page = new BoardPage();
+      page.Document.addRange(pages[i].Strokes);
+      for (let j = 0; j < pages[i].Images.length; j++) {
+        page.Images.push(pages[i].Images[j]);
+      }
+      this.Pages.splice(insertion + i, 0, page);
+    }
+    this.CurrentIndex = insertion;
+    return true;
   }
 
   // 原子清空当前页（C# ClearCurrentPage）：墨迹+图片+视频一并清空，一个页内撤销单元整体恢复。
@@ -256,6 +302,7 @@ export class BoardDocument {
       Top: asset.Top,
       Width: asset.Width,
       Height: asset.Height,
+      LayerOrder: asset.LayerOrder,
       Transform: asset.Transform === null ? null : asset.Transform.slice()
     };
   }
@@ -363,6 +410,25 @@ export class BoardDocument {
   }
 }
 
+export function cloneBoardAsset(asset: BoardAsset, newId: string): BoardAsset {
+  return {
+    Id: newId,
+    Name: asset.Name,
+    Data: asset.Data,
+    ContentType: asset.ContentType,
+    Left: asset.Left,
+    Top: asset.Top,
+    Width: asset.Width,
+    Height: asset.Height,
+    LayerOrder: asset.LayerOrder,
+    Opacity: asset.Opacity,
+    PosterData: asset.PosterData,
+    NaturalWidth: asset.NaturalWidth,
+    NaturalHeight: asset.NaturalHeight,
+    Transform: asset.Transform === null ? null : asset.Transform.slice()
+  };
+}
+
 export interface BoardDocumentSummary {
   Pages: number;
   Current: number;
@@ -455,6 +521,16 @@ export function boardPageOpsProbe(text: string, ops: string[]): Object[] {
       results.push(board.Current.History.undo());
     } else if (op === 'redo') {
       results.push(board.Current.History.redo());
+    } else if (op.startsWith('insertpages:')) {
+      const count = Number(op.substring('insertpages:'.length));
+      const pages: { Strokes: InkStroke[]; Images: BoardAsset[] }[] = [];
+      for (let j = 0; j < count; j++) {
+        const stroke = new InkStroke(new StrokeAttributes());
+        stroke.restorePoints([new InkPoint(50 + j, 60, 0.5, 2.5, 0)]);
+        stroke.complete();
+        pages.push({ Strokes: [stroke], Images: [] });
+      }
+      results.push(board.insertPagesAfterCurrent(pages));
     } else if (op.startsWith('clone:')) {
       const parts = op.substring(6).split('|');
       const indexText = parts.length > 0 ? parts[0] : '';

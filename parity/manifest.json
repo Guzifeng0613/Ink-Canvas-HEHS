@@ -26,7 +26,7 @@
       "tests": [
         "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
       ],
-      "notes": "面积擦/线条擦 + G1 套索擦（LassoGeometry even/odd 命中 + 4096 抽稀 + 恢复保序，向量互认）+ 橡皮悬停预览由画笔光标环承担；浮条套索按钮。"
+      "notes": "面积擦/线条擦 + 套索擦（LassoGeometry + 4096 抽稀 + 元素命中/离场，向量互认）+ 橡皮预览：触摸期间指示环常显（isShowCursor 或橡皮工具），ArkTS 无 hover（真机笔悬浮待核）。"
     },
     {
       "id": "ink-palm-rejection",
@@ -73,11 +73,13 @@
       "status": "ported",
       "csharp": [
         "src/InkCanvas.Core/Replay/ReplayClock.cs",
-        "src/InkCanvas.Core/Replay/InkReplaySession.cs"
+        "src/InkCanvas.Core/Replay/InkReplaySession.cs",
+        "src/InkCanvas.Ink/InkPlayback.cs"
       ],
       "arkts": [
         "harmony/core/src/main/ets/replay/ReplayClock.ts",
-        "harmony/core/src/main/ets/replay/InkReplaySession.ts"
+        "harmony/core/src/main/ets/replay/InkReplaySession.ts",
+        "harmony/ink/src/main/ets/InkPlayback.ts"
       ],
       "vectors": [
         "parity/vectors/replay-clock.json",
@@ -86,7 +88,7 @@
       "tests": [
         "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
       ],
-      "notes": "回放时钟与会话（Phase A）；Phase A 完成（黄金向量）"
+      "notes": "回放时钟/会话 + G9 画布内回放融合（InkPlayback display-only：控制器 Begin/Seek/EndPlayback，期间拒输入、切工具/换文档自动结束；源笔画与历史不动；playback 2 向量）。"
     },
     {
       "id": "ink-selection",
@@ -94,11 +96,13 @@
       "phase": "A",
       "status": "ported",
       "csharp": [
-        "src/InkCanvas.Core/Selection/SelectionGeometry.cs"
+        "src/InkCanvas.Core/Selection/SelectionGeometry.cs",
+        "src/InkCanvas.Features/Board/BoardSelectionElement.cs"
       ],
       "arkts": [
         "harmony/core/src/main/ets/selection/SelectionGeometry.ts",
-        "harmony/core/src/main/ets/math/Matrix3x2.ts"
+        "harmony/core/src/main/ets/math/Matrix3x2.ts",
+        "harmony/features/src/main/ets/board/BoardSelectionElement.ts"
       ],
       "vectors": [
         "parity/vectors/selection.json",
@@ -107,7 +111,7 @@
       "tests": [
         "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
       ],
-      "notes": "选区命中、缩放、旋转、平移（Phase A）；Phase A 完成（黄金向量）"
+      "notes": "命中/缩放/旋转/平移 + G2 元素选区桥（ISelectionElement 注入：图片/视频参与框选/点击/删除/克隆/双指/套索，SetPresent z 序恢复，board-selection-element 6 向量）+ G3 命令（Recolor/ScaleWidth/RestoreWidth/TransformSelectionUndoable）+ 选区工具条（placeToolbar 放置，克隆/9 色/粗细/删除/取消）。 G14：visibleResizeHandles（短/薄对象省略边柄，selection-handles 5 向量；渲染/命中接线为待办）。"
     },
     {
       "id": "ink-shape-generator",
@@ -198,15 +202,17 @@
     },
     {
       "id": "ink-taper-causal",
-      "name": "因果增量笔锋（None/Tail/Velocity）",
+      "name": "因果增量笔锋（None/Tail/Velocity/模拟压感×4）",
       "phase": "A",
       "status": "ported",
       "csharp": [
         "src/InkCanvas.Core/Ink/TaperProfile.cs",
-        "src/InkCanvas.Core/Ink/InkStroke.cs"
+        "src/InkCanvas.Core/Ink/InkStroke.cs",
+        "src/InkCanvas.Ink/InkDotAnimation.cs"
       ],
       "arkts": [
-        "harmony/core/src/main/ets/ink/TaperProfile.ts"
+        "harmony/core/src/main/ets/ink/TaperProfile.ts",
+        "harmony/ink/src/main/ets/InkDotAnimation.ts"
       ],
       "vectors": [
         "parity/vectors/taper-tail.json",
@@ -215,7 +221,7 @@
       "tests": [
         "tests/InkCanvas.Core.Tests/VectorParityTests.cs"
       ],
-      "notes": "因果增量笔锋（None/Tail/Velocity）（Phase A）；Phase A 完成（黄金向量）"
+      "notes": "TaperKind 0..6 + SimulatedPressureTaper/OneEuroFilter/StablePointCount（向量互认）+ G6 落点：ConfirmTap 屏幕容差收拢 + InkDotAnimation 120ms 成形动画（dot-animation 3 向量；entry 覆盖层驱动 16ms 帧步进）。"
     },
     {
       "id": "ink-touch-classifier",
@@ -333,7 +339,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "无三方悬浮窗权限；改为应用内触摸路由（ns→ms、压感/接触面积归一化）。"
+      "notes": "跨应用悬浮批注已按用户决策禁用（2026-11-19，平台限制，不再迁移）：应用内双层 Canvas 承担批注；PiP 倒计时悬浮窗（免权限）保留。"
     },
     {
       "id": "ink-overlay-render",
@@ -403,7 +409,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "无 COM/无公开放映 intent；课件批注主路径 PDF Kit 逐页渲染+自绘墨迹；原始 PPT 经「PPT（WPS）」工具以文件打开 Want 拉起 WPS 鸿蒙版（手机 cn.wps.mobileoffice.hap / Pad cn.wps.office.hap，UTD+FLAG_AUTH_READ 授权，16000019 回退引导安装）。放映控制待 WPS 官方开放；WPS 响应需真机核对。"
+      "notes": "PPT 放映控制（COM 联动）已按用户决策禁用（2026-11-19，平台限制，不再迁移）：课件批注主路径 PDF（逐页渲染+自绘墨迹+批注写回）；原始 PPT 经「PPT（WPS）」拉起 WPS 鸿蒙版查看。"
     },
     {
       "id": "system-autostart",
@@ -422,7 +428,7 @@
       "id": "system-edge-gesture",
       "name": "Windows 边缘手势抑制",
       "phase": "C",
-      "status": "adapted",
+      "status": "not-ported",
       "csharp": [
         "src/InkCanvas.Platform/System/EdgeGestureService.cs",
         "src/InkCanvas.App/App.xaml.cs"
@@ -432,7 +438,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "无边缘手势抑制 API；沉浸式全屏，系统手势由系统管理。"
+      "notes": "已按用户决策禁用（2026-11-19，平台限制，不再迁移）：边缘手势抑制（无 API）；沉浸式全屏下系统手势由系统管理。"
     },
     {
       "id": "system-filelog",
@@ -453,7 +459,7 @@
       "id": "system-foreground-autofold",
       "name": "前台进程识别与自动收纳",
       "phase": "C",
-      "status": "adapted",
+      "status": "not-ported",
       "csharp": [
         "src/InkCanvas.Platform/System/SystemServices.cs",
         "src/InkCanvas.App/Services/ShellController.cs"
@@ -463,7 +469,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "无法读取前台应用；移除自动收纳，保留手动折叠。"
+      "notes": "已按用户决策禁用（2026-11-19，平台限制，不再迁移）：自动收纳（前台识别不可用）；手动收纳保留（Alt+V/浮条隐藏）。"
     },
     {
       "id": "system-update",
@@ -483,7 +489,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "ReleaseFeed/UpdatePolicy 逻辑移植；自更新→市场更新：updateManager.checkAppUpdate+showUpdateDialog（@kit.AppGalleryKit，API12+）+ AppGallery 详情页（appdetail store://）。无静默自安装；需已上架/真机/前台/中国境内，模拟器不支持。"
+      "notes": "内置升级/静默安装已按用户决策禁用（2026-11-19，平台限制，不再迁移）：市场更新为唯一路径（checkAppUpdate/showUpdateDialog + AppGallery 详情页）。"
     },
     {
       "id": "tool-launchers",
@@ -529,7 +535,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "无全局热键；应用内 onKeyEvent（Alt/Ctrl 组合），需焦点。"
+      "notes": "全局热键（系统级）已按用户决策禁用（2026-11-19，平台限制，不再迁移）：应用内 onKeyEvent（Alt/Ctrl 组合，需焦点）保留。"
     },
     {
       "id": "ui-mouse-mode",
@@ -666,7 +672,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "回放窗口（Phase D）"
+      "notes": "回放控制条 + G9 融合：进度/速度驱动 controller.SeekPlayback，画布只画 Playback 可见前缀。"
     },
     {
       "id": "ui-floating-bar",
@@ -839,7 +845,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "插入/渲染/缓存/释放/matrix4 精确变换/拖拽（页内撤销）/1080P 压缩/笔尖 Nib+NibRotation 存档持久化（.icink 与画板包双向，向量互认）已接。"
+      "notes": "插入（G11 记页内撤销单元）/渲染/缓存/释放/matrix4/拖拽（单撤销）/1080P 压缩/Nib 持久化；元素选区桥参与删除/克隆/套索（G2）。"
     },
     {
       "id": "board-persistence",
@@ -970,7 +976,7 @@
       ],
       "vectors": [],
       "tests": [],
-      "notes": "课件模式接线（进入/退出/翻页/墨迹分页）；放映轮询不适用。"
+      "notes": "课件模式接线（进入/退出/翻页/墨迹分页）+ RecommendedPollInterval 节奏纯函数（放映 200ms/空闲 1000ms，G17，向量互认；PDF 本地渲染无轮询宿主）。"
     },
     {
       "id": "system-app-services",
@@ -1009,8 +1015,8 @@
   "coverage": {
     "total": 56,
     "ported": 32,
-    "adapted": 23,
-    "not-ported": 1,
-    "percent": 98.21
+    "adapted": 21,
+    "not-ported": 3,
+    "percent": 94.64
   }
 }

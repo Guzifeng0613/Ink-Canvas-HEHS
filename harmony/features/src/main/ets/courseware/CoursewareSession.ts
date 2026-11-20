@@ -41,6 +41,16 @@ export class CoursewareSession {
     return doc;
   }
 
+  /** 指定页的墨迹文档（懒建；D8 批注写回按页枚举用）。 */
+  pageDocument(index: number): InkDocument {
+    let doc = this.pages.get(index);
+    if (doc === undefined) {
+      doc = new InkDocument();
+      this.pages.set(index, doc);
+    }
+    return doc;
+  }
+
   next(): boolean {
     if (this.CurrentIndex + 1 >= this.PageCount) {
       return false;
@@ -154,4 +164,11 @@ export function coursewareManifestSummary(pageCount: number, current: number, in
   }
   session.goto(current);
   return session.manifest();
+}
+
+// @parity src/InkCanvas.Features/Ppt/PptInkSession.cs（RecommendedPollInterval）
+// C#：无事件订阅时宿主按此节奏轮询——放映中 200ms（低延迟墨迹切换）、空闲 1000ms。
+// HarmonyOS 课件为 PDF 本地渲染、无 COM 附着；保留纯函数供宿主计时器对齐节奏语义（G17）。
+export function recommendedPollIntervalMs(slideShowRunning: boolean): number {
+  return slideShowRunning ? 200 : 1000;
 }

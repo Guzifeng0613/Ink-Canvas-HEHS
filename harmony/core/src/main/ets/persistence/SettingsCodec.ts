@@ -4,6 +4,7 @@
 import { createDefaultSettings } from '../settings/AppSettings';
 import type {
   AdvancedSettings,
+  ExperimentalSettings,
   AppearanceSettings,
   AppSettings,
   AutomationSettings,
@@ -159,6 +160,19 @@ const DEF_RAND = new SectionDef('randSettings', [
   new FieldDef('isNotRepeatName', BOOL)
 ]);
 
+// 基线演进：experimental 组（ScreenTracking）；键名 PascalCase（C# 默认序列化名，读取大小写不敏感）。
+const DEF_EXPERIMENTAL = new SectionDef('experimental', [
+  new FieldDef('ScreenContentTracking', BOOL),
+  new FieldDef('FollowScroll', BOOL),
+  new FieldDef('FollowZoom', BOOL),
+  new FieldDef('MaskFixedRegions', BOOL),
+  new FieldDef('RememberPages', BOOL),
+  new FieldDef('PreserveUnchangedRegions', BOOL),
+  new FieldDef('Word', BOOL),
+  new FieldDef('PowerPoint', BOOL),
+  new FieldDef('Edge', BOOL)
+]);
+
 function asDict(value: Object): Record<string, Object> {
   return value as Record<string, Object>;
 }
@@ -260,6 +274,7 @@ export function parseSettings(json: string): AppSettings {
   result.inkToShape = readSection(root, DEF_INK_TO_SHAPE, result.inkToShape) as InkToShapeSettings;
   result.startup = readSection(root, DEF_STARTUP, result.startup) as StartupSettings;
   result.randSettings = readSection(root, DEF_RAND, result.randSettings) as RandSettings;
+  result.experimental = readSection(root, DEF_EXPERIMENTAL, result.experimental) as ExperimentalSettings;
   return result;
 }
 
@@ -274,6 +289,7 @@ export function stringifySettings(settings: AppSettings): string {
   out['inkToShape'] = pickSection(settings.inkToShape as Object, DEF_INK_TO_SHAPE);
   out['startup'] = pickSection(settings.startup as Object, DEF_STARTUP);
   out['randSettings'] = pickSection(settings.randSettings as Object, DEF_RAND);
+  out['experimental'] = pickSection(settings.experimental as Object, DEF_EXPERIMENTAL);
   return JSON.stringify(out);
 }
 

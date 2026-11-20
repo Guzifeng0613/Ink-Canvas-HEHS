@@ -119,12 +119,26 @@ export interface RandSettings {
   isNotRepeatName: boolean;
 }
 
+// 基线演进：实验性屏幕内容跟踪（ScreenTracking）设置组；键名 PascalCase（C# 默认序列化名）。
+export interface ExperimentalSettings {
+  ScreenContentTracking: boolean;
+  FollowScroll: boolean;
+  FollowZoom: boolean;
+  MaskFixedRegions: boolean;
+  RememberPages: boolean;
+  PreserveUnchangedRegions: boolean;
+  Word: boolean;
+  PowerPoint: boolean;
+  Edge: boolean;
+}
+
 export interface AppSettings {
   advanced: AdvancedSettings;
   appearance: AppearanceSettings;
   automation: AutomationSettings;
   behavior: PowerPointSettings;
   canvas: CanvasSettings;
+  experimental: ExperimentalSettings;
   gesture: GestureSettings;
   inkToShape: InkToShapeSettings;
   startup: StartupSettings;
@@ -239,6 +253,17 @@ export function createDefaultSettings(): AppSettings {
     randSettings: {
       peopleCount: 60,
       isNotRepeatName: false
+    },
+    experimental: {
+      ScreenContentTracking: false,
+      FollowScroll: true,
+      FollowZoom: true,
+      MaskFixedRegions: true,
+      RememberPages: true,
+      PreserveUnchangedRegions: true,
+      Word: true,
+      PowerPoint: true,
+      Edge: true
     }
   };
 }

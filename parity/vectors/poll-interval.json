@@ -1,0 +1,20 @@
+{
+  "id": "poll-interval",
+  "entry": "harmony/features/src/main/ets/courseware/CoursewareSession.ts",
+  "cases": [
+    {
+      "id": "running-fast",
+      "fn": "recommendedPollIntervalMs",
+      "input": [true],
+      "expected": 200,
+      "tolerance": 0
+    },
+    {
+      "id": "idle-slow",
+      "fn": "recommendedPollIntervalMs",
+      "input": [false],
+      "expected": 1000,
+      "tolerance": 0
+    }
+  ]
+}

@@ -17,6 +17,9 @@ import {
   COMPRESS_MAX_DIM,
   CountdownPiPService,
   CountdownPiPParams,
+  writeAnnotatedPdf,
+  readPdfGeometries,
+  containPlacement,
   openInWps,
   openAppGalleryDetail,
   checkForUpdate,
@@ -50,13 +53,14 @@ import {
   buildScene,
   Invalidation
 } from '@inkcanvas/ink';
-import type { SceneStrokeInput, SceneSelectionInput } from '@inkcanvas/ink';
-import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings, matrixToArray, transformPointByMatrix, PenNib, calibrationMultiplier, toTaperKind, toPenStyle, toEraserRadius, resetToRecommendation, TaperKind } from '@inkcanvas/core';
+import type { SceneStrokeInput, SceneSelectionInput, ISelectionElement } from '@inkcanvas/ink';
+import type { PagePlacement } from '@inkcanvas/platform';
+import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings, matrixToArray, transformPointByMatrix, PenNib, calibrationMultiplier, toTaperKind, toPenStyle, toEraserRadius, resetToRecommendation, TaperKind, placeToolbar } from '@inkcanvas/core';
 import type { ShapeKind, StrokePointInput, AppSettings, AdvancedTouchInput, Matrix3x2 } from '@inkcanvas/core';
-import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground, renderMatrix4Values, applyReplaceRules, lotteryDisplayName, lotteryFlicker, lotteryDrawUnique, lotterySplitGroups, appendTransform, transformedBounds, snapshotGeometry, recordTransform } from '@inkcanvas/features';
+import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground, renderMatrix4Values, applyReplaceRules, lotteryDisplayName, lotteryFlicker, lotteryDrawUnique, lotterySplitGroups, appendTransform, transformedBounds, snapshotGeometry, recordTransform, BoardSelectionElement, parseRoster } from '@inkcanvas/features';
 import type { CoursewarePageFile } from '@inkcanvas/features';
 import type { BoardAsset, ElementGeometry } from '@inkcanvas/features';
-import { ReplayClock, InkReplaySession } from '@inkcanvas/core';
+import { ReplayClock } from '@inkcanvas/core';
 import { picker, fileIo } from '@kit.CoreFileKit';
 import { KeyCode } from '@kit.InputKit';
 import { promptAction, matrix4 } from '@kit.ArkUI';
@@ -68,6 +72,24 @@ import { image } from '@kit.ImageKit';
 interface UiPrefs {
   reduceMotion: boolean;
 }
+
+// G3 选区工具条重染色板（9 色，与笔板深色套一致）。
+interface SelectionColor {
+  packed: number;
+  hex: string;
+}
+
+const SELECTION_COLORS: SelectionColor[] = [
+  { packed: 0xFF000000, hex: '#FF000000' },
+  { packed: 0xFFFFFFFF, hex: '#FFFFFFFF' },
+  { packed: 0xFFDC2626, hex: '#FFDC2626' },
+  { packed: 0xFF9333CE, hex: '#FF9333CE' },
+  { packed: 0xFFEA580C, hex: '#FFEA580C' },
+  { packed: 0xFFEAB308, hex: '#FFEAB308' },
+  { packed: 0xFF16A34A, hex: '#FF16A34A' },
+  { packed: 0xFF0D9488, hex: '#FF0D9488' },
+  { packed: 0xFF2563EB, hex: '#FF2563EB' }
+];
 
 // 更新日志静态条目（摘要自 CHANGELOG.md；HarmonyOS 移植版随 HAP 分发，不读外部文件）。
 interface ChangelogEntry {
@@ -147,6 +169,10 @@ struct Index {
   @State countdownFullscreen: boolean = false;
   @State countdownFinished: boolean = false;
   @State countdownPiPActive: boolean = false;
+  // G3 选区工具条：随选区放置（FloatingToolbarLayout 候选评分，差异化紧凑形态）。
+  @State selectionToolbarOpen: boolean = false;
+  @State selectionToolbarX: number = 0;
+  @State selectionToolbarY: number = 0;
   @State lotteryOpen: boolean = false;
   @State lotteryNames: string = '';
   @State lotteryResult: string = '';
@@ -186,6 +212,8 @@ struct Index {
   private annotateDocument: InkDocument = new InkDocument();
   private pdfSource: PdfPageSource = new PdfPageSource();
   private courseware: CoursewareSession = new CoursewareSession();
+  // D8：课件源 PDF 沙箱路径（保存批注 PDF 用）。
+  private coursewareSourcePath: string = '';
   private storage: StorageService | null = null;
   private countdown: CountdownEngine = new CountdownEngine();
   private countdownPiP: CountdownPiPService = new CountdownPiPService();
@@ -194,7 +222,8 @@ struct Index {
   private lotteryTimer: number = -1;
   private replayTimer: number = -1;
   private replayClock: ReplayClock | null = null;
-  private replaySession: InkReplaySession | null = null;
+  // G6 落点成形动画驱动（16ms 帧步进；动画清空后自停）。
+  private dotTimer: number = -1;
   private settings: AppSettings = createDefaultSettings();
   private autoSave: AutoSaveService | null = null;
   private board: BoardDocument = new BoardDocument();
@@ -238,6 +267,33 @@ struct Index {
       this.refreshScene();
     };
     this.controller.ToolChanged = () => {
+      this.refreshScene();
+    };
+    // G2 元素选区桥：画板模式注入当前页图片/视频为可选元素。
+    this.controller.GetSelectableElements = (): ISelectionElement[] => {
+      if (!this.boardOpen) {
+        return [];
+      }
+      const result: ISelectionElement[] = [];
+      const images = this.board.Current.Images;
+      for (let i = 0; i < images.length; i++) {
+        result.push(new BoardSelectionElement(this.board, images[i], false));
+      }
+      const media = this.board.Current.Media;
+      for (let i = 0; i < media.length; i++) {
+        result.push(new BoardSelectionElement(this.board, media[i], true));
+      }
+      return result;
+    };
+    // 选区变化：元素在场/离场需刷新画板 ForEach；选区工具条（G3）随动。
+    this.controller.SelectionChanged = () => {
+      // D1：元素在场/离场与选区变化都可能改变层序 → 置脏 + 画板重排。
+      this.controller.MarkLayerOrderDirty();
+      this.boardImagesVersion++;
+      this.selectionToolbarOpen = this.controller.HasSelection;
+      if (this.selectionToolbarOpen) {
+        this.updateSelectionToolbarPosition();
+      }
       this.refreshScene();
     };
     this.controller.CurrentAttributes.BaseWidth = 2.5;
@@ -451,11 +507,12 @@ struct Index {
       }
 
       if (this.boardOpen) {
-        ForEach(this.board.Current.Images, (asset: BoardAsset) => {
-          this.BoardImage(asset)
-        }, (asset: BoardAsset) => asset.Id + ':' + this.boardImagesVersion)
-        ForEach(this.board.Current.Media, (asset: BoardAsset) => {
-          this.BoardVideo(asset)
+        ForEach(this.orderedBoardAssets(), (asset: BoardAsset) => {
+          if (this.board.Current.Media.indexOf(asset) >= 0) {
+            this.BoardVideo(asset)
+          } else {
+            this.BoardImage(asset)
+          }
         }, (asset: BoardAsset) => asset.Id + ':' + this.boardImagesVersion)
       }
 
@@ -481,15 +538,62 @@ struct Index {
         this.handleTouch(event);
       })
 
-      if (this.controller.IsLassoErasing) {
-        Canvas(this.lassoContext)
-          .width('100%')
-          .height('100%')
-          .hitTestBehavior(HitTestMode.None)
-          .onReady(() => { this.drawLassoOverlay(); })
+      // 常驻覆盖层画布（套索路径 / 落点动画预览；不参与命中测试）。
+      Canvas(this.lassoContext)
+        .width('100%')
+        .height('100%')
+        .hitTestBehavior(HitTestMode.None)
+        .onReady(() => { this.drawLassoOverlay(); })
+      // G3 选区工具条（ArkTS 差异化紧凑形态；位置走 placeToolbar 候选评分）。
+      if (this.selectionToolbarOpen) {
+        Row({ space: 6 }) {
+          Text(this.controller.CloneMode ? '克隆开' : '克隆')
+            .fontSize(12).fontColor(Color.White).padding(6)
+            .backgroundColor(this.controller.CloneMode ? '#FF0067C0' : '#99000000').borderRadius(4)
+            .onClick(() => {
+              this.controller.CloneMode = !this.controller.CloneMode;
+              this.refreshScene();
+            })
+          ForEach(SELECTION_COLORS, (color: SelectionColor) => {
+            Circle()
+              .width(20).height(20)
+              .fill(color.hex)
+              .stroke('#66FFFFFF')
+              .strokeWidth(1)
+              .onClick(() => { this.recolorSelection(color.packed); })
+          }, (color: SelectionColor) => color.hex)
+          Text('B+').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+            .onClick(() => { this.controller.ScaleSelectionWidth(1.25); })
+          Text('B-').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+            .onClick(() => { this.controller.ScaleSelectionWidth(0.8); })
+          Text('恢复').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+            .onClick(() => { this.controller.RestoreSelectionWidth(); })
+          Text('顶层').fontSize(12).fontColor(Color.White).padding(6)
+            .backgroundColor(this.controller.CanArrangeSelection(0) ? '#99000000' : '#4D000000').borderRadius(4)
+            .onClick(() => { this.controller.ArrangeSelection(0); })
+          Text('上移').fontSize(12).fontColor(Color.White).padding(6)
+            .backgroundColor(this.controller.CanArrangeSelection(1) ? '#99000000' : '#4D000000').borderRadius(4)
+            .onClick(() => { this.controller.ArrangeSelection(1); })
+          Text('下移').fontSize(12).fontColor(Color.White).padding(6)
+            .backgroundColor(this.controller.CanArrangeSelection(2) ? '#99000000' : '#4D000000').borderRadius(4)
+            .onClick(() => { this.controller.ArrangeSelection(2); })
+          Text('底层').fontSize(12).fontColor(Color.White).padding(6)
+            .backgroundColor(this.controller.CanArrangeSelection(3) ? '#99000000' : '#4D000000').borderRadius(4)
+            .onClick(() => { this.controller.ArrangeSelection(3); })
+          Text('删除').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#FFC0392B').borderRadius(4)
+            .onClick(() => { this.controller.DeleteSelection(); })
+          Text('✕').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
+            .onClick(() => { this.controller.ClearSelection(); })
+        }
+        .padding(6)
+        .backgroundColor(panelBackground(this.dark, this.blurEnabled))
+        .backgroundBlurStyle(panelBlurStyle(this.blurEnabled))
+        .borderRadius(10)
+        .position({ x: this.selectionToolbarX, y: this.selectionToolbarY })
+        .transition(overlayTransition(this.isMotionReduced()))
       }
 
-      if (this.cursorVisible && this.settings.canvas.isShowCursor) {
+      if (this.cursorVisible && (this.settings.canvas.isShowCursor || this.controller.Tool === InkTool.Eraser)) {
         Circle()
           .width(this.cursorDiameter())
           .height(this.cursorDiameter())
@@ -796,6 +900,8 @@ struct Index {
                   .onClick(() => { this.lotterySingle = !this.lotterySingle; })
                 Text(this.lotteryReplaceOpen ? '收起替换' : '替换名单').fontSize(13).fontColor(this.dark ? Color.White : Color.Black)
                   .onClick(() => { this.lotteryReplaceOpen = !this.lotteryReplaceOpen; })
+                Text('导入名单').fontSize(13).fontColor(Color.White).padding(6).backgroundColor('#FF0067C0').borderRadius(4)
+                  .onClick(() => { this.importRoster(); })
               }
             }
             if (this.lotteryGroups.length > 0) {
@@ -1074,6 +1180,9 @@ struct Index {
           Column({ space: 6 }) {
             this.ToolEntry('课件（PDF）', 'courseware')
             this.ToolEntry('PPT（WPS）', 'pptWps')
+            if (this.mode === 'courseware') {
+              this.ToolEntry('保存批注 PDF', 'saveAnnotatedPdf')
+            }
             this.ToolEntry('截图', 'screenshot')
             this.ToolEntry('Desmos', 'desmos')
             this.ToolEntry('检查更新', 'update')
@@ -1192,6 +1301,7 @@ struct Index {
         .position({ x: asset.Left, y: asset.Top })
         .width(asset.Width)
         .height(asset.Height)
+        .opacity(asset.Opacity === undefined ? 1 : asset.Opacity)
         .transform(this.boardAssetMatrix(asset))
     }
   }
@@ -1339,13 +1449,7 @@ struct Index {
   @Builder
   SettingsStartup() {
     this.SettingSection('启动选项')
-    this.SettingInfo('HarmonyOS 无三方自更新/自启动通道：更新经应用市场；开机自启为唯一 not-ported 功能。')
-    this.SettingDeferred('自动检查更新', '无 HAP 自更新 API，请经应用市场更新。')
-    this.SettingDeferred('静默更新', '自更新不可用；静默时间窗策略仅保留配置值。')
-    this.SettingDeferred('静默更新起始/终止时间',
-      '当前值：' + this.settings.startup.isAutoUpdateWithSilenceStartTime + ' – ' +
-      this.settings.startup.isAutoUpdateWithSilenceEndTime + '（仅保留配置）。')
-    this.SettingDeferred('开机时运行', '无三方自启 API；替代路径：桌面快捷方式/服务卡片。')
+    this.SettingInfo('更新经应用市场（工具面板「检查更新」）；内置升级/静默安装/开机自启已按决策禁用（平台限制，不再迁移）。')
     this.SettingToggle('开机运行后收纳到侧边栏', this.settings.startup.isFoldAtStartup, (v: boolean) => {
       this.settings.startup.isFoldAtStartup = v;
       this.touchSettings();
@@ -1562,19 +1666,16 @@ struct Index {
       this.settings.behavior.isShowPPTNavigationSides = v;
       this.touchSettings();
     })
-    this.SettingInfo('WPS 支持：工具面板「PPT（WPS）」拉起 WPS 鸿蒙版（手机/Pad 包自适应）；未安装引导应用市场。放映控制待 WPS 官方开放。')
-    this.SettingDeferred('进入放映时自动批注', '无放映状态检测。')
-    this.SettingDeferred('放映模式双指手势', '放映专属手势门控尚未移植（与基线一致）。')
+    this.SettingInfo('WPS 支持：工具面板「PPT（WPS）」拉起 WPS 鸿蒙版（手机/Pad 包自适应）；未安装引导应用市场。')
+    this.SettingInfo('PPT 放映控制（放映状态联动/自动批注/放映手势门控/自动截屏/播放记忆）已按决策禁用（平台限制，不再迁移）。')
     this.SettingToggle('允许手指手势翻页', this.settings.behavior.isEnableFingerGestureSlideShowControl, (v: boolean) => {
       this.settings.behavior.isEnableFingerGestureSlideShowControl = v;
       this.touchSettings();
     })
-    this.SettingDeferred('自动幻灯片截屏', '无自动放映截屏。')
     this.SettingToggle('自动保存课件墨迹', this.settings.behavior.isAutoSaveStrokesInPowerPoint, (v: boolean) => {
       this.settings.behavior.isAutoSaveStrokesInPowerPoint = v;
       this.touchSettings();
     })
-    this.SettingDeferred('记忆上次播放位置 / 提示隐藏幻灯片 / 提示自动播放', '无 PPT 状态通知。')
     this.SettingToggle('选择时不清除墨迹（课件）', this.settings.behavior.isNoClearStrokeOnSelectWhenInPowerPoint, (v: boolean) => {
       this.settings.behavior.isNoClearStrokeOnSelectWhenInPowerPoint = v;
       this.settings.behavior.isShowStrokeOnSelectInPowerPoint = v;
@@ -1651,7 +1752,7 @@ struct Index {
       this.settings.advanced.isSecondConfimeWhenShutdownApp = v;
       this.touchSettings();
     })
-    this.SettingDeferred('阻止系统边缘手势', '无边缘手势抑制 API；沉浸式全屏下系统手势由系统决定。')
+    this.SettingInfo('边缘手势抑制已按决策禁用（平台限制）；沉浸式全屏下系统手势由系统管理。')
     this.SettingInfo('特殊屏幕与触摸参数按原 WPF 算法移植；请在实际触控屏与压感笔上复核（需真机验证）。')
   }
 
@@ -1659,19 +1760,7 @@ struct Index {
   SettingsAutomation() {
     this.SettingSection('自动选项')
     this.SettingInfo('无法获取其他应用前台状态：自动收纳/进程查杀类设置仅保留值。')
-    this.SettingDeferred('进入“希沃白板”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('自动收纳忽略桌面 EN 批注窗口', '窗口识别排除规则不可用。')
-    this.SettingDeferred('进入“希沃视频展台”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“希沃轻白板”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“希沃品课”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“鸿合白板”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“鸿合视频展台”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“文香白板”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“中原旧白板”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“微软 Whiteboard”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入 PPT 放映时自动收纳', '无放映状态检测；手动收纳可用（Alt+V）。')
-    this.SettingDeferred('自动查杀希沃“PPT 小工具”', '无进程查杀能力。')
-    this.SettingDeferred('自动查杀希沃白板 5', '无进程查杀能力。')
+    this.SettingInfo('自动收纳（前台识别）与进程查杀已按决策禁用（平台限制，不再迁移）；手动收纳可用（Alt+V 或浮条「隐藏」）。')
     this.SettingToggle('清屏时自动保存墨迹', this.settings.automation.isAutoSaveStrokesAtClear, (v: boolean) => {
       this.settings.automation.isAutoSaveStrokesAtClear = v;
       this.touchSettings();
@@ -1767,6 +1856,47 @@ struct Index {
         .fontSize(13).fontColor(Color.White).padding(10)
         .backgroundColor('#FF0067C0').borderRadius(6)
         .onClick(() => { this.settingsOpen = false; this.changelogOpen = true; })
+    }
+  }
+
+  // D8：保存批注 PDF——当前会话各页墨迹写为标准 INK 批注的 PDF 副本（沙箱）+ sidecar .icink（权威层）。
+  private async saveAnnotatedCoursewarePdf(): Promise<void> {
+    if (this.storage === null || this.coursewareSourcePath.length === 0) {
+      promptAction.showToast({ message: '请先打开课件 PDF', duration: 2000 });
+      return;
+    }
+    const geometries = readPdfGeometries(this.coursewareSourcePath);
+    if (geometries === null) {
+      promptAction.showToast({ message: 'PDF Kit 不可用（仅中国大陆设备），已保留 .icink 批注层', duration: 2500 });
+      this.saveCoursewareBundle();
+      return;
+    }
+    const pages = new Map<number, InkStroke[]>();
+    const placements = new Map<number, PagePlacement>();
+    for (let i = 0; i < this.courseware.PageCount; i++) {
+      const doc = this.courseware.pageDocument(i);
+      if (doc.Strokes.length > 0) {
+        pages.set(i, doc.Strokes);
+        const size = this.pdfSource.pageSize(i);
+        const dipWidth = size[0] * 96 / 72;
+        const dipHeight = size[1] * 96 / 72;
+        placements.set(i, containPlacement(this.windowWidth, this.windowHeight, dipWidth, dipHeight));
+      }
+    }
+    const stamp = Date.now();
+    const target = this.storage.fullPathPublic('annotated-' + stamp + '.pdf');
+    const result = await writeAnnotatedPdf(this.coursewareSourcePath, target, pages, geometries, placements);
+    // sidecar：会话级 .icink 清单照常保存（权威可编辑层）。
+    this.saveCoursewareBundle();
+    if (result.Ok) {
+      promptAction.showToast({
+        message: '批注 PDF 已保存（' + result.Annotations + ' 条墨迹' + (result.Limited ? '，部分页跳过' : '') + '）',
+        duration: 2500
+      });
+    } else if (result.Annotations > 0) {
+      promptAction.showToast({ message: '批注写入失败，.icink 批注层已保存', duration: 2500 });
+    } else {
+      promptAction.showToast({ message: '无可写墨迹，.icink 批注层已保存', duration: 2000 });
     }
   }
 
@@ -1969,7 +2099,26 @@ struct Index {
       Top: Math.max(0, (this.windowHeight - 240) / 2),
       Width: 320,
       Height: 240,
+      LayerOrder: null,
+      Opacity: 1,
       Transform: null
+    });
+    // G11：插图记为页内可撤销单元（撤销移除、重做放回）。
+    const page = this.board.Current;
+    const inserted = page.Images[page.Images.length - 1];
+    page.History.push({
+      name: 'insert image',
+      redo: (): void => {
+        if (page.Images.indexOf(inserted) < 0) {
+          page.Images.push(inserted);
+        }
+      },
+      undo: (): void => {
+        const index = page.Images.indexOf(inserted);
+        if (index >= 0) {
+          page.Images.splice(index, 1);
+        }
+      }
     });
     this.boardImagesVersion++;
   }
@@ -2015,7 +2164,28 @@ struct Index {
       Top: Math.max(0, (this.windowHeight - 240) / 2),
       Width: 360,
       Height: 240,
+      LayerOrder: null,
+      PosterData: '',
+      NaturalWidth: 0,
+      NaturalHeight: 0,
       Transform: null
+    });
+    // G11：插视频记为页内可撤销单元。
+    const page = this.board.Current;
+    const inserted = page.Media[page.Media.length - 1];
+    page.History.push({
+      name: 'insert video',
+      redo: (): void => {
+        if (page.Media.indexOf(inserted) < 0) {
+          page.Media.push(inserted);
+        }
+      },
+      undo: (): void => {
+        const index = page.Media.indexOf(inserted);
+        if (index >= 0) {
+          page.Media.splice(index, 1);
+        }
+      }
     });
     this.boardImagesVersion++;
   }
@@ -2059,6 +2229,45 @@ struct Index {
     context.lineWidth = 1.5;
     context.stroke();
     context.setLineDash([]);
+  }
+
+  // G6 落点成形动画：覆盖层画 Preview 首点（世界→视图，半径随过渡宽度）。
+  private drawDotAnimations(): void {
+    const animations = this.controller.DotAnimations;
+    if (animations.length === 0) {
+      return;
+    }
+    const context = this.lassoContext;
+    const view = this.controller.ViewTransform;
+    for (let i = 0; i < animations.length; i++) {
+      const preview = animations[i].Preview;
+      if (preview.Count === 0) {
+        continue;
+      }
+      const p = preview.Points[0];
+      const screen = transformPointByMatrix(view, p.X, p.Y);
+      const scale = Math.sqrt(Math.abs(view.M11 * view.M22 - view.M12 * view.M21));
+      const radius = Math.max(0.5, p.Width / 2) * Math.max(0.1, scale);
+      context.beginPath();
+      context.arc(screen.X, screen.Y, radius, 0, Math.PI * 2);
+      const packed = preview.Attributes.Color.packedArgb();
+      context.fillStyle = '#' + (packed >>> 0).toString(16).padStart(8, '0');
+      context.fill();
+    }
+  }
+
+  private ensureDotTimer(): void {
+    if (this.dotTimer >= 0 || this.controller.DotAnimations.length === 0) {
+      return;
+    }
+    this.dotTimer = setInterval(() => {
+      this.controller.AdvanceDotAnimations(16);
+      if (this.controller.DotAnimations.length === 0 && this.dotTimer >= 0) {
+        clearInterval(this.dotTimer);
+        this.dotTimer = -1;
+      }
+      this.refreshScene();
+    }, 16);
   }
 
   private drawBoardGrid(): void {
@@ -2159,6 +2368,81 @@ struct Index {
       return Math.max(8, this.eraserRadiusForSize(this.settings.canvas.eraserSize) * 2);
     }
     return Math.max(8, this.controller.CurrentAttributes.BaseWidth * 2);
+  }
+
+  // G3 选区工具条放置：选区 AABB → 视图矩形 → FloatingToolbarLayout 候选评分（G16）。
+  private updateSelectionToolbarPosition(): void {
+    const bounds = this.controller.SelectionBounds;
+    if (bounds.isEmpty()) {
+      this.selectionToolbarOpen = false;
+      return;
+    }
+    const view = this.controller.ViewTransform;
+    const corners: number[][] = [
+      [bounds.Left, bounds.Top], [bounds.Right, bounds.Top],
+      [bounds.Right, bounds.Bottom], [bounds.Left, bounds.Bottom]
+    ];
+    let left = Number.MAX_VALUE;
+    let top = Number.MAX_VALUE;
+    let right = -Number.MAX_VALUE;
+    let bottom = -Number.MAX_VALUE;
+    for (let i = 0; i < corners.length; i++) {
+      const p = transformPointByMatrix(view, corners[i][0], corners[i][1]);
+      left = Math.min(left, p.X);
+      top = Math.min(top, p.Y);
+      right = Math.max(right, p.X);
+      bottom = Math.max(bottom, p.Y);
+    }
+    const placed = placeToolbar(
+      [0, 0, this.windowWidth, this.windowHeight],
+      [left, top, right, bottom],
+      [0, 0, 0, 0], 320, 44, 10);
+    this.selectionToolbarX = placed[0];
+    this.selectionToolbarY = placed[1];
+  }
+
+  // 选区工具条动作（G3：Recolor/ScaleWidth/RestoreWidth/Delete/克隆开关/取消）。
+  private recolorSelection(packed: number): void {
+    this.controller.RecolorSelection(InkColor.fromPackedArgb(packed));
+  }
+
+  // D1：画板元素按 DrawingObjects 层序渲染（墨迹仍整体画在独立画布——单画布架构下的
+  // 已记录简化；元素间 z 序完整保留）。空层序时回退 图片→视频 页序。
+  private orderedBoardAssets(): BoardAsset[] {
+    const images = this.board.Current.Images;
+    const media = this.board.Current.Media;
+    const byId = new Map<string, BoardAsset>();
+    for (let i = 0; i < images.length; i++) {
+      byId.set(images[i].Id, images[i]);
+    }
+    for (let i = 0; i < media.length; i++) {
+      byId.set(media[i].Id, media[i]);
+    }
+    const result: BoardAsset[] = [];
+    const objects = this.controller.DrawingObjects;
+    for (let i = 0; i < objects.length; i++) {
+      const element = objects[i].Element;
+      if (element !== null && element.isPresent()) {
+        const asset = byId.get(element.id());
+        if (asset !== undefined) {
+          result.push(asset);
+          byId.delete(element.id());
+        }
+      }
+    }
+    // 未入层序体系（无 GetSelectableElements 数据）的剩余元素按页序补尾。
+    const rest: BoardAsset[] = [];
+    for (let i = 0; i < images.length; i++) {
+      if (byId.has(images[i].Id)) {
+        rest.push(images[i]);
+      }
+    }
+    for (let i = 0; i < media.length; i++) {
+      if (byId.has(media[i].Id)) {
+        rest.push(media[i]);
+      }
+    }
+    return result.concat(rest);
   }
 
   // 应用触摸校准：乘数 = 目标参考宽度 / 平均接触宽度，写入 advanced.touchMultiplier。
@@ -2378,25 +2662,8 @@ struct Index {
   }
 
   private finishLotteryDraw(names: string[], pool: number, count: number): void {
-    const outputs: string[] = [];
-    if (this.lotteryNoRepeat) {
-      for (let i = 0; i < count; i++) {
-        const picked = this.lottery.pick();
-        if (picked === null) {
-          break;
-        }
-        outputs.push(picked);
-      }
-    } else {
-      const drawRandoms: number[] = [];
-      for (let i = 0; i < count * 8 + 8; i++) {
-        drawRandoms.push(Math.random());
-      }
-      const numbers = lotteryDrawUnique(pool, count, drawRandoms);
-      for (let i = 0; i < numbers.length; i++) {
-        outputs.push(lotteryDisplayName(names, numbers[i]));
-      }
-    }
+    // D5：多次抽取走引擎 draw（部分 Fisher-Yates：抽取内唯一 + 不重复池 + 历史封顶 20）。
+    const outputs = this.lottery.draw(count);
     this.lotteryGroups = lotterySplitGroups(outputs);
     this.lotteryResult = outputs.length === 0 ? '已抽完' : this.lotteryGroups[0];
     this.lotteryRolling = false;
@@ -2408,13 +2675,61 @@ struct Index {
     }
   }
 
-  private openReplay(): void {
-    const strokes = this.controller.Document.Strokes;
-    if (strokes.length === 0) {
+  // D5：从 CSV/TSV/每行一名文件导入名单（UTF-8 优先，失败回退 GBK 解码）。
+  private async importRoster(): Promise<void> {
+    let uris: string[] = [];
+    try {
+      const docPicker = new picker.DocumentViewPicker();
+      uris = await docPicker.select({ maxSelectNumber: 1, fileSuffixFilters: ['.csv', '.txt', '.tsv'] });
+    } catch (e) {
       return;
     }
-    this.replaySession = new InkReplaySession(strokes, 12);
-    this.replayClock = new ReplayClock(this.replaySession.DurationMs);
+    if (uris.length === 0) {
+      return;
+    }
+    const path = this.storage === null ? null : this.storage.importUriToSandbox(uris[0], 'roster.txt');
+    if (path === null) {
+      promptAction.showToast({ message: '名单导入失败', duration: 2000 });
+      return;
+    }
+    let text = '';
+    try {
+      const file = fileIo.openSync(path, fileIo.OpenMode.READ_ONLY);
+      const stat = fileIo.statSync(file.fd);
+      const buffer = new ArrayBuffer(stat.size);
+      fileIo.readSync(file.fd, buffer);
+      fileIo.closeSync(file);
+      const bytes = new Uint8Array(buffer);
+      try {
+        text = new util.TextDecoder('utf-8').decodeToString(bytes);
+      } catch (e) {
+        text = new util.TextDecoder('gbk').decodeToString(bytes);
+      }
+    } catch (e) {
+      promptAction.showToast({ message: '名单读取失败', duration: 2000 });
+      return;
+    }
+    const names = parseRoster(text);
+    if (names.length === 0) {
+      promptAction.showToast({ message: '未解析到名字（支持每行一名或带姓名列的 CSV）', duration: 2500 });
+      return;
+    }
+    this.lotteryNames = names.join('\n');
+    this.lotteryGroups = [];
+    this.lotteryResult = '';
+    promptAction.showToast({ message: '已导入 ' + names.length + ' 个名字', duration: 2000 });
+  }
+
+  private openReplay(): void {
+    // G9：回放融合到控制器（display-only Playback；源笔画与历史不动）。
+    if (!this.controller.BeginPlayback()) {
+      return;
+    }
+    const playback = this.controller.Playback;
+    if (playback === null) {
+      return;
+    }
+    this.replayClock = new ReplayClock(playback.DurationMs);
     this.replayClock.Speed = this.replaySpeed;
     this.replayOpen = true;
     this.replayPlaying = false;
@@ -2442,6 +2757,7 @@ struct Index {
         return;
       }
       this.replayClock.advance(33);
+      this.controller.SeekPlayback(this.replayClock.ElapsedMs);
       this.replayProgress = this.replayClock.Progress;
       this.replayPlaying = this.replayClock.IsPlaying;
       this.refreshScene();
@@ -2460,8 +2776,8 @@ struct Index {
 
   private closeReplay(): void {
     this.stopReplayTimer();
+    this.controller.EndPlayback();
     this.replayOpen = false;
-    this.replaySession = null;
     this.replayClock = null;
     this.refreshScene();
   }
@@ -2609,8 +2925,18 @@ struct Index {
     }
     const committed: SceneStrokeInput[] = [];
     let strokes = this.controller.Document.Strokes;
-    if (this.replayOpen && this.replaySession !== null && this.replayClock !== null) {
-      strokes = this.replaySession.visibleAt(this.replayClock.ElapsedMs);
+    // G9：画布内回放期间只画 Playback 可见前缀（源笔画隐藏、历史不动）。
+    if (this.replayOpen && this.controller.Playback !== null) {
+      strokes = this.controller.Playback.VisibleStrokes;
+    } else if (this.controller.DotAnimations.length > 0) {
+      // G6：成形动画期间跳过已提交圆点，由覆盖层画过渡预览。
+      const visible: InkStroke[] = [];
+      for (let i = 0; i < strokes.length; i++) {
+        if (!this.controller.IsAnimatingDot(strokes[i])) {
+          visible.push(strokes[i]);
+        }
+      }
+      strokes = visible;
     }
     // 鼠标模式墨迹可见性（C# ShellController.ToggleClickThrough 语义）：
     // 课件内看 behavior.isShowStrokeOnSelectInPowerPoint，否则看 canvas.hideStrokeWhenSelecting。
@@ -2642,6 +2968,8 @@ struct Index {
     }
     this.renderer.render(buildScene(committed, active, selection, matrixToArray(this.controller.ViewTransform)), Invalidation.full());
     this.drawLassoOverlay();
+    this.drawDotAnimations();
+    this.ensureDotTimer();
   }
 
   private async openCourseware(): Promise<void> {
@@ -2663,6 +2991,7 @@ struct Index {
       promptAction.showToast({ message: 'PDF 打开失败', duration: 2000 });
       return;
     }
+    this.coursewareSourcePath = path;
     if (this.mode !== 'courseware') {
       this.annotateDocument = this.controller.Document;
     }
@@ -2869,6 +3198,9 @@ struct Index {
       this.changelogOpen = true;
     } else if (id === 'courseware') {
       this.openCourseware();
+    } else if (id === 'saveAnnotatedPdf') {
+      this.toolsOpen = false;
+      this.saveAnnotatedCoursewarePdf();
     } else if (id === 'pptWps') {
       this.toolsOpen = false;
       this.openPptInWps();

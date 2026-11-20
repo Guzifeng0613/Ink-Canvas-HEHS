@@ -9,7 +9,7 @@ export { effectiveWidths, applyTaperAt, createTaperProfile, TaperProfile, NoneTa
 export type { TaperOptionsInput } from './src/main/ets/ink/TaperProfile';
 export { OneEuroFilter } from './src/main/ets/ink/OneEuroFilter';
 export { InkStroke, Rect, SelectionFrameState, strokeBounds, setTaperAndWidths, strokeTaperProbe } from './src/main/ets/ink/InkStroke';
-export type { StrokePointInput, StrokeTaperSampleInput, StrokeTaperProbeResult } from './src/main/ets/ink/InkStroke';
+export type { StrokePointInput, StrokeTaperSampleInput, StrokeTaperProbeResult, ShapeSourceData } from './src/main/ets/ink/InkStroke';
 export { InkDocument } from './src/main/ets/ink/InkDocument';
 export {
   buildSegmentOutline,
@@ -52,6 +52,7 @@ export {
   selectionDragMatrix,
   rotateHandlePosition
 } from './src/main/ets/selection/SelectionGeometry';
+export { visibleResizeHandles, visibleHandlesForFrame } from './src/main/ets/selection/SelectionGeometry';
 export type { BoundsInput } from './src/main/ets/selection/SelectionGeometry';
 export { placeToolbar, boardDockLayout } from './src/main/ets/selection/LayoutHelpers';
 export type { BoardDockLayoutResult } from './src/main/ets/selection/LayoutHelpers';
@@ -72,6 +73,12 @@ export type { ReplayFrameProbeResult } from './src/main/ets/replay/InkReplaySess
 export type { ReplayVisibleResult } from './src/main/ets/replay/InkReplaySession';
 export { blendOver } from './src/main/ets/imaging/PixelCompositing';
 export { compressTargetSize } from './src/main/ets/imaging/CompressMath';
+export { PdfPageGeometry, PdfContinuousLayout, parsePdfPageRange, pdfGeometryProbe, pdfRangeProbe, pdfLayoutProbe } from './src/main/ets/pdf/PdfLayout';
+export { encodePdfInk, decodePdfInkSummary, PDF_INK_MAXIMUM_POINTS } from './src/main/ets/pdf/PdfInkCodec';
+export type { PdfPoint } from './src/main/ets/pdf/PdfLayout';
+export type { PdfInkSummary } from './src/main/ets/pdf/PdfInkCodec';
+export { svgLength, svgResolveSize } from './src/main/ets/imaging/SvgSize';
+export type { SvgSize } from './src/main/ets/imaging/SvgSize';
 export type { CompressTarget } from './src/main/ets/imaging/CompressMath';
 export { AppTheme, getMainWindowTheme, getBoardTheme } from './src/main/ets/theming/ThemeResolver';
 export { AppVersion, parseVersion, compareVersions } from './src/main/ets/versioning/AppVersion';

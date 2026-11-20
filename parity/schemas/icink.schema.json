@@ -56,6 +56,31 @@
           "NibRotation": {
             "type": "number",
             "description": "Extra nib rotation in radians; default 0"
+          },
+          "LayerOrder": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Layer order (z-order); null = document order"
+          },
+          "ShapeSource": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Provider-owned shape formula {GroupId, Provider, Definition}; null for freehand",
+            "properties": {
+              "GroupId": {
+                "type": "string"
+              },
+              "Provider": {
+                "type": "string"
+              },
+              "Definition": {
+                "type": "string"
+              }
+            }
           }
         },
         "required": [

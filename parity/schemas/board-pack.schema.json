@@ -70,6 +70,13 @@
                 "NibRotation": {
                   "type": "number",
                   "description": "Extra nib rotation in radians; default 0"
+                },
+                "LayerOrder": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "description": "Layer order (z-order); null = document order"
                 }
               },
               "required": [
