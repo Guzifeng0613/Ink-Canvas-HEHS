@@ -45,7 +45,7 @@ public sealed class PenPalette : UserControl
         foreach (string option in OriginalMenuCatalog.PenStyles) _style.Items.Add(option);
         _style.SelectedIndex = 0;
         _alpha.Value = _highlighterAlpha;
-        Accessible(_style, "笔迹风格", "点集笔锋、速率笔锋、关闭笔锋");
+        Accessible(_style, "笔迹风格", "点集笔锋、速率笔锋、关闭笔锋、自然笔锋");
         _style.SelectionChanged += (_, _) =>
         {
             if (Controller is null || _suppress || _style.SelectedIndex < 0) return;
@@ -53,6 +53,7 @@ public sealed class PenPalette : UserControl
             {
                 1 => TaperKind.Velocity,
                 2 => TaperKind.None,
+                3 => TaperKind.Natural,
                 _ => TaperKind.Tail,
             };
             InkStyleChanged?.Invoke(_style.SelectedIndex);
@@ -282,6 +283,7 @@ public sealed class PenPalette : UserControl
             {
                 TaperKind.Velocity => 1,
                 TaperKind.None => 2,
+                TaperKind.Natural => 3,
                 _ => 0,
             };
             if (InkAlphaChanged is not null)
