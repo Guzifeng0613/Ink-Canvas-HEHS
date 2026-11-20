@@ -10,11 +10,13 @@ using InkCanvas.Ink;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Line = Microsoft.UI.Xaml.Shapes.Line;
 using System.Diagnostics;
+using System.Numerics;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
 
@@ -61,11 +63,17 @@ public sealed class TimeMachineWindow : Window
         Opacity = 0.75,
     };
     private readonly List<(SessionBookmark Bookmark, Border Marker)> _bookmarkMarkers = new();
+    private double _appliedViewScale = 1;
+    private double _appliedViewTx;
+    private double _appliedViewTy;
     private readonly TextBlock _timeLabel = new() { VerticalAlignment = VerticalAlignment.Center, MinWidth = 132 };
     private readonly TextBlock _pageLabel = new() { VerticalAlignment = VerticalAlignment.Center, MinWidth = 96 };
     private readonly ComboBox _pageCombo = new() { Width = 120, VerticalAlignment = VerticalAlignment.Center };
     private readonly TouchIconButton _exportButton;
     private readonly TouchIconButton _cancelExport;
+    private readonly TouchIconButton _retryExport;
+    private readonly TouchIconButton _addBookmark;
+    private readonly ToggleButton _boardToggle;
     private readonly ProgressBar _exportProgress = new()
     {
         Width = 160,
@@ -102,6 +110,12 @@ public sealed class TimeMachineWindow : Window
     private bool _suppressSeek;
     private int _activeBookmark = -2;
     private CancellationTokenSource _exportCts;
+    private CancellationTokenSource _seekCts;
+    private int _seekVersion;
+    private volatile bool _seekInFlight;
+    private readonly SemaphoreSlim _seekGate = new(1, 1);
+    private ExportOptions _lastExportOptions;
+    private bool _boardOnly;
 
     public TimeMachineWindow(ClassroomSession session, BoardService board, int theme)
     {
@@ -129,14 +143,34 @@ public sealed class TimeMachineWindow : Window
         Title = "板书时光机";
 
         _playPause = Icon(Glyphs.Play, "播放 / 暂停");
-        _playPause.Click += (_, _) => { _clock.Toggle(); SyncPlayGlyph(); };
+        _playPause.Click += (_, _) =>
+        {
+            _seekCts?.Cancel();
+            _clock.Toggle();
+            SyncPlayGlyph();
+        };
         var stop = Icon(Glyphs.Restart, "停止并从开头重新开始");
-        stop.Click += (_, _) => { _clock.Pause(); _clock.Seek(0); SyncPlayGlyph(); RenderFrame(); };
+        stop.Click += (_, _) => SeekAsync(0);
 
         var previous = Icon(Glyphs.ChevronLeft, "上一笔");
         previous.Click += (_, _) => StepEvent(-1);
         var next = Icon(Glyphs.ChevronRight, "下一笔");
         next.Click += (_, _) => StepEvent(+1);
+
+        var previousEvent = Icon(Glyphs.ChevronUp, "上一事件");
+        previousEvent.Click += (_, _) => StepEvent(-1);
+        var nextEvent = Icon(Glyphs.ChevronDown, "下一事件");
+        nextEvent.Click += (_, _) => StepEvent(+1);
+
+        _boardToggle = new ToggleButton
+        {
+            Content = BoardOnlyLabel(false),
+            VerticalAlignment = VerticalAlignment.Center,
+            MinHeight = 40,
+        };
+        ToolTipService.SetToolTip(_boardToggle, "切换「完整课堂 / 仅板书」：仅板书时隐藏 PPT 截图");
+        _boardToggle.Checked += (_, _) => SetBoardOnly(true);
+        _boardToggle.Unchecked += (_, _) => SetBoardOnly(false);
 
         var speed = new ComboBox { Width = 96, SelectedIndex = 1, VerticalAlignment = VerticalAlignment.Center };
         foreach (var s in new[] { "0.5x", "1x", "2x", "4x", "8x" }) speed.Items.Add(s);
@@ -158,14 +192,28 @@ public sealed class TimeMachineWindow : Window
         _cancelExport.Visibility = Visibility.Collapsed;
         _cancelExport.Click += (_, _) => _exportCts?.Cancel();
 
+        _retryExport = Icon(Glyphs.Restart, "重试上次失败的导出");
+        _retryExport.Visibility = Visibility.Collapsed;
+        _retryExport.Click += async (_, _) =>
+        {
+            if (_lastExportOptions is not null) await RunExportAsync(_lastExportOptions);
+        };
+
+        _addBookmark = Icon(Glyphs.Add, "在当前位置添加书签");
+        _addBookmark.Click += async (_, _) => await AddBookmarkAsync();
+
         var topBar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         topBar.Children.Add(_playPause);
         topBar.Children.Add(stop);
         topBar.Children.Add(previous);
         topBar.Children.Add(next);
+        topBar.Children.Add(previousEvent);
+        topBar.Children.Add(nextEvent);
         topBar.Children.Add(speed);
+        topBar.Children.Add(_boardToggle);
         topBar.Children.Add(_timeLabel);
         topBar.Children.Add(_exportButton);
+        topBar.Children.Add(_retryExport);
         topBar.Children.Add(_cancelExport);
         topBar.Children.Add(close);
 
@@ -173,8 +221,7 @@ public sealed class TimeMachineWindow : Window
         _progress.ValueChanged += (_, e) =>
         {
             if (_suppressSeek) return;
-            _clock.Seek((float)(e.NewValue / 1000.0 * _clock.DurationMs));
-            RenderFrame();
+            SeekAsync((long)(e.NewValue / 1000.0 * _clock.DurationMs));
         };
 
         for (int i = 0; i < _pageCount; i++) _pageCombo.Items.Add($"第 {i + 1} 页");
@@ -183,10 +230,7 @@ public sealed class TimeMachineWindow : Window
             if (_suppressSeek) return;
             int target = _pageCombo.SelectedIndex;
             if (target < 0) return;
-            _clock.Pause();
-            _clock.Seek(FirstEventTimeForPage(target));
-            SyncPlayGlyph();
-            RenderFrame();
+            SeekAsync(FirstEventTimeForPage(target));
         };
 
         var bottomBar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
@@ -196,6 +240,7 @@ public sealed class TimeMachineWindow : Window
         bottomBar.Children.Add(_pageCombo);
 
         var bookmarkRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        bookmarkRow.Children.Add(_addBookmark);
         bookmarkRow.Children.Add(new TextBlock
         {
             Text = "书签",
@@ -216,6 +261,7 @@ public sealed class TimeMachineWindow : Window
         });
         exportRow.Children.Add(_exportProgress);
         exportRow.Children.Add(_exportStatus);
+        exportRow.Children.Add(_retryExport);
 
         var bottomPanel = new StackPanel { Spacing = 4 };
         bottomPanel.Children.Add(bookmarkRow);
@@ -339,8 +385,7 @@ public sealed class TimeMachineWindow : Window
                 Background = idleBrush,
                 Opacity = BookmarkIdleOpacity,
             };
-            ToolTipService.SetToolTip(marker,
-                $"{DisplayName(bookmark)}  ·  {Format(bookmark.TimeMs)}");
+            ToolTipService.SetToolTip(marker, _timeline.DescribeBookmark(bookmark));
 
             double x = (double)bookmark.TimeMs / duration * width - BookmarkMarkerWidth / 2;
             Canvas.SetLeft(marker, Math.Clamp(x, 0, Math.Max(0, width - BookmarkMarkerWidth)));
@@ -375,11 +420,43 @@ public sealed class TimeMachineWindow : Window
             return;
         }
 
-        _clock.Pause();
-        _clock.Seek(bookmarks[index].TimeMs);
-        SyncPlayGlyph();
-        RenderFrame();
+        SeekAsync(bookmarks[index].TimeMs);
         e.Handled = true;
+    }
+
+    private async Task AddBookmarkAsync()
+    {
+        var root = (Content as FrameworkElement)?.XamlRoot;
+        if (root is null) return;
+
+        long time = (long)_clock.ElapsedMs;
+        int manualCount = (_session.Bookmarks?.Count(b => b is not null && !b.Auto) ?? 0) + 1;
+        string defaultName = $"书签 {manualCount}";
+        int index = _timeline.AddBookmark(time, defaultName, "manual");
+        SaveSession();
+        RebuildBookmarks();
+
+        var input = new TextBox
+        {
+            Text = defaultName,
+            MinWidth = 240,
+            PlaceholderText = "书签名称",
+        };
+        var dialog = new ContentDialog
+        {
+            Title = $"已添加书签（{Format(time)} · 第 {_timeline.PageAt(time) + 1} 页）",
+            Content = input,
+            PrimaryButtonText = "保存名称",
+            CloseButtonText = "保留默认名",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = root,
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (string.IsNullOrWhiteSpace(input.Text)) return;
+        if (!_timeline.RenameBookmark(index, input.Text)) return;
+        SaveSession();
+        RebuildBookmarks();
     }
 
     private async Task RenameBookmarkAsync(int index)
@@ -458,13 +535,69 @@ public sealed class TimeMachineWindow : Window
 
     private void StepEvent(int delta)
     {
-        int cutoff = _timeline.IndexAt((long)_clock.ElapsedMs);
-        int target = Math.Clamp(cutoff + delta, 0, Math.Max(0, _session.Events.Count - 1));
         if (_session.Events.Count == 0) return;
+        int cutoff = _timeline.IndexAt((long)_clock.ElapsedMs);
+        int target = Math.Clamp(cutoff + delta, 0, _session.Events.Count - 1);
+        SeekAsync(_timeline.TimeAtEvent(target));
+    }
+
+    /// <summary>
+    /// 异步定位：新请求先取消旧任务，后台重建目标帧；回调前校验 token / 版本，
+    /// 只呈现最后一次目标。定位期间暂停，完成后仍停在目标帧。
+    /// </summary>
+    private async void SeekAsync(long targetMs)
+    {
+        _seekCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _seekCts = cts;
+        int version = ++_seekVersion;
+        _seekInFlight = true;
+
         _clock.Pause();
-        _clock.Seek(_timeline.TimeAtEvent(target));
         SyncPlayGlyph();
-        RenderFrame();
+        long clamped = Math.Clamp(targetMs, 0, _timeline.Duration);
+
+        void Finish()
+        {
+            // 只让最后一次请求清除在途标记，避免旧请求提前放开播放帧渲染。
+            if (version == _seekVersion) _seekInFlight = false;
+        }
+
+        try
+        {
+            await _seekGate.WaitAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            Finish();
+            return;
+        }
+
+        IReadOnlyList<InkStroke> visible;
+        try
+        {
+            visible = await Task.Run(() => _timeline.BuildFrame(clamped), cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            Finish();
+            return;
+        }
+        finally
+        {
+            _seekGate.Release();
+        }
+
+        if (!InkTimeline.ShouldApplySeek(cts.Token, version, _seekVersion))
+        {
+            Finish();
+            return;
+        }
+
+        _clock.Seek(clamped);
+        RenderFrame(clamped, visible);
+        SyncPlayGlyph();
+        Finish();
     }
 
     private void OnTick()
@@ -472,7 +605,8 @@ public sealed class TimeMachineWindow : Window
         var now = DateTime.UtcNow;
         float delta = (float)(now - _lastTick).TotalMilliseconds;
         _lastTick = now;
-        if (!_clock.IsPlaying) return;
+        // 定位在后台重建帧时跳过本次渲染，避免与 BuildFrame 并发读取时间轴。
+        if (!_clock.IsPlaying || _seekInFlight) return;
         _clock.Advance(delta);
         RenderFrame();
         SyncPlayGlyph();
@@ -481,12 +615,17 @@ public sealed class TimeMachineWindow : Window
     private void RenderFrame()
     {
         long time = (long)_clock.ElapsedMs;
-        var visible = _timeline.BuildFrame(time);
+        RenderFrame(time, _timeline.BuildFrame(time));
+    }
+
+    private void RenderFrame(long time, IReadOnlyList<InkStroke> visible)
+    {
         _replayController.Document.Clear();
         _replayController.Document.AddRange(visible);
 
         ClassroomScene scene = _timeline.SceneAt(time);
         ApplyBackground(scene);
+        ApplyViewState(scene);
 
         int page = scene.PageIndex;
         _pageLabel.Text = $"第 {page + 1} 页 / 共 {_pageCount} 页";
@@ -496,8 +635,26 @@ public sealed class TimeMachineWindow : Window
         if (page >= 0 && page < _pageCombo.Items.Count) _pageCombo.SelectedIndex = page;
         _suppressSeek = false;
 
-        _timeLabel.Text = $"{Format(_clock.ElapsedMs)} / {Format(_timeline.Duration)}";
+        _timeLabel.Text = $"{Format(time)} / {Format(_timeline.Duration)}";
         UpdateBookmarkHighlight(time);
+    }
+
+    private static string BoardOnlyLabel(bool boardOnly) => boardOnly ? "仅板书" : "完整课堂";
+
+    private void SetBoardOnly(bool boardOnly)
+    {
+        _boardToggle.Content = BoardOnlyLabel(boardOnly);
+        if (_boardOnly == boardOnly)
+        {
+            if (boardOnly) HideAllPptImages();
+            return;
+        }
+
+        _boardOnly = boardOnly;
+        // 清空已加载路径：切回完整课堂时即使同一张截图也会重新加载，切换即时生效。
+        _activeScreenshotPath = "";
+        if (boardOnly) HideAllPptImages();
+        RenderFrame();
     }
 
     // ---- 背景层：PPT 截图 + 网格 -----------------------------------------
@@ -506,10 +663,30 @@ public sealed class TimeMachineWindow : Window
     /// 同帧更新背景：先纯色，再尝试叠 PPT 截图，最后按背景枚举画网格。
     /// 截图不可用时仅保留纯色，不会留下上一页的图片。
     /// </summary>
+    /// <summary>
+    /// 定位后按时间轴记录的视图状态（缩放 + 平移）设置回放控制器；
+    /// 与当前值相同则跳过，避免每帧重复赋值。
+    /// </summary>
+    private void ApplyViewState(ClassroomScene scene)
+    {
+        double scale = double.IsFinite(scene.ViewScale) && scene.ViewScale > 0 ? scene.ViewScale : 1;
+        double tx = double.IsFinite(scene.ViewTx) ? scene.ViewTx : 0;
+        double ty = double.IsFinite(scene.ViewTy) ? scene.ViewTy : 0;
+        if (Math.Abs(scale - _appliedViewScale) < 0.0001
+            && Math.Abs(tx - _appliedViewTx) < 0.01
+            && Math.Abs(ty - _appliedViewTy) < 0.01) return;
+
+        _appliedViewScale = scale;
+        _appliedViewTx = tx;
+        _appliedViewTy = ty;
+        _replayController.SetView(
+            Matrix3x2.CreateScale((float)scale) * Matrix3x2.CreateTranslation((float)tx, (float)ty));
+    }
+
     private void ApplyBackground(ClassroomScene scene)
     {
         _background.Background = new SolidColorBrush(BackgroundColor(scene.Background));
-        UpdatePptImage(scene.PptScreenshotPath);
+        UpdatePptImage(_boardOnly ? "" : scene.PptScreenshotPath);
         UpdateGrid(scene.Background);
     }
 
@@ -641,6 +818,16 @@ public sealed class TimeMachineWindow : Window
         long durationMs = Math.Max(0, _timeline.Duration);
         double durationSec = Math.Max(1, durationMs / 1000.0);
 
+        double actualWidth = _gridCanvas.ActualWidth;
+        double actualHeight = _gridCanvas.ActualHeight;
+        int sourceWidth = 1920;
+        int sourceHeight = 1080;
+        if (actualWidth >= 320 && actualHeight >= 320)
+        {
+            sourceWidth = Math.Clamp((int)Math.Round(actualWidth / 2) * 2, 320, 3840);
+            sourceHeight = Math.Clamp((int)Math.Round(actualHeight / 2) * 2, 320, 3840);
+        }
+
         var startBox = new NumberBox
         {
             Header = "开始（秒）",
@@ -681,12 +868,92 @@ public sealed class TimeMachineWindow : Window
             TextWrapping = TextWrapping.Wrap,
         };
 
+        var resolution = new ComboBox { Header = "分辨率", Width = 220, SelectedIndex = 0 };
+        resolution.Items.Add("1920 × 1080");
+        resolution.Items.Add("1280 × 720");
+        resolution.Items.Add($"源尺寸（{sourceWidth} × {sourceHeight}）");
+
+        var speedCombo = new ComboBox { Header = "倍速", Width = 120, SelectedIndex = 0 };
+        speedCombo.Items.Add("1x");
+        speedCombo.Items.Add("2x");
+        speedCombo.Items.Add("4x");
+
+        var boardOnly = new CheckBox
+        {
+            Content = "仅导出板书（不含 PPT 截图）",
+            IsChecked = false,
+        };
+
+        var hintText = new TextBlock
+        {
+            FontSize = 12,
+            Opacity = 0.8,
+            TextWrapping = TextWrapping.Wrap,
+        };
+
+        (int Width, int Height) SelectedSize() => resolution.SelectedIndex switch
+        {
+            1 => (1280, 720),
+            2 => (sourceWidth, sourceHeight),
+            _ => (1920, 1080),
+        };
+
+        double SelectedSpeed() => speedCombo.SelectedIndex switch
+        {
+            1 => 2.0,
+            2 => 4.0,
+            _ => 1.0,
+        };
+
+        void UpdateHint()
+        {
+            double startValue = double.IsNaN(startBox.Value) ? 0 : startBox.Value;
+            double endValue = double.IsNaN(endBox.Value) ? durationSec : endBox.Value;
+            long startMsPreview = (long)Math.Round(Math.Clamp(startValue, 0, durationSec) * 1000);
+            long endMsPreview = (long)Math.Round(Math.Clamp(endValue, 0, durationSec) * 1000);
+            if (endMsPreview <= startMsPreview)
+            {
+                hintText.Text = "结束时间必须大于开始时间。";
+                return;
+            }
+
+            (int width, int height) = SelectedSize();
+            try
+            {
+                var preview = new ExportOptions(
+                    "preview.mp4", startMsPreview, endMsPreview, Fps: 30,
+                    Width: width, Height: height, Speed: SelectedSpeed(),
+                    BoardOnly: boardOnly.IsChecked == true);
+                int frames = TimeMachineExporter.EstimateFrameCount(preview);
+                double outputSeconds = TimeMachineExporter.EffectiveDurationMs(preview) / 1000.0;
+                hintText.Text = $"预计 {frames} 帧 · 输出时长 {outputSeconds:0.0} 秒 · "
+                    + $"{width}×{height} · {SelectedSpeed():0.#}x"
+                    + (boardOnly.IsChecked == true ? " · 仅板书" : "");
+            }
+            catch (Exception ex)
+            {
+                hintText.Text = ex.Message;
+            }
+        }
+
+        startBox.ValueChanged += (_, _) => UpdateHint();
+        endBox.ValueChanged += (_, _) => UpdateHint();
+        resolution.SelectionChanged += (_, _) => UpdateHint();
+        speedCombo.SelectionChanged += (_, _) => UpdateHint();
+        boardOnly.Checked += (_, _) => UpdateHint();
+        boardOnly.Unchecked += (_, _) => UpdateHint();
+
         var panel = new StackPanel { Spacing = 12 };
         panel.Children.Add(hint);
         panel.Children.Add(startBox);
         panel.Children.Add(endBox);
+        panel.Children.Add(resolution);
+        panel.Children.Add(speedCombo);
+        panel.Children.Add(boardOnly);
+        panel.Children.Add(hintText);
         panel.Children.Add(audio);
         panel.Children.Add(audioHint);
+        UpdateHint();
 
         var settings = new ContentDialog
         {
@@ -719,13 +986,18 @@ public sealed class TimeMachineWindow : Window
         var file = await picker.PickSaveFileAsync();
         if (file is null) return;
 
+        (int outputWidth, int outputHeight) = SelectedSize();
         var options = new ExportOptions(
-            file.Path, startMs, endMs, IncludeAudio: audio.IsChecked == true);
+            file.Path, startMs, endMs, IncludeAudio: audio.IsChecked == true,
+            Width: outputWidth, Height: outputHeight, Speed: SelectedSpeed(),
+            BoardOnly: boardOnly.IsChecked == true);
         await RunExportAsync(options);
     }
 
     private async Task RunExportAsync(ExportOptions options)
     {
+        _lastExportOptions = options;
+        _retryExport.Visibility = Visibility.Collapsed;
         _exportCts = new CancellationTokenSource();
         _exportButton.IsEnabled = false;
         _cancelExport.Visibility = Visibility.Visible;
@@ -750,17 +1022,22 @@ public sealed class TimeMachineWindow : Window
 
             _exportProgress.Value = 1;
             _exportStatus.Text = $"已导出 {result.FrameCount} 帧 · {result.AudioNote}";
+            _lastExportOptions = null;
+            _retryExport.Visibility = Visibility.Collapsed;
+            TimeMachineExporter.CleanupArtifacts(options);
             OpenContainingFolder(result.OutputPath);
         }
         catch (OperationCanceledException)
         {
             _exportProgress.Value = 0;
             _exportStatus.Text = "导出已取消。";
+            _retryExport.Visibility = Visibility.Collapsed;
         }
         catch (Exception ex)
         {
             _exportProgress.Value = 0;
-            _exportStatus.Text = "导出失败。";
+            _exportStatus.Text = "导出失败，可点击重试。";
+            _retryExport.Visibility = Visibility.Visible;
             await ShowMessageAsync("导出视频失败", ex.Message);
         }
         finally
@@ -829,6 +1106,9 @@ public sealed class TimeMachineWindow : Window
     {
         _timer.Stop();
         try { _exportCts?.Cancel(); } catch { /* 取消导出失败不应影响关闭 */ }
+        try { _seekCts?.Cancel(); } catch { /* 取消定位失败不应影响关闭 */ }
+        _seekCts?.Dispose();
+        _seekCts = null;
         _replayController.Dispose();
         try
         {
