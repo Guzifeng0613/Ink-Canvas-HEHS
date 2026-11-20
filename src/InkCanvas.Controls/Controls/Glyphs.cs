@@ -15,6 +15,9 @@ public static class Glyphs
     public const string Shapes = "△";
     public const string ShapesFont = "Segoe UI Symbol";
 
+    /// <summary>Sentinel instead of an icon codepoint: hosts render the literal text "AI".</summary>
+    public const string Ai = "AI";
+
     public const string Undo = "";
     public const string Redo = "";
     public const string Delete = "";

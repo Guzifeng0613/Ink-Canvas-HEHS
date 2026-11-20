@@ -21,6 +21,7 @@ public sealed class TouchIconButton : Button
         new PropertyMetadata("", OnGlyphChanged));
 
     private readonly FontIcon _icon;
+    private readonly TextBlock _aiText;
     private Grid _customIcon;
     private Microsoft.UI.Xaml.Shapes.Path _customIconOutline;
 
@@ -43,12 +44,21 @@ public sealed class TouchIconButton : Button
             // does not raise the change callback, which would leave the icon blank.
             Glyph = Glyph,
         };
+        _aiText = new TextBlock
+        {
+            Text = "AI",
+            FontSize = 12,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+
+        };
         Content = _icon;
 
         PointerPressed += (_, _) => { if (Motion.AnimationsEnabled) Motion.Pulse(this, 0.92f); };
         Loaded += (_, _) =>
         {
-            _icon.Glyph = Glyph;
+            UpdateContent();
             ApplyVisualState();
         };
     }
@@ -122,20 +132,45 @@ public sealed class TouchIconButton : Button
         => ((TouchIconButton)d).ApplyVisualState();
 
     private static void OnGlyphChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
-        => ((TouchIconButton)d)._icon.Glyph = e.NewValue as string ?? string.Empty;
+        => ((TouchIconButton)d).UpdateContent();
+
+    /// <summary>
+    /// Swaps the button content for the current glyph. <see cref="Glyphs.Ai"/> is a sentinel:
+    /// it renders as a literal "AI" label instead of a Segoe Fluent Icons codepoint.
+    /// </summary>
+    private void UpdateContent()
+    {
+        // A vector pictogram (pass-through toggle) owns the content; leave it untouched.
+        if (_customIcon is not null) return;
+
+        if (Glyph == Glyphs.Ai)
+        {
+            Content = _aiText;
+            ApplyIconForeground();
+            return;
+        }
+
+        _icon.Glyph = Glyph ?? string.Empty;
+        Content = _icon;
+    }
+
+    private void ApplyIconForeground()
+    {
+        var brush = (Brush)Microsoft.UI.Xaml.Application.Current.Resources[
+            IsSelected ? "IcAccentBrush" : "IcTextPrimaryBrush"];
+        _icon.Foreground = brush;
+        _aiText.Foreground = brush;
+    }
 
     private void ApplyVisualState()
     {
         if (IsSelected)
-        {
             Background = (Brush)Microsoft.UI.Xaml.Application.Current.Resources["IcAccentSoftBrush"];
-            _icon.Foreground = (Brush)Microsoft.UI.Xaml.Application.Current.Resources["IcAccentBrush"];
-        }
         else
-        {
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            _icon.Foreground = (Brush)Microsoft.UI.Xaml.Application.Current.Resources["IcTextPrimaryBrush"];
-        }
+
+        ApplyIconForeground();
+
         if (_customIconOutline is not null)
             _customIconOutline.Stroke = IsSelected
                 ? (Brush)Microsoft.UI.Xaml.Application.Current.Resources["IcAccentBrush"]

@@ -3,6 +3,7 @@ using InkCanvas.Controls.Animation;
 using InkCanvas.Controls.Controls;
 using InkCanvas.Platform.Interop;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
@@ -91,7 +92,7 @@ public sealed class ToolkitWindow : Window
         AddTool(grid, 1, 1, Glyphs.Select, "聚光灯", () => _shell?.OpenSpotlight());
         AddTool(grid, 2, 0, Glyphs.Add, "放大镜", () => _shell?.OpenMagnifier());
         AddTool(grid, 2, 1, Glyphs.Board, "画板", () => _shell?.ToggleBoard());
-        AddTool(grid, 3, 0, Glyphs.Help, "AI 助教", () => _shell?.OpenAiAssistant());
+        AddTool(grid, 3, 0, Glyphs.Ai, "AI 助教", () => _shell?.OpenAiAssistant());
 
         _body = new Border { Child = grid, Padding = new Thickness(0, 0, 0, 8) };
 
@@ -133,12 +134,29 @@ public sealed class ToolkitWindow : Window
 
     private static void AddTool(Grid grid, int row, int column, string glyph, string label, Action onClick)
     {
-        var icon = new FontIcon
+        FrameworkElement icon;
+        if (glyph == Glyphs.Ai)
         {
-            FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
-            FontSize = 18,
-            Glyph = glyph,
-        };
+            var aiHost = new Grid { Width = 24, Height = 22 };
+            aiHost.Children.Add(new TextBlock
+            {
+                Text = "AI",
+                FontSize = 15,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            icon = aiHost;
+        }
+        else
+        {
+            icon = new FontIcon
+            {
+                FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
+                FontSize = 18,
+                Glyph = glyph,
+            };
+        }
         var text = new TextBlock { Text = label, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center };
         var content = new StackPanel { Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center };
         content.Children.Add(icon);
@@ -154,6 +172,7 @@ public sealed class ToolkitWindow : Window
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
             BorderThickness = new Thickness(0),
         };
+        AutomationProperties.SetName(button, label);
         button.Click += (_, _) => onClick();
         Grid.SetRow(button, row);
         Grid.SetColumn(button, column);

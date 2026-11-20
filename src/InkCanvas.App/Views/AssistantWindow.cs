@@ -164,12 +164,32 @@ public sealed class AssistantWindow : Window
         };
         _titleText = new TextBlock
         {
-            Text = "AI 助教",
             FontSize = 15,
             FontWeight = FontWeights.SemiBold,
             Foreground = _textPrimary,
             VerticalAlignment = VerticalAlignment.Center,
         };
+        // 标题内嵌「AI」徽标：标题控件本身的起点不变，不挤占关闭按钮与头部高度。
+        _titleText.Inlines.Add(new InlineUIContainer
+        {
+            Child = new Border
+            {
+                Background = _accentSoftBrush,
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(4, 1, 4, 1),
+                Margin = new Thickness(0, 0, 6, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = new TextBlock
+                {
+                    Text = "AI",
+                    FontSize = 10,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = _accentBrush,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+            },
+        });
+        _titleText.Inlines.Add(new Run { Text = "AI 助教" });
         _modeText = new TextBlock
         {
             Text = "自动",
