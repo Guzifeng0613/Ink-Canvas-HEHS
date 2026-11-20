@@ -25,6 +25,11 @@ public static partial class ExtensionPackages
         if (manifest.ApiVersion != ExtensionApi.Version) throw new InvalidDataException($"Extension requires API {manifest.ApiVersion}, host supports {ExtensionApi.Version}.");
         if (manifest.Dependencies is null || manifest.Dependencies.Any(id => id is null || !Identifier().IsMatch(id))
             || manifest.Capabilities is null || manifest.Capabilities.Any(capability => !Enum.IsDefined(capability))) throw new InvalidDataException("Invalid extension dependency or capability.");
+        if (manifest.ImportExtensions is null || manifest.ImportExtensions.Length > 16
+            || (manifest.ImportExtensions.Length > 0) != manifest.Capabilities.Contains(PluginCapability.FileImport)
+            || manifest.ImportExtensions.Any(ext => ext is null || !Regex.IsMatch(ext, @"\A\.[a-z0-9]{1,12}\z")
+                || ext is ".icink" or ".pdf"))
+            throw new InvalidDataException("Invalid file importer extensions.");
         if (string.IsNullOrWhiteSpace(manifest.EntryType) || manifest.EntryType.Length > 300) throw new InvalidDataException("Invalid extension entry type.");
     }
     public static string EntryPath(string directory, string entry)

@@ -1816,24 +1816,26 @@ public sealed class BoardWindow : Window
         catch (Exception ex) { await ShowMessageAsync($"画板保存失败：{ex.Message}"); }
     }
 
-    private async Task OpenPageAsync()
-    {
-        if ((_board.Current.Document.Count > 0 || _board.CurrentImages.Count > 0 || _board.CurrentMedia.Count > 0)
-            && !await ConfirmAsync("替换当前页", "打开文件会替换当前页上的墨迹、图片和视频。继续吗？")) return;
-        var file = await PickInkFileAsync();
-        if (file is null) return;
-        try { _board.LoadPage(file.Path); }
-        catch (Exception ex) { await ShowMessageAsync($"页面打开失败：{ex.Message}"); }
-    }
+    private Task OpenPageAsync() => OpenInkAsync(false);
 
-    private async Task OpenBoardAsync()
+    private Task OpenBoardAsync() => OpenInkAsync(true);
+
+    private async Task OpenInkAsync(bool entireBoard)
     {
-        if (_board.HasContent
-            && !await ConfirmAsync("替换整个画板", "打开文件会替换当前画板的所有页面、墨迹和图片。继续吗？")) return;
-        var file = await PickInkFileAsync();
-        if (file is null) return;
-        try { _board.LoadBoard(file.Path); }
-        catch (Exception ex) { await ShowMessageAsync($"画板打开失败：{ex.Message}"); }
+        var page = CurrentController;
+        try
+        {
+            var file = await PickInkFileAsync();
+            if (file is null || _closed) return;
+            var apply = await _services.PrepareInkOpenAsync(file.Path, _board, entireBoard);
+            if (_closed || page != CurrentController) return;
+            bool hasContent = entireBoard ? _board.HasContent
+                : page.Document.Count > 0 || _board.CurrentImages.Count > 0 || _board.CurrentMedia.Count > 0;
+            if (hasContent && !await ConfirmAsync(entireBoard ? "替换整个画板" : "替换当前页",
+                entireBoard ? "打开文件会替换所有画板页面。继续吗？" : "打开文件会替换当前页上的墨迹、图片和视频。继续吗？")) return;
+            if (!_closed && page == CurrentController) apply();
+        }
+        catch (Exception ex) { if (!_closed) await ShowMessageAsync($"文件打开失败：{ex.Message}"); }
     }
 
     private FileSavePicker CreateSavePicker(string typeName, string extension, string suggestedName)
@@ -1848,6 +1850,7 @@ public sealed class BoardWindow : Window
     {
         var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         picker.FileTypeFilter.Add(".icink");
+        foreach (string extension in _services.Plugins.ImportExtensions) picker.FileTypeFilter.Add(extension);
         InitializeWithWindow.Initialize(picker, WindowChrome.GetHwnd(this));
         return await picker.PickSingleFileAsync();
     }

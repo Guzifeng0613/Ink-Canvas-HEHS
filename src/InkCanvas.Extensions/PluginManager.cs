@@ -148,6 +148,42 @@ public sealed class PluginManager : IDisposable
         }
         catch (Exception ex) { Fault(plugin, client, ex.GetBaseException().Message); throw; }
     }
+    public string[] ImportExtensions
+    {
+        get
+        {
+            lock (_plugins) return _plugins.Values.Where(p => p.State == ExtensionState.Running)
+                .SelectMany(p => p.Manifest.ImportExtensions).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        }
+    }
+
+    // A conversion uses a host-owned temporary file. Large media never travel over the command pipe.
+    public async Task ConvertFileAsync(string input, string output)
+    {
+        Plugin plugin;
+        PluginClient client;
+        lock (_plugins)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            var matches = _plugins.Values.Where(p => p.State == ExtensionState.Running
+                && p.Manifest.ImportExtensions.Contains(Path.GetExtension(input), StringComparer.OrdinalIgnoreCase)).ToArray();
+            if (matches.Length != 1) throw new InvalidOperationException(matches.Length == 0
+                ? "请先启用相应的文件导入插件。" : "多个已启用插件支持此格式，请只启用其中一个。");
+            plugin = matches[0];
+            client = plugin.Client;
+        }
+        PluginResponse response;
+        try
+        {
+            response = await client.RequestAsync(new PluginRequest("import") { SourcePath = input, DestinationPath = output },
+                _shutdown.Token, TimeSpan.FromMinutes(2));
+        }
+        catch (Exception ex) { Fault(plugin, client, ex.GetBaseException().Message); throw; }
+        if (!response.Success) throw new InvalidDataException(response.Error);
+        lock (_plugins) if (plugin.Client != client || plugin.State != ExtensionState.Running)
+            throw new OperationCanceledException("文件导入插件已停用。");
+    }
+
     private void Fault(Plugin plugin, PluginClient client, string error)
     {
         lock (_plugins)
@@ -200,9 +236,9 @@ internal sealed class PluginClient : IDisposable
         await _pipe.WaitForConnectionAsync(timeout.Token);
         return await RequestAsync(new PluginRequest("initialize"), token);
     }
-    public async Task<PluginResponse> RequestAsync(PluginRequest request, CancellationToken token)
+    public async Task<PluginResponse> RequestAsync(PluginRequest request, CancellationToken token, TimeSpan? requestTimeout = null)
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(_timeout);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(requestTimeout ?? _timeout);
         await _requests.WaitAsync(timeout.Token);
         try
         {
@@ -221,7 +257,16 @@ internal sealed class PluginClient : IDisposable
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _pipe?.Dispose();
-        try { if (_process is not null && !_process.HasExited) _process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+        try
+        {
+            if (_process is not null)
+            {
+                if (!_process.HasExited) _process.Kill(entireProcessTree: true);
+                // Kill is asynchronous. Release loaded package files before disposal returns.
+                _process.WaitForExit(1000);
+            }
+        }
+        catch (InvalidOperationException) { }
         _process?.Dispose();
     }
 }

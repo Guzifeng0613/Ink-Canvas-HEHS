@@ -48,6 +48,24 @@ public sealed class AppServices : IDisposable
     public AppSettings Settings { get; private set; }
     public ModuleRuntime Modules { get; } = new();
     public PluginManager Plugins { get; }
+    internal async Task<Action> PrepareInkOpenAsync(string path, BoardService target, bool entireBoard = false)
+    {
+        if (Path.GetExtension(path).Equals(".icink", StringComparison.OrdinalIgnoreCase))
+            return entireBoard ? () => target.LoadBoard(path) : () => target.LoadPage(path);
+
+        string directory = Directory.CreateTempSubdirectory("InkCanvas-import-").FullName;
+        string output = Path.Combine(directory, "page.icink");
+        try
+        {
+            await Plugins.ConvertFileAsync(path, output);
+            if (new FileInfo(output).Length > 192L * 1024 * 1024)
+                throw new InvalidDataException("插件返回的画板超过 192 MiB。");
+            return await Task.Run(() => target.PrepareImportedPage(output, entireBoard));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+
     public ExtensionPreferencesStore ExtensionStore { get; }
     public ExtensionPreferences ExtensionPreferences { get; }
     private bool _modulesStarted;

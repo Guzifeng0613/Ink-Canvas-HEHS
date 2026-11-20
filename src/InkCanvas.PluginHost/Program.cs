@@ -37,6 +37,8 @@ try
                     var assembly = new PluginLoadContext(entry).LoadFromAssemblyPath(entry);
                     plugin = Activator.CreateInstance(assembly.GetType(manifest.EntryType, true)!) as IInkCanvasPlugin
                         ?? throw new InvalidDataException("Entry type does not implement IInkCanvasPlugin.");
+                    if (manifest.ImportExtensions.Length > 0 && plugin is not IInkFileImporter)
+                        throw new InvalidDataException("File importer interface is missing.");
                     Directory.CreateDirectory(context.DataDirectory);
                     await plugin.InitializeAsync(context, CancellationToken.None);
                     context.Seal();
@@ -46,6 +48,12 @@ try
                     var result = await context.ExecuteAsync(request.CommandId, request.Context);
                     PluginWire.ValidateResult(result, manifest.Capabilities);
                     response = new PluginResponse { Success = true, Result = result };
+                    break;
+                case "import" when plugin is IInkFileImporter importer:
+                    if (!manifest.ImportExtensions.Contains(Path.GetExtension(request.SourcePath), StringComparer.OrdinalIgnoreCase))
+                        throw new InvalidDataException("Unsupported import extension.");
+                    await importer.ConvertAsync(request.SourcePath, request.DestinationPath);
+                    response = new PluginResponse { Success = true };
                     break;
                 case "shutdown":
                     if (plugin is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync();
@@ -58,7 +66,7 @@ try
         }
         catch (Exception ex) { response = new PluginResponse { Error = ex.GetBaseException().Message }; }
         await PluginWire.WriteAsync(pipe, response, CancellationToken.None);
-        if (stop || !response.Success) break;
+        if (stop || (!response.Success && request.Method != "import")) break;
     }
 }
 catch (Exception ex) when (ex is IOException or OperationCanceledException or InvalidDataException or ArgumentException) { Environment.ExitCode = 1; }
