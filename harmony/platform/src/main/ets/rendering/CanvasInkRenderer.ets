@@ -34,10 +34,9 @@ export class CanvasInkRenderer implements InkRenderer {
   // 活动层脏矩形状态（世界坐标）
   private prevActiveBox: number[] | null = null;
   private prevSelectionVisible: boolean = false;
-  // F3 形状预览（世界坐标）脏盒与可见性缓存；橡皮筋为视图 DIP，仅跟踪可见性。
+  // F3 形状预览（世界坐标）脏盒缓存；橡皮筋为视图 DIP，跟踪上一帧屏幕盒用于局部清除。
   private prevPreviewBox: number[] | null = null;
-  private prevPreviewVisible: boolean = false;
-  private prevMarqueeVisible: boolean = false;
+  private prevMarqueeBox: number[] | null = null;
 
   // Pen Kit 报点预测临时段：世界坐标扁平点列 [x0,y0,x1,y1,...]。
   // 只存在于活动层，每帧由宿主用最新 TouchEvent 整体替换；绝不进入 OffscreenCanvas 离屏缓存、
@@ -91,8 +90,7 @@ export class CanvasInkRenderer implements InkRenderer {
     this.prevSelectionVisible = false;
     this.prevPredictionBox = null;
     this.prevPreviewBox = null;
-    this.prevPreviewVisible = false;
-    this.prevMarqueeVisible = false;
+    this.prevMarqueeBox = null;
     this.prediction = [];
     this.predictionColor = 0;
     this.predictionWidth = 0;
@@ -216,14 +214,11 @@ export class CanvasInkRenderer implements InkRenderer {
     const activeBox = scene.Active !== null
       ? CanvasInkRenderer.commandBox(scene.Active, WORLD_BOX_PADDING_VP)
       : null;
-    // F3：形状预览与活体笔画同处世界坐标，脏盒一并并入；橡皮筋为视图 DIP，只跟踪可见性。
-    const previewVisible = scene.Preview.length > 0;
-    const previewToggled = previewVisible !== this.prevPreviewVisible;
+    // F3：形状预览与活体笔画同处世界坐标，脏盒一并并入；橡皮筋为视图 DIP，单独并入屏幕脏盒。
     const previewBox = CanvasInkRenderer.commandsBox(scene.Preview, WORLD_BOX_PADDING_VP);
-    const marqueeVisible = scene.Marquee !== null;
-    const marqueeToggled = marqueeVisible !== this.prevMarqueeVisible;
+    const currMarqueeBox = CanvasInkRenderer.padScreenBox(scene.Marquee, this.widthVp, this.heightVp);
     const currPredictionBox = this.predictionAabb();
-    // 当前帧活动层总脏盒 = 活体笔画盒 ∪ 预测段盒 ∪ 预览盒。
+    // 当前帧活动层世界脏盒 = 活体笔画盒 ∪ 预测段盒 ∪ 预览盒。
     let currBox = activeBox;
     if (currPredictionBox !== null) {
       currBox = currBox === null ? currPredictionBox : CanvasInkRenderer.unionBox(currBox, currPredictionBox);
@@ -231,8 +226,9 @@ export class CanvasInkRenderer implements InkRenderer {
     if (previewBox !== null) {
       currBox = currBox === null ? previewBox : CanvasInkRenderer.unionBox(currBox, previewBox);
     }
-    const fullRedraw = forceFull || selectionVisible || selectionToggled
-      || previewVisible || previewToggled || marqueeVisible || marqueeToggled;
+    // 性能（M1）：预览/橡皮筋为 transient 覆盖层，改走局部脏盒，不再每帧全屏重绘活动层；
+    // 仅选区在场/切换或宿主强制时才全量重绘（选区涉及内容搬移，保持全量以控风险）。
+    const fullRedraw = forceFull || selectionVisible || selectionToggled;
 
     if (fullRedraw) {
       this.active.setTransform(1, 0, 0, 1, 0, 0);
@@ -277,30 +273,27 @@ export class CanvasInkRenderer implements InkRenderer {
       } else if (this.prevPreviewBox !== null) {
         dirtyWorld = CanvasInkRenderer.unionBox(dirtyWorld, this.prevPreviewBox);
       }
-      if (dirtyWorld === null) {
-        // 前后帧均无活动笔画：上层保持空位图，无需任何绘制。
+      // 屏幕脏盒 = 世界脏盒映射 ∪ 上一帧橡皮筋 ∪ 当前橡皮筋（橡皮筋为视图 DIP，不套视图矩阵）。
+      let dirtyScreen: number[] | null = dirtyWorld !== null ? this.worldToScreenBox(dirtyWorld, v) : null;
+      dirtyScreen = CanvasInkRenderer.unionScreenBox(dirtyScreen, this.prevMarqueeBox);
+      dirtyScreen = CanvasInkRenderer.unionScreenBox(dirtyScreen, currMarqueeBox);
+      if (dirtyScreen === null) {
+        // 前后帧均无活动层内容：上层保持空位图，无需任何绘制。
         this.prevActiveBox = null;
         this.prevPredictionBox = null;
         this.prevPreviewBox = null;
+        this.prevMarqueeBox = currMarqueeBox;
         this.prevSelectionVisible = selectionVisible;
-        this.prevPreviewVisible = previewVisible;
-        this.prevMarqueeVisible = marqueeVisible;
         return;
       }
-      const screenBox = this.worldToScreenBox(dirtyWorld, v);
-      if (screenBox === null) {
-        // 脏盒失效的防御性回退：全屏重绘。
-        this.active.setTransform(1, 0, 0, 1, 0, 0);
-        this.active.clearRect(0, 0, this.widthVp, this.heightVp);
-      } else {
-        this.active.setTransform(1, 0, 0, 1, 0, 0);
-        this.active.clearRect(screenBox[0], screenBox[1],
-          screenBox[2] - screenBox[0], screenBox[3] - screenBox[1]);
-      }
+      this.active.setTransform(1, 0, 0, 1, 0, 0);
+      this.active.clearRect(dirtyScreen[0], dirtyScreen[1],
+        dirtyScreen[2] - dirtyScreen[0], dirtyScreen[3] - dirtyScreen[1]);
+      // 世界内容（活体 + 预测 + 预览）clip 到世界脏盒，避免越界重绘。
       this.active.setTransform(v[0], v[1], v[2], v[3], v[4], v[5]);
       if (scene.Active !== null || scene.Preview.length > 0) {
         this.active.save();
-        if (screenBox !== null) {
+        if (dirtyWorld !== null) {
           this.active.rect(dirtyWorld[0], dirtyWorld[1],
             dirtyWorld[2] - dirtyWorld[0], dirtyWorld[3] - dirtyWorld[1]);
           this.active.clip();
@@ -315,14 +308,17 @@ export class CanvasInkRenderer implements InkRenderer {
         this.active.restore();
         // Active===null 时入口已 clearPrediction，预测段不再补画，避免无活体笔画的残留重绘。
       }
+      // 橡皮筋在身份变换下绘制（drawMarquee 内部自设 identity），不套视图矩阵、不受世界 clip 影响。
+      if (scene.Marquee !== null) {
+        this.drawMarquee(scene.Marquee);
+      }
     }
 
     this.prevActiveBox = activeBox;
     this.prevPredictionBox = currPredictionBox;
     this.prevPreviewBox = previewBox;
+    this.prevMarqueeBox = currMarqueeBox;
     this.prevSelectionVisible = selectionVisible;
-    this.prevPreviewVisible = previewVisible;
-    this.prevMarqueeVisible = marqueeVisible;
   }
 
   // 预测段世界坐标轴对齐包围盒；点数不足（不足一条线段）时返回 null。
@@ -563,6 +559,42 @@ export class CanvasInkRenderer implements InkRenderer {
       Math.min(a[1], b[1]),
       Math.max(a[2], b[2]),
       Math.max(a[3], b[3])
+    ];
+  }
+
+  // 视图 DIP 矩形加屏幕填充并夹取到视口；空/退化/非有限返回 null。
+  private static padScreenBox(bounds: number[] | null, widthVp: number, heightVp: number): number[] | null {
+    if (bounds === null || bounds.length !== 4) {
+      return null;
+    }
+    const l = bounds[0];
+    const t = bounds[1];
+    const r = bounds[2];
+    const b = bounds[3];
+    if (!Number.isFinite(l) || !Number.isFinite(t) || !Number.isFinite(r) || !Number.isFinite(b)) {
+      return null;
+    }
+    const left = Math.max(0, l - SCREEN_BOX_PADDING_VP);
+    const top = Math.max(0, t - SCREEN_BOX_PADDING_VP);
+    const right = Math.min(widthVp, r + SCREEN_BOX_PADDING_VP);
+    const bottom = Math.min(heightVp, b + SCREEN_BOX_PADDING_VP);
+    if (right <= left || bottom <= top) {
+      return null;
+    }
+    return [left, top, right, bottom];
+  }
+
+  // 可空屏幕盒并集；任一为 null 时退化为另一个。
+  private static unionScreenBox(a: number[] | null, b: number[] | null): number[] | null {
+    if (a === null) {
+      return b;
+    }
+    if (b === null) {
+      return a;
+    }
+    return [
+      Math.min(a[0], b[0]), Math.min(a[1], b[1]),
+      Math.max(a[2], b[2]), Math.max(a[3], b[3])
     ];
   }
 
