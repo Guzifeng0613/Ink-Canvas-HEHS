@@ -778,6 +778,8 @@ public sealed class VectorParityTests
                 Taper = (int)s.Attributes.TaperKind,
                 Nib = (int)s.Attributes.Nib,
                 NibRotation = (double)s.Attributes.NibRotation,
+                s.LayerOrder,
+                s.ShapeSource,
                 Shape = s.IsRecognizedShape,
                 ObjectFrame = s.ExportObjectFrame(),
                 Points = s.Points.Select(p => new double[]
