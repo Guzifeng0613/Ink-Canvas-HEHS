@@ -98,12 +98,38 @@ public sealed class InkController : IDisposable
     private Matrix3x2 _viewAtDragStart;
     private List<InkStroke> _dragSnapshot;
 
+    // Marquee (rubber-band) selection state. Pure view/world geometry; no UI dependency.
+    private bool _marqueeing;
+    private Vector2 _marqueeStartView, _marqueeStartWorld, _marqueeCurrentView;
+
+    /// <summary>Current marquee rectangle in view coordinates while dragging, otherwise null.</summary>
+    public Rect? MarqueeViewRect
+    {
+        get
+        {
+            if (!_marqueeing) return null;
+            var a = _marqueeStartView;
+            var b = _marqueeCurrentView;
+            return Rect.FromLTRB(MathF.Min(a.X, b.X), MathF.Min(a.Y, b.Y),
+                MathF.Max(a.X, b.X), MathF.Max(a.Y, b.Y));
+        }
+    }
+
     public PalmRejector Palm => _palm;
 
     /// <summary>Raised once per logical change; the presenter redraws on this.</summary>
     public event Action Invalidated;
 
     public event Action SelectionChanged;
+
+    /// <summary>一支笔画刚被提交到文档（用于板书录制）。</summary>
+    public event Action<InkStroke> StrokeCommitted;
+
+    /// <summary>整笔擦除移除的笔画（用于板书录制）。</summary>
+    public event Action<IReadOnlyList<InkStroke>> StrokesErased;
+
+    /// <summary>当前页被清空（用于板书录制）。</summary>
+    public event Action Cleared;
 
     public void ConfigureGestures(bool zoom, bool translate, bool rotate)
     {
@@ -218,6 +244,13 @@ public sealed class InkController : IDisposable
             }
         }
 
+        if (_marqueeing)
+        {
+            _marqueeCurrentView = new Vector2(p.X, p.Y);
+            Invalidated?.Invoke();
+            return;
+        }
+
         if (_activeHandle != SelectionHandle.None)
         {
             UpdateSelectionDrag(new Vector2(p.X, p.Y));
@@ -260,6 +293,12 @@ public sealed class InkController : IDisposable
             _slideGestureActive = false;
             float dx = p.X - _slideGestureStartX;
             if (MathF.Abs(dx) > 60f) SlideFlipRequested?.Invoke(dx < 0);
+            return;
+        }
+
+        if (_marqueeing)
+        {
+            EndMarquee(world);
             return;
         }
 
@@ -312,6 +351,7 @@ public sealed class InkController : IDisposable
             () => Document.AddRange(strokes),
             () => Document.RemoveAll(strokes)));
 
+        foreach (var s in strokes) StrokeCommitted?.Invoke(s);
         if (RecognizeShapes && name == "ink") TryRecognize(strokes);
         Invalidated?.Invoke();
     }
@@ -410,6 +450,7 @@ public sealed class InkController : IDisposable
             History.Push(new DelegateAction("erase",
                 () => Document.RemoveAll(removed),
                 () => Document.AddRange(removed)));
+            StrokesErased?.Invoke(removed);
             _erasedThisGesture.Clear();
         }
         Invalidated?.Invoke();
@@ -448,14 +489,22 @@ public sealed class InkController : IDisposable
         if (handle == SelectionHandle.None)
         {
             var hits = Document.HitTest(world, 8f);
-            Selection.Clear();
-            Selection.AddRange(hits);
-            SelectionChanged?.Invoke();
-            if (Selection.Count == 0)
+            if (hits.Count == 0)
             {
+                // Nothing under the cursor: start a rubber-band marquee selection.
+                _marqueeing = true;
+                _marqueeStartView = viewPoint;
+                _marqueeStartWorld = world;
+                _marqueeCurrentView = viewPoint;
+                Selection.Clear();
+                SelectionChanged?.Invoke();
                 Invalidated?.Invoke();
                 return;
             }
+
+            Selection.Clear();
+            Selection.AddRange(hits);
+            SelectionChanged?.Invoke();
             // Tapping a stroke selects it and immediately allows dragging it.
             handle = SelectionHandle.Move;
         }
@@ -465,6 +514,31 @@ public sealed class InkController : IDisposable
         _viewAtDragStart = ViewTransform;
         _dragStartViewBounds = ViewBoundsOf(SelectionBounds);
         _dragSnapshot = Selection.Select(s => s.Clone()).ToList();
+        Invalidated?.Invoke();
+    }
+
+    private void EndMarquee(Vector2 endWorld)
+    {
+        _marqueeing = false;
+
+        var a = _marqueeStartView;
+        var b = _marqueeCurrentView;
+        float vLeft = MathF.Min(a.X, b.X), vTop = MathF.Min(a.Y, b.Y);
+        float vRight = MathF.Max(a.X, b.X), vBottom = MathF.Max(a.Y, b.Y);
+        var viewRect = Rect.FromLTRB(vLeft, vTop, vRight, vBottom);
+
+        Selection.Clear();
+        if (viewRect.Width >= 6 && viewRect.Height >= 6)
+        {
+            float wLeft = MathF.Min(_marqueeStartWorld.X, endWorld.X);
+            float wTop = MathF.Min(_marqueeStartWorld.Y, endWorld.Y);
+            float wRight = MathF.Max(_marqueeStartWorld.X, endWorld.X);
+            float wBottom = MathF.Max(_marqueeStartWorld.Y, endWorld.Y);
+            var worldRect = Rect.FromLTRB(wLeft, wTop, wRight, wBottom);
+            Selection.AddRange(Document.HitTest(worldRect));
+        }
+
+        SelectionChanged?.Invoke();
         Invalidated?.Invoke();
     }
 
@@ -565,6 +639,7 @@ public sealed class InkController : IDisposable
         History.Push(new DelegateAction("clear",
             () => Document.RemoveAll(removed),
             () => Document.AddRange(removed)));
+        Cleared?.Invoke();
         Invalidated?.Invoke();
     }
 

@@ -21,6 +21,15 @@ public sealed class CountdownWindow : Window, IDisposable
     };
     private readonly Button _startPause = new() { Content = "开始", MinHeight = 44, MinWidth = 96 };
 
+    /// <summary>倒计时开始 / 继续，参数为剩余时长。</summary>
+    public event Action<TimeSpan> TimerStarted;
+
+    /// <summary>倒计时暂停 / 停止，参数为剩余时长。</summary>
+    public event Action<TimeSpan> TimerStopped;
+
+    /// <summary>倒计时归零结束。</summary>
+    public event Action TimerEnded;
+
     public CountdownWindow()
     {
         Title = "倒计时";
@@ -32,6 +41,7 @@ public sealed class CountdownWindow : Window, IDisposable
             _display.Text = "00:00";
             _startPause.Content = "开始";
             Motion.Pulse(_display, 1.15f);
+            TimerEnded?.Invoke();
         });
 
         var presets = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center };
@@ -41,17 +51,29 @@ public sealed class CountdownWindow : Window, IDisposable
             var b = new Button { Content = $"{minutes} 分钟", MinHeight = 40 };
             b.Click += (_, _) =>
             {
-                _timer.Start(TimeSpan.FromMinutes(captured));
+                var duration = TimeSpan.FromMinutes(captured);
+                _timer.Start(duration);
                 _startPause.Content = "暂停";
                 Render(_timer.Remaining);
+                TimerStarted?.Invoke(duration);
             };
             presets.Children.Add(b);
         }
 
         _startPause.Click += (_, _) =>
         {
-            if (_timer.IsRunning) { _timer.Pause(); _startPause.Content = "继续"; }
-            else { _timer.Resume(); _startPause.Content = "暂停"; }
+            if (_timer.IsRunning)
+            {
+                _timer.Pause();
+                _startPause.Content = "继续";
+                TimerStopped?.Invoke(_timer.Remaining);
+            }
+            else
+            {
+                _timer.Resume();
+                _startPause.Content = "暂停";
+                if (_timer.IsRunning) TimerStarted?.Invoke(_timer.Remaining);
+            }
         };
 
         var reset = new Button { Content = "重置", MinHeight = 44, MinWidth = 96 };
@@ -60,6 +82,7 @@ public sealed class CountdownWindow : Window, IDisposable
             _timer.Stop();
             _startPause.Content = "开始";
             _display.Text = "00:00";
+            TimerStopped?.Invoke(TimeSpan.Zero);
         };
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center };

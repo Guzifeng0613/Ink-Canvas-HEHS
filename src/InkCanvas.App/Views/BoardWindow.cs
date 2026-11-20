@@ -3,12 +3,14 @@ using InkCanvas.Controls.Animation;
 using InkCanvas.Controls.Controls;
 using InkCanvas.Core.Ink;
 using InkCanvas.Core.Shapes;
+using InkCanvas.Features.AiAssistant;
 using InkCanvas.Features.Board;
 using InkCanvas.Ink;
 using Microsoft.Graphics.Canvas.UI.Xaml;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using System.Numerics;
 using WinRT.Interop;
@@ -30,13 +32,15 @@ public sealed class BoardWindow : Window
     private readonly BoardImageLayer _images = new();
     private readonly CanvasControl _paper;
     private readonly Border _background;
-    private readonly TextBlock _pageLabel = new() { VerticalAlignment = VerticalAlignment.Center, MinWidth = 32, TextAlignment = TextAlignment.Center };
-    private readonly TextBlock _pageCountLabel = new() { VerticalAlignment = VerticalAlignment.Center, MinWidth = 58, TextAlignment = TextAlignment.Center };
+    private readonly TextBlock _pageCountLabel = new() { VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center, Opacity = 0.75 };
     private readonly TextBlock _selectionLabel = new() { VerticalAlignment = VerticalAlignment.Center };
-    private Button _previousPageButton;
-    private Button _nextPageButton;
-    private Button _addPageButton;
+    private readonly StackPanel _pageListPanel = new() { Spacing = 4 };
+    private Button _newPageButton;
+    private Button _copyPageButton;
     private Button _deletePageButton;
+    private Button _moveUpButton;
+    private Button _moveDownButton;
+    private Button _renamePageButton;
     private readonly Border _selectionActions;
     private readonly Border _bottomBar;
     private readonly Grid _contentRoot;
@@ -45,6 +49,9 @@ public sealed class BoardWindow : Window
     private InkController _boundController;
     private bool _isFullscreen;
     private float _viewScale = 1f;
+    private long _lastImageTapTicks;
+    private Windows.Foundation.Point _lastImageTapPoint;
+    private bool _editingAiCard;
 
     /// <summary>The controller currently bound to the board surface and its floating tools.</summary>
     public InkController CurrentController => _board.Current;
@@ -63,6 +70,12 @@ public sealed class BoardWindow : Window
         _paper = new CanvasControl { ClearColor = Windows.UI.Color.FromArgb(0, 0, 0, 0) };
         _paper.Draw += OnDrawPaper;
         _images.SelectionChanged += OnImageSelectionChanged;
+        // Image views mark pointer presses as handled for dragging, so observe them at the layer
+        // level to detect a double tap without touching the existing drag/delete interaction.
+        _images.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnImageLayerPointerPressed), true);
+        // Native gesture is registered in parallel so system-injected or synthesized double taps
+        // still reach the same edit entry point.
+        _images.AddHandler(UIElement.DoubleTappedEvent, new DoubleTappedEventHandler(OnImageDoubleTapped), true);
 
         var surfaceHost = new Grid();
         surfaceHost.Children.Add(_background);
@@ -72,16 +85,12 @@ public sealed class BoardWindow : Window
 
         _toolButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
         var toolStrip = BuildToolStrip();
-        var pageStrip = BuildPageStrip();
         var actionStrip = BuildActionStrip();
         var dock = new Grid { ColumnSpacing = 8 };
-        dock.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         dock.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         dock.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        Grid.SetColumn(pageStrip, 0);
-        Grid.SetColumn(toolStrip, 1);
-        Grid.SetColumn(actionStrip, 2);
-        dock.Children.Add(pageStrip);
+        Grid.SetColumn(toolStrip, 0);
+        Grid.SetColumn(actionStrip, 1);
         dock.Children.Add(toolStrip);
         dock.Children.Add(actionStrip);
 
@@ -95,15 +104,24 @@ public sealed class BoardWindow : Window
             Child = dock,
         };
 
-        _contentRoot = new Grid { Background = new SolidColorBrush(Microsoft.UI.Colors.Black) };
-        _contentRoot.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        _contentRoot.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var mainArea = new Grid();
+        mainArea.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        mainArea.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         Grid.SetRow(surfaceHost, 0);
-        Grid.SetRow(_bottomBar, 1);
-        _contentRoot.Children.Add(surfaceHost);
+        mainArea.Children.Add(surfaceHost);
         Grid.SetRow(_selectionActions, 0);
-        _contentRoot.Children.Add(_selectionActions);
-        _contentRoot.Children.Add(_bottomBar);
+        mainArea.Children.Add(_selectionActions);
+        Grid.SetRow(_bottomBar, 1);
+        mainArea.Children.Add(_bottomBar);
+
+        var sidebar = BuildPageSidebar();
+        _contentRoot = new Grid { Background = new SolidColorBrush(Microsoft.UI.Colors.Black) };
+        _contentRoot.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        _contentRoot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        Grid.SetColumn(sidebar, 0);
+        _contentRoot.Children.Add(sidebar);
+        Grid.SetColumn(mainArea, 1);
+        _contentRoot.Children.Add(mainArea);
 
         WindowChrome.MakeBorderless(this, topmost: false, resizable: true);
         _windowedContent = WindowChrome.AddTitleBar(this, Title, _contentRoot, closeButton: true);
@@ -123,20 +141,133 @@ public sealed class BoardWindow : Window
         Activated += (_, _) => Motion.PlayEntrance(_bottomBar, 20f);
     }
 
-    private Border BuildPageStrip()
+    private Border BuildPageSidebar()
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
-        _previousPageButton = Button("‹", "上一页", () => _board.PreviousPage(), 44);
-        _nextPageButton = Button("›", "下一页", () => _board.NextPage(), 44);
-        _addPageButton = Button("+", "在当前页后插入新页", () => _board.InsertPageAfterCurrent(), 44);
-        _deletePageButton = Button("−", "删除当前页", DeleteCurrentPage, 44);
-        row.Children.Add(_previousPageButton);
-        row.Children.Add(_pageLabel);
-        row.Children.Add(_nextPageButton);
-        row.Children.Add(_pageCountLabel);
-        row.Children.Add(_addPageButton);
-        row.Children.Add(_deletePageButton);
-        return Strip(row);
+        var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+        header.Children.Add(new TextBlock { Text = "页面", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+        _pageCountLabel.Text = "共 1 页";
+        header.Children.Add(_pageCountLabel);
+
+        var actions = new Grid { RowSpacing = 2, ColumnSpacing = 2, Margin = new Thickness(0, 6, 0, 6) };
+        for (int c = 0; c < 3; c++)
+            actions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        actions.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        actions.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _newPageButton = Button("＋", "在当前页后新建页面", () => _board.InsertPageAfterCurrent(), 1);
+        _copyPageButton = Button("⧉", "复制当前页", () => _board.CopyCurrentPage(), 1);
+        _deletePageButton = Button("－", "删除当前页", DeleteCurrentPage, 1);
+        _moveUpButton = Button("↑", "上移当前页", () => MoveCurrentPage(-1), 1);
+        _moveDownButton = Button("↓", "下移当前页", () => MoveCurrentPage(1), 1);
+        _renamePageButton = Button("✎", "重命名当前页", () => _ = RenameCurrentPageAsync(), 1);
+        var actionButtons = new[]
+        {
+            (_newPageButton, 0, 0), (_copyPageButton, 0, 1), (_deletePageButton, 0, 2),
+            (_moveUpButton, 1, 0), (_moveDownButton, 1, 1), (_renamePageButton, 1, 2),
+        };
+        foreach (var (button, row, column) in actionButtons)
+        {
+            button.HorizontalAlignment = HorizontalAlignment.Stretch;
+            Grid.SetRow(button, row);
+            Grid.SetColumn(button, column);
+            actions.Children.Add(button);
+        }
+
+        var scroll = new ScrollViewer
+        {
+            Content = _pageListPanel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollMode = ScrollMode.Auto,
+            HorizontalScrollMode = ScrollMode.Disabled,
+        };
+
+        var panel = new Grid();
+        panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        Grid.SetRow(header, 0);
+        panel.Children.Add(header);
+        Grid.SetRow(actions, 1);
+        panel.Children.Add(actions);
+        Grid.SetRow(scroll, 2);
+        panel.Children.Add(scroll);
+
+        return new Border
+        {
+            Width = 176,
+            Padding = new Thickness(6),
+            Background = (Brush)Application.Current.Resources["IcSurfaceBrush"],
+            BorderBrush = (Brush)Application.Current.Resources["IcStrokeBrush"],
+            BorderThickness = new Thickness(0, 0, 1, 0),
+            Child = panel,
+        };
+    }
+
+    private void RefreshPageList()
+    {
+        _pageListPanel.Children.Clear();
+        for (int i = 0; i < _board.PageCount; i++)
+            _pageListPanel.Children.Add(BuildPageListItem(_board.GetPageThumbnail(i)));
+    }
+
+    private UIElement BuildPageListItem(BoardPageThumbnail info)
+    {
+        bool current = info.Index == _board.CurrentIndex;
+        bool dark = IsDarkBackground(info.Background);
+
+        var thumb = new Border
+        {
+            Width = 42,
+            Height = 30,
+            CornerRadius = new CornerRadius(3),
+            Background = new SolidColorBrush(PageBackgroundColor(info.Background)),
+            BorderBrush = (Brush)Application.Current.Resources["IcStrokeBrush"],
+            BorderThickness = new Thickness(1),
+            Child = new TextBlock
+            {
+                Text = info.StrokeCount > 0 ? info.StrokeCount.ToString() : string.Empty,
+                Foreground = new SolidColorBrush(dark ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 11,
+            },
+        };
+
+        var text = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center };
+        text.Children.Add(new TextBlock { Text = $"第 {info.Index + 1} 页", FontSize = 11, Opacity = 0.7 });
+        text.Children.Add(new TextBlock
+        {
+            Text = string.IsNullOrEmpty(info.Name) ? "未命名" : info.Name,
+            FontSize = 12,
+            MaxLines = 1,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+
+        var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        content.Children.Add(thumb);
+        content.Children.Add(text);
+
+        var button = new Button
+        {
+            Content = content,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            MinHeight = 48,
+            Padding = new Thickness(6, 4, 6, 4),
+            Background = current ? (Brush)Application.Current.Resources["IcAccentSoftBrush"] : (Brush)Application.Current.Resources["IcSurfaceAltBrush"],
+            BorderBrush = current ? (Brush)Application.Current.Resources["IcAccentBrush"] : (Brush)Application.Current.Resources["IcStrokeBrush"],
+            BorderThickness = current ? new Thickness(2) : new Thickness(1),
+        };
+        ToolTipService.SetToolTip(button, $"{info.Name}（{info.StrokeCount} 笔 / {info.ImageCount} 图）");
+        int index = info.Index;
+        button.Click += (_, _) => _board.GoTo(index);
+        return button;
+    }
+
+    private void MoveCurrentPage(int delta)
+    {
+        int from = _board.CurrentIndex;
+        _board.MovePage(from, from + delta);
     }
 
     private Border BuildToolStrip()
@@ -330,8 +461,10 @@ public sealed class BoardWindow : Window
         var flyout = new MenuFlyout();
         foreach (var (label, background) in new[]
         {
-            ("黑板", BoardBackground.Black), ("白板", BoardBackground.White),
+            ("黑板", BoardBackground.Black), ("黑板绿", BoardBackground.Green),
+            ("护眼米黄", BoardBackground.Cream), ("纯白", BoardBackground.White),
             ("网格纸", BoardBackground.Grid), ("横线纸", BoardBackground.Lined),
+            ("坐标系", BoardBackground.Coordinate),
         })
         {
             var item = new MenuFlyoutItem { Text = label };
@@ -379,9 +512,9 @@ public sealed class BoardWindow : Window
     private void SetBackground(BoardBackground background)
     {
         _board.SetBackground(background);
-        bool white = background != BoardBackground.Black;
-        _services.Settings.Canvas.UsingWhiteboard = white;
+        _services.Settings.Canvas.UsingWhiteboard = !IsDarkBackground(background);
         _services.SaveSettings();
+        RefreshPageList();
     }
 
     private void SetViewScale(float scale)
@@ -533,9 +666,36 @@ public sealed class BoardWindow : Window
 
     private async Task ConfirmDeleteCurrentPageAsync()
     {
-        if (!await ConfirmAsync("删除当前页", "删除当前页及其墨迹、图片？此操作无法从其他页恢复。")) return;
+        bool hasContent = _board.Current.Document.Count > 0 || _board.CurrentImages.Count > 0;
+        if (_board.PageCount <= 1)
+        {
+            if (!await ConfirmAsync("清空当前页", "这是最后一页，将清空其全部墨迹和图片。继续吗？")) return;
+        }
+        else if (hasContent)
+        {
+            if (!await ConfirmAsync("删除当前页", "当前页含墨迹或图片，删除后无法从其他页恢复。继续吗？")) return;
+        }
+        else if (!await ConfirmAsync("删除当前页", "确定删除当前空白页吗？")) return;
+
         _board.RemoveCurrentPage();
         UpdatePageNavigation();
+    }
+
+    private async Task RenameCurrentPageAsync()
+    {
+        if (Content is not FrameworkElement root || root.XamlRoot is null) return;
+        var input = new TextBox { Text = _board.PageName(_board.CurrentIndex), PlaceholderText = "页面名称" };
+        var dialog = new ContentDialog
+        {
+            Title = "重命名页面",
+            Content = input,
+            PrimaryButtonText = "确定",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = root.XamlRoot,
+        };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            _board.RenamePage(_board.CurrentIndex, input.Text);
     }
 
     private async Task ConfirmClearCurrentPageAsync()
@@ -564,18 +724,50 @@ public sealed class BoardWindow : Window
     {
         if (!_isFullscreen)
         {
-            AppWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
-            Content = _contentRoot;
-            _isFullscreen = true;
+            try
+            {
+                AppWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
+                if (!ReferenceEquals(_contentRoot, Content))
+                {
+                    // The element may still be parented by the windowed chrome; detach it
+                    // before handing it to Window.Content or the setter throws.
+                    _windowedContent.Children.Remove(_contentRoot);
+                    Content = null;
+                    Content = _contentRoot;
+                }
+                _isFullscreen = true;
+            }
+            catch (Exception ex)
+            {
+                InkCanvas.Core.Diagnostics.FileLog.WriteLogToFile(
+                    $"进入全屏失败：{ex}", InkCanvas.Core.Diagnostics.LogType.Error);
+            }
         }
         else
         {
-            AppWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
-            WindowChrome.MakeBorderless(this, topmost: false, resizable: true);
-            Content = _windowedContent;
-            var work = Platform.System.ScreenService.WorkArea;
-            WindowChrome.Place(this, work.X, work.Y, work.Width, work.Height);
-            _isFullscreen = false;
+            try
+            {
+                AppWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
+                WindowChrome.MakeBorderless(this, topmost: false, resizable: true);
+                if (!ReferenceEquals(_windowedContent, Content))
+                {
+                    Content = null;
+                    if (!_windowedContent.Children.Contains(_contentRoot))
+                    {
+                        Grid.SetRow(_contentRoot, 1);
+                        _windowedContent.Children.Add(_contentRoot);
+                    }
+                    Content = _windowedContent;
+                }
+                var work = Platform.System.ScreenService.WorkArea;
+                WindowChrome.Place(this, work.X, work.Y, work.Width, work.Height);
+                _isFullscreen = false;
+            }
+            catch (Exception ex)
+            {
+                InkCanvas.Core.Diagnostics.FileLog.WriteLogToFile(
+                    $"退出全屏失败：{ex}", InkCanvas.Core.Diagnostics.LogType.Error);
+            }
         }
         UpdatePageNavigation();
     }
@@ -595,7 +787,7 @@ public sealed class BoardWindow : Window
             _surface.Controller = _boundController;
         _images.SetPage(_board);
         _images.UpdateViewTransform(_boundController.ViewTransform);
-        _pageLabel.Text = $"{_board.CurrentIndex + 1} / {_board.PageCount}";
+
         _viewScale = ExtractScale(_boundController.ViewTransform);
         SetTool(_boundController.Tool);
         UpdatePageNavigation();
@@ -616,12 +808,14 @@ public sealed class BoardWindow : Window
 
     private void UpdatePageNavigation()
     {
-        _pageLabel.Text = $"{_board.CurrentIndex + 1}";
         _pageCountLabel.Text = $"共 {_board.PageCount} 页";
-        _previousPageButton.IsEnabled = _board.CurrentIndex > 0;
-        _nextPageButton.IsEnabled = _board.CurrentIndex < _board.PageCount - 1 || _board.PageCount < BoardService.MaximumPages;
-        _addPageButton.IsEnabled = _board.PageCount < BoardService.MaximumPages;
-        _deletePageButton.IsEnabled = _board.PageCount > 1;
+        if (_newPageButton is not null) _newPageButton.IsEnabled = _board.PageCount < BoardService.MaximumPages;
+        if (_copyPageButton is not null) _copyPageButton.IsEnabled = _board.PageCount < BoardService.MaximumPages;
+        if (_deletePageButton is not null) _deletePageButton.IsEnabled = _board.PageCount > 1;
+        if (_moveUpButton is not null) _moveUpButton.IsEnabled = _board.CurrentIndex > 0;
+        if (_moveDownButton is not null) _moveDownButton.IsEnabled = _board.CurrentIndex < _board.PageCount - 1;
+        if (_renamePageButton is not null) _renamePageButton.IsEnabled = _board.PageCount >= 1;
+        RefreshPageList();
     }
 
     private void OnStrokeSelectionChanged() => UpdateSelectionActions();
@@ -647,11 +841,9 @@ public sealed class BoardWindow : Window
 
     private void RefreshBackground()
     {
-        bool dark = _board.Background == BoardBackground.Black;
-        var color = dark
-            ? (Windows.UI.Color)Application.Current.Resources["IcBoardBlackColor"]
-            : (Windows.UI.Color)Application.Current.Resources["IcBoardWhiteColor"];
-        _background.Background = new SolidColorBrush(color);
+        var background = _board.Background;
+        bool dark = IsDarkBackground(background);
+        _background.Background = new SolidColorBrush(PageBackgroundColor(background));
         var boardTheme = Core.Theming.ThemeResolver.GetBoardTheme(!dark);
         WindowChrome.ApplyTheme(this, boardTheme == Core.Theming.AppTheme.Light ? 1 : 2);
         if (dark && IsBlackLike(_board.Current.CurrentAttributes.Color))
@@ -663,11 +855,22 @@ public sealed class BoardWindow : Window
 
     private InkColor ColorForCurrentBackground(InkColor color)
     {
-        bool dark = _board.Background == BoardBackground.Black;
+        bool dark = IsDarkBackground(_board.Background);
         if (dark && IsBlackLike(color)) return InkColor.Opaque(245, 245, 245);
         if (!dark && IsWhiteLike(color)) return InkColor.Opaque(20, 20, 20);
         return color;
     }
+
+    private static bool IsDarkBackground(BoardBackground background)
+        => background is BoardBackground.Black or BoardBackground.Green;
+
+    private static Windows.UI.Color PageBackgroundColor(BoardBackground background) => background switch
+    {
+        BoardBackground.Black => (Windows.UI.Color)Application.Current.Resources["IcBoardBlackColor"],
+        BoardBackground.Green => Windows.UI.Color.FromArgb(255, 0x1E, 0x3B, 0x2F),
+        BoardBackground.Cream => Windows.UI.Color.FromArgb(255, 0xF5, 0xEF, 0xDC),
+        _ => Windows.UI.Color.FromArgb(255, 0xFA, 0xFA, 0xFA),
+    };
 
     private static bool IsBlackLike(InkColor color)
         => color.R <= 32 && color.G <= 32 && color.B <= 32;
@@ -677,17 +880,253 @@ public sealed class BoardWindow : Window
 
     private void OnDrawPaper(CanvasControl sender, CanvasDrawEventArgs args)
     {
-        if (_board.Background is not (BoardBackground.Grid or BoardBackground.Lined)) return;
+        var background = _board.Background;
+        bool dark = IsDarkBackground(background);
         float spacing = Math.Clamp(_board.GridSpacing, 12f, 160f);
-        var line = Windows.UI.Color.FromArgb(55, 92, 113, 121);
         float width = (float)sender.ActualWidth;
         float height = (float)sender.ActualHeight;
-        for (float y = spacing; y < height; y += spacing)
-            args.DrawingSession.DrawLine(new Vector2(0, y), new Vector2(width, y), line, 1f);
-        if (_board.Background == BoardBackground.Grid)
-            for (float x = spacing; x < width; x += spacing)
-                args.DrawingSession.DrawLine(new Vector2(x, 0), new Vector2(x, height), line, 1f);
+        var line = dark
+            ? Windows.UI.Color.FromArgb(70, 235, 235, 235)
+            : Windows.UI.Color.FromArgb(55, 92, 113, 121);
+
+        switch (background)
+        {
+            case BoardBackground.Grid:
+                for (float y = spacing; y < height; y += spacing)
+                    args.DrawingSession.DrawLine(new Vector2(0, y), new Vector2(width, y), line, 1f);
+                for (float x = spacing; x < width; x += spacing)
+                    args.DrawingSession.DrawLine(new Vector2(x, 0), new Vector2(x, height), line, 1f);
+                break;
+
+            case BoardBackground.Lined:
+                for (float y = spacing; y < height; y += spacing)
+                    args.DrawingSession.DrawLine(new Vector2(0, y), new Vector2(width, y), line, 1f);
+                break;
+
+            case BoardBackground.Coordinate:
+                DrawCoordinateGrid(args, dark, spacing, width, height);
+                break;
+        }
     }
+
+    private static void DrawCoordinateGrid(CanvasDrawEventArgs args, bool dark, float spacing, float width, float height)
+    {
+        var session = args.DrawingSession;
+        var axis = dark
+            ? Windows.UI.Color.FromArgb(200, 230, 230, 230)
+            : Windows.UI.Color.FromArgb(190, 60, 80, 90);
+        var tick = dark
+            ? Windows.UI.Color.FromArgb(150, 220, 220, 220)
+            : Windows.UI.Color.FromArgb(140, 60, 80, 90);
+
+        float originX = width * 0.5f;
+        float originY = height * 0.5f;
+        const float tickHalf = 4f;
+
+        session.DrawLine(new Vector2(0, originY), new Vector2(width, originY), axis, 1.6f);
+        session.DrawLine(new Vector2(originX, 0), new Vector2(originX, height), axis, 1.6f);
+
+        for (float x = originX + spacing; x < width; x += spacing)
+            session.DrawLine(new Vector2(x, originY - tickHalf), new Vector2(x, originY + tickHalf), tick, 1f);
+        for (float x = originX - spacing; x > 0; x -= spacing)
+            session.DrawLine(new Vector2(x, originY - tickHalf), new Vector2(x, originY + tickHalf), tick, 1f);
+        for (float y = originY + spacing; y < height; y += spacing)
+            session.DrawLine(new Vector2(originX - tickHalf, y), new Vector2(originX + tickHalf, y), tick, 1f);
+        for (float y = originY - spacing; y > 0; y -= spacing)
+            session.DrawLine(new Vector2(originX - tickHalf, y), new Vector2(originX + tickHalf, y), tick, 1f);
+
+        using var format = new Microsoft.Graphics.Canvas.Text.CanvasTextFormat { FontSize = 12 };
+        session.DrawText("O", originX + 4, originY + 4, axis, format);
+        session.DrawText("x", width - 18, originY + 4, axis, format);
+        session.DrawText("y", originX + 4, 4, axis, format);
+        session.DrawText($"单位：1 格 = {spacing:0} DIP", 8, height - 20, axis, format);
+    }
+
+    private void OnImageLayerPointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        var point = e.GetCurrentPoint(_images).Position;
+        long now = Environment.TickCount64;
+        bool isDoubleTap = now - _lastImageTapTicks <= 450
+            && Math.Abs(point.X - _lastImageTapPoint.X) <= 6
+            && Math.Abs(point.Y - _lastImageTapPoint.Y) <= 6;
+        _lastImageTapTicks = isDoubleTap ? 0 : now;
+        _lastImageTapPoint = point;
+        if (!isDoubleTap) return;
+
+        if (TryEditAiCardAt(point, "手动双击判定"))
+            e.Handled = true;
+    }
+
+    private void OnImageDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        var point = e.GetPosition(_images);
+        if (TryEditAiCardAt(point, "DoubleTapped"))
+            e.Handled = true;
+    }
+
+    /// <summary>Shared edit entry point for both the manual tap heuristic and DoubleTapped.</summary>
+    private bool TryEditAiCardAt(Windows.Foundation.Point point, string source)
+    {
+        var asset = HitTestImage((float)point.X, (float)point.Y);
+        if (asset is null)
+        {
+            InkCanvas.Core.Diagnostics.FileLog.WriteLogToFile(
+                $"AI 卡片双击（{source}）：坐标 ({point.X:0.0},{point.Y:0.0}) 未命中任何资产",
+                InkCanvas.Core.Diagnostics.LogType.Trace);
+            return false;
+        }
+
+        if (!string.Equals(asset.ContentType, "image/png", StringComparison.OrdinalIgnoreCase))
+        {
+            InkCanvas.Core.Diagnostics.FileLog.WriteLogToFile(
+                $"AI 卡片双击（{source}）：命中资产 {asset.Name}，坐标 ({point.X:0.0},{point.Y:0.0})，ContentType={asset.ContentType} 非 image/png，忽略",
+                InkCanvas.Core.Diagnostics.LogType.Trace);
+            return false;
+        }
+
+        var metadata = AiPasteMetadata.TryParse(asset.Metadata);
+        if (metadata is null)
+        {
+            InkCanvas.Core.Diagnostics.FileLog.WriteLogToFile(
+                $"AI 卡片双击（{source}）：命中资产 {asset.Name}，坐标 ({point.X:0.0},{point.Y:0.0})，Metadata 为空或无法解析（长度 {asset.Metadata?.Length ?? 0}），忽略",
+                InkCanvas.Core.Diagnostics.LogType.Trace);
+            return false;
+        }
+
+        InkCanvas.Core.Diagnostics.FileLog.WriteLogToFile(
+            $"AI 卡片双击（{source}）：命中资产 {asset.Name}，坐标 ({point.X:0.0},{point.Y:0.0})，Kind={metadata.Kind}，进入编辑",
+            InkCanvas.Core.Diagnostics.LogType.Event);
+        _ = EditAiCardAsync(asset, metadata);
+        return true;
+    }
+
+    private BoardImageAsset HitTestImage(float x, float y)
+    {
+        var images = _board.CurrentImages;
+        for (int i = images.Count - 1; i >= 0; i--)
+        {
+            var image = images[i];
+            if (x >= image.Left && x <= image.Left + image.Width
+                && y >= image.Top && y <= image.Top + image.Height)
+                return image;
+        }
+        return null;
+    }
+
+    private async Task EditAiCardAsync(BoardImageAsset asset, AiPasteMetadata metadata)
+    {
+        InkCanvas.Core.Diagnostics.FileLog.WriteLogToFile(
+            $"AI 卡片编辑：进入 EditAiCardAsync，资产 {asset.Name}，Kind={metadata.Kind}，已在编辑={_editingAiCard}",
+            InkCanvas.Core.Diagnostics.LogType.Event);
+        if (_editingAiCard)
+        {
+            InkCanvas.Core.Diagnostics.FileLog.WriteLogToFile(
+                "AI 卡片编辑：已有编辑对话框，忽略重复请求",
+                InkCanvas.Core.Diagnostics.LogType.Trace);
+            return;
+        }
+        if (Content is not FrameworkElement root || root.XamlRoot is null)
+        {
+            InkCanvas.Core.Diagnostics.FileLog.WriteLogToFile(
+                $"AI 卡片编辑：XamlRoot 为空（Content={Content?.GetType().Name ?? "null"}），无法打开对话框",
+                InkCanvas.Core.Diagnostics.LogType.Error);
+            return;
+        }
+
+        bool formula = metadata.Kind == AiPasteKind.Formula;
+        string initial = formula
+            ? metadata.Latex
+            : metadata.Kind == AiPasteKind.Steps && metadata.Lines.Count > 0
+                ? string.Join("\n", metadata.Lines)
+                : metadata.Text;
+
+        var editor = new TextBox
+        {
+            Text = initial,
+            AcceptsReturn = !formula,
+            TextWrapping = TextWrapping.Wrap,
+            MinWidth = 360,
+            MinHeight = formula ? 60 : 140,
+        };
+        var panel = new StackPanel { Spacing = 6 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = formula ? "LaTeX 公式" : "卡片文本",
+            Opacity = 0.7,
+        });
+        panel.Children.Add(editor);
+
+        var dialog = new ContentDialog
+        {
+            Title = "编辑 AI 卡片",
+            Content = panel,
+            PrimaryButtonText = "保存",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = root.XamlRoot,
+        };
+
+        _editingAiCard = true;
+        try
+        {
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+
+            string text = editor.Text ?? "";
+            if (formula && string.IsNullOrWhiteSpace(text))
+            {
+                await ShowMessageAsync("LaTeX 内容不能为空。");
+                return;
+            }
+
+            var updated = new AiPasteMetadata
+            {
+                Version = metadata.Version > 0 ? metadata.Version : AiPasteMetadata.CurrentVersion,
+                Kind = metadata.Kind,
+                Annotations = metadata.Annotations.Select(points => new List<double>(points)).ToList(),
+            };
+            if (formula)
+            {
+                updated.Latex = text.Trim();
+            }
+            else
+            {
+                updated.Text = text;
+                updated.Lines = SplitCardLines(text);
+            }
+
+            var lines = ContentLines(updated);
+            var (estimatedWidth, estimatedHeight) = PasteCardLayout.Estimate(lines);
+            int width = Math.Clamp((int)Math.Round(Math.Max(asset.Width, estimatedWidth)), 120, 640);
+            int height = Math.Clamp((int)Math.Round(Math.Max(asset.Height, estimatedHeight)), 60, 480);
+            byte[] png = await PasteCardRenderer.RenderPngAsync(asset.Name, lines, width, height);
+            if (png is null || png.Length == 0)
+            {
+                await ShowMessageAsync("卡片重新渲染失败，原内容保持不变。");
+                return;
+            }
+
+            if (!_board.UpdateImage(asset, png, updated.Serialize()))
+                await ShowMessageAsync("卡片已不在当前页面，未更新。");
+        }
+        finally
+        {
+            _editingAiCard = false;
+        }
+    }
+
+    private static List<string> ContentLines(AiPasteMetadata metadata)
+    {
+        if (metadata.Kind == AiPasteKind.Formula)
+            return new List<string> { metadata.Latex };
+        if (metadata.Lines.Count > 0) return metadata.Lines.ToList();
+        return SplitCardLines(metadata.Text);
+    }
+
+    private static List<string> SplitCardLines(string text)
+        => (text ?? "").Replace("\r", "").Split('\n')
+            .Select(line => line.TrimEnd())
+            .Where(line => line.Length > 0)
+            .ToList();
 
     private void OnClosed(object sender, WindowEventArgs args)
     {
