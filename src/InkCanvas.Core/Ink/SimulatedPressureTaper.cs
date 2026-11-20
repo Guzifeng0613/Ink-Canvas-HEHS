@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace InkCanvas.Core.Ink;
 
-/// <summary>Timestamp-based virtual pressure and a bounded, distance-based cubic nib tail.</summary>
+/// <summary>Timestamp-based virtual pressure, device pressure and a bounded, distance-based cubic nib tail.</summary>
 internal sealed class SimulatedPressureTaper : TaperProfile
 {
     private readonly TaperKind _kind;
@@ -59,7 +59,7 @@ internal sealed class SimulatedPressureTaper : TaperProfile
 
         if (_kind is TaperKind.SmoothPen or TaperKind.SoftPen)
         {
-            Settle(ref current.Width, baseWidth * _ratio);
+            Settle(ref current.Width, baseWidth * _ratio * DevicePressureScale(current.Pressure));
             return;
         }
 
@@ -79,11 +79,17 @@ internal sealed class SimulatedPressureTaper : TaperProfile
         {
             float progress = Math.Clamp((_distance - _distances[index % _widths.Length]) / tailLength, 0, 1);
             float cubic = 1 - MathF.Pow(1 - progress, 3);
-            Settle(ref points[index].Width, _widths[index % _widths.Length] * (tipRatio + (1 - tipRatio) * cubic));
+            Settle(ref points[index].Width, _widths[index % _widths.Length] * (tipRatio + (1 - tipRatio) * cubic)
+                * DevicePressureScale(points[index].Pressure));
             if (progress >= 1) _stable = index + 1;
         }
         _stable = Math.Max(_stable, tipIndex - _widths.Length + 1);
     }
 
     private static float SmoothStep(float value) => value * value * (3 - 2 * value);
+
+    // Pressure-less input uses .5, preserving the existing virtual-pressure profiles exactly.
+    private static float DevicePressureScale(float pressure) => pressure <= .5f
+        ? .45f + .55f * Math.Clamp(pressure / .5f, 0, 1)
+        : 1 + .35f * Math.Clamp((pressure - .5f) / .5f, 0, 1);
 }

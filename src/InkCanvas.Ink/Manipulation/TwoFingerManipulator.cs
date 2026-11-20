@@ -18,6 +18,15 @@ public sealed class TwoFingerManipulator
     public float MinScale { get; set; } = 0.2f;
     public float MaxScale { get; set; } = 8f;
 
+    /// <summary>
+    /// Fraction of logarithmic zoom applied immediately. 1 = legacy 1:1 tracking.
+    /// Reversing or subdividing the same pinch must not introduce scale drift.
+    /// </summary>
+    public float ZoomDamping { get; set; } = 1f;
+
+    /// <summary>Contact-length dead zone in DIP below which zoom/rotate are ignored.</summary>
+    public float ZoomDeadZone { get; set; } = 1f;
+
     public void Begin(Vector2 a, Vector2 b)
     {
         _prevA = a; _prevB = b; _hasPrevious = true;
@@ -50,15 +59,16 @@ public sealed class TwoFingerManipulator
         if (AllowTranslate)
             delta *= Matrix3x2.CreateTranslation(mid - prevMid);
 
-        if (AllowZoom && prevLen > 1f && len > 1f)
+        if (AllowZoom && prevLen > ZoomDeadZone && len > ZoomDeadZone)
         {
             float scale = len / prevLen;
+            scale = MathF.Pow(scale, Math.Clamp(ZoomDamping, 0.05f, 1f));
             float currentScale = MathF.Sqrt(MathF.Abs(transform.M11 * transform.M22 - transform.M12 * transform.M21));
             scale = Math.Clamp(scale, MinScale / MathF.Max(currentScale, 1e-3f), MaxScale / MathF.Max(currentScale, 1e-3f));
             delta *= Matrix3x2.CreateTranslation(-center) * Matrix3x2.CreateScale(scale) * Matrix3x2.CreateTranslation(center);
         }
 
-        if (AllowRotation && prevLen > 1f && len > 1f)
+        if (AllowRotation && prevLen > ZoomDeadZone && len > ZoomDeadZone)
         {
             float angle = MathF.Atan2(vec.Y, vec.X) - MathF.Atan2(prevVec.Y, prevVec.X);
             while (angle > MathF.PI) angle -= 2 * MathF.PI;

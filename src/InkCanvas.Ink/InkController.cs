@@ -537,6 +537,28 @@ public sealed partial class InkController : IDisposable
         _selectionManipulator.AllowTranslate = translate;
     }
 
+    /// <summary>Test-build zoom damping; 1 = legacy hard 1:1 tracking, 0.85–0.9 adds rubber band.</summary>
+    public float ZoomDamping
+    {
+        get => _manipulator.ZoomDamping;
+        set
+        {
+            _manipulator.ZoomDamping = value;
+            _selectionManipulator.ZoomDamping = value;
+        }
+    }
+
+    /// <summary>Two-finger contact dead zone in DIP.</summary>
+    public float ZoomDeadZone
+    {
+        get => _manipulator.ZoomDeadZone;
+        set
+        {
+            _manipulator.ZoomDeadZone = value;
+            _selectionManipulator.ZoomDeadZone = value;
+        }
+    }
+
     // ---- input ------------------------------------------------------------
 
     public void OnPointerDown(in OverlayPointer p)

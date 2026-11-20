@@ -126,6 +126,8 @@ public sealed class AppServices : IDisposable
         controller.CurrentAttributes.Nib = Enum.IsDefined(Settings.Canvas.PenNib) ? Settings.Canvas.PenNib : PenNib.Round;
         controller.CurrentAttributes.HighlighterAlpha = (byte)Math.Clamp(Settings.Canvas.InkAlpha, 20, 240);
         controller.EraserRadius = OriginalMenuCatalog.ToEraserRadius(Settings.Canvas.EraserSize);
+        controller.ZoomDamping = .88f;
+        controller.ZoomDeadZone = 2f;
         if (Settings.Canvas.EraserType == 1) controller.EraserMode = InkEraserMode.Area;
         else if (Settings.Canvas.EraserType == 2) controller.EraserMode = InkEraserMode.WholeStroke;
         controller.RecognizeShapes = Settings.InkToShape.IsInkToShapeEnabled;

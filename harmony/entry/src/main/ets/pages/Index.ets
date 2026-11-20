@@ -2196,6 +2196,9 @@ struct Index {
       this.settings.gesture.isEnableTwoFingerTranslate,
       this.settings.gesture.isEnableTwoFingerRotation
     );
+    // 缩放阻尼：吸收 88% 的对数缩放增量，死区 2 vp。
+    this.controller.ZoomDamping = 0.88;
+    this.controller.ZoomDeadZone = 2;
   }
 
   private boardBackgroundColor(): string {
@@ -2787,7 +2790,14 @@ struct Index {
     const touches = event.changedTouches;
     for (let i = 0; i < touches.length; i++) {
       const touch = touches[i];
-      const pressure = event.pressure > 0 ? event.pressure : 0.5;
+      const touchPressure = touch.pressure === undefined ? 0 : touch.pressure;
+      let pressure = 0.5;
+      if (touchPressure > 0) {
+        // TouchObject.pressure 为 [0,65535)，与 event.pressure([0,1]) 量纲不同。
+        pressure = Math.min(Math.max(touchPressure / 65535, 0), 1);
+      } else if (event.pressure > 0) {
+        pressure = event.pressure;
+      }
       const width = touch.width === undefined ? 0 : touch.width;
       const height = touch.height === undefined ? 0 : touch.height;
       const sample = new PointerSample(

@@ -45,6 +45,8 @@ public sealed class VectorParityTests
     [Theory]
     [InlineData("taper-tail.json")]
     [InlineData("taper-velocity.json")]
+    [InlineData("taper-simulated.json")]
+    [InlineData("taper-device-pressure.json")]
     public void TaperVectorsMatch(string file)
     {
         using var doc = Load(file);
@@ -277,10 +279,12 @@ public sealed class VectorParityTests
         }
     }
 
-    [Fact]
-    public void TwoFingerVectorsMatch()
+    [Theory]
+    [InlineData("two-finger.json")]
+    [InlineData("two-finger-damping.json")]
+    public void TwoFingerVectorsMatch(string file)
     {
-        using var doc = Load("two-finger.json");
+        using var doc = Load(file);
         foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
         {
             var input = c.GetProperty("input");
@@ -291,7 +295,9 @@ public sealed class VectorParityTests
                 AllowTranslate = options.GetProperty("allowTranslate").GetBoolean(),
                 AllowRotation = options.GetProperty("allowRotation").GetBoolean(),
                 MinScale = options.GetProperty("minScale").GetSingle(),
-                MaxScale = options.GetProperty("maxScale").GetSingle()
+                MaxScale = options.GetProperty("maxScale").GetSingle(),
+                ZoomDamping = options.TryGetProperty("zoomDamping", out var damping) ? damping.GetSingle() : 1,
+                ZoomDeadZone = options.TryGetProperty("zoomDeadZone", out var deadZone) ? deadZone.GetSingle() : 1
             };
             var transform = Mat(input[1]);
             var center = new System.Numerics.Vector2(input[2].GetSingle(), input[3].GetSingle());
