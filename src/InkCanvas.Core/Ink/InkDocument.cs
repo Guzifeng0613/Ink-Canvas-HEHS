@@ -109,6 +109,30 @@ public sealed class InkDocument
         return true;
     }
 
+    /// <summary>Restore removed strokes in ascending original-index order, notifying once.</summary>
+    public void InsertRange(IEnumerable<(int Index, InkStroke Stroke)> strokes)
+    {
+        bool any = false;
+        foreach (var (index, stroke) in strokes)
+        {
+            _strokes.Insert(Math.Clamp(index, 0, _strokes.Count), stroke);
+            any = true;
+        }
+        if (any) Changed?.Invoke();
+    }
+
+    /// <summary>Replace one stroke by its surviving fragments without reordering other ink.</summary>
+    public bool Replace(InkStroke stroke, IReadOnlyList<InkStroke> replacement)
+    {
+        int index = _strokes.IndexOf(stroke);
+        if (index < 0) return false;
+        _strokes.RemoveAt(index);
+        _strokes.InsertRange(index, replacement);
+        // Notify once, so renderers never observe a temporarily empty document mid-erase.
+        Changed?.Invoke();
+        return true;
+    }
+
     public void Clear()
     {
         if (_strokes.Count == 0) return;
@@ -123,6 +147,15 @@ public sealed class InkDocument
         _strokes.Clear();
         _strokes.AddRange(incoming);
         NotifyChanged();
+    }
+
+    /// <summary>Exchange a screen page atomically while retaining stroke identity for undo.</summary>
+    public void ReplaceAll(IEnumerable<InkStroke> strokes)
+    {
+        var incoming = strokes.Where(stroke => stroke is not null).ToArray();
+        _strokes.Clear();
+        _strokes.AddRange(incoming);
+        Changed?.Invoke();
     }
 
     /// <summary>Notify that stroke geometry mutated in place (e.g. a transform).</summary>

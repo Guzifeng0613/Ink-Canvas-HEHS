@@ -2227,6 +2227,9 @@ struct Index {
       this.settings.gesture.isEnableTwoFingerTranslate,
       this.settings.gesture.isEnableTwoFingerRotation
     );
+    // 缩放阻尼：吸收 88% 的对数缩放增量，死区 2 vp。
+    this.controller.ZoomDamping = 0.88;
+    this.controller.ZoomDeadZone = 2;
   }
 
   // 手写笔手势（双击 doubleTap / 轻捏 squeeze）工具轮转：画笔类（铅笔/荧光笔/形状/漫游）
@@ -2864,17 +2867,25 @@ struct Index {
   private handleTouch(event: TouchEvent): void {
     const timeMs = event.timestamp / 1000000;
     const touches = event.changedTouches;
-    // ArkUI SourceTool.Pen=2；仅手写笔通道的非零压感才视为真实硬件压感，
-    // 手指/鼠标/模拟器继续走 0.5 回退，宽度行为与 C# 速度笔锋保持一致。
-    // pressure/tiltX/tiltY 定义在 BaseEvent 上（API9，pressure 已归一化到 [0,1]），
+    // ArkUI SourceTool.Pen=2；pressure/tiltX/tiltY 定义在 BaseEvent 上（API9，已归一化 [0,1]），
     // TouchObject 自身不携带倾角；同一次 TouchEvent 内各触点共享该笔状态。
+    // 压感：优先触点级采样（TouchObject.pressure 为 [0,65535)，与 event.pressure [0,1] 量纲不同），
+    // 回退事件级，均无则 0.5；hasPressure 仅手写笔通道为真（笔宽调制/报点预测按笔门控，融合两线语义）。
     const isStylus = event.sourceTool === 2;
-    const hasPressure = isStylus && event.pressure > 0;
-    const pressure = event.pressure > 0 ? event.pressure : 0.5;
     const tiltX = event.tiltX;
     const tiltY = event.tiltY;
     for (let i = 0; i < touches.length; i++) {
       const touch = touches[i];
+      const touchPressure = touch.pressure === undefined ? 0 : touch.pressure;
+      let pressure = 0.5;
+      let hasPressure = false;
+      if (touchPressure > 0) {
+        pressure = Math.min(Math.max(touchPressure / 65535, 0), 1);
+        hasPressure = isStylus;
+      } else if (event.pressure > 0) {
+        pressure = event.pressure;
+        hasPressure = isStylus;
+      }
       const width = touch.width === undefined ? 0 : touch.width;
       const height = touch.height === undefined ? 0 : touch.height;
       const sample = new PointerSample(
