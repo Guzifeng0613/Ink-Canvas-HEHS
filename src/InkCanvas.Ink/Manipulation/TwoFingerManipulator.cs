@@ -18,6 +18,11 @@ public sealed class TwoFingerManipulator
     public float MinScale { get; set; } = 0.2f;
     public float MaxScale { get; set; } = 8f;
 
+    /// <summary>Fraction of logarithmic zoom; reversing a pinch must not introduce drift.</summary>
+    public float ZoomDamping { get; set; } = 1f;
+    /// <summary>Contact length below which zoom and rotation are ignored, in DIP.</summary>
+    public float ZoomDeadZone { get; set; } = 1f;
+
     public void Begin(Vector2 a, Vector2 b)
     {
         _prevA = a; _prevB = b; _hasPrevious = true;
@@ -36,9 +41,9 @@ public sealed class TwoFingerManipulator
         float previousLength = before.Length();
         float length = after.Length();
         float scale = 1, angle = 0;
-        if (previousLength > 1 && length > 1)
+        if (previousLength > ZoomDeadZone && length > ZoomDeadZone)
         {
-            if (AllowZoom) scale = Math.Clamp(length / previousLength, MinScale, MaxScale);
+            if (AllowZoom) scale = Math.Clamp(MathF.Pow(length / previousLength, Math.Clamp(ZoomDamping, .05f, 1f)), MinScale, MaxScale);
             if (AllowRotation) angle = MathF.Atan2(after.Y, after.X) - MathF.Atan2(before.Y, before.X);
         }
         return Matrix3x2.CreateTranslation(-previousMidpoint) * Matrix3x2.CreateScale(scale)
@@ -72,15 +77,15 @@ public sealed class TwoFingerManipulator
 
         var pivot = screenSpace && AllowTranslate && Vector2.DistanceSquared(center, mid) < .001f ? prevMid : center;
 
-        if (AllowZoom && prevLen > 1f && len > 1f)
+        if (AllowZoom && prevLen > ZoomDeadZone && len > ZoomDeadZone)
         {
-            float scale = len / prevLen;
+            float scale = MathF.Pow(len / prevLen, Math.Clamp(ZoomDamping, .05f, 1f));
             float currentScale = MathF.Sqrt(MathF.Abs(transform.M11 * transform.M22 - transform.M12 * transform.M21));
             scale = Math.Clamp(scale, MinScale / MathF.Max(currentScale, 1e-3f), MaxScale / MathF.Max(currentScale, 1e-3f));
             delta *= Matrix3x2.CreateTranslation(-pivot) * Matrix3x2.CreateScale(scale) * Matrix3x2.CreateTranslation(pivot);
         }
 
-        if (AllowRotation && prevLen > 1f && len > 1f)
+        if (AllowRotation && prevLen > ZoomDeadZone && len > ZoomDeadZone)
         {
             float angle = MathF.Atan2(vec.Y, vec.X) - MathF.Atan2(prevVec.Y, prevVec.X);
             while (angle > MathF.PI) angle -= 2 * MathF.PI;

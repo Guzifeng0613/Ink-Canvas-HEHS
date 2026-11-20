@@ -14,7 +14,7 @@ public sealed class PressureAndZoomTests
     [InlineData(TaperKind.SoftPen)]
     [InlineData(TaperKind.Natural)]
     [InlineData(TaperKind.Calligraphy)]
-    public void EachPointKeepsItsOwnDevicePressureMultiplier(TaperKind kind)
+    public void PressureWithoutDeviceMetadataKeepsTheSimulatedWidth(TaperKind kind)
     {
         var neutral = new InkStroke(new StrokeAttributes { TaperKind = kind, BaseWidth = 8 });
         var pressured = new InkStroke(new StrokeAttributes { TaperKind = kind, BaseWidth = 8 });
@@ -31,9 +31,8 @@ public sealed class PressureAndZoomTests
         }
         for (int i = 0; i < pressured.Count; i++)
         {
-            float p = pressured.Points[i].Pressure;
-            float scale = p <= .5f ? .45f + 1.1f * p : 1 + .7f * (p - .5f);
-            Assert.Equal(neutral.Points[i].Width * scale, pressured.Points[i].Width, 4);
+            Assert.False(pressured.Points[i].HasPressure);
+            Assert.Equal(neutral.Points[i].Width, pressured.Points[i].Width, 4);
         }
         var live = pressured.Points.ToArray();
         var outline = StrokeGeometry.BuildUnionContours(pressured).SelectMany(p => p).ToArray();

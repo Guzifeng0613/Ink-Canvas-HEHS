@@ -267,7 +267,7 @@ public static class MathMarkup
             Next();
         }
 
-        private FormatException Error(string message) => new(message + "，位置 " + Math.Max(1, _position) + "。");
+        private FormatException Error(string message) => new(message + "，位置 " + System.Math.Max(1, _position) + "。");
         private void Enter() { if (++_depth > 48) throw Error("公式嵌套过深。"); }
         private void Count() { if (++_nodes > 512) throw Error("公式过于复杂。"); }
         private static XElement Operator(string text) => new(Math + "mo", text);

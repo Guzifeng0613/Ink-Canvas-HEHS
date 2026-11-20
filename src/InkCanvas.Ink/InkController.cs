@@ -408,6 +408,18 @@ public sealed partial class InkController : IDisposable
 
     public Matrix3x2 ViewTransform { get; set; } = Matrix3x2.Identity;
     public bool PanZoomEnabled { get; set; }
+
+    public float ZoomDamping
+    {
+        get => _manipulator.ZoomDamping;
+        set { _manipulator.ZoomDamping = value; _selectionManipulator.ZoomDamping = value; }
+    }
+
+    public float ZoomDeadZone
+    {
+        get => _manipulator.ZoomDeadZone;
+        set { _manipulator.ZoomDeadZone = value; _selectionManipulator.ZoomDeadZone = value; }
+    }
     public void ConfigureViewScaleLimits(float minimum, float maximum)
     {
         _manipulator.MinScale = minimum;
