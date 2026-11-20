@@ -6,6 +6,7 @@ using Microsoft.Graphics.Canvas;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.WindowsRuntime;
 
 namespace InkCanvas.Features.Classroom;
 
@@ -22,14 +23,22 @@ public enum ExportStage
 /// <summary>带阶段说明的导出进度（0–1）。</summary>
 public sealed record ExportProgress(ExportStage Stage, double Value, string Message);
 
-/// <summary>视频导出参数。<see cref="StartMs"/> / <see cref="EndMs"/> 为相对录制开始的时间。</summary>
+/// <summary>
+/// 视频导出参数。<see cref="StartMs"/> / <see cref="EndMs"/> 为相对录制开始的时间，
+/// <see cref="Speed"/> 为回放倍速（输出时长 = 区间长度 / Speed），<see cref="BoardOnly"/>
+/// 为 true 时跳过 PPT 截图（只保留背景 / 网格 / 笔画）。
+/// </summary>
 public sealed record ExportOptions(
     string OutputPath,
     long StartMs,
     long EndMs,
     int Fps = 30,
     int BitRate = 4_000_000,
-    bool IncludeAudio = false);
+    bool IncludeAudio = false,
+    int Width = 1920,
+    int Height = 1080,
+    double Speed = 1.0,
+    bool BoardOnly = false);
 
 /// <summary>导出结果（含音频状态说明，避免把「只有视频」静默当成成功）。</summary>
 public sealed record ExportResult(
@@ -86,42 +95,170 @@ public static class TimeMachineExporter
         if (options.BitRate < 100_000 || options.BitRate > 100_000_000)
             throw new ArgumentException("码率必须在 100 kbps–100 Mbps 之间。", nameof(options));
 
-        double seconds = (options.EndMs - options.StartMs) / 1000.0;
+        if (options.Width < 320 || options.Width > 3840)
+            throw new ArgumentException("导出宽度必须在 320–3840 之间。", nameof(options));
+
+        if (options.Height < 320 || options.Height > 3840)
+            throw new ArgumentException("导出高度必须在 320–3840 之间。", nameof(options));
+
+        if (!double.IsFinite(options.Speed) || options.Speed < 0.5 || options.Speed > 8)
+            throw new ArgumentException("导出倍速必须在 0.5–8 之间。", nameof(options));
+
+        double seconds = EffectiveDurationMs(options) / 1000.0;
+        if (seconds <= 0)
+            throw new ArgumentException("导出的结束时间必须大于起始时间。", nameof(options));
+
         if (seconds * options.Fps > 1_000_000)
             throw new ArgumentException("导出时长过长（超过 100 万帧），请缩短时间段或降低帧率。", nameof(options));
     }
 
+    /// <summary>原始会话区间时长（毫秒）：<c>EndMs - StartMs</c>，不受倍速影响。</summary>
+    public static long SourceDurationMs(ExportOptions options)
+        => options is null ? 0 : Math.Max(0, options.EndMs - options.StartMs);
+
+    /// <summary>倍速换算后的输出时长（毫秒）：<c>(EndMs - StartMs) / Speed</c>。</summary>
+    public static double EffectiveDurationMs(ExportOptions options)
+        => (options.EndMs - options.StartMs) / Math.Max(0.5, Math.Min(8, options.Speed));
+
+    /// <summary>预计输出帧数：<c>ceil(输出时长 × Fps / 1000)</c>；倍速越高帧数越少，至少 1 帧。</summary>
+    public static int EstimateFrameCount(ExportOptions options)
+    {
+        Validate(options);
+        double frames = EffectiveDurationMs(options) * options.Fps / 1000.0;
+        if (frames < 1) return 1;
+        if (frames > 1_000_000) throw new ArgumentException(
+            "导出时长过长（超过 100 万帧），请缩短时间段或降低帧率。", nameof(options));
+        return (int)Math.Ceiling(frames);
+    }
+
     /// <summary>
     /// 生成每一帧对应的时刻（毫秒，递增且不超过 <see cref="ExportOptions.EndMs"/>）。
-    /// 纯函数，可单独测试。
+    /// 帧 i 的时间为 <c>StartMs + i * (1000/Fps) * Speed</c>，与导出倍速一致。纯函数，可单独测试。
     /// </summary>
     public static IReadOnlyList<long> SampleFrameTimes(ExportOptions options)
     {
         Validate(options);
 
-        long span = options.EndMs - options.StartMs;
-        int count = (int)(span * options.Fps / 1000);
-        if (count < 1) count = 1;
+        int count = EstimateFrameCount(options);
+        double stepMs = (1000.0 / options.Fps) * options.Speed;
 
         var times = new List<long>(count);
         for (int i = 0; i < count; i++)
         {
-            long offset = (long)Math.Round(i * 1000.0 / options.Fps, MidpointRounding.AwayFromZero);
+            long offset = (long)Math.Round(i * stepMs, MidpointRounding.AwayFromZero);
             long time = options.StartMs + offset;
             if (time > options.EndMs) break;
             times.Add(time);
         }
+        if (times.Count == 0) times.Add(options.StartMs);
         return times;
     }
 
-    /// <summary>讲解音频应与视频等长：按所选时间段计算 48 kHz PCM 帧数（纯函数，可测试）。</summary>
+    /// <summary>
+    /// 讲解音频应与输出视频等长：按所选时间段 / 倍速计算 48 kHz PCM 帧数（纯函数，可测试）。
+    /// </summary>
     public static long AudioSampleFrames(ExportOptions options, int sampleRate = AudioSampleRate)
     {
         Validate(options);
         if (sampleRate <= 0) throw new ArgumentOutOfRangeException(nameof(sampleRate), "采样率必须大于 0。");
         return Pcm16Wav.SampleFrames(
-            TimeSpan.FromMilliseconds(options.EndMs - options.StartMs), sampleRate);
+            TimeSpan.FromMilliseconds(EffectiveDurationMs(options)), sampleRate);
     }
+
+    /// <summary>BoardOnly 时跳过 PPT 截图；返回 true 表示需要渲染 PPT 背景。</summary>
+    public static bool ShouldDrawPptBackground(ExportOptions options)
+        => options is not null && !options.BoardOnly;
+
+    /// <summary>
+    /// 估算导出占用的磁盘字节数：<c>帧数 × 宽 × 高 × 4</c>，含音频时再加上
+    /// <c>采样率 × 输出时长（秒）× 4</c>（48 kHz / 2 声道 / 16-bit 原始 PCM）。
+    /// </summary>
+    public static long EstimateRequiredBytes(ExportOptions options)
+    {
+        Validate(options);
+
+        long frames = EstimateFrameCount(options);
+        long video = frames * (long)options.Width * options.Height * 4;
+
+        long audio = 0;
+        if (options.IncludeAudio)
+        {
+            // 录制按原始时长进行，倍速 > 1 时会先录下更长的 WAV 再变速；
+            // 倍速 < 1 时变速后的输出反而更长，取两者较大值估算峰值占用。
+            double outputSeconds = EffectiveDurationMs(options) / 1000.0;
+            double recordedSeconds = SourceDurationMs(options) / 1000.0;
+            double seconds = Math.Max(outputSeconds, recordedSeconds);
+            audio = (long)Math.Ceiling(AudioSampleRate * seconds * 4);
+        }
+        return video + audio;
+    }
+
+    /// <summary>
+    /// 按可用空间校验导出所需磁盘；不足预估的 1.2 倍时抛出中文 <see cref="InvalidOperationException"/>，
+    /// 调用方应在启动编码前调用，避免浪费录制 / 渲染时间。
+    /// </summary>
+    public static void EnsureFreeDiskSpace(long availableBytes, ExportOptions options)
+    {
+        long required = EstimateRequiredBytes(options);
+        double needed = required * 1.2;
+        if (availableBytes < needed)
+        {
+            double needMb = needed / (1024.0 * 1024.0);
+            double freeMb = Math.Max(0, availableBytes) / (1024.0 * 1024.0);
+            throw new InvalidOperationException(
+                $"磁盘可用空间不足：预计需要 {needMb:0.0} MB（含 20% 余量），当前仅 {freeMb:0.0} MB。" +
+                "请清理磁盘、选择其它位置或缩短导出时间段。");
+        }
+    }
+
+    /// <summary>读取输出目录所在卷的可用空间并校验；无法读取时跳过检查（不阻断导出）。</summary>
+    public static void EnsureDiskSpace(ExportOptions options)
+    {
+        Validate(options);
+        string fullPath = Path.GetFullPath(options.OutputPath);
+        string directory = Path.GetDirectoryName(fullPath);
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+
+        string root;
+        try
+        {
+            root = Path.GetPathRoot(fullPath);
+            if (string.IsNullOrEmpty(root)) return;
+            long available = new DriveInfo(root).AvailableFreeSpace;
+            EnsureFreeDiskSpace(available, options);
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch
+        {
+            // 驱动器不存在 / 权限受限：无法判断时保持原有行为，交由编码阶段报错。
+        }
+    }
+
+    /// <summary>
+    /// 清理导出失败 / 中断留下的半成品（同名 <c>.tmp</c> / <c>.part</c>）。
+    /// 成功的 MP4（以及作为结果的 WAV）不会被删除，便于调用方在成功后也安全调用。
+    /// </summary>
+    public static void CleanupArtifacts(ExportOptions options)
+    {
+        if (options is null || string.IsNullOrWhiteSpace(options.OutputPath)) return;
+
+        string fullPath;
+        try
+        {
+            fullPath = Path.GetFullPath(options.OutputPath);
+        }
+        catch
+        {
+            return;
+        }
+
+        TryDelete(fullPath + ".tmp");
+        TryDelete(fullPath + ".part");
+    }
+
 
     /// <summary>导出 MP4；返回结果以便调用方提示音频状态。</summary>
     public static Task<ExportResult> ExportWithResultAsync(
@@ -174,6 +311,9 @@ public static class TimeMachineExporter
         string directory = Path.GetDirectoryName(outputPath);
         if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
 
+        // 磁盘空间不足时在录制 / 渲染之前就失败，避免留下半成品。
+        EnsureDiskSpace(options);
+
         // 先删掉同名残留，避免编码失败时留下旧文件被误认为本次结果。
         try
         {
@@ -193,13 +333,15 @@ public static class TimeMachineExporter
             ct.ThrowIfCancellationRequested();
             WasapiAudioRecorder recorder = audioRecorder ?? new WasapiAudioRecorder();
             string tempWav = TempWavPath();
+            long sourceMs = SourceDurationMs(options);
 
-            Report(progress, ExportStage.RecordingAudio, 0, "正在录制讲解音频（系统声音）…");
+            Report(progress, ExportStage.RecordingAudio, 0,
+                $"正在录制讲解音频（原始时长 {sourceMs / 1000.0:0.##}s，倍速 {options.Speed:0.##}×）…");
             try
             {
                 wavPath = recorder.RecordAsync(
                     tempWav,
-                    TimeSpan.FromMilliseconds(options.EndMs - options.StartMs),
+                    TimeSpan.FromMilliseconds(sourceMs),
                     new InlineProgress(value =>
                         Report(progress, ExportStage.RecordingAudio, value,
                             $"正在录制讲解音频… {value * 100:0}%")),
@@ -221,6 +363,36 @@ public static class TimeMachineExporter
             {
                 hasAudio = true;
                 audioNote = "已同步录制系统讲解音频。";
+
+                // 音频按原始会话时长录制；倍速导出时在编码前把 WAV 变速到输出时长，
+                // 从而与视频帧数 / fps 对齐（±1 帧）。
+                if (Math.Abs(options.Speed - 1.0) > 1e-9)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    string resampled = TempWavPath();
+                    try
+                    {
+                        WavResampler.ChangeSpeedToFile(wavPath, resampled, options.Speed);
+                        TryDelete(wavPath);
+                        wavPath = resampled;
+                        audioNote =
+                            $"已同步录制讲解音频（{options.Speed:0.##}× 变速，输出 {EffectiveDurationMs(options) / 1000.0:0.##}s）。";
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        TryDelete(resampled);
+                        TryDelete(wavPath);
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        TryDelete(resampled);
+                        TryDelete(wavPath);
+                        wavPath = null;
+                        hasAudio = false;
+                        audioNote = "音频变速失败（" + ex.Message + "），已仅导出视频。";
+                    }
+                }
             }
         }
 
@@ -232,16 +404,18 @@ public static class TimeMachineExporter
             {
                 using var renderer = new StrokeRenderer();
                 using var device = CanvasDevice.GetSharedDevice();
-                using var target = new CanvasRenderTarget(device, FrameWidth, FrameHeight, 96);
+                using var target = new CanvasRenderTarget(device, options.Width, options.Height, 96);
                 var timeline = new InkTimeline(session);
                 var sceneCursor = new SceneCursor(session);
+                CanvasBitmap pptBitmap = null;
+                string pptBitmapPath = "";
 
                 Mf.SinkWriter writer = null;
                 if (hasAudio)
                 {
                     try
                     {
-                        writer = new Mf.SinkWriter(outputPath, FrameWidth, FrameHeight,
+                        writer = new Mf.SinkWriter(outputPath, options.Width, options.Height,
                             options.Fps, options.BitRate, includeAudio: true);
                         Report(progress, ExportStage.EncodingAudio, 0, "正在编码讲解音频…");
                         writer.WriteAudioWav(wavPath,
@@ -270,7 +444,7 @@ public static class TimeMachineExporter
 
                 if (writer is null)
                 {
-                    writer = new Mf.SinkWriter(outputPath, FrameWidth, FrameHeight,
+                    writer = new Mf.SinkWriter(outputPath, options.Width, options.Height,
                         options.Fps, options.BitRate, includeAudio: false);
                 }
 
@@ -283,9 +457,16 @@ public static class TimeMachineExporter
 
                         long timeMs = times[i];
                         var scene = sceneCursor.At(timeMs);
+                        LoadPptBitmap(device, scene.PptScreenshotPath, options, ref pptBitmap, ref pptBitmapPath);
                         using (var drawing = target.CreateDrawingSession())
                         {
                             drawing.Clear(BackgroundColor(scene.Background));
+                            if (pptBitmap is not null)
+                                drawing.DrawImage(pptBitmap,
+                                    new Windows.Foundation.Rect(0, 0, options.Width, options.Height),
+                                    new Windows.Foundation.Rect(0, 0, pptBitmap.SizeInPixels.Width,
+                                        pptBitmap.SizeInPixels.Height));
+                            DrawGrid(drawing, scene.Background, options.Width, options.Height);
                             foreach (var stroke in timeline.BuildFrame(timeMs))
                                 renderer.Draw(drawing, stroke, Matrix3x2.Identity);
                         }
@@ -303,6 +484,8 @@ public static class TimeMachineExporter
                 finally
                 {
                     writer?.Dispose();
+                    pptBitmap?.Dispose();
+                    pptBitmap = null;
                 }
             }
             finally
@@ -367,6 +550,69 @@ public static class TimeMachineExporter
             };
         }
         return Windows.UI.Color.FromArgb(255, 0xFA, 0xFA, 0xFA);
+    }
+
+    /// <summary>
+    /// 按需加载 PPT 截图。BoardOnly（或截图不存在 / 已失效）时释放缓存并回退纯色背景，
+    /// 避免把上一页的图片带进后续帧。
+    /// </summary>
+    private static void LoadPptBitmap(CanvasDevice device, string path, ExportOptions options,
+        ref CanvasBitmap bitmap, ref string loadedPath)
+    {
+        bool shouldDraw = ShouldDrawPptBackground(options)
+            && !string.IsNullOrWhiteSpace(path)
+            && File.Exists(path);
+
+        if (!shouldDraw)
+        {
+            bitmap?.Dispose();
+            bitmap = null;
+            loadedPath = "";
+            return;
+        }
+
+        if (bitmap is not null && string.Equals(loadedPath, path, StringComparison.OrdinalIgnoreCase)) return;
+
+        bitmap?.Dispose();
+        bitmap = null;
+        loadedPath = "";
+        try
+        {
+            bitmap = CanvasBitmap.LoadAsync(device, path).AsTask().GetAwaiter().GetResult();
+            loadedPath = path;
+        }
+        catch
+        {
+            // 截图损坏 / 格式不支持：静默回退纯色，不中断导出。
+            bitmap = null;
+            loadedPath = "";
+        }
+    }
+
+    /// <summary>按回放背景样式绘制网格 / 坐标轴（与时光机窗口 40 px 间距一致）。</summary>
+    private static void DrawGrid(CanvasDrawingSession drawing, string background, int width, int height)
+    {
+        ReplayBackgroundStyle style = ReplayBackgrounds.Resolve(background);
+        if (!style.HasGrid) return;
+
+        const float spacing = 40;
+        var gridColor = style.IsLight
+            ? Windows.UI.Color.FromArgb(0x2E, 0x00, 0x00, 0x00)
+            : Windows.UI.Color.FromArgb(0x2E, 0xFF, 0xFF, 0xFF);
+        for (float x = spacing; x < width; x += spacing)
+            drawing.DrawLine(x, 0, x, height, gridColor, 0.5f);
+        for (float y = spacing; y < height; y += spacing)
+            drawing.DrawLine(0, y, width, y, gridColor, 0.5f);
+
+        if (!style.HasAxes) return;
+
+        var axisColor = style.IsLight
+            ? Windows.UI.Color.FromArgb(0x88, 0x00, 0x00, 0x00)
+            : Windows.UI.Color.FromArgb(0x88, 0xFF, 0xFF, 0xFF);
+        float centerX = width / 2f;
+        float centerY = height / 2f;
+        drawing.DrawLine(centerX, 0, centerX, height, axisColor, 1.4f);
+        drawing.DrawLine(0, centerY, width, centerY, axisColor, 1.4f);
     }
 
     private static void TryDelete(string path)

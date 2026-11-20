@@ -84,6 +84,39 @@ public sealed class SessionJournal : IDisposable
         catch { return false; }
     }
 
+    /// <summary>
+    /// 读取 journal 与最后一个完整快照，返回已落盘的末事件时间（毫秒）。
+    /// 两者都没有有效事件时返回 -1。用于量化异常恢复最多丢多少时间。
+    /// </summary>
+    public static long LastEventTimeMs(string sessionId, string directory = null)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)) return -1;
+
+        long last = -1;
+        var (_, events) = ReadJournal(sessionId, directory);
+        foreach (var ev in events)
+        {
+            if (ev is not null && ev.TimeMs > last) last = ev.TimeMs;
+        }
+
+        var snapshot = TryLoadSnapshot(sessionId, directory);
+        if (snapshot?.Events is { Count: > 0 })
+        {
+            foreach (var ev in snapshot.Events)
+            {
+                if (ev is not null && ev.TimeMs > last) last = ev.TimeMs;
+            }
+        }
+        return last;
+    }
+
+    /// <summary>读取最后一个完整快照；损坏 / 不可读时返回 null（不影响末事件时间查询）。</summary>
+    private static ClassroomSession TryLoadSnapshot(string sessionId, string directory)
+    {
+        try { return ClassroomSessionStore.LoadSnapshot(sessionId, directory); }
+        catch { return null; }
+    }
+
     /// <summary>列出目录中所有未完成日志的会话 id。</summary>
     public static IReadOnlyList<string> PendingSessionIds(string directory = null)
     {
