@@ -12,6 +12,8 @@ public sealed class InkReplaySession
     private readonly List<InkStroke> _source;
     private readonly List<float> _cumulative;
     private readonly float _totalMs;
+    private InkStroke _partial;
+    private int _partialIndex = -1;
 
     public InkReplaySession(IEnumerable<InkStroke> strokes, float msPerPoint = 12f)
     {
@@ -31,6 +33,28 @@ public sealed class InkReplaySession
     public int StrokeCount => _source.Count;
 
     public bool IsComplete(float elapsedMs) => elapsedMs >= _totalMs;
+
+    /// <summary>Reusable playback frame. Finished strokes retain their cached geometry and the partial stroke keeps its identity.</summary>
+    public void WriteVisibleAt(float elapsedMs, List<InkStroke> result)
+    {
+        result.Clear();
+        for (int i = 0; i < _source.Count; i++)
+        {
+            float start = i == 0 ? 0 : _cumulative[i - 1];
+            if (elapsedMs < start) break;
+            var source = _source[i];
+            float end = _cumulative[i];
+            if (elapsedMs >= end) { result.Add(source); continue; }
+            if (elapsedMs <= 0) break;
+            int take = Math.Clamp((int)(source.Count * (elapsedMs - start) / Math.Max(1, end - start)), Math.Min(1, source.Count), source.Count);
+            if (_partialIndex != i)
+            {
+                _partial = new InkStroke(source.Attributes.Clone()); _partialIndex = i;
+            }
+            if (_partial.Count != take) _partial.RestorePrefix(source.Points, take);
+            result.Add(_partial); break;
+        }
+    }
 
     /// <summary>Strokes visible at <paramref name="elapsedMs"/>, the last one possibly partial.</summary>
     public List<InkStroke> VisibleAt(float elapsedMs)

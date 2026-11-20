@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace InkCanvas.Core.Settings;
@@ -20,9 +20,136 @@ public sealed class AppSettings
     [JsonPropertyName("inkToShape")] public InkToShapeSettings InkToShape { get; set; } = new();
     [JsonPropertyName("startup")] public StartupSettings Startup { get; set; } = new();
     [JsonPropertyName("randSettings")] public RandSettings Rand { get; set; } = new();
+    [JsonPropertyName("experimental")] public ExperimentalSettings Experimental { get; set; } = new();
 
     public AppSettings Clone() =>
         JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(this)) ?? new AppSettings();
+
+    /// <summary>
+    /// 1:1 port of upstream SetSettingsToRecommendation() (MW_Settings.cs): the "重置设置"
+    /// default set. Mutates in place instead of replacing the instance so live references
+    /// held by services (AutoSaveService's Automation, Palm's Advanced) stay valid; the
+    /// caller re-applies and saves afterwards. Upstream keeps the auto-delete configuration
+    /// across a reset, and fields it does not list fall back to the constructor defaults
+    /// (which match upstream Settings.cs).
+    /// </summary>
+    public void ResetToRecommendation()
+    {
+        bool autoDelSavedFiles = Automation.AutoDelSavedFiles;
+        int autoDelDaysThreshold = Automation.AutoDelSavedFilesDaysThreshold;
+
+        Advanced.IsSpecialScreen = true;
+        Advanced.IsQuadIR = false;
+        Advanced.TouchMultiplier = 0.3;
+        Advanced.NibModeBoundsWidth = 5;
+        Advanced.FingerModeBoundsWidth = 20;
+        Advanced.NibModeBoundsWidthThresholdValue = 2.5;
+        Advanced.FingerModeBoundsWidthThresholdValue = 2.5;
+        Advanced.NibModeBoundsWidthEraserSize = 0.8;
+        Advanced.FingerModeBoundsWidthEraserSize = 0.8;
+        Advanced.IsLogEnabled = true;
+        Advanced.IsSecondConfimeWhenShutdownApp = false;
+        Advanced.IsEnableEdgeGestureUtil = false;
+
+        Appearance.IsEnableDisPlayFloatBarText = false;
+        Appearance.IsEnableDisPlayNibModeToggler = false;
+        Appearance.IsColorfulViewboxFloatingBar = false;
+        Appearance.FloatingBarScale = 100.0;
+        Appearance.BlackboardScale = 100.0;
+        Appearance.FloatingBarBottomMargin = 100.0; // upstream constructor default
+        Appearance.IsTransparentButtonBackground = true;
+        Appearance.IsShowExitButton = true;
+        Appearance.IsShowEraserButton = true;
+        Appearance.IsShowHideControlButton = false;
+        Appearance.IsShowLRSwitchButton = false;
+        Appearance.IsShowModeFingerToggleSwitch = true;
+        Appearance.Theme = 0;
+
+        Automation.IsAutoFoldInEasiNote = true;
+        Automation.IsAutoFoldInEasiNoteIgnoreDesktopAnno = true;
+        Automation.IsAutoFoldInEasiCamera = true;
+        Automation.IsAutoFoldInEasiNote3C = false;
+        Automation.IsAutoFoldInSeewoPincoTeacher = false;
+        Automation.IsAutoFoldInHiteTouchPro = false;
+        Automation.IsAutoFoldInHiteCamera = false;
+        Automation.IsAutoFoldInWxBoardMain = false;
+        Automation.IsAutoFoldInOldZyBoard = false;
+        Automation.IsAutoFoldInMSWhiteboard = false;
+        Automation.IsAutoFoldInPPTSlideShow = false;
+        Automation.IsAutoKillPptService = false;
+        Automation.IsAutoKillEasiNote = false;
+        Automation.IsSaveScreenshotsInDateFolders = false;
+        Automation.IsAutoSaveStrokesAtScreenshot = true;
+        Automation.IsAutoSaveStrokesAtClear = true;
+        Automation.IsAutoClearWhenExitingWritingMode = false;
+        Automation.MinimumAutomationStrokeNumber = 0;
+        Automation.AutoSavedStrokesLocation = @"D:\Ink Canvas"; // upstream constructor default
+        Automation.AutoDelSavedFiles = autoDelSavedFiles;
+        Automation.AutoDelSavedFilesDaysThreshold = autoDelDaysThreshold;
+
+        PowerPoint.IsShowPPTNavigationBottom = false;
+        PowerPoint.IsShowPPTNavigationSides = true; // upstream constructor default
+        PowerPoint.IsShowBottomPPTNavigationPanel = true;
+        PowerPoint.IsShowSidePPTNavigationPanel = true;
+        PowerPoint.PowerPointSupport = true;
+        PowerPoint.IsShowCanvasAtNewSlideShow = true;
+        PowerPoint.IsNoClearStrokeOnSelectWhenInPowerPoint = true;
+        PowerPoint.IsShowStrokeOnSelectInPowerPoint = false;
+        PowerPoint.IsAutoSaveStrokesInPowerPoint = true;
+        PowerPoint.IsAutoSaveScreenShotInPowerPoint = true;
+        PowerPoint.IsNotifyPreviousPage = false;
+        PowerPoint.IsNotifyHiddenPage = false;
+        PowerPoint.IsNotifyAutoPlayPresentation = true;
+        PowerPoint.IsEnableTwoFingerGestureInPresentationMode = false;
+        PowerPoint.IsEnableFingerGestureSlideShowControl = false;
+        PowerPoint.IsSupportWPS = true;
+
+        Canvas.InkWidth = 2.5;
+        Canvas.HighlighterWidth = null;
+        Canvas.InkAlpha = 80;
+        Canvas.IsCompressPicturesUploaded = false; // upstream constructor default
+        Canvas.IsShowCursor = false;
+        Canvas.InkStyle = 0;
+        Canvas.PenNib = Ink.PenNib.Round;
+        Canvas.EraserSize = 1;
+        Canvas.EraserType = 0;
+        Canvas.HideStrokeWhenSelecting = false;
+        Canvas.UsingWhiteboard = false;
+
+        Gesture.MatrixTransformCenterPoint = MatrixTransformCenterPointOptions.CanvasCenterPoint;
+        Gesture.AutoSwitchTwoFingerGesture = true;
+        Gesture.IsEnableTwoFingerTranslate = true;
+        Gesture.IsEnableTwoFingerZoom = false;
+        Gesture.IsEnableTwoFingerRotation = false;
+        Gesture.IsEnableTwoFingerRotationOnSelection = true;
+        Gesture.IsEnableMultiTouchMode = true; // upstream constructor default
+
+        InkToShape.IsInkToShapeEnabled = true;
+
+        Startup.IsEnableNibMode = false;
+        Startup.IsAutoUpdate = true;
+        Startup.IsAutoUpdateWithSilence = true;
+        Startup.AutoUpdateWithSilenceStartTime = "18:20";
+        Startup.AutoUpdateWithSilenceEndTime = "07:40";
+        Startup.IsFoldAtStartup = false;
+
+        Rand.PeopleCount = 60; // upstream constructor default
+        Rand.IsNotRepeatName = false;
+        Experimental = new ExperimentalSettings();
+    }
+}
+
+public sealed class ExperimentalSettings
+{
+    public bool ScreenContentTracking { get; set; }
+    public bool FollowScroll { get; set; } = true;
+    public bool FollowZoom { get; set; } = true;
+    public bool MaskFixedRegions { get; set; } = true;
+    public bool RememberPages { get; set; } = true;
+    public bool PreserveUnchangedRegions { get; set; } = true;
+    public bool Word { get; set; } = true;
+    public bool PowerPoint { get; set; } = true;
+    public bool Edge { get; set; } = true;
 }
 
 public enum OptionalOperation { Yes, No, Ask }
@@ -30,12 +157,15 @@ public enum OptionalOperation { Yes, No, Ask }
 public sealed class CanvasSettings
 {
     [JsonPropertyName("inkWidth")] public double InkWidth { get; set; } = 2.5;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonPropertyName("highlighterWidth")] public double? HighlighterWidth { get; set; }
     [JsonPropertyName("inkAlpha")] public int InkAlpha { get; set; } = 140;
     [JsonPropertyName("isCompressPicturesUploaded")] public bool IsCompressPicturesUploaded { get; set; }
     [JsonPropertyName("isShowCursor")] public bool IsShowCursor { get; set; }
 
-    /// <summary>0 = nib taper, 1 = velocity taper, 2 = uniform, 3 = smooth pen, 4 = soft pen, 5 = natural (pressure + real-time speed), 6 = calligraphy. Maps to <see cref="Ink.TaperKind"/>.</summary>
+    /// <summary>Persisted pen-style index, mapped by <see cref="OriginalMenuCatalog.ToTaperKind"/>.</summary>
     [JsonPropertyName("inkStyle")] public int InkStyle { get; set; }
+    [JsonPropertyName("penNib")] public Ink.PenNib PenNib { get; set; }
 
     [JsonPropertyName("eraserSize")] public int EraserSize { get; set; } = 2;
 
@@ -44,7 +174,6 @@ public sealed class CanvasSettings
 
     [JsonPropertyName("hideStrokeWhenSelecting")] public bool HideStrokeWhenSelecting { get; set; } = true;
     [JsonPropertyName("usingWhiteboard")] public bool UsingWhiteboard { get; set; }
-    [JsonPropertyName("hyperbolaAsymptoteOption")] public OptionalOperation HyperbolaAsymptoteOption { get; set; } = OptionalOperation.Ask;
 }
 
 public enum MatrixTransformCenterPointOptions

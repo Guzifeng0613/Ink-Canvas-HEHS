@@ -1,5 +1,34 @@
 # 移植对照与验证状态
 
+## 3.4.0 还原轮（真机部分验证）
+
+平台级根因与修复（均有真机证据，详见 CHANGELOG 3.4.0）：overlay 点击抬升Z带埋没chrome窗口、
+WinUI island 拖动三缺陷（HTCAPTION 无效/PointerMoved 停发/相对坐标）、构造期 DPI=0 致裁切、
+island 与 HWND 错位、Server 2025 composition interop DWM 死锁（永久移除，半透改 DesktopAcrylicBackdrop）、
+未root容器 Parent 不设置致重复父级 COMException、放置记录snap回 (100,100)。
+
+WPF 1:1：浮动栏 ViewboxFloatingBar 结构/顺序/刷色/独立矩形/面板独立弹窗；笔/荧光笔双菜单；
+图形所见即所得 24 矢量预览＋图钉/长按；形状语义（回笔/中心半径/吸附/两步体/等宽/克隆）＋21 单测；
+设置 440DIP 面板＋重置推荐；计时器/抽奖/指南/是否窗重建；热键 WPF 键位；画板三浮条＋选区面板＋橡皮两步。
+
+round 3 已落地：系统性裁切审计（所有窗在真实 DPI 下按工作区夹取、首激活延迟一 tick 落位、
+Kind-0 记录防重激活snap回）；调色盘/图形popup 移除 WPF 没有的标题栏（改 FloatBarTitleBackground 标题带、
+色选即关、Escape/外部点击/落笔收起、图钉跨开合持久）；色板/主题格改 Button（读屏+UIA）；
+图标居中（固定 22DIP 图标区＋caption 不位移）；触摸/压感反馈抑制（overlay+画板 SetWindowFeedbackSetting）、
+overlay 指针→present 全同步＋区域限定拷贝降延迟；PPT 200ms 放映轮询、导航面板折叠/画板门控、
+放映开始退画板+红笔、结束退画板、翻页先退画板、WPS wpp 进程守卫、导航面板几何/glyph/计数格式 1:1；
+画板元素（图片/视频）参与旋转/翻转/双指手势（累积 canvas 矩阵、单撤销单元）、选区面板精确 WPF 按钮集、
+存为图片精确 padding、衍至新页、插入居中缩放 1:1、视频刷新保留播放位置；多指书写语义修正
+（MultiTouchEnabled=true=多指书写且禁手势，WPF MW_TouchEvents 275-291）、选区手势枢轴读设置；
+收纳把手改露出 ~14DIP 小条＋纳入 Z 重压（修复收纳后点不到恢复）＋Button 语义；
+画板打开闪退修复（模板资源刷需克隆实例，COMException 0x800F0902）；指南 Shift 键帽不再换行。
+
+headless 自检钩子：`--shot=<dir>`（各窗激活后自渲染 RenderTargetBitmap PNG）、`--open=a,b,c`（逐窗间隔开启）。
+断开会话下 CopyFromScreen/PrintWindow 不可靠、输入注入被拒；UIA Invoke 可用于 Button。
+
+仍待目标设备复核：触摸/压感硬件、Win11 亚克力真半透（Server 回退不透明）、Office/WPS COM 实机、
+视频帧导出 best-effort、克隆上限提示与确认对话框为移植期刻意保留的安全 additions。
+
 ## 3.3.0 新增移植（行为未验证）
 
 按用户要求，本轮没有启动应用、没有接真实触摸屏/压感笔/PowerPoint/WPS；仅做 Release build compile-check。例外：为了修复同一笔自交镂空运行了 3 项纯几何回归测试（3/3 通过），但 Win2D 实际栅格化行为未测试。详细来源和差异见 `board-porting-notes.md`、`ppt-porting-notes.md`、`menu-porting-notes.md`。

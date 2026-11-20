@@ -19,8 +19,8 @@ public sealed class TwoFingerManipulator
     public float MaxScale { get; set; } = 8f;
 
     /// <summary>
-    /// Fraction of each frame's zoom delta applied immediately. 1 = legacy behaviour
-    /// (hard 1:1 tracking); 0.85–0.9 adds a light "rubber band" feel without lag.
+    /// Fraction of logarithmic zoom applied immediately. 1 = legacy 1:1 tracking.
+    /// Reversing or subdividing the same pinch must not introduce scale drift.
     /// </summary>
     public float ZoomDamping { get; set; } = 1f;
 
@@ -38,7 +38,7 @@ public sealed class TwoFingerManipulator
     /// Accumulates the delta from the previous pair position into <paramref name="transform"/>.
     /// Returns false when there is nothing to apply.
     /// </summary>
-    public bool Update(Vector2 a, Vector2 b, ref Matrix3x2 transform, Vector2 center)
+    public bool Update(Vector2 a, Vector2 b, ref Matrix3x2 transform, Vector2 center, bool screenSpace = false)
     {
         if (!_hasPrevious)
         {
@@ -62,7 +62,7 @@ public sealed class TwoFingerManipulator
         if (AllowZoom && prevLen > ZoomDeadZone && len > ZoomDeadZone)
         {
             float scale = len / prevLen;
-            scale = 1f + (scale - 1f) * Math.Clamp(ZoomDamping, 0.05f, 1f);
+            scale = MathF.Pow(scale, Math.Clamp(ZoomDamping, 0.05f, 1f));
             float currentScale = MathF.Sqrt(MathF.Abs(transform.M11 * transform.M22 - transform.M12 * transform.M21));
             scale = Math.Clamp(scale, MinScale / MathF.Max(currentScale, 1e-3f), MaxScale / MathF.Max(currentScale, 1e-3f));
             delta *= Matrix3x2.CreateTranslation(-center) * Matrix3x2.CreateScale(scale) * Matrix3x2.CreateTranslation(center);
@@ -79,7 +79,7 @@ public sealed class TwoFingerManipulator
         _prevA = a; _prevB = b;
 
         if (delta == Matrix3x2.Identity) return false;
-        transform = delta * transform;
+        transform = screenSpace ? transform * delta : delta * transform;
         return true;
     }
 }

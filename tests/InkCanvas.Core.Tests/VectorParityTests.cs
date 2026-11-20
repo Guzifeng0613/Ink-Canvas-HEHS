@@ -45,7 +45,8 @@ public sealed class VectorParityTests
     [Theory]
     [InlineData("taper-tail.json")]
     [InlineData("taper-velocity.json")]
-
+    [InlineData("taper-simulated.json")]
+    [InlineData("taper-device-pressure.json")]
     public void TaperVectorsMatch(string file)
     {
         using var doc = Load(file);
@@ -278,10 +279,12 @@ public sealed class VectorParityTests
         }
     }
 
-    [Fact]
-    public void TwoFingerVectorsMatch()
+    [Theory]
+    [InlineData("two-finger.json")]
+    [InlineData("two-finger-damping.json")]
+    public void TwoFingerVectorsMatch(string file)
     {
-        using var doc = Load("two-finger.json");
+        using var doc = Load(file);
         foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
         {
             var input = c.GetProperty("input");
@@ -292,7 +295,9 @@ public sealed class VectorParityTests
                 AllowTranslate = options.GetProperty("allowTranslate").GetBoolean(),
                 AllowRotation = options.GetProperty("allowRotation").GetBoolean(),
                 MinScale = options.GetProperty("minScale").GetSingle(),
-                MaxScale = options.GetProperty("maxScale").GetSingle()
+                MaxScale = options.GetProperty("maxScale").GetSingle(),
+                ZoomDamping = options.TryGetProperty("zoomDamping", out var damping) ? damping.GetSingle() : 1,
+                ZoomDeadZone = options.TryGetProperty("zoomDeadZone", out var deadZone) ? deadZone.GetSingle() : 1
             };
             var transform = Mat(input[1]);
             var center = new System.Numerics.Vector2(input[2].GetSingle(), input[3].GetSingle());
@@ -374,16 +379,19 @@ public sealed class VectorParityTests
         using var doc = Load("recognizer.json");
         foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
         {
-            var pts = c.GetProperty("input")[0].EnumerateArray()
-                .Select(p => new Vector2(p.GetProperty("X").GetSingle(), p.GetProperty("Y").GetSingle()))
-                .ToArray();
-            var stroke = new InkStroke(new StrokeAttributes { BaseWidth = 3f });
-            foreach (var p in pts)
+            var input = c.GetProperty("input")[0];
+            var pointSets = input.GetArrayLength() > 0 && input[0].ValueKind == JsonValueKind.Array
+                ? input.EnumerateArray().ToArray() : new[] { input };
+            var strokes = new List<InkStroke>();
+            foreach (var points in pointSets)
             {
-                stroke.AddPoint(p.X, p.Y);
+                var stroke = new InkStroke(new StrokeAttributes { BaseWidth = 3f });
+                foreach (var point in points.EnumerateArray())
+                    stroke.AddPoint(point.GetProperty("X").GetSingle(), point.GetProperty("Y").GetSingle());
+                stroke.Complete();
+                strokes.Add(stroke);
             }
-            stroke.Complete();
-            var result = ShapeRecognizer.Recognize(new[] { stroke });
+            var result = ShapeRecognizer.Recognize(strokes);
             var actual = new
             {
                 kind = (int)result.Shape,
@@ -774,6 +782,10 @@ public sealed class VectorParityTests
                 Highlighter = s.Attributes.IsHighlighter,
                 HighlighterAlpha = (int)s.Attributes.HighlighterAlpha,
                 Taper = (int)s.Attributes.TaperKind,
+                Nib = (int)s.Attributes.Nib,
+                NibRotation = (double)s.Attributes.NibRotation,
+                s.LayerOrder,
+                s.ShapeSource,
                 Shape = s.IsRecognizedShape,
                 ObjectFrame = s.ExportObjectFrame(),
                 Points = s.Points.Select(p => new double[]
@@ -1048,6 +1060,8 @@ public sealed class VectorParityTests
             var settings = JsonSerializer.Deserialize<AppSettings>(input, CaseInsensitive)!;
             var actual = JsonNode.Parse(JsonSerializer.Serialize(settings))!;
             var expected = JsonNode.Parse(c.GetProperty("expected").GetRawText())!;
+            // WPF vectors predate the WinUI screen-follow extension, covered by ScreenTrackingTests.
+            if (expected["experimental"] is null) actual.AsObject().Remove("experimental");
             Assert.True(JsonNode.DeepEquals(actual, expected), $"settings case {id} mismatch");
         }
     }

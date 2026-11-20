@@ -386,7 +386,7 @@ struct Index {
     this.taperIndex = this.settings.canvas.inkStyle;
     this.controller.CurrentAttributes.BaseWidth = this.settings.canvas.inkWidth;
     this.controller.CurrentAttributes.HighlighterAlpha = this.settings.canvas.inkAlpha;
-// inkStyle 持久化为菜单索引（OriginalMenuCatalog.ToTaperKind 映射，含 4 种模拟压感笔锋）。
+    // inkStyle 持久化为菜单索引（OriginalMenuCatalog.ToTaperKind 映射，含 4 种模拟压感笔锋）。
     this.controller.CurrentAttributes.TaperKind = toTaperKind(this.settings.canvas.inkStyle);
     // 笔/荧光笔独立宽度（highlighterWidth 缺省 = 跟随笔宽），切工具互换 BaseWidth。
     this.controller.ConfigurePenWidths(
@@ -743,7 +743,7 @@ struct Index {
               this.persistSettings();
             },
             onTaper: (kind: number) => {
-// kind 为 TaperKind；taperIndex 持久化菜单索引（ToPenStyle 反向映射）。
+              // kind 为 TaperKind；taperIndex 持久化菜单索引（ToPenStyle 反向映射）。
               this.taperIndex = toPenStyle(kind as TaperKind);
               this.controller.CurrentAttributes.TaperKind = kind;
               this.persistSettings();
@@ -1486,7 +1486,7 @@ struct Index {
       this.touchSettings();
       this.refreshScene();
     })
-this.SettingOptions('笔迹风格', ['点集笔锋', '速率笔锋', '关闭笔锋', '平滑硬笔', '柔和压感', '自然笔锋', '书法笔锋'],
+    this.SettingOptions('笔迹风格', ['点集笔锋', '速率笔锋', '关闭笔锋', '平滑硬笔', '柔和压感', '自然笔锋', '书法笔锋'],
       this.settings.canvas.inkStyle, (i: number) => {
         this.settings.canvas.inkStyle = i;
         this.taperIndex = i;
@@ -2196,7 +2196,7 @@ this.SettingOptions('笔迹风格', ['点集笔锋', '速率笔锋', '关闭笔�
       this.settings.gesture.isEnableTwoFingerTranslate,
       this.settings.gesture.isEnableTwoFingerRotation
     );
-    // 测试版缩放阻尼：每帧只吸收 88% 增量，死区 2 vp。
+    // 缩放阻尼：吸收 88% 的对数缩放增量，死区 2 vp。
     this.controller.ZoomDamping = 0.88;
     this.controller.ZoomDeadZone = 2;
   }

@@ -50,6 +50,9 @@ public sealed class PalmRejector
     /// </summary>
     public AdvancedSettings Advanced { get; set; }
 
+    // Read-only fallback so ClassifyContact does not allocate a settings object per contact.
+    private static readonly AdvancedSettings DefaultAdvanced = new();
+
     /// <summary>Original <c>Settings.Startup.IsEnableNibMode</c>.</summary>
     public bool NibMode { get; set; }
 
@@ -66,7 +69,7 @@ public sealed class PalmRejector
     /// </summary>
     public TouchDecision ClassifyContact(in OverlayPointer p)
     {
-        var advanced = Advanced ?? new AdvancedSettings();
+        var advanced = Advanced ?? DefaultAdvanced;
         double width = TouchContactClassifier.MeasureContactWidth(
             p.ContactWidth, p.ContactHeight, advanced.IsQuadIR);
         return TouchContactClassifier.Classify(width, advanced, NibMode,
