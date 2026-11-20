@@ -42,3 +42,5 @@ export {
 } from './src/main/ets/system/WpsInterop';
 export { ownBundleName, openAppGalleryDetail, checkForUpdate } from './src/main/ets/system/MarketUpdate';
 export type { UpdateCheckOutcome } from './src/main/ets/system/MarketUpdate';
+export { InkCastClient } from './src/main/ets/net/InkCastClient';
+export type { InkCastEvent } from './src/main/ets/net/InkCastClient';

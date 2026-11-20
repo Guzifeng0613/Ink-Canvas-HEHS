@@ -2,6 +2,10 @@
   "note": "ArkTS→C# 锚点登记；C# 反向锚点延后（见 notes）。",
   "pairs": [
     {
+      "arkts": "harmony/core/src/main/ets/ai/AiAssistant.ts",
+      "csharp": "src/InkCanvas.Core/Recognition/ShapeRecognizer.cs"
+    },
+    {
       "arkts": "harmony/controls/src/main/ets/FloatingBar.ets",
       "csharp": "src/InkCanvas.Controls/Controls/FloatingBar.cs"
     },

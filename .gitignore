@@ -33,3 +33,9 @@ tools/toolchain.local.json
 
 # generated per-machine HarmonyOS env
 tools/harmony-env.ps1
+
+# Local HarmonyOS signing material (never commit)
+harmony/.sign/
+# Licensed Segoe icon font: do not redistribute in the public repo
+harmony/entry/src/main/resources/rawfile/fonts/
+

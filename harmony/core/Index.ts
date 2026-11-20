@@ -149,3 +149,29 @@ export {
   recognizeStrokes
 } from './src/main/ets/recognition/ShapeRecognizer';
 export type { InkPointLike, RecognitionPoint, RecognitionSummary } from './src/main/ets/recognition/ShapeRecognizer';
+export {
+  AiCaptureKind,
+  AI_ENGINE_LABEL,
+  AI_NOTE_ACCENTS,
+  normalizeRegion,
+  classifyCaptureKind,
+  summarizeInk,
+  recognizeCapture,
+  buildLectureNotes,
+  toMarkdown,
+  shapeSnapOptions,
+  recommendedSnapIndex,
+  confidencePercent,
+  aiAssistantProbe,
+  recognizeFromText
+} from './src/main/ets/ai/AiAssistant';
+export type {
+  AiRegion,
+  AiInkSummary,
+  AiCaptureInput,
+  AiTextInput,
+  AiRecognizeResult,
+  LectureNoteCard,
+  LectureNotes,
+  ShapeSnapOption
+} from './src/main/ets/ai/AiAssistant';

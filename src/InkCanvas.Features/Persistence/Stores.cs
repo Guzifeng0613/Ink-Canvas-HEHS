@@ -82,6 +82,12 @@ public static class InkFileStore
         public byte HighlighterAlpha { get; set; } = 96;
         public int Taper { get; set; }
         public bool Shape { get; set; }
+        // HarmonyOS-port fields kept for lossless cross-platform round-trip.
+        public int? LayerOrder { get; set; }
+        public int Nib { get; set; }
+        public float NibRotation { get; set; }
+        public ShapeSourceInfo? ShapeSource { get; set; }
+        public float[]? ObjectFrame { get; set; }
         /// <summary>Rows of [x, y, pressure, width, timeMs].</summary>
         public List<float[]> Points { get; set; } = new();
     }
@@ -99,6 +105,11 @@ public static class InkFileStore
                 HighlighterAlpha = s.Attributes.HighlighterAlpha,
                 Taper = (int)s.TaperKind,
                 Shape = s.IsRecognizedShape,
+                LayerOrder = s.LayerOrder,
+                Nib = s.Nib,
+                NibRotation = s.NibRotation,
+                ShapeSource = s.ShapeSource,
+                ObjectFrame = s.ObjectFrame,
             };
             foreach (var p in s.Points)
                 sm.Points.Add(new[] { p.X, p.Y, p.Pressure, p.Width, p.TimeMs });
@@ -127,7 +138,15 @@ public static class InkFileStore
                 HighlighterAlpha = sm.HighlighterAlpha,
                 TaperKind = (TaperKind)sm.Taper,
             };
-            var stroke = new InkStroke(attrs) { IsRecognizedShape = sm.Shape };
+            var stroke = new InkStroke(attrs)
+            {
+                IsRecognizedShape = sm.Shape,
+                LayerOrder = sm.LayerOrder,
+                Nib = sm.Nib,
+                NibRotation = sm.NibRotation,
+                ShapeSource = sm.ShapeSource,
+                ObjectFrame = sm.ObjectFrame
+            };
             // Restore stored widths verbatim: re-running the taper here would change history.
             stroke.RestorePoints(sm.Points
                 .Where(r => r.Length >= 4)

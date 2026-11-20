@@ -35,6 +35,21 @@ public sealed class InkStroke
     /// <summary>Set when the stroke was produced by shape recognition rather than freehand.</summary>
     public bool IsRecognizedShape { get; set; }
 
+    // --- HarmonyOS-port fields, preserved so .icink round-trips without loss. ---
+    /// <summary>Layer ordering hint (null = not layered).</summary>
+    public int? LayerOrder { get; set; }
+
+    /// <summary>Pen nib: 0 = round, 1 = oblique (matches HarmonyOS PenNib).</summary>
+    public int Nib { get; set; }
+
+    public float NibRotation { get; set; }
+
+    /// <summary>Recognition source for AI/geometry-generated strokes.</summary>
+    public ShapeSourceInfo? ShapeSource { get; set; }
+
+    /// <summary>Object frame (10 floats) used by board image/video transforms.</summary>
+    public float[]? ObjectFrame { get; set; }
+
     public TaperKind TaperKind
     {
         get => _taper.Kind;
@@ -168,6 +183,14 @@ public sealed class InkStroke
         _points.AddRange(points);
         _boundsDirty = true;
     }
+}
+
+/// <summary>Recognition source preserved by the .icink codec (HarmonyOS shape pipeline).</summary>
+public sealed class ShapeSourceInfo
+{
+    public string GroupId { get; set; } = string.Empty;
+    public string Provider { get; set; } = string.Empty;
+    public string Definition { get; set; } = string.Empty;
 }
 
 /// <summary>UI-independent rectangle.</summary>

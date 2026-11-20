@@ -91,6 +91,10 @@ export function symbolForButton(id: string, glyph: string): string {
   if (id === 'insertImage') {
     return 'picture';
   }
+  // 与「鼠标」按钮的 mouse 图标区分，避免主栏出现两个相同图案。
+  if (id === 'clearAndMouse') {
+    return 'arrow_clockwise';
+  }
   return symbolForCodepoint(codepointOf(glyph));
 }
 
@@ -138,13 +142,22 @@ export interface IconGlyphOptions {
   size: number;
   color: ResourceColor;
   enabled: boolean;
+  // 可选：原始图标码点字符。useIconFont 为 true 且已注册内置图标字体时优先用字体渲染，
+  // 与 Windows 端 (Segoe Fluent Icons) 视觉完全一致；缺失/未加载时回退 SymbolGlyph。
+  glyph?: string;
+  useIconFont?: boolean;
 }
 
 // 跨文件 @Builder：单对象参数按引用传递。enabled=false（能力探测不支持）
 // 或 symbol 为空时回退文字，保持原有布局尺寸。
 @Builder
 export function IconGlyph(options: IconGlyphOptions) {
-  if (!options.enabled || options.symbol === '') {
+  if (options.enabled && options.useIconFont === true && options.glyph !== undefined && options.glyph !== '') {
+    Text(options.glyph)
+      .fontFamily('InkSegoeIcons')
+      .fontSize(options.size)
+      .fontColor(options.color)
+  } else if (!options.enabled || options.symbol === '') {
     Text(options.fallback)
       .fontSize(options.size)
       .fontColor(options.color)

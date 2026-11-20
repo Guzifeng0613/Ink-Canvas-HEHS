@@ -26,7 +26,8 @@ import {
   isTablet,
   is2in1,
   breakpointForWidth,
-  isFullLayout
+  isFullLayout,
+  InkCastClient
 } from '@inkcanvas/platform';
 import {
   FloatingBar,
@@ -40,7 +41,13 @@ import {
   MOTION_STANDARD,
   sharedId,
   panelBackground,
-  panelBlurStyle
+  panelBlurStyle,
+  AiCaptureOverlay,
+  AiGeneratingOverlay,
+  AiResultCard,
+  AiNotesPanel,
+  ShapeSnapPanel,
+  BoardDock
 } from '@inkcanvas/controls';
 import {
   InkController,
@@ -51,15 +58,18 @@ import {
   Invalidation
 } from '@inkcanvas/ink';
 import type { SceneStrokeInput, SceneSelectionInput, ISelectionElement } from '@inkcanvas/ink';
-import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings, matrixToArray, transformPointByMatrix, PenNib, calibrationMultiplier, toTaperKind, toPenStyle, toEraserRadius, resetToRecommendation, TaperKind, placeToolbar } from '@inkcanvas/core';
+import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings, matrixToArray, transformPointByMatrix, PenNib, calibrationMultiplier, toTaperKind, toPenStyle, toEraserRadius, resetToRecommendation, TaperKind, placeToolbar, summarizeInk, recognizeFromText, buildLectureNotes, shapeSnapOptions } from '@inkcanvas/core';
 import type { ShapeKind, StrokePointInput, AppSettings, AdvancedTouchInput, Matrix3x2 } from '@inkcanvas/core';
+import type { AiRegion, AiInkSummary, AiRecognizeResult, LectureNotes, LectureNoteCard, ShapeSnapOption } from '@inkcanvas/core';
 import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground, renderMatrix4Values, applyReplaceRules, lotteryDisplayName, lotteryFlicker, lotteryDrawUnique, lotterySplitGroups, appendTransform, transformedBounds, snapshotGeometry, recordTransform, BoardSelectionElement } from '@inkcanvas/features';
 import type { CoursewarePageFile } from '@inkcanvas/features';
 import type { BoardAsset, ElementGeometry } from '@inkcanvas/features';
 import { ReplayClock } from '@inkcanvas/core';
 import { picker, fileIo } from '@kit.CoreFileKit';
 import { KeyCode } from '@kit.InputKit';
-import { promptAction, matrix4 } from '@kit.ArkUI';
+import { promptAction, matrix4, componentSnapshot, font, window } from '@kit.ArkUI';
+import { textRecognition } from '@kit.CoreVisionKit';
+import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
 import { image } from '@kit.ImageKit';
@@ -67,6 +77,20 @@ import { image } from '@kit.ImageKit';
 // 应用内 UI 偏好（减少动效开关）。独立于 Settings.json，避免分叉跨端设置格式。
 interface UiPrefs {
   reduceMotion: boolean;
+  glassEnabled: boolean;
+  glassIntensity: number;
+  // InkCast 局域网墨迹同步（默认关闭，地址可经 hdc rport 指向 127.0.0.1）
+  inkCastEnabled: boolean;
+  inkCastHost: string;
+  inkCastPort: number;
+  // 透明批注模式：窗口与画布透明，配合系统悬浮窗覆盖教材批注
+  transparentAnnotate: boolean;
+}
+
+// 端侧 OCR 结果：Text 为空时仍需区分“设备没有 OCR”与“没识别到文字”。
+interface OcrOutcome {
+  Text: string;
+  Available: boolean;
 }
 
 // G3 选区工具条重染色板（9 色，与笔板深色套一致）。
@@ -196,10 +220,23 @@ struct Index {
   @State changelogOpen: boolean = false;
   @State settingsVersion: number = 0;
   @State reduceMotion: boolean = false;
+  @State glassEnabled: boolean = true;
+  @State glassIntensity: number = 55;
+  @State inkCastEnabled: boolean = true;
+  @State inkCastHost: string = '127.0.0.1';
+  @State inkCastPort: number = 9091;
+  @State transparentAnnotate: boolean = false;
+  private inkCast: InkCastClient | null = null;
   @State barDragX: number = 0;
   @State barDragY: number = 0;
+  // 每次拖动的起始位移基准：PanGesture 的 offset 是本次手势的累计值，
+  // 直接赋值会丢掉上一次拖动的位置，造成第二次拖动跳位。
+  private barDragBaseX: number = 0;
+  private barDragBaseY: number = 0;
   @State windowWidth: number = 0;
   @State windowHeight: number = 0;
+  // 内置 Segoe 图标字体是否已注册完成（未完成时工具栏回退系统 SymbolGlyph）。
+  @State iconFontReady: boolean = false;
   private systemReduceMotion: boolean = false;
   private blurEnabled: boolean = false;
   private symbolIcons: boolean = true;
@@ -243,9 +280,51 @@ struct Index {
   @State cursorX: number = 0;
   @State cursorY: number = 0;
   @State cursorVisible: boolean = false;
+  // 指针最后有效坐标：Up/Cancel 的 changedTouches 偶发返回 (0,0)，
+  // 直接落笔会让笔画末端连到画布原点（表现为“从画布中心拉出一根线”）。
+  private touchXSeen: Map<number, number> = new Map<number, number>();
+  private touchYSeen: Map<number, number> = new Map<number, number>();
+  // 浮动工具栏命中区：在其上点按/拖动不应进入墨迹控制器（笔工具下会误写）。
+  private barFrameX: number = 0;
+  private barFrameY: number = 0;
+  private barFrameW: number = 0;
+  private barFrameH: number = 0;
+  private barPointerId: number = -1;
+  // 端侧 OCR 初始化状态（首次识别时 init，失败后不再重试以免反复阻塞）。
+  private ocrReady: boolean = false;
+  private ocrTried: boolean = false;
   // 触摸校准垫：采集接触宽度样本。
   @State calibrationOpen: boolean = false;
   @State calibrationSamples: number[] = [];
+
+  // ---- AI 教学助手（鸿蒙端增强；内容来自端侧确定性演示引擎） ----
+  @State aiCaptureOpen: boolean = false;
+  @State aiScanning: boolean = false;
+  @State aiCaptureKind: number = 0;
+  @State aiResultOpen: boolean = false;
+  @State aiResult: AiRecognizeResult = {
+    Kind: 0,
+    Title: '',
+    Badge: '',
+    Question: '',
+    Formula: '',
+    Steps: [],
+    Tags: [],
+    Confidence: 0.9,
+    Engine: ''
+  };
+  @State aiNotesGenerating: boolean = false;
+  @State aiNotesProgress: number = 0;
+  @State aiNotesOpen: boolean = false;
+  @State aiNotes: LectureNotes = {
+    Title: '',
+    Subtitle: '',
+    Cards: [],
+    Markdown: '',
+    Coverage: 0
+  };
+  @State aiSnapOpen: boolean = false;
+  @State aiSnapOptions: ShapeSnapOption[] = [];
 
   aboutToDisappear(): void {
     this.stopCountdownTimer();
@@ -255,6 +334,19 @@ struct Index {
   }
 
   aboutToAppear(): void {
+    // 注册内置的 Windows 端图标字体（rawfile/fonts/SegoeFluentIcons.ttf），
+    // 工具栏按原始 Segoe 码点渲染，与 Windows 版保持同一套图标。
+    try {
+      font.registerFont({
+        familyName: 'InkSegoeIcons',
+        familySrc: $rawfile('fonts/SegoeFluentIcons.ttf')
+      });
+      setTimeout(() => {
+        this.iconFontReady = true;
+      }, 150);
+    } catch (error) {
+      void error;
+    }
     this.storage = new StorageService(getContext(this).filesDir);
     this.controller.Document = this.annotateDocument;
     this.controller.Invalidated = () => {
@@ -310,6 +402,10 @@ struct Index {
       this.systemReduceMotion = false;
     }
     this.loadUiPrefs();
+    this.syncInkCast();
+    setTimeout(() => {
+      this.applyWindowTransparency();
+    }, 300);
     this.applySettings();
     if (this.settings.startup.isFoldAtStartup) {
       this.collapsed = true;
@@ -337,6 +433,15 @@ struct Index {
     try {
       const prefs = JSON.parse(text) as UiPrefs;
       this.reduceMotion = prefs.reduceMotion === true;
+      this.glassEnabled = prefs.glassEnabled !== false;
+      const intensity = prefs.glassIntensity;
+      this.glassIntensity = (typeof intensity === 'number' && intensity >= 0 && intensity <= 100) ? intensity : 55;
+      this.inkCastEnabled = prefs.inkCastEnabled !== false;
+      const castHost = prefs.inkCastHost;
+      this.inkCastHost = (typeof castHost === 'string' && castHost.length > 0) ? castHost : '127.0.0.1';
+      const castPort = prefs.inkCastPort;
+      this.inkCastPort = (typeof castPort === 'number' && castPort > 0 && castPort < 65536) ? castPort : 9091;
+      this.transparentAnnotate = prefs.transparentAnnotate === true;
     } catch (e) {
       void e;
     }
@@ -346,8 +451,82 @@ struct Index {
     if (this.storage === null) {
       return;
     }
-    const prefs: UiPrefs = { reduceMotion: this.reduceMotion };
+    const prefs: UiPrefs = {
+      reduceMotion: this.reduceMotion,
+      glassEnabled: this.glassEnabled,
+      glassIntensity: this.glassIntensity,
+      inkCastEnabled: this.inkCastEnabled,
+      inkCastHost: this.inkCastHost,
+      inkCastPort: this.inkCastPort,
+      transparentAnnotate: this.transparentAnnotate
+    };
     this.storage.writeTextAtomic('UiPrefs.json', JSON.stringify(prefs));
+  }
+
+  // 透明批注模式：窗口与画布透明，配合系统悬浮窗覆盖在教材/PPT 上批注。
+  private applyWindowTransparency(): void {
+    try {
+      window.getLastWindow(getContext(this) as common.UIAbilityContext).then((win: window.Window) => {
+        win.setWindowBackgroundColor(this.transparentAnnotate ? '#00000000' : '#FFFFFFFF');
+      }).catch((err: BusinessError) => {
+        void err;
+      });
+    } catch (error) {
+      void error;
+    }
+  }
+
+  // ---- InkCast 局域网同步：提交后的笔画 / 清屏 / AI 批注推送到 PC 大屏 ----
+  private syncInkCast(): void {
+    if (this.inkCast === null) {
+      this.inkCast = new InkCastClient();
+    }
+    if (this.inkCastEnabled) {
+      this.inkCast.connect(this.inkCastHost, this.inkCastPort);
+    } else {
+      this.inkCast.close();
+    }
+  }
+
+  private castLastStroke(): void {
+    if (!this.inkCastEnabled || this.inkCast === null) {
+      return;
+    }
+    const strokes = this.controller.Document.Strokes;
+    if (strokes.length === 0) {
+      return;
+    }
+    const stroke = strokes[strokes.length - 1];
+    const points: number[][] = [];
+    for (let i = 0; i < stroke.Count; i++) {
+      const p = stroke.Points[i];
+      points.push([p.X, p.Y, p.Pressure, p.Width, p.TimeMs]);
+    }
+    this.inkCast.sendStroke(
+      's-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+      stroke.Attributes.Color.packedArgb(),
+      stroke.Attributes.BaseWidth,
+      stroke.Attributes.IsHighlighter,
+      stroke.Attributes.HighlighterAlpha,
+      stroke.Attributes.TaperKind,
+      stroke.IsRecognizedShape,
+      points);
+  }
+
+  private castClear(): void {
+    if (this.inkCastEnabled && this.inkCast !== null) {
+      this.inkCast.sendClear();
+    }
+  }
+
+  private castAi(result: AiRecognizeResult): void {
+    if (!this.inkCastEnabled || this.inkCast === null) {
+      return;
+    }
+    this.inkCast.sendAi(
+      result.Title,
+      result.Question + (result.Formula !== '' ? ' ' + result.Formula : ''),
+      result.Tags);
   }
 
   private isMotionReduced(): boolean {
@@ -489,7 +668,7 @@ struct Index {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor(this.boardOpen ? this.boardBackgroundColor() : (this.dark ? '#FF1B1B1B' : '#FFFAFAFA'))
+        .backgroundColor(this.boardOpen ? this.boardBackgroundColor() : (this.transparentAnnotate ? Color.Transparent : (this.dark ? '#FF1B1B1B' : '#FFFAFAFA')))
 
       if (this.boardOpen && (this.boardBackground === 2 || this.boardBackground === 3)) {
         Canvas(this.boardGridContext)
@@ -522,12 +701,13 @@ struct Index {
             this.refreshScene();
           }
         })
-      }
+}
       .width('100%')
       .height('100%')
       .onTouch((event: TouchEvent) => {
         this.handleTouch(event);
       })
+      .id('inkCanvas')
 
       // 常驻覆盖层画布（套索路径 / 落点动画预览；不参与命中测试）。
       Canvas(this.lassoContext)
@@ -538,6 +718,11 @@ struct Index {
       // G3 选区工具条（ArkTS 差异化紧凑形态；位置走 placeToolbar 候选评分）。
       if (this.selectionToolbarOpen) {
         Row({ space: 6 }) {
+          Text('AI 识题')
+            .fontSize(12).fontColor('#FF05070C').padding(6)
+            .linearGradient({ angle: 135, colors: [['#FF38E1FF', 0.0], ['#FF2E7BFF', 1.0]] })
+            .borderRadius(4)
+            .onClick(() => { this.selectionToolbarOpen = false; this.openAiCapture(0); })
           Text(this.controller.CloneMode ? '克隆开' : '克隆')
             .fontSize(12).fontColor(Color.White).padding(6)
             .backgroundColor(this.controller.CloneMode ? '#FF0067C0' : '#99000000').borderRadius(4)
@@ -1007,6 +1192,7 @@ struct Index {
 
       if (this.boardOpen) {
         Stack({ alignContent: Alignment.TopStart }) {
+          if (!this.fullLayout()) {
           Column({ space: 8 }) {
             // 页面浮条
             Row({ space: 6 }) {
@@ -1055,6 +1241,7 @@ struct Index {
           .margin({ left: 12, top: 12 })
           .alignItems(HorizontalAlign.Start)
           .scale({ x: this.settings.appearance.enableViewboxBlackBoardScaleTransform / 100, y: this.settings.appearance.enableViewboxBlackBoardScaleTransform / 100 })
+          }
         }
         .width('100%').height('100%')
         .hitTestBehavior(HitTestMode.Transparent)
@@ -1157,6 +1344,10 @@ struct Index {
           Column({ space: 6 }) {
             this.ToolEntry('课件（PDF）', 'courseware')
             this.ToolEntry('PPT（WPS）', 'pptWps')
+            this.ToolEntry('AI 圈选识题', 'aiCapture')
+            this.ToolEntry('AI 圈选识别公式', 'aiCaptureFormula')
+            this.ToolEntry('AI 课堂纪要', 'aiNotes')
+            this.ToolEntry('智能图形规整', 'aiSnap')
             this.ToolEntry('截图', 'screenshot')
             this.ToolEntry('Desmos', 'desmos')
             this.ToolEntry('检查更新', 'update')
@@ -1180,16 +1371,20 @@ struct Index {
         .hitTestBehavior(HitTestMode.Transparent)
       }
 
-      Stack({ alignContent: Alignment.Bottom }) {
-        FloatingBar({
+      if (!this.boardOpen) {
+        Stack({ alignContent: Alignment.Bottom }) {
+          FloatingBar({
           dark: this.dark,
           showLabels: this.settings.appearance.isEnableDisPlayFloatBarText,
           uiScale: this.settings.appearance.enableViewboxFloatingBarScaleTransform / 100,
           selectedId: this.selectedId,
           folded: this.collapsed,
           pptActive: this.pptActive,
-          materialBlur: this.blurEnabled,
+          materialBlur: this.blurEnabled && this.glassEnabled,
+          glassIntensity: this.glassIntensity,
+          availableWidth: this.windowWidth,
           symbolIcons: this.symbolIcons,
+          useIconFont: this.iconFontReady,
           reduceMotion: this.isMotionReduced(),
           showEraserButton: this.settings.appearance.isShowEraserButton,
           showHideControlButton: this.settings.appearance.isShowHideControlButton,
@@ -1201,19 +1396,163 @@ struct Index {
           onAction: (id: string) => {
             this.handleAction(id);
           },
+          onBarDragStart: () => {
+            this.barDragBaseX = this.barDragX;
+            this.barDragBaseY = this.barDragY;
+          },
           onDrag: (dx: number, dy: number) => {
-            this.barDragX = dx;
-            this.barDragY = dy;
+            this.barDragX = this.barDragBaseX + dx;
+            this.barDragY = this.barDragBaseY + dy;
           },
           onDragFinished: () => {
+            // 拖拽位置完全由 translate（barDrag）表达；不再额外钳制，
+            // 否则 onAreaChange 的位置与 translate 叠加会导致第二次拖动跳位。
+            void 0;
           }
         })
           .margin({ bottom: this.settings.appearance.floatingBarBottomMargin })
           .translate({ x: this.barDragX, y: this.barDragY })
+          .onAreaChange((oldValue: Area, newValue: Area) => {
+            this.barFrameX = Number(newValue.position.x);
+            this.barFrameY = Number(newValue.position.y);
+            this.barFrameW = Number(newValue.width);
+            this.barFrameH = Number(newValue.height);
+          })
       }
       .width('100%')
       .height('100%')
       .hitTestBehavior(HitTestMode.Transparent)
+      }
+
+      if (this.boardOpen) {
+        Stack({ alignContent: Alignment.Bottom }) {
+          BoardDock({
+            dark: this.dark,
+            uiScale: this.settings.appearance.enableViewboxBlackBoardScaleTransform / 100,
+            pageIndex: this.boardIndex,
+            pageCount: this.boardPageCount,
+            boardBackground: this.boardBackground,
+            selectedId: this.selectedId,
+            materialBlur: this.blurEnabled && this.glassEnabled,
+            glassIntensity: this.glassIntensity,
+            onCommand: (id: string) => {
+              this.handleBoardCommand(id);
+            }
+          })
+            .margin({ bottom: 16 })
+        }
+        .width('100%')
+        .height('100%')
+        .hitTestBehavior(HitTestMode.Transparent)
+      }
+
+      // ---- AI 教学助手（鸿蒙端增强层） ----
+      if (this.aiCaptureOpen) {
+        AiCaptureOverlay({
+          dark: this.dark,
+          reduceMotion: this.isMotionReduced(),
+          scanning: this.aiScanning,
+          hint: this.aiCaptureKind === 1 ? '横向圈出公式区域' : '圈出要识别的题目或公式',
+          scanLabel: this.aiCaptureKind === 1 ? '正在识别公式' : '正在识别题目',
+          onCapture: (region: AiRegion) => {
+            this.handleAiCapture(region);
+          },
+          onCancel: () => {
+            this.aiCaptureOpen = false;
+            this.aiScanning = false;
+          }
+        })
+
+      }
+
+      if (this.aiNotesGenerating) {
+        AiGeneratingOverlay({
+          dark: this.dark,
+          reduceMotion: this.isMotionReduced(),
+          progress: this.aiNotesProgress,
+          title: 'AI 正在梳理本页板书',
+          subtitle: '提取知识点 · 关联公式 · 生成课堂纪要'
+        })
+      }
+
+      if (this.aiResultOpen) {
+        Stack({ alignContent: Alignment.Center }) {
+          AiResultCard({
+            dark: this.dark,
+            reduceMotion: this.isMotionReduced(),
+            result: this.aiResult,
+            onClose: () => {
+              this.aiResultOpen = false;
+            },
+            onCopy: () => {
+              this.copyAiResult();
+            },
+            onRecapture: () => {
+              this.aiResultOpen = false;
+              this.openAiCapture(0);
+            },
+            onInsertNotes: () => {
+              this.aiResultOpen = false;
+              this.openAiNotes();
+            }
+          })
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#40000000')
+
+      }
+
+      if (this.aiNotesOpen) {
+        Stack({ alignContent: Alignment.Top }) {
+          AiNotesPanel({
+            dark: this.dark,
+            reduceMotion: this.isMotionReduced(),
+            notes: this.aiNotes,
+            onClose: () => {
+              this.aiNotesOpen = false;
+            },
+            onCopy: () => {
+              this.copyAiNotes();
+            },
+            onSave: () => {
+              this.copyAiNotes();
+            },
+            onReplayCard: (card: LectureNoteCard) => {
+              this.aiNotesOpen = false;
+              promptAction.showToast({
+                message: '已定位到「' + card.Title + '」对应板书区',
+                duration: 1800
+              });
+            }
+          })
+            .margin({ top: 24 })
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#55000000')
+
+      }
+
+      if (this.aiSnapOpen) {
+        Stack({ alignContent: Alignment.Center }) {
+          ShapeSnapPanel({
+            dark: this.dark,
+            reduceMotion: this.isMotionReduced(),
+            options: this.aiSnapOptions,
+            onApply: (kind: number) => {
+              this.applyAiSnap(kind);
+            },
+            onClose: () => {
+              this.aiSnapOpen = false;
+            }
+          })
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#33000000')
+
+      }
     }
     .id('inkRoot')
     .focusable(true)
@@ -1233,10 +1572,16 @@ struct Index {
       if (this.boardOpen && (this.boardBackground === 2 || this.boardBackground === 3)) {
         this.drawBoardGrid();
       }
+      // 旋转 / 折叠屏 / 自由多窗改变尺寸后，让拖动过的工具栏回到默认位置，
+      // 避免旧位移在新窗口形态下越界（比按旧坐标钳制更可预测）。
+      setTimeout(() => {
+        this.barDragX = 0;
+        this.barDragY = 0;
+        this.barDragBaseX = 0;
+        this.barDragBaseY = 0;
+      }, 80);
     })
-    .onTouch((event: TouchEvent) => {
-      this.handleTouch(event);
-    })
+
   }
 
   @Builder
@@ -1620,9 +1965,36 @@ struct Index {
       this.reduceMotion = v;
       this.persistUiPrefs();
     })
+    this.SettingSection('浮动工具栏质感')
+    this.SettingToggle('磨砂玻璃效果', this.glassEnabled, (v: boolean) => {
+      this.glassEnabled = v;
+      this.persistUiPrefs();
+    })
+    this.SettingSlider('玻璃通透度 (%，越高越透明)', this.glassIntensity, 0, 100, 1, (v: number) => {
+      this.glassIntensity = v;
+      this.persistUiPrefs();
+    })
+    this.SettingInfo(this.blurEnabled
+      ? '磨砂效果使用系统背景模糊；通透度同时调整模糊半径与底色透明度。'
+      : '当前设备未探测到系统材质能力，磨砂将回退为半透明底色。')
     this.SettingInfo(this.systemReduceMotion
       ? '系统动效缩放为 0，已自动减少动效。'
       : '系统动效缩放未读取到减少信号；可手动开启（探测需真机核对）。')
+    this.SettingSection('局域网同步（InkCast）')
+    this.SettingToggle('启用墨迹同步到 PC 大屏', this.inkCastEnabled, (v: boolean) => {
+      this.inkCastEnabled = v;
+      this.persistUiPrefs();
+      this.syncInkCast();
+    })
+    this.SettingInfo('目标：' + this.inkCastHost + ':' + this.inkCastPort +
+      '（TCP）。大屏打开 http://<PC-IP>:9090/ 查看同步板书与 AI 批注；USB 可用 hdc rport 转发。')
+    this.SettingSection('批注模式')
+    this.SettingToggle('透明批注模式（配合系统悬浮窗）', this.transparentAnnotate, (v: boolean) => {
+      this.transparentAnnotate = v;
+      this.persistUiPrefs();
+      this.applyWindowTransparency();
+    })
+    this.SettingInfo('开启后窗口与画布透明；在多任务把本应用切为「悬浮窗」，即可覆盖教材/PPT 批注，工具栏保留。')
   }
 
   @Builder
@@ -1918,6 +2290,8 @@ struct Index {
       this.handleAction('fold');
     } else if (alt && code === KeyCode.KEYCODE_Q) {
       this.handleAction('mouse');
+    } else if (alt && code === KeyCode.KEYCODE_A) {
+      this.openAiCapture(0);
     }
   }
 
@@ -2668,7 +3042,71 @@ struct Index {
     this.refreshScene();
   }
 
+  // 浮动工具栏命中：容器是 Transparent 命中，事件会同时到达画布层，
+  // 因此这里显式拦截 Down 并锁定该指针的 Move/Up，避免拖动工具栏时留下笔迹。
+  // 拖动结束或窗口尺寸变化后，把浮动栏钳制回可视区域，
+  // 覆盖横竖屏切换、折叠屏展开/折叠、自由多窗缩放等场景。
+  private clampBarToWindow(): void {
+    if (this.barFrameW <= 0 || this.barFrameH <= 0 || this.windowWidth <= 0 || this.windowHeight <= 0) {
+      return;
+    }
+    const left = this.barFrameX + this.barDragX;
+    const top = this.barFrameY + this.barDragY;
+    const maxLeft = Math.max(0, this.windowWidth - this.barFrameW);
+    const maxTop = Math.max(0, this.windowHeight - this.barFrameH);
+    const targetLeft = Math.min(Math.max(0, left), maxLeft);
+    const targetTop = Math.min(Math.max(0, top), maxTop);
+    if (targetLeft !== left) {
+      this.barDragX += targetLeft - left;
+    }
+    if (targetTop !== top) {
+      this.barDragY += targetTop - top;
+    }
+  }
+
+  // 当前是否有会遮挡画布的模态弹窗/面板；为 true 时画布不接收任何触摸。
+  // 画板模式（boardOpen）、PPT 模式、浮条折叠等非模态状态不在此列，画布照常可写。
+  private overlayBlocksInk(): boolean {
+    return this.toolsOpen
+      || this.paletteOpen
+      || this.shapeOpen
+      || this.countdownOpen
+      || this.lotteryOpen
+      || this.lotteryReplaceOpen
+      || this.replayOpen
+      || this.guideOpen
+      || this.settingsOpen
+      || this.yesNoOpen
+      || this.updateOpen
+      || this.changelogOpen
+      || this.calibrationOpen
+      || this.aiCaptureOpen
+      || this.aiResultOpen
+      || this.aiNotesGenerating
+      || this.aiNotesOpen
+      || this.aiSnapOpen;
+  }
+
+  private inFloatingBar(x: number, y: number): boolean {
+    if (this.boardOpen) {
+      return false;
+    }
+    if (this.barFrameW <= 0 || this.barFrameH <= 0) {
+      return false;
+    }
+    const pad = 6;
+    const left = this.barFrameX + this.barDragX;
+    const top = this.barFrameY + this.barDragY;
+    return x >= left - pad && x <= left + this.barFrameW + pad
+      && y >= top - pad && y <= top + this.barFrameH + pad;
+  }
+
   private handleTouch(event: TouchEvent): void {
+    // 任何模态弹窗/面板打开时，画布一律拒绝书写：这些面板的外层多为 Transparent 命中，
+    // 触摸会同时到达画布层，导致在弹窗上点按或拖动时落墨。
+    if (this.overlayBlocksInk()) {
+      return;
+    }
     const timeMs = event.timestamp / 1000000;
     const touches = event.changedTouches;
     for (let i = 0; i < touches.length; i++) {
@@ -2676,10 +3114,49 @@ struct Index {
       const pressure = event.pressure > 0 ? event.pressure : 0.5;
       const width = touch.width === undefined ? 0 : touch.width;
       const height = touch.height === undefined ? 0 : touch.height;
+      let px = touch.x;
+      let py = touch.y;
+      // 坐标合法性：鼠标拖出窗口/屏幕边缘时 ArkUI 会回传负坐标或超界坐标，
+      // 直接落盘会在笔迹末端拉出“指向画布中心 / 中心对称位置”的假线段。
+      const maxX = this.windowWidth > 0 ? this.windowWidth + 1 : 100000;
+      const maxY = this.windowHeight > 0 ? this.windowHeight + 1 : 100000;
+      const inRange = Number.isFinite(px) && Number.isFinite(py)
+        && px >= -1 && px <= maxX && py >= -1 && py <= maxY;
+      if (event.type === TouchType.Down) {
+        if (!inRange) {
+          continue;
+        }
+        this.touchXSeen.set(touch.id, px);
+        this.touchYSeen.set(touch.id, py);
+      } else {
+        const lastX = this.touchXSeen.get(touch.id);
+        const lastY = this.touchYSeen.get(touch.id);
+        const usable = inRange && !(px === 0 && py === 0);
+        if (lastX !== undefined && lastY !== undefined && !usable && (lastX !== 0 || lastY !== 0)) {
+          px = lastX;
+          py = lastY;
+        } else if (lastX === undefined || lastY === undefined) {
+          continue;
+        } else if (inRange) {
+          this.touchXSeen.set(touch.id, px);
+          this.touchYSeen.set(touch.id, py);
+        }
+      }
+      if (event.type === TouchType.Down) {
+        if (this.inFloatingBar(px, py)) {
+          this.barPointerId = touch.id;
+          continue;
+        }
+      } else if (touch.id === this.barPointerId) {
+        if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+          this.barPointerId = -1;
+        }
+        continue;
+      }
       const sample = new PointerSample(
         touch.id,
-        touch.x,
-        touch.y,
+        px,
+        py,
         pressure,
         width,
         height,
@@ -2687,11 +3164,11 @@ struct Index {
         timeMs
       );
       if (this.settings.canvas.isShowCursor) {
-        this.cursorX = touch.x;
-        this.cursorY = touch.y;
+        this.cursorX = px;
+        this.cursorY = py;
         this.cursorVisible = event.type === TouchType.Down || event.type === TouchType.Move;
       }
-      if (this.routeBoardImageDrag(event.type, touch.id, touch.x, touch.y)) {
+      if (this.routeBoardImageDrag(event.type, touch.id, px, py)) {
         continue;
       }
       if (event.type === TouchType.Down) {
@@ -2700,6 +3177,7 @@ struct Index {
         this.controller.onPointerMove(sample);
       } else if (event.type === TouchType.Up) {
         this.controller.onPointerUp(sample);
+        this.castLastStroke();
       } else if (event.type === TouchType.Cancel) {
         this.controller.onPointerCanceled(sample);
       }
@@ -2964,6 +3442,216 @@ struct Index {
     this.refreshScene();
   }
 
+  // ---- AI 教学助手：端侧确定性引擎 + 演示交互（真实服务接入时只替换 core 实现） ----
+  // ---- 画板三栏底栏命令 ----
+  private cycleBoardBackground(): void {
+    const next = (this.boardBackground + 1) % 4;
+    if (next === 0) {
+      this.board.Background = BoardBackground.Black;
+    } else if (next === 1) {
+      this.board.Background = BoardBackground.White;
+    } else if (next === 2) {
+      this.board.Background = BoardBackground.Grid;
+    } else {
+      this.board.Background = BoardBackground.Lined;
+    }
+    this.boardBackground = next;
+    if (next === 2 || next === 3) {
+      this.drawBoardGrid();
+    }
+  }
+
+  private handleBoardCommand(id: string): void {
+    if (id === 'pagePrev') {
+      this.boardNavigate(-1);
+    } else if (id === 'pageNext') {
+      this.boardNavigate(1);
+    } else if (id === 'pageAdd') {
+      this.board.addPage();
+      this.syncBoard();
+    } else if (id === 'pageRemove') {
+      this.board.removePage(this.boardIndex);
+      this.syncBoard();
+    } else if (id === 'clearPage') {
+      this.clearBoardPage();
+    } else if (id === 'bgCycle') {
+      this.cycleBoardBackground();
+    } else if (id === 'insertImage') {
+      this.insertBoardImage();
+    } else if (id === 'insertVideo') {
+      this.insertBoardVideo();
+    } else if (id === 'save') {
+      this.saveBoard();
+    } else if (id === 'open') {
+      this.loadBoard();
+    } else if (id === 'exit') {
+      this.exitBoard();
+    } else {
+      this.handleAction(id);
+    }
+  }
+
+  private aiInkSummary(): AiInkSummary {
+    return summarizeInk(this.controller.Document.Strokes);
+  }
+
+  private openAiCapture(kind: number): void {
+    this.toolsOpen = false;
+    this.paletteOpen = false;
+    this.shapeOpen = false;
+    this.selectionToolbarOpen = false;
+    this.aiResultOpen = false;
+    this.aiCaptureKind = kind === 1 ? 1 : 0;
+    this.aiScanning = false;
+    this.aiCaptureOpen = true;
+  }
+
+  // 端侧 OCR：截取画布（不含遮罩/工具栏）→ 按圈选区域裁剪 → 文字识别。
+  // Text 为空时通过 Available 区分“设备无 OCR 能力”和“未识别到文字”，绝不编造内容。
+  private async ocrRegion(region: AiRegion): Promise<OcrOutcome> {
+    let snapshot: image.PixelMap | null = null;
+    try {
+      snapshot = await componentSnapshot.get('inkCanvas');
+      const info = await snapshot.getImageInfo();
+      const ratio = this.windowWidth > 0 ? info.size.width / this.windowWidth : 1;
+      const x = Math.max(0, Math.round(region.Left * ratio));
+      const y = Math.max(0, Math.round(region.Top * ratio));
+      const width = Math.max(1, Math.round(region.Width * ratio));
+      const height = Math.max(1, Math.round(region.Height * ratio));
+      if (x < info.size.width && y < info.size.height) {
+        await snapshot.crop({
+          x: x,
+          y: y,
+          size: {
+            width: Math.min(width, info.size.width - x),
+            height: Math.min(height, info.size.height - y)
+          }
+        });
+      }
+      if (!this.ocrTried) {
+        this.ocrTried = true;
+        this.ocrReady = await textRecognition.init();
+      }
+      if (!this.ocrReady) {
+        return { Text: '', Available: false };
+      }
+      const recognized = await textRecognition.recognizeText({ pixelMap: snapshot });
+      return { Text: recognized.value, Available: true };
+    } catch (error) {
+      void error;
+      return { Text: '', Available: this.ocrReady };
+    } finally {
+      if (snapshot !== null) {
+        await snapshot.release();
+      }
+    }
+  }
+
+  private async handleAiCapture(region: AiRegion): Promise<void> {
+    const ink = this.aiInkSummary();
+    const kind = this.aiCaptureKind === 1 ? 1 : 0;
+    this.aiScanning = true;
+    const started = Date.now();
+    let outcome: OcrOutcome = { Text: '', Available: this.ocrReady };
+    try {
+      outcome = await this.ocrRegion(region);
+    } catch (error) {
+      void error;
+    }
+    const result = recognizeFromText({ Kind: kind, Text: outcome.Text, Available: outcome.Available, Region: region, Ink: ink });
+    const remaining = Math.max(0, 1250 - (Date.now() - started));
+    setTimeout(() => {
+      this.aiCaptureOpen = false;
+      this.aiScanning = false;
+      this.aiResult = result;
+      this.aiResultOpen = true;
+      this.castAi(result);
+    }, remaining);
+  }
+
+  private copyAiResult(): void {
+    const result = this.aiResult;
+    let text = result.Title + '\n' + result.Question;
+    if (result.Formula !== '') {
+      text += '\n公式：' + result.Formula;
+    }
+    for (let i = 0; i < result.Steps.length; i++) {
+      text += '\n' + (i + 1) + '. ' + result.Steps[i];
+    }
+    text += '\n（' + result.Engine + '）';
+    this.copyText(text, '识别结果已复制');
+  }
+
+  private openAiNotes(): void {
+    this.toolsOpen = false;
+    this.paletteOpen = false;
+    this.shapeOpen = false;
+    this.aiNotesGenerating = true;
+    this.aiNotesProgress = 0;
+    let progress = 0;
+    const timer = setInterval(() => {
+      progress = Math.min(0.96, progress + 0.07);
+      this.aiNotesProgress = progress;
+    }, 60);
+    const now = new Date();
+    const minutes = now.getMinutes();
+    const label = now.getHours() + ':' + (minutes < 10 ? '0' + String(minutes) : String(minutes));
+    const pageIndex = this.boardOpen ? this.boardIndex : 0;
+    const ink = this.aiInkSummary();
+    setTimeout(() => {
+      clearInterval(timer);
+      this.aiNotesProgress = 1;
+      this.aiNotes = buildLectureNotes(ink, pageIndex, label);
+      setTimeout(() => {
+        this.aiNotesGenerating = false;
+        this.aiNotesOpen = true;
+      }, 200);
+    }, 1300);
+  }
+
+  private copyAiNotes(): void {
+    this.copyText(this.aiNotes.Markdown, '纪要已复制为 Markdown');
+  }
+
+  private openAiSnap(): void {
+    this.toolsOpen = false;
+    this.paletteOpen = false;
+    this.shapeOpen = false;
+    this.aiSnapOptions = shapeSnapOptions(this.aiInkSummary());
+    this.aiSnapOpen = true;
+  }
+
+  private applyAiSnap(kind: number): void {
+    this.aiSnapOpen = false;
+    let label = '圆';
+    if (kind === 5) {
+      label = '矩形';
+    } else if (kind === 4) {
+      label = '三角形';
+    } else if (kind === 1) {
+      label = '直线';
+    }
+    promptAction.showToast({
+      message: '已按「' + label + '」生成规整预览（演示：未写回画布墨迹）',
+      duration: 2200
+    });
+  }
+
+  private copyText(text: string, okMessage: string): void {
+    try {
+      const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
+      pasteboard.getSystemPasteboard().setData(data).then(() => {
+        promptAction.showToast({ message: okMessage, duration: 1800 });
+      }).catch((err: Error) => {
+        void err;
+        promptAction.showToast({ message: '复制失败：剪贴板不可用', duration: 1800 });
+      });
+    } catch (error) {
+      void error;
+      promptAction.showToast({ message: '复制失败', duration: 1800 });
+    }
+  }
+
   private handleAction(id: string): void {
     if (id === 'pen') {
       this.controller.Tool = InkTool.Pen;
@@ -3027,6 +3715,7 @@ struct Index {
       }
       this.controller.ClearSelection();
       this.controller.Clear();
+      this.castClear();
       if (id === 'clearAndMouse') {
         this.controller.Tool = InkTool.Pan;
         this.selectedId = 'mouse';
@@ -3063,6 +3752,14 @@ struct Index {
     } else if (id === 'screenshot') {
       this.toolsOpen = false;
       this.takeScreenshot();
+    } else if (id === 'aiCapture') {
+      this.openAiCapture(0);
+    } else if (id === 'aiCaptureFormula') {
+      this.openAiCapture(1);
+    } else if (id === 'aiNotes') {
+      this.openAiNotes();
+    } else if (id === 'aiSnap') {
+      this.openAiSnap();
     } else if (id === 'countdown') {
       this.toolsOpen = false;
       this.countdownOpen = true;

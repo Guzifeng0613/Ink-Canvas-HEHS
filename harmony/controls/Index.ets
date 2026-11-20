@@ -4,6 +4,7 @@ export type { ThemeTokens } from './src/main/ets/ThemeTokens';
 export { FLOATING_BAR_BUTTONS, catalogSummary } from './src/main/ets/FloatingBarCatalog';
 export type { FloatingBarButton, FloatingBarCatalogSummary } from './src/main/ets/FloatingBarCatalog';
 export { FloatingBar } from './src/main/ets/FloatingBar';
+export { BoardDock } from './src/main/ets/BoardDock';
 export {
   PEN_COLORS_DARK,
   PEN_COLORS_LIGHT,
@@ -41,6 +42,13 @@ export {
   animateMotion
 } from './src/main/ets/Motion';
 export { panelBackground, panelBlurStyle } from './src/main/ets/PanelStyle';
+export {
+  AiCaptureOverlay,
+  AiGeneratingOverlay,
+  AiResultCard,
+  AiNotesPanel,
+  ShapeSnapPanel
+} from './src/main/ets/AiStudio';
 export {
   GLYPH_SYMBOLS,
   symbolForCodepoint,
