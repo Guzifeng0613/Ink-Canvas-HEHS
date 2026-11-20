@@ -14,6 +14,7 @@ public sealed record ExtensionManifest
     public string EntryType { get; init; }
     public string[] Dependencies { get; init; } = Array.Empty<string>();
     public PluginCapability[] Capabilities { get; init; } = Array.Empty<PluginCapability>();
+    public string[] ImportExtensions { get; init; } = Array.Empty<string>();
     public string[] PackageFiles { get; init; } = Array.Empty<string>();
 }
 
@@ -32,11 +33,17 @@ public interface IModuleContext
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<PluginCapability>))]
-public enum PluginCapability { Notifications, CanvasWrite }
+public enum PluginCapability { Notifications, CanvasWrite, FileImport }
 
 public interface IInkCanvasPlugin
 {
     ValueTask InitializeAsync(IPluginContext context, CancellationToken cancellationToken);
+}
+
+/// <summary>Converts a user-selected file to the host-assigned native page path.</summary>
+public interface IInkFileImporter
+{
+    Task ConvertAsync(string sourcePath, string destinationPath);
 }
 
 public interface IPluginContext
@@ -62,7 +69,11 @@ public sealed record PluginCommandResult
     public PluginStroke[] Strokes { get; init; } = Array.Empty<PluginStroke>();
 }
 
-public sealed record PluginRequest(string Method, string CommandId = null, PluginCommandContext Context = null);
+public sealed record PluginRequest(string Method, string CommandId = null, PluginCommandContext Context = null)
+{
+    public string SourcePath { get; init; }
+    public string DestinationPath { get; init; }
+}
 public sealed record PluginResponse
 {
     public bool Success { get; init; }

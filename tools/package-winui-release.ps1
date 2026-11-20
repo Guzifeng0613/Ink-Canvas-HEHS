@@ -17,6 +17,8 @@ foreach ($module in $modules) {
 }
 & (Join-Path $PSScriptRoot 'pack-extension.ps1') -Project (Join-Path $repoRoot 'samples\InkCanvas.SamplePlugin\InkCanvas.SamplePlugin.csproj') -Kind Plugin -OutputDirectory $outputRoot
 if ($LASTEXITCODE -ne 0) { throw 'Sample plugin publish failed.' }
+& (Join-Path $PSScriptRoot 'pack-extension.ps1') -Project (Join-Path $repoRoot 'src\InkCanvas.Plugins.LegacyImport\InkCanvas.Plugins.LegacyImport.csproj') -Kind Plugin -OutputDirectory $outputRoot
+if ($LASTEXITCODE -ne 0) { throw 'Legacy import plugin publish failed.' }
 $docs = Join-Path $app 'Docs'
 New-Item -ItemType Directory -Path $docs -Force | Out-Null
 foreach ($name in @('ANALYTIC-GEOMETRY.md', 'PDF.md', 'EXTENSIONS.md')) { Copy-Item -LiteralPath (Join-Path $repoRoot ('docs\' + $name)) -Destination $docs }

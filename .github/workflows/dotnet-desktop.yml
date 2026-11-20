@@ -4,7 +4,7 @@ on:
   push:
     branches: [master, feat/winui3-migration]
   pull_request:
-    branches: [master]
+    branches: [master, release/winui3-v3.5.0]
   workflow_dispatch:
 
 jobs:
@@ -28,6 +28,17 @@ jobs:
 
       - name: Test
         run: dotnet test tests/InkCanvas.Core.Tests/InkCanvas.Core.Tests.csproj -c Release -p:Platform=x64 --no-build
+
+      - name: Test legacy file import with WPF archives
+        run: dotnet test tests/InkCanvas.LegacyImport.Tests -c Release -p:Platform=x64 --no-build
+
+      - name: Package legacy import plugin
+        run: ./tools/pack-extension.ps1 -Project src/InkCanvas.Plugins.LegacyImport/InkCanvas.Plugins.LegacyImport.csproj -Kind Plugin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: inkcanvas-legacy-import
+          path: artifacts/extension-packages/inkcanvas.legacy-import-*.zip
 
       - name: Publish
         run: dotnet publish src/InkCanvas.App/InkCanvas.App.csproj -c Release -p:Platform=x64 -o artifacts/app

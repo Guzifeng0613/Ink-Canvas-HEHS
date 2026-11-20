@@ -108,3 +108,25 @@ dotnet pack src/InkCanvas.Extensibility/InkCanvas.Extensibility.csproj -c Releas
 `ExtensionRuntimeTests` 覆盖依赖排序与逆序停止、启动回滚、事件故障、缺包、禁用、循环、清单兼容、IPC 长度、结果校验、插件重启、多进程及数据隔离、退出与超时，以及启动期间改变启用意图。
 
 `--extensionscheck=<目录> --extensionpackage=<示例插件包目录>` 通过真实设置按钮调用外部插件，验证工具栏入口、画布输出、撤销重做和停用。基础包使用 `--expect-no-screen-module` 验证缺少模块仍可书写。既有 `--screenfollowcheck`、`--workspacecheck`、`--settingscheck` 等回归入口继续可用。
+
+## 旧版白板文件导入
+
+1. 使用包含文件导入接口的宿主版本。把 `inkcanvas.legacy-import-1.0.0.zip` 解压到设置页提供的插件目录，使清单位于 `Plugins/inkcanvas.legacy-import/plugin.json`。插件解码器需要 x64 .NET 10 Desktop Runtime。
+2. 重启应用，在「设置 → 模块与插件」启用「旧版白板文件导入」。桌面「打开墨迹」及白板的打开页面、打开画板会列出旧扩展名。停用后这些选项随即消失。
+3. 选择文件。已有内容时会询问是否替换。后续保存使用 `.icink`，可继续编辑笔迹或移动媒体。
+
+| 格式 | 导入内容 |
+|---|---|
+| `.isf`、`.icstk` | WPF 笔迹、颜色、宽度、压力和荧光笔标记。特殊笔尖轮廓、曲线拟合和自定义属性会有差异。 |
+| `.icart` | 单页白板包中的 `strokes.icstk`、`elements.xaml` 和 `File Dependency/`。恢复旧版插入器支持的 JPG/PNG/BMP 图片、MP4/AVI/WMV 视频及常见平移、缩放、旋转和矩阵变换。视频播放依赖设备解码器。 |
+
+导入器按文件名在包内查找依赖，仅读取布局数值，不实例化 XAML 对象。缺失源文件（例如某些旧版压缩图片未打包）、不支持的对象或损坏存档会显示错误，保留当前画布。ISF 上限 16 MiB，布局 32 MiB，媒体合计 96 MiB，白板包 128 MiB。PPT 历史存档可手动打开。
+
+发布脚本同时生成独立插件 ZIP。单独构建与端到端测试命令（Windows x64）：
+
+```powershell
+.\tools\pack-extension.ps1 -Project src\InkCanvas.Plugins.LegacyImport\InkCanvas.Plugins.LegacyImport.csproj -Kind Plugin
+dotnet test tests/InkCanvas.LegacyImport.Tests -c Release -p:Platform=x64
+```
+
+文件导入插件声明 `FileImport` 和 `ImportExtensions`，并实现 `IInkFileImporter`。宿主指定输入路径与一次性输出路径，插件写入含一个页面的原生画板文件。命名管道只传路径和结果，成功或失败后宿主清理临时文件。旧版导入插件通过自己的 WindowsDesktop 可执行文件解码，主程序和通用插件宿主均无需加载 WPF。

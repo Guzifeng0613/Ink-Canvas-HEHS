@@ -338,7 +338,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
             _pptSession.DisableSlideTimings();
 
         if (notice.LegacyInkFilesDetected)
-            await NotifyAsync("发现旧版墨迹存档", "发现 .icstk/.icart 存档。该 WPF ISF 格式无法在 WinUI 3 直接读取；当前仅保留文件，不会覆盖或删除。");
+            await NotifyAsync("发现旧版墨迹存档", "发现 .icstk/.icart 存档。启用「旧版白板文件导入」插件后，可通过「打开墨迹」手动打开。");
     }
 
     private void OnPptScreenshotRequested(PptScreenshotRequest request)
@@ -823,6 +823,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         {
             var picker = new Windows.Storage.Pickers.FileOpenPicker();
             picker.FileTypeFilter.Add(".icink");
+            foreach (string extension in Services.Plugins.ImportExtensions) picker.FileTypeFilter.Add(extension);
             if (Services.Modules.HasExport<IPdfWorkspaceService>()) picker.FileTypeFilter.Add(".pdf");
             WinRT.Interop.InitializeWithWindow.Initialize(picker, WindowChrome.GetHwnd((Window)_board ?? _bar));
             var file = await picker.PickSingleFileAsync();
@@ -830,16 +831,21 @@ public sealed partial class ShellController : IShellActions, IDisposable
             if (Path.GetExtension(file.Path).Equals(".pdf", StringComparison.OrdinalIgnoreCase)) { await OpenPdfAsync(file.Path); return; }
             var owner = (Window)_board ?? _bar;
             var store = _board is not null ? Services.Board : Services.ScreenImages;
+            var page = store.Current;
+            var apply = await Services.PrepareInkOpenAsync(file.Path, store);
+            if (_disposed || owner != ((Window)_board ?? _bar) || page != store.Current) return;
             if (store.Current.Document.Count > 0 || store.CurrentImages.Count > 0 || store.CurrentMedia.Count > 0)
             {
-                if (!await YesOrNoWindow.AskAsync(owner, "打开将替换当前墨迹和图片，是否继续？")) return;
+                if (!await YesOrNoWindow.AskAsync(owner, "打开将替换当前墨迹、图片和视频，是否继续？")) return;
             }
-            store.LoadPage(file.Path);
+            if (_disposed || owner != ((Window)_board ?? _bar) || page != store.Current) return;
+            apply();
             _bar?.Bar.RefreshSelection();
         }
         catch (Exception ex)
         {
             Core.Diagnostics.FileLog.WriteLogToFile($"open strokes: {ex}", Core.Diagnostics.LogType.Error);
+            if (!_disposed) await NotifyAsync("文件打开失败", ex.GetBaseException().Message);
         }
     }
 

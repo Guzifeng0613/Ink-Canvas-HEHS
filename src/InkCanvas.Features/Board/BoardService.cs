@@ -618,6 +618,32 @@ public sealed class BoardService
             };
         }
 
+        ApplyBoard(loadedPages.Select(PreparePage).ToList(), background, gridSpacing);
+    }
+
+    // Parse and materialize the entire plugin result before the user confirms replacing live content.
+    public Action PrepareImportedPage(string path, bool entireBoard)
+    {
+        if (!TryReadBoardFile(path, out var model) || model.Pages is not { Count: 1 } || model.Pages[0] is null)
+            throw new InvalidDataException("文件导入插件未返回有效的单页画板。");
+        var file = model.Pages[0];
+        if (file.Images?.Any(image => !IsValidImage(image)) == true || file.Media?.Any(media => !IsValidMedia(media)) == true)
+            throw new InvalidDataException("文件导入插件返回了无效媒体。");
+        var page = PreparePage(file);
+        return () =>
+        {
+            if (entireBoard) ApplyBoard(new[] { page }, Background, GridSpacing);
+            else
+            {
+                ReplacePage(CurrentIndex, page);
+                PageChanged?.Invoke();
+                ImagesChanged?.Invoke();
+            }
+        };
+    }
+
+    private void ApplyBoard(IReadOnlyList<PreparedPage> loadedPages, BoardBackground background, float gridSpacing)
+    {
         foreach (var page in _pages) page.Dispose();
         _pages.Clear();
         _images.Clear();
@@ -626,10 +652,10 @@ public sealed class BoardService
         {
             var controller = new InkController();
             controller.GetSelectableElements = () => GetSelectionElements(controller);
-            controller.Document.AddRange((page.Strokes ?? new List<StrokeFile>()).Select(FromStrokeFile));
+            controller.Document.AddRange(page.Strokes);
             _pages.Add(controller);
-            _images.Add((page.Images ?? new List<BoardImageAsset>()).Where(IsValidImage).ToList());
-            _media.Add((page.Media ?? new List<BoardMediaAsset>()).Where(IsValidMedia).ToList());
+            _images.Add(page.Images);
+            _media.Add(page.Media);
         }
         CurrentIndex = 0;
         GridSpacing = Math.Clamp(gridSpacing, 12f, 160f);
@@ -678,16 +704,25 @@ public sealed class BoardService
         return true;
     }
 
-    private void ReplacePage(int index, BoardPageFile page)
+    private sealed record PreparedPage(List<InkStroke> Strokes, List<BoardImageAsset> Images, List<BoardMediaAsset> Media);
+
+    private static PreparedPage PreparePage(BoardPageFile page) => new(
+        (page.Strokes ?? new()).Select(FromStrokeFile).ToList(),
+        (page.Images ?? new()).Where(IsValidImage).ToList(),
+        (page.Media ?? new()).Where(IsValidMedia).ToList());
+
+    private void ReplacePage(int index, BoardPageFile page) => ReplacePage(index, PreparePage(page));
+
+    private void ReplacePage(int index, PreparedPage page)
     {
         var controller = _pages[index];
         controller.CancelLassoErase(); controller.ClearSelection();
         controller.Document.Clear();
         controller.History.Clear();
         controller.ViewTransform = Matrix3x2.Identity;
-        controller.Document.AddRange((page.Strokes ?? new List<StrokeFile>()).Select(FromStrokeFile));
-        _images[index] = (page.Images ?? new List<BoardImageAsset>()).Where(IsValidImage).ToList();
-        _media[index] = (page.Media ?? new List<BoardMediaAsset>()).Where(IsValidMedia).ToList();
+        controller.Document.AddRange(page.Strokes);
+        _images[index] = page.Images;
+        _media[index] = page.Media;
     }
 
     private void AddPageAt(int index)
