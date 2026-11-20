@@ -29,7 +29,9 @@ import {
   isTablet,
   is2in1,
   breakpointForWidth,
-  isFullLayout
+  isFullLayout,
+  StrokePredictor,
+  StylusBinding
 } from '@inkcanvas/platform';
 import {
   FloatingBar,
@@ -208,6 +210,7 @@ struct Index {
   private blurEnabled: boolean = false;
   private symbolIcons: boolean = true;
   private renderer: CanvasInkRenderer | null = null;
+  private strokePredictor: StrokePredictor = new StrokePredictor();
   private controller: InkController = new InkController();
   private annotateDocument: InkDocument = new InkDocument();
   private pdfSource: PdfPageSource = new PdfPageSource();
@@ -226,6 +229,8 @@ struct Index {
   private dotTimer: number = -1;
   private settings: AppSettings = createDefaultSettings();
   private autoSave: AutoSaveService | null = null;
+  // 手写笔手势订阅句柄（双击/轻捏轮转工具）；页面销毁时成对释放。
+  private stylusBinding: StylusBinding | null = null;
   private board: BoardDocument = new BoardDocument();
   private boardGridSettings: RenderingContextSettings = new RenderingContextSettings(true);
   private boardGridContext: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.boardGridSettings);
@@ -258,6 +263,7 @@ struct Index {
     this.stopLotteryTimer();
     this.stopReplayTimer();
     this.countdownPiP.stop();
+    this.releaseStylusGesture();
   }
 
   aboutToAppear(): void {
@@ -332,6 +338,7 @@ struct Index {
         this.showCoursewarePage(this.coursewareIndex + (next ? 1 : -1));
       }
     };
+    this.setupStylusGesture();
   }
 
   private loadUiPrefs(): void {
@@ -527,6 +534,10 @@ struct Index {
         InkCanvasSurface({
           onRendererReady: (renderer: CanvasInkRenderer) => {
             this.renderer = renderer;
+            if (this.windowWidth > 0 && this.windowHeight > 0) {
+              this.controller.ViewCenter.X = this.windowWidth / 2;
+              this.controller.ViewCenter.Y = this.windowHeight / 2;
+            }
             this.renderer.resize(this.windowWidth, this.windowHeight);
             this.refreshScene();
           }
@@ -1250,9 +1261,20 @@ struct Index {
       this.handleKey(event);
     })
     .onAreaChange((oldValue: Area, newValue: Area) => {
-      this.windowWidth = Number(newValue.width);
-      this.windowHeight = Number(newValue.height);
-      if (this.renderer !== null) {
+      const nextWidth = Number(newValue.width);
+      const nextHeight = Number(newValue.height);
+      const sizeChanged = nextWidth !== this.windowWidth || nextHeight !== this.windowHeight;
+      this.windowWidth = nextWidth;
+      this.windowHeight = nextHeight;
+      // F3：对齐 C# InkSurface.OnDraw 的 ViewCenter 语义，在视口尺寸变化（onAreaChange）时按半尺寸刷新
+      // （vp，与触摸手势同单位）；C# 为每帧刷新，此处事件驱动在默认 1920×1080vp 视口下与旧值逐位相等。
+      // 布局尚未给出有效尺寸时保留控制器默认 960×540。
+      if (this.windowWidth > 0 && this.windowHeight > 0) {
+        this.controller.ViewCenter.X = this.windowWidth / 2;
+        this.controller.ViewCenter.Y = this.windowHeight / 2;
+      }
+      // 同尺寸回调跳过 resize+refresh，避免无谓的全量重绘。
+      if (this.renderer !== null && sizeChanged) {
         this.renderer.resize(this.windowWidth, this.windowHeight);
         this.refreshScene();
       }
@@ -1564,6 +1586,15 @@ struct Index {
     this.SettingToggle('双指旋转', this.settings.gesture.isEnableTwoFingerRotation, (v: boolean) => {
       this.settings.gesture.isEnableTwoFingerRotation = v;
       this.applyGestures();
+      this.touchSettings();
+    })
+    this.SettingToggle('手写笔手势切换（双击/轻捏轮转工具）', this.settings.gesture.isEnableStylusGesture, (v: boolean) => {
+      this.settings.gesture.isEnableStylusGesture = v;
+      if (v) {
+        this.setupStylusGesture();
+      } else {
+        this.releaseStylusGesture();
+      }
       this.touchSettings();
     })
   }
@@ -2198,6 +2229,54 @@ struct Index {
     );
   }
 
+  // 手写笔手势（双击 doubleTap / 轻捏 squeeze）工具轮转：画笔类（铅笔/荧光笔/形状/漫游）
+  // → 区域橡皮 → 选择 → 回到铅笔。荧光笔/整笔擦/套索擦等不在环内，经 else 分支先进入区域橡皮，
+  // 随后沿环回到铅笔，不存在死循环或不可达状态。
+  // 轮转直接复用现有 handleAction(id)，完整沿用其工具状态、面板与 UI 逻辑，不另写一套切换；
+  // 当前工具状态取自 controller.Tool（与工具栏选中态同源）。
+  private rotateToolByStylusGesture(): void {
+    // 切工具瞬间活体笔画即将提交/已不存在，先清预测段，避免旧颜色旧宽度的临时段残留到新工具帧。
+    if (this.renderer !== null) {
+      this.renderer.clearPrediction();
+    }
+    const tool = this.controller.Tool;
+    let nextId: string;
+    if (tool === InkTool.Select) {
+      nextId = 'pen';
+    } else if (tool === InkTool.Eraser) {
+      nextId = 'select';
+    } else {
+      nextId = 'eraserCircle';
+    }
+    this.handleAction(nextId);
+  }
+
+  // 订阅手写笔手势；设置关闭或设备不支持时由 StylusBinding 内部静默降级。
+  private setupStylusGesture(): void {
+    if (!this.settings.gesture.isEnableStylusGesture) {
+      return;
+    }
+    // 重复进入先释放旧订阅，避免同一手势注册多份回调导致轮转触发多次。
+    this.releaseStylusGesture();
+    this.stylusBinding = new StylusBinding();
+    // 现有设置结构未提供区分双击/轻捏的独立开关位，故两种手势当前触发同一轮转；
+    // 回调入口已按手势分开预留，未来可分别绑定不同行为。
+    this.stylusBinding.on('doubleTap', () => {
+      this.rotateToolByStylusGesture();
+    });
+    this.stylusBinding.on('squeeze', () => {
+      this.rotateToolByStylusGesture();
+    });
+  }
+
+  // 释放手写笔手势订阅，与 setupStylusGesture 成对，避免监听泄漏。
+  private releaseStylusGesture(): void {
+    if (this.stylusBinding !== null) {
+      this.stylusBinding.release();
+      this.stylusBinding = null;
+    }
+  }
+
   private boardBackgroundColor(): string {
     if (this.boardBackground === 1) {
       return '#FFFAFAFA';
@@ -2785,9 +2864,17 @@ struct Index {
   private handleTouch(event: TouchEvent): void {
     const timeMs = event.timestamp / 1000000;
     const touches = event.changedTouches;
+    // ArkUI SourceTool.Pen=2；仅手写笔通道的非零压感才视为真实硬件压感，
+    // 手指/鼠标/模拟器继续走 0.5 回退，宽度行为与 C# 速度笔锋保持一致。
+    // pressure/tiltX/tiltY 定义在 BaseEvent 上（API9，pressure 已归一化到 [0,1]），
+    // TouchObject 自身不携带倾角；同一次 TouchEvent 内各触点共享该笔状态。
+    const isStylus = event.sourceTool === 2;
+    const hasPressure = isStylus && event.pressure > 0;
+    const pressure = event.pressure > 0 ? event.pressure : 0.5;
+    const tiltX = event.tiltX;
+    const tiltY = event.tiltY;
     for (let i = 0; i < touches.length; i++) {
       const touch = touches[i];
-      const pressure = event.pressure > 0 ? event.pressure : 0.5;
       const width = touch.width === undefined ? 0 : touch.width;
       const height = touch.height === undefined ? 0 : touch.height;
       const sample = new PointerSample(
@@ -2798,7 +2885,12 @@ struct Index {
         width,
         height,
         pointerKind(event.source, event.sourceTool),
-        timeMs
+        timeMs,
+        false,
+        false,
+        tiltX,
+        tiltY,
+        hasPressure
       );
       if (this.settings.canvas.isShowCursor) {
         this.cursorX = touch.x;
@@ -2808,16 +2900,61 @@ struct Index {
       if (this.routeBoardImageDrag(event.type, touch.id, touch.x, touch.y)) {
         continue;
       }
+      // Down/Up/Cancel 在派发给控制器之前清空预测段：Invalidated 是同步回调，
+      // 若先派发，提交帧会把上一帧残留的预测段又画回活动层且之后无帧清除。
       if (event.type === TouchType.Down) {
+        if (this.renderer !== null) {
+          this.renderer.clearPrediction();
+        }
         this.controller.onPointerDown(sample);
       } else if (event.type === TouchType.Move) {
         this.controller.onPointerMove(sample);
+        this.updateStrokePrediction(event, isStylus);
       } else if (event.type === TouchType.Up) {
+        if (this.renderer !== null) {
+          this.renderer.clearPrediction();
+        }
         this.controller.onPointerUp(sample);
       } else if (event.type === TouchType.Cancel) {
+        if (this.renderer !== null) {
+          this.renderer.clearPrediction();
+        }
         this.controller.onPointerCanceled(sample);
       }
     }
+  }
+
+  // Pen Kit 报点预测：仅手写笔在铅笔/荧光笔书写时，把“最后真实点 → 预测点”的临时段
+  // 交给活动层渲染，用于抵消触控采样到上屏的链路延迟。预测点永远不进入 InkDocument、
+  // 活体笔画、离屏缓存与持久化；其余工具/通道一律立即清空，保证手指与鼠标路径零变化。
+  // 仅在 TouchType.Move 后调用（Down/Up/Cancel 已在派发到控制器前清空）。
+  private updateStrokePrediction(event: TouchEvent, isStylus: boolean): void {
+    if (this.renderer === null) {
+      return;
+    }
+    if (!isStylus
+      || (this.controller.Tool !== InkTool.Pen && this.controller.Tool !== InkTool.Highlighter)) {
+      this.renderer.clearPrediction();
+      return;
+    }
+    const predicted = this.strokePredictor.predict(event);
+    const active = this.controller.ActiveStroke;
+    if (predicted === null || active === null || active.Count === 0) {
+      this.renderer.clearPrediction();
+      return;
+    }
+    const last = active.Points[active.Count - 1];
+    const world = this.controller.toWorld(predicted.X, predicted.Y);
+    const width = last.Width > 0 ? last.Width : active.Attributes.BaseWidth;
+    this.renderer.setPrediction(
+      [last.X, last.Y, world.X, world.Y],
+      // 与本体同管线：荧光笔经 effectiveColor 套 HighlighterAlpha，避免预测段比落墨更浓。
+      active.Attributes.effectiveColor().packedArgb(),
+      width
+    );
+    // onPointerMove 的同步出帧发生在 setPrediction 之前，这里补一帧让预测段当帧上屏，
+    // 否则预测恒滞后一个采样、且抬笔前最后一段会被 Up 分支直接清掉而永不显示。
+    this.refreshScene();
   }
 
   // 画板元素拖拽路由：Select/Pan 工具下，Down 命中图片则接管该指针；Move 平移；Up/Cancel 记撤销。
@@ -2956,6 +3093,13 @@ struct Index {
     }
     const activeStroke = this.controller.ActiveStroke;
     const active = activeStroke === null ? null : this.toSceneStroke(activeStroke);
+    // F3：形状拖动预览（控制器每 move 已算好，此处只做场景透传，不改识别/生成算法）。
+    const previewInputs: SceneStrokeInput[] = [];
+    for (let i = 0; i < this.controller.ShapePreview.length; i++) {
+      previewInputs.push(this.toSceneStroke(this.controller.ShapePreview[i]));
+    }
+    // F3：框选橡皮筋（视图 DIP 矩形；命中与选择结果仍由控制器负责）。
+    const marquee = this.controller.MarqueeBounds;
     let selection: SceneSelectionInput | null = null;
     if (this.controller.Selection.length > 0) {
       const frame = this.controller.selectionFrameSummary();
@@ -2966,7 +3110,10 @@ struct Index {
         RotationRadians: Math.atan2(m[1], m[0])
       };
     }
-    this.renderer.render(buildScene(committed, active, selection, matrixToArray(this.controller.ViewTransform)), Invalidation.full());
+    this.renderer.render(buildScene(
+      committed, active, selection, matrixToArray(this.controller.ViewTransform),
+      previewInputs, marquee
+    ), Invalidation.full());
     this.drawLassoOverlay();
     this.drawDotAnimations();
     this.ensureDotTimer();
