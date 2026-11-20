@@ -32,6 +32,9 @@ public readonly record struct OverlayPointer(
 public sealed class LayeredInkWindow : IDisposable
 {
     private const string ClassName = "InkCanvasOverlayWindow";
+    private const uint SWP_NOZORDER = 0x0004;
+    private const uint SWP_NOACTIVATE = 0x0010;
+    private const uint SWP_NOOWNERZORDER = 0x0200;
     private static bool _classRegistered;
     private static bool _mouseInPointerEnabled;
     private static bool _mouseAsPointer;
@@ -117,7 +120,7 @@ public sealed class LayeredInkWindow : IDisposable
     public int Height { get; private set; }
 
     /// <summary>Logical DIPs per physical screen pixel on the monitor this overlay covers.</summary>
-    public float DpiScale { get; } = 1f;
+    public float DpiScale { get; private set; } = 1f;
 
     /// <summary>Writable premultiplied-BGRA surface, <c>Width*Height*4</c> bytes, top-down.</summary>
     public IntPtr PixelBuffer => _bits;
@@ -177,6 +180,81 @@ public sealed class LayeredInkWindow : IDisposable
         if (!IsVisible) return;
         NativeMethods.ShowWindow(_hwnd, NativeMethods.SW_HIDE);
         IsVisible = false;
+    }
+
+    /// <summary>
+    /// Repositions and/or resizes the overlay without touching click-through, topmost or
+    /// visibility. The DIB surface is only reallocated when the size actually changes, and
+    /// <see cref="PixelBuffer"/> always points at the current allocation afterwards.
+    /// </summary>
+    public void SetBounds(int x, int y, int width, int height)
+    {
+        if (_disposed || _hwnd == IntPtr.Zero) return;
+        if (width <= 0 || height <= 0) return;
+
+        bool sizeChanged = width != Width || height != Height;
+        if (sizeChanged && !RebuildSurface(width, height)) return;
+
+        if (x != X || y != Y || sizeChanged)
+        {
+            NativeMethods.SetWindowPos(_hwnd, IntPtr.Zero, x, y, width, height,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+        }
+
+        X = x; Y = y; Width = width; Height = height;
+
+        uint dpi = NativeMethods.GetDpiForWindow(_hwnd);
+        DpiScale = dpi == 0 ? 1.0f : dpi / 96.0f;
+    }
+
+    /// <summary>Replaces the bitmap-backed drawing surface; leaves state untouched on failure.</summary>
+    private bool RebuildSurface(int width, int height)
+    {
+        IntPtr screen = NativeMethods.GetDC(IntPtr.Zero);
+        try
+        {
+            if (_memDc == IntPtr.Zero)
+                _memDc = NativeMethods.CreateCompatibleDC(screen);
+
+            if (_memDc == IntPtr.Zero) return false;
+
+            var bi = new NativeMethods.BITMAPINFO
+            {
+                biSize = Marshal.SizeOf<NativeMethods.BITMAPINFO>(),
+                biWidth = width,
+                biHeight = -height,   // top-down
+                biPlanes = 1,
+                biBitCount = 32,
+                biCompression = 0,
+            };
+
+            // Allocate the replacement first so a failure keeps the current surface usable.
+            IntPtr newDib = NativeMethods.CreateDIBSection(screen, ref bi, 0, out IntPtr newBits, IntPtr.Zero, 0);
+            if (newDib == IntPtr.Zero || newBits == IntPtr.Zero)
+            {
+                if (newDib != IntPtr.Zero) NativeMethods.DeleteObject(newDib);
+                return false;
+            }
+
+            if (_oldBitmap != IntPtr.Zero)
+                NativeMethods.SelectObject(_memDc, _oldBitmap);
+            if (_dib != IntPtr.Zero)
+                NativeMethods.DeleteObject(_dib);
+
+            _dib = newDib;
+            _bits = newBits;
+            IntPtr previous = NativeMethods.SelectObject(_memDc, _dib);
+            if (previous != IntPtr.Zero) _oldBitmap = previous;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            NativeMethods.ReleaseDC(IntPtr.Zero, screen);
+        }
     }
 
     /// <summary>Push the current pixel buffer to the screen with per-pixel alpha.</summary>

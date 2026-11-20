@@ -11,8 +11,10 @@ namespace InkCanvas.Features.Ppt;
 /// </summary>
 public sealed class PptInkFileStore : IPptInkStore
 {
+    public const int CurrentManifestVersion = 2;
     private const string ManifestName = "InkCanvas-Ppt.json";
     private const string PositionName = "Position";
+    private const string SlideFilePrefix = "slide-";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private readonly string _root;
 
@@ -31,7 +33,10 @@ public sealed class PptInkFileStore : IPptInkStore
 
         var slides = new List<PptStoredSlide>();
         int? lastIndex = null;
+        int? lastSlideId = null;
         int? lastPosition = null;
+        int manifestVersion = 1;
+        bool manifestRead = false;
         bool hasLegacy = Directory.EnumerateFiles(directory, "*.icstk", SearchOption.TopDirectoryOnly).Any() ||
             Directory.EnumerateFiles(directory, "*.icart", SearchOption.TopDirectoryOnly).Any();
         string manifestPath = Path.Combine(directory, ManifestName);
@@ -42,7 +47,10 @@ public sealed class PptInkFileStore : IPptInkStore
                 Manifest manifest = JsonSerializer.Deserialize<Manifest>(File.ReadAllText(manifestPath), JsonOptions);
                 if (manifest?.Slides is not null)
                 {
+                    manifestRead = true;
+                    manifestVersion = manifest.Version;
                     lastIndex = manifest.LastSlideIndex;
+                    lastSlideId = manifest.LastSlideId;
                     lastPosition = manifest.LastShowPosition;
                     foreach (var entry in manifest.Slides)
                     {
@@ -55,6 +63,9 @@ public sealed class PptInkFileStore : IPptInkStore
             }
             catch { /* Preserve legacy-file diagnosis when a manifest is damaged. */ }
         }
+        // Index-named files are the pre-manifest layout; only look for them when no manifest
+        // described this directory (id-named files must never be misread as page numbers).
+        if (!manifestRead && slides.Count == 0) slides.AddRange(LoadIndexNamedSlides(directory));
         string positionPath = Path.Combine(directory, PositionName);
         if (lastIndex is null && File.Exists(positionPath) &&
             int.TryParse(File.ReadAllText(positionPath), out int legacyPosition) && legacyPosition > 0)
@@ -62,7 +73,8 @@ public sealed class PptInkFileStore : IPptInkStore
             lastIndex = legacyPosition;
             lastPosition = legacyPosition;
         }
-        return new PptInkArchive(presentation, lastIndex, lastPosition, slides, hasLegacy);
+        return new PptInkArchive(presentation, lastIndex, lastPosition, slides, hasLegacy,
+            lastSlideId, manifestVersion);
     }
 
     public void Save(PptInkArchive archive)
@@ -77,7 +89,9 @@ public sealed class PptInkFileStore : IPptInkStore
 
         var manifest = new Manifest
         {
+            Version = CurrentManifestVersion,
             LastSlideIndex = archive.LastSlideIndex,
+            LastSlideId = archive.LastSlideId is > 0 ? archive.LastSlideId : null,
             LastShowPosition = archive.LastShowPosition,
             Slides = new List<ManifestSlide>(),
         };
@@ -97,17 +111,63 @@ public sealed class PptInkFileStore : IPptInkStore
             File.WriteAllText(Path.Combine(directory, PositionName), archive.LastSlideIndex.Value.ToString());
 
         var retained = manifest.Slides.Select(s => s.File).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (ManifestSlide old in previous?.Slides ?? new List<ManifestSlide>())
+        // Legacy (pre-v2) files are never pruned: they may be the only copy the migrator left
+        // behind, and the migration contract forbids deleting old data.
+        if (previous?.Version >= CurrentManifestVersion)
         {
-            if (retained.Contains(old.File)) continue;
-            string obsolete = SafeManifestFile(directory, old.File);
-            if (obsolete is not null && File.Exists(obsolete)) File.Delete(obsolete);
+            foreach (ManifestSlide old in previous.Slides ?? new List<ManifestSlide>())
+            {
+                if (retained.Contains(old.File)) continue;
+                string obsolete = SafeManifestFile(directory, old.File);
+                if (obsolete is not null && File.Exists(obsolete)) File.Delete(obsolete);
+            }
         }
     }
 
-    private string GetPresentationDirectory(PptPresentationInfo presentation) =>
+    /// <summary>
+    /// Reads a single slide's ink straight from the manifest file layout. Used by the neighbor
+    /// prefetcher so it never has to touch the session's in-memory state from a worker thread.
+    /// Returns <c>null</c> when the slide has no file or it is damaged.
+    /// </summary>
+    public IReadOnlyList<InkStroke> TryLoadSlide(PptPresentationInfo presentation, int slideId)
+    {
+        if (presentation is null || slideId <= 0) return null;
+        try
+        {
+            string directory = GetPresentationDirectory(presentation);
+            string file = Path.Combine(directory, $"{SlideFilePrefix}{slideId}{InkFileStore.Extension}");
+            if (!File.Exists(file)) return null;
+            List<InkStroke> strokes = InkFileStore.Load(file);
+            return strokes is { Count: > 0 } ? strokes : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>Public so callers can back up or migrate exactly the directory Load reads.</summary>
+    public string GetPresentationDirectory(PptPresentationInfo presentation) =>
         Path.Combine(_root, "Auto Saved - Presentations",
             $"{SafeFilePart(presentation.Name)}_{Math.Max(0, presentation.SlideCount)}");
+
+    /// <summary>
+    /// Legacy archives stored one file per page number (<c>slide-3.icink</c>) with no manifest.
+    /// Returns them with SlideId 0 and the page number as SlideIndex so the migrator can map
+    /// them onto live slide ids by index.
+    /// </summary>
+    private static IEnumerable<PptStoredSlide> LoadIndexNamedSlides(string directory)
+    {
+        foreach (string file in Directory.EnumerateFiles(directory, SlideFilePrefix + "*" + InkFileStore.Extension,
+                     SearchOption.TopDirectoryOnly))
+        {
+            string name = Path.GetFileNameWithoutExtension(file);
+            if (!name.StartsWith(SlideFilePrefix, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!int.TryParse(name.AsSpan(SlideFilePrefix.Length), out int index) || index <= 0) continue;
+            List<InkStroke> strokes;
+            try { strokes = InkFileStore.Load(file); }
+            catch { continue; }
+            if (strokes.Count == 0) continue;
+            yield return new PptStoredSlide(0, index, strokes);
+        }
+    }
 
     private static string SafeManifestFile(string directory, string fileName)
     {
@@ -129,6 +189,7 @@ public sealed class PptInkFileStore : IPptInkStore
     {
         public int Version { get; set; } = 1;
         public int? LastSlideIndex { get; set; }
+        public int? LastSlideId { get; set; }
         public int? LastShowPosition { get; set; }
         public List<ManifestSlide> Slides { get; set; } = new();
     }
