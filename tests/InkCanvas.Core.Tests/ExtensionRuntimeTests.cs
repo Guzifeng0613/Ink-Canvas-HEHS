@@ -143,6 +143,19 @@ public sealed class ExtensionRuntimeTests
         await manager.SetEnabledAsync("test.first", true); Assert.Equal(2, manager.Commands.Count);
     }
 
+    [Fact]
+    public async Task DisposingManagerWaitsForItsWorkerToExitAndReleasePackageFiles()
+    {
+        using var fixture = new PluginsFixture(); fixture.Add("test.dispose", "GoodPlugin");
+        using var manager = fixture.Manager(); manager.Discover(fixture.Packages);
+        await manager.SetEnabledAsync("test.dispose", true);
+        var result = await manager.ExecuteAsync("test.dispose", "run", new(800, 600, "board"));
+        using var worker = System.Diagnostics.Process.GetProcessById(int.Parse(result.Notification.Split(':')[1]));
+        manager.Dispose();
+        Assert.True(worker.HasExited);
+        Directory.Delete(fixture.Packages, recursive: true);
+    }
+
     [Theory]
     [InlineData("FailingStartup")]
     [InlineData("CrashingPlugin")]

@@ -257,7 +257,16 @@ internal sealed class PluginClient : IDisposable
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _pipe?.Dispose();
-        try { if (_process is not null && !_process.HasExited) _process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+        try
+        {
+            if (_process is not null)
+            {
+                if (!_process.HasExited) _process.Kill(entireProcessTree: true);
+                // Kill is asynchronous. Release loaded package files before disposal returns.
+                _process.WaitForExit(1000);
+            }
+        }
+        catch (InvalidOperationException) { }
         _process?.Dispose();
     }
 }
