@@ -48,3 +48,22 @@ export {
 } from './src/main/ets/system/WpsInterop';
 export { ownBundleName, openAppGalleryDetail, checkForUpdate } from './src/main/ets/system/MarketUpdate';
 export type { UpdateCheckOutcome } from './src/main/ets/system/MarketUpdate';
+export {
+  AiConfig,
+  AI_DEFAULT_TIMEOUT_MS,
+  AI_DEFAULT_MODEL,
+  envValue,
+  parseTimeoutMs,
+  readAiConfig,
+  describeAiConfig
+} from './src/main/ets/assistant/AiConfig';
+export { AiClient, buildPrompt, buildPayload, buildMockScript } from './src/main/ets/assistant/AiClient';
+export type {
+  AssistantStream,
+  AssistantEventSink,
+  AssistantErrorSink,
+  AssistantDoneSink,
+  ChatMessage,
+  AssistantPayload
+} from './src/main/ets/assistant/AiClient';
+export { CAPTURE_MAX_EDGE, captureRegionBase64 } from './src/main/ets/assistant/AssistantCapture';
