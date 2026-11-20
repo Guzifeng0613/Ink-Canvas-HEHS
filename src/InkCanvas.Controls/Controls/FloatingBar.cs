@@ -16,17 +16,27 @@ public interface IShellActions
     void OpenSettings();
     void OpenTimer();
     void OpenLottery();
+    void OpenRoster();
+    void OpenSpotlight();
+    void OpenMagnifier();
+    void OpenToolkit();
     void OpenReplay();
+    void OpenTimeMachine();
     void OpenGuide();
+    void OpenAiAssistant();
     void OpenPenPalette(bool highlighter);
     void OpenShapePicker();
     Task ScreenshotAsync();
     void ToggleFold();
     void ToggleClickThrough();
+    void ToggleBlackScreen();
     void PptNext();
     void PptPrevious();
     void PptExit();
     void PptOpenNavigation();
+    void RotatePptNavigationCorner();
+    void CollapsePptNavigation();
+    void TogglePptNavigationWindow();
     void Exit();
 }
 
@@ -227,6 +237,7 @@ public sealed class FloatingBar : UserControl
         });
         _eraserButton = Add(_primary, Glyphs.Eraser, "橡皮擦", () => SetTool(InkTool.Eraser));
         _selectButton = Add(_primary, Glyphs.Select, "选择", () => SetTool(InkTool.Select));
+        Add(_primary, Glyphs.Help, "AI 识别（先框选内容）", () => Shell?.OpenAiAssistant());
         _deleteSelectionButton = Add(_primary, Glyphs.Delete, "删除选中墨迹", () => Controller?.DeleteSelection());
         _deleteSelectionButton.Visibility = Visibility.Collapsed;
         _shapeButton = Add(_primary, Glyphs.Shapes, "图形", () => Shell?.OpenShapePicker());
@@ -251,9 +262,14 @@ public sealed class FloatingBar : UserControl
         _passThroughButton.UseMousePointerIcon();
         _foldButton = Add(_primary, Glyphs.ChevronUp, "展开更多", ToggleFold);
 
+        Add(_secondary, Glyphs.Help, "AI 助教", () => Shell?.OpenAiAssistant());
+        Add(_secondary, Glyphs.ChevronRight, "翻页悬浮窗", () => Shell?.TogglePptNavigationWindow());
+        Add(_secondary, Glyphs.Lock, "黑屏/恢复（快捷键 F9）", () => Shell?.ToggleBlackScreen());
+        Add(_secondary, Glyphs.Board, "课堂工具", () => Shell?.OpenToolkit());
         Add(_secondary, Glyphs.Stopwatch, "倒计时", () => Shell?.OpenTimer());
         Add(_secondary, Glyphs.People, "抽奖", () => Shell?.OpenLottery());
         Add(_secondary, Glyphs.Replay, "墨迹回放", () => Shell?.OpenReplay());
+        Add(_secondary, Glyphs.TimeMachine, "板书时光机", () => Shell?.OpenTimeMachine());
         Add(_secondary, Glyphs.Camera, "截图", async () => { if (Shell is not null) await Shell.ScreenshotAsync(); });
         Add(_secondary, Glyphs.Help, "操作指南", () => Shell?.OpenGuide());
         Add(_secondary, Glyphs.Settings, "设置", () => Shell?.OpenSettings());
