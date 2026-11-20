@@ -76,12 +76,17 @@ public static class InkFileStore
 
     private sealed class StrokeModel
     {
+        public long? LayerOrder { get; set; }
         public uint Color { get; set; }
         public float Width { get; set; }
         public bool Highlighter { get; set; }
         public byte HighlighterAlpha { get; set; } = 96;
         public int Taper { get; set; }
+        public PenNib Nib { get; set; }
+        public float NibRotation { get; set; }
         public bool Shape { get; set; }
+        public ShapeSource ShapeSource { get; set; }
+        public float[] ObjectFrame { get; set; }
         /// <summary>Rows of [x, y, pressure, width, timeMs].</summary>
         public List<float[]> Points { get; set; } = new();
     }
@@ -93,12 +98,17 @@ public static class InkFileStore
         {
             var sm = new StrokeModel
             {
+                LayerOrder = s.LayerOrder,
                 Color = s.Attributes.Color.PackedArgb,
                 Width = s.Attributes.BaseWidth,
                 Highlighter = s.Attributes.IsHighlighter,
                 HighlighterAlpha = s.Attributes.HighlighterAlpha,
                 Taper = (int)s.TaperKind,
+                Nib = s.Attributes.Nib,
+                NibRotation = s.Attributes.NibRotation,
                 Shape = s.IsRecognizedShape,
+                ShapeSource = s.ShapeSource,
+                ObjectFrame = s.ExportObjectFrame(),
             };
             foreach (var p in s.Points)
                 sm.Points.Add(new[] { p.X, p.Y, p.Pressure, p.Width, p.TimeMs });
@@ -126,13 +136,16 @@ public static class InkFileStore
                 IsHighlighter = sm.Highlighter,
                 HighlighterAlpha = sm.HighlighterAlpha,
                 TaperKind = (TaperKind)sm.Taper,
+                Nib = Enum.IsDefined(sm.Nib) ? sm.Nib : PenNib.Round,
+                NibRotation = float.IsFinite(sm.NibRotation) ? sm.NibRotation : 0,
             };
-            var stroke = new InkStroke(attrs) { IsRecognizedShape = sm.Shape };
+            var stroke = new InkStroke(attrs) { IsRecognizedShape = sm.Shape, LayerOrder = sm.LayerOrder, ShapeSource = sm.ShapeSource };
             // Restore stored widths verbatim: re-running the taper here would change history.
             stroke.RestorePoints(sm.Points
                 .Where(r => r.Length >= 4)
                 .Select(r => new InkPoint(r[0], r[1], r[2], r[3], r.Length > 4 ? r[4] : 0f)));
             stroke.Complete();
+            stroke.ImportObjectFrame(sm.ObjectFrame);
             result.Add(stroke);
         }
         return result;

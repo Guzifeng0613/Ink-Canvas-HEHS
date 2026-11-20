@@ -5,6 +5,9 @@ using InkCanvas.Features.Persistence;
 using InkCanvas.Features.Ppt;
 using InkCanvas.Features.Tools;
 using InkCanvas.Ink;
+using InkCanvas.Extensibility;
+using InkCanvas.Extensions;
+using InkCanvas.Host.Contracts;
 
 namespace InkCanvas.App.Services;
 
@@ -14,11 +17,18 @@ namespace InkCanvas.App.Services;
 /// </summary>
 public sealed class AppServices : IDisposable
 {
-    public AppServices()
+    public AppServices(string settingsDirectory = null)
     {
-        Store = new SettingsStore();
+        Store = new SettingsStore(settingsDirectory);
         Settings = Store.Load();
+        ExtensionStore = new ExtensionPreferencesStore(Store.Directory);
+        ExtensionPreferences = ExtensionStore.Load();
+        Plugins = new PluginManager(Path.Combine(AppContext.BaseDirectory, "PluginHost", "InkCanvas.PluginHost.exe"), Path.Combine(Store.Directory, "PluginData"));
+        Plugins.Discover(Path.Combine(AppContext.BaseDirectory, "Plugins"), Path.Combine(Store.Directory, "Plugins"));
         Board = new BoardService();
+        ScreenImages = new BoardService(OverlayInk);
+        OverlayInk.GetSelectableElements = ScreenImages.GetSelectionElements;
+        ScreenImages.ImagePlacementChanged += OnScreenImagePlacementChanged;
         // 1:1 SetBoardTheme：白板模式决定画板明暗。未验证。
         Board.Background = Core.Theming.ThemeResolver.GetBoardTheme(Settings.Canvas.UsingWhiteboard)
             == Core.Theming.AppTheme.Light ? BoardBackground.White : BoardBackground.Black;
@@ -31,53 +41,106 @@ public sealed class AppServices : IDisposable
     public SettingsStore Store { get; }
 
     public AppSettings Settings { get; private set; }
+    public ModuleRuntime Modules { get; } = new();
+    public PluginManager Plugins { get; }
+    internal async Task<Action> PrepareInkOpenAsync(string path, BoardService target, bool entireBoard = false)
+    {
+        if (Path.GetExtension(path).Equals(".icink", StringComparison.OrdinalIgnoreCase))
+            return entireBoard ? () => target.LoadBoard(path) : () => target.LoadPage(path);
+
+        string directory = Directory.CreateTempSubdirectory("InkCanvas-import-").FullName;
+        string output = Path.Combine(directory, "page.icink");
+        try
+        {
+            await Plugins.ConvertFileAsync(path, output);
+            if (new FileInfo(output).Length > 192L * 1024 * 1024)
+                throw new InvalidDataException("插件返回的画板超过 192 MiB。");
+            return await Task.Run(() => target.PrepareImportedPage(output, entireBoard));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    public ExtensionPreferencesStore ExtensionStore { get; }
+    public ExtensionPreferences ExtensionPreferences { get; }
+    private bool _modulesStarted;
+    public void StartModules(IScreenTrackingHost host, IDocumentWorkspaceHost documents = null, ICanvasToolsHost canvasTools = null)
+    {
+        if (_modulesStarted) return; _modulesStarted = true;
+        Modules.AddService(host);
+        if (documents is not null) Modules.AddService(documents);
+        if (canvasTools is not null) Modules.AddService(canvasTools);
+        Modules.RegisterPackage("inkcanvas.screen-tracking", "屏幕内容跟随", Path.Combine(AppContext.BaseDirectory, "Modules", "inkcanvas.screen-tracking", "module.json"));
+        if (documents is not null) Modules.RegisterPackage("inkcanvas.pdf", "PDF 阅读与批注", Path.Combine(AppContext.BaseDirectory, "Modules", "inkcanvas.pdf", "module.json"));
+        if (canvasTools is not null) Modules.RegisterPackage("inkcanvas.analytic-geometry", "解析几何", Path.Combine(AppContext.BaseDirectory, "Modules", "inkcanvas.analytic-geometry", "module.json"));
+        Modules.Start(ExtensionPreferences.DisabledModules);
+        Modules.Changed += UpdateModuleStatus;
+        UpdateModuleStatus();
+    }
+    private void UpdateModuleStatus()
+    {
+        var status = Modules.Status.FirstOrDefault(module => module.Id == "inkcanvas.screen-tracking");
+        if (status is not null && status.State != ExtensionState.Running)
+            ScreenTrackingStatus = $"屏幕跟随模块未运行 · {status.State} · {status.Error}";
+    }
 
     /// <summary>Ink on the transparent screen overlay.</summary>
     public InkController OverlayInk { get; } = new();
 
     public BoardService Board { get; }
+    public BoardService ScreenImages { get; }
+
+    private void OnScreenImagePlacementChanged(BoardImageAsset image) => OverlayInk.NotifyElementsChanged();
 
     public PptInteropService Ppt { get; }
 
     public AutoSaveService AutoSave { get; }
 
     public LotteryService Lottery { get; }
+    public string ScreenTrackingStatus { get; internal set; } = "未启用屏幕内容跟随";
+    public event Action SettingsApplied;
+    public event Action ScreenTrackingResetRequested;
+    public void ResetScreenTrackingAnchor() => ScreenTrackingResetRequested?.Invoke();
 
     /// <summary>Push the current settings into every controller.</summary>
     public void ApplySettings()
     {
-        var taper = Settings.Canvas.InkStyle switch
-        {
-            1 => TaperKind.Velocity,
-            2 => TaperKind.None,
-            _ => TaperKind.Tail,
-        };
-
+        Settings.Experimental ??= new ExperimentalSettings();
         foreach (var controller in AllControllers())
         {
-            controller.CurrentAttributes.BaseWidth = (float)Math.Clamp(Settings.Canvas.InkWidth, 0.5, 60);
-            controller.CurrentAttributes.TaperKind = taper;
-            controller.CurrentAttributes.HighlighterAlpha = (byte)Math.Clamp(Settings.Canvas.InkAlpha, 20, 240);
-            controller.EraserRadius = 8f + Math.Clamp(Settings.Canvas.EraserSize, 0, 8) * 8f;
-            controller.RecognizeShapes = Settings.InkToShape.IsInkToShapeEnabled;
-            controller.MultiTouchEnabled = Settings.Gesture.IsEnableMultiTouchMode;
-            controller.ConfigureGestures(
-                Settings.Gesture.IsEnableTwoFingerZoom,
-                Settings.Gesture.IsEnableTwoFingerTranslate,
-                Settings.Gesture.IsEnableTwoFingerRotation);
-            controller.Palm.PalmContactThreshold = Math.Max(8, Settings.Advanced.FingerModeBoundsWidth);
-            controller.GesturesTargetSelection = Settings.Gesture.IsEnableTwoFingerRotationOnSelection;
-
-            // 1:1 特殊屏移植接线（QuadIR / TouchMultiplier / 笔尖-手指分档）。未验证。
-            controller.Palm.Advanced = Settings.Advanced;
-            controller.Palm.NibMode = Settings.Startup.IsEnableNibMode;
-            controller.TransformCenterOption = Settings.Gesture.MatrixTransformCenterPoint;
+            ConfigureController(controller);
         }
 
         Ppt.AllowWps = Settings.PowerPoint.IsSupportWPS;
         Lottery.PeopleCount = Settings.Rand.PeopleCount;
         Lottery.NoRepeat = Settings.Rand.IsNotRepeatName;
         Core.Diagnostics.FileLog.Enabled = Settings.Advanced.IsLogEnabled;
+        SettingsApplied?.Invoke();
+    }
+
+    public void ConfigureController(InkController controller)
+    {
+        var taper = OriginalMenuCatalog.ToTaperKind(Settings.Canvas.InkStyle);
+        controller.ConfigurePenWidths((float)Math.Clamp(Settings.Canvas.InkWidth, .5, 60),
+            (float)Math.Clamp(Settings.Canvas.HighlighterWidth ?? Settings.Canvas.InkWidth, .5, 60));
+        controller.CurrentAttributes.TaperKind = taper;
+        controller.CurrentAttributes.Nib = Enum.IsDefined(Settings.Canvas.PenNib) ? Settings.Canvas.PenNib : PenNib.Round;
+        controller.CurrentAttributes.HighlighterAlpha = (byte)Math.Clamp(Settings.Canvas.InkAlpha, 20, 240);
+        controller.EraserRadius = OriginalMenuCatalog.ToEraserRadius(Settings.Canvas.EraserSize);
+        if (Settings.Canvas.EraserType == 1) controller.EraserMode = InkEraserMode.Area;
+        else if (Settings.Canvas.EraserType == 2) controller.EraserMode = InkEraserMode.WholeStroke;
+        controller.RecognizeShapes = Settings.InkToShape.IsInkToShapeEnabled;
+        controller.MultiTouchEnabled = Settings.Gesture.IsEnableMultiTouchMode;
+        controller.ConfigureGestures(
+            Settings.Gesture.IsEnableTwoFingerZoom,
+            Settings.Gesture.IsEnableTwoFingerTranslate,
+            Settings.Gesture.IsEnableTwoFingerRotation);
+        controller.Palm.PalmContactThreshold = Math.Max(8, Settings.Advanced.FingerModeBoundsWidth);
+        controller.GesturesTargetSelection = Settings.Gesture.IsEnableTwoFingerRotationOnSelection;
+
+        // 1:1 特殊屏移植接线（QuadIR / TouchMultiplier / 笔尖-手指分档）。未验证。
+        controller.Palm.Advanced = Settings.Advanced;
+        controller.Palm.NibMode = Settings.Startup.IsEnableNibMode;
+        controller.TransformCenterOption = Settings.Gesture.MatrixTransformCenterPoint;
     }
 
     public IEnumerable<InkController> AllControllers()
@@ -97,6 +160,10 @@ public sealed class AppServices : IDisposable
 
     public void Dispose()
     {
+        Plugins.Dispose();
+        Modules.Changed -= UpdateModuleStatus;
+        Modules.Dispose();
+        ScreenImages.ImagePlacementChanged -= OnScreenImagePlacementChanged;
         OverlayInk.Dispose();
         foreach (var page in Board.Pages) page.Dispose();
     }

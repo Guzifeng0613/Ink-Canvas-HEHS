@@ -16,11 +16,19 @@ namespace InkCanvas.Controls.Controls;
 /// window is always opaque; it uses <see cref="OverlayInkPresenter"/> instead.
 /// </para>
 /// </summary>
-public sealed class InkSurface : UserControl
+public sealed class InkSurface : UserControl, IDisposable
 {
     private readonly CanvasControl _canvas;
     private InkController _controller;
     private InkSceneRenderer _scene;
+    private readonly CommittedInkLayer _committed = new();
+    private DotAnimationClock _dotClock;
+    private readonly Dictionary<uint, OverlayPointer> _activePointers = new();
+    private bool _disposed;
+    public event Action InputBegan;
+    public bool DrawCommitted { get; set; } = true;
+    /// <summary>Optional page extent in document coordinates. Null keeps an infinite canvas.</summary>
+    public InkCanvas.Core.Ink.Rect? ContentBounds { get; set; }
 
     public InkSurface()
     {
@@ -33,6 +41,9 @@ public sealed class InkSurface : UserControl
 
         PointerPressed += OnPointerPressed;
         PointerMoved += OnPointerMoved;
+        PointerEntered += OnPointerEntered;
+        PointerExited += (_, args) => _controller?.HideEraserPreview(args.Pointer.PointerId);
+        Unloaded += (_, _) => _controller?.HideEraserPreview();
         PointerReleased += OnPointerReleased;
         PointerCanceled += OnPointerCanceled;
         PointerCaptureLost += OnPointerCanceled;
@@ -45,14 +56,31 @@ public sealed class InkSurface : UserControl
         get => _controller;
         set
         {
-            if (_controller is not null) _controller.Invalidated -= OnInvalidated;
+            // Detach the OLD controller first (both Invalidated and Document.Changed), so a
+            // board rebind never leaves the previous document driving redraws of this surface.
+            if (_controller is not null)
+            {
+                _dotClock?.Dispose();
+                _dotClock = null;
+                foreach (var sample in _activePointers.Values) _controller.OnPointerCanceled(sample);
+                _activePointers.Clear();
+                _controller.HideEraserPreview();
+                _controller.Invalidated -= OnInvalidated;
+                _controller.EraserPreviewChanged -= OnInvalidated;
+                _controller.Document.Changed -= OnDocumentChanged;
+                _controller.PlaybackChanged -= OnPlaybackChanged;
+            }
             _controller = value;
             _scene?.Dispose();
+            _committed.Dispose();
             _scene = new InkSceneRenderer();
             if (_controller is not null)
             {
+                _dotClock = new DotAnimationClock(_controller, OnInvalidated);
                 _controller.Invalidated += OnInvalidated;
+                _controller.EraserPreviewChanged += OnInvalidated;
                 _controller.Document.Changed += OnDocumentChanged;
+                _controller.PlaybackChanged += OnPlaybackChanged;
             }
             _canvas.Invalidate();
         }
@@ -67,10 +95,18 @@ public sealed class InkSurface : UserControl
 
     private void OnDocumentChanged()
     {
-        _scene?.Strokes.InvalidateAll();
+        _committed.Invalidate();
+        _scene?.Strokes.Retain(_controller.Document.Strokes);
         _canvas.Invalidate();
     }
+    private void OnPlaybackChanged() { _committed.Invalidate(); _canvas.Invalidate(); }
 
+    // Latency contract (board): XAML delivers pointer events on the UI thread and the handlers
+    // below run the controller inline, exactly like the overlay's WndProc path. Invalidate()
+    // schedules the Win2D draw on the very next composition render tick — the earliest a XAML
+    // surface can present — and Win2D coalesces repeated invalidations into one draw. There is
+    // no dispatcher hop, no timer, and no redraw of an unchanged scene: CanvasControl only draws
+    // when invalidated, never on a free-running loop.
     private void OnInvalidated() => _canvas.Invalidate();
 
     private void OnDraw(CanvasControl sender, CanvasDrawEventArgs args)
@@ -78,34 +114,69 @@ public sealed class InkSurface : UserControl
         if (_controller is null || _scene is null) return;
         _controller.ViewCenter = new System.Numerics.Vector2(
             (float)ActualWidth / 2, (float)ActualHeight / 2);
-        _scene.Draw(args.DrawingSession, _controller);
+        Microsoft.Graphics.Canvas.CanvasActiveLayer clip = null;
+        if (ContentBounds is { } bounds)
+        {
+            var first = System.Numerics.Vector2.Transform(new(bounds.Left, bounds.Top), _controller.ViewTransform);
+            var last = System.Numerics.Vector2.Transform(new(bounds.Right, bounds.Bottom), _controller.ViewTransform);
+            clip = args.DrawingSession.CreateLayer(1, new Windows.Foundation.Rect(Math.Min(first.X, last.X), Math.Min(first.Y, last.Y), Math.Abs(last.X - first.X), Math.Abs(last.Y - first.Y)));
+        }
+        using (clip)
+        {
+        _scene.ShowSelectionOutline = ContentBounds is null;
+        if (DrawCommitted) _committed.Draw(args.DrawingSession, _scene, _controller, (float)ActualWidth, (float)ActualHeight, sender.Dpi);
+        _scene.DrawLive(args.DrawingSession, _controller);
+        }
+        if (ContentBounds is not null) _scene.DrawSelectionOverlay(args.DrawingSession, _controller);
     }
 
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
     {
         if (_controller is null) return;
+        InputBegan?.Invoke();
         CapturePointer(e.Pointer);
-        _controller.OnPointerDown(Translate(e));
+        var sample = Translate(e);
+        if (ContentBounds is { } bounds && _controller.Tool is not (InkTool.Pan or InkTool.Select)
+            && System.Numerics.Matrix3x2.Invert(_controller.ViewTransform, out var inverse)
+            && !bounds.Contains(System.Numerics.Vector2.Transform(new(sample.X, sample.Y), inverse)))
+        { ReleasePointerCapture(e.Pointer); return; }
+        _activePointers[sample.Id] = sample;
+        _controller.OnPointerDown(sample);
         e.Handled = true;
     }
 
     private void OnPointerMoved(object sender, PointerRoutedEventArgs e)
     {
         if (_controller is null) return;
-        _controller.OnPointerMove(Translate(e));
+        var sample = Translate(e);
+        if (!_activePointers.ContainsKey(sample.Id))
+        {
+            _controller.OnPointerHover(sample);
+            return;
+        }
+        _activePointers[sample.Id] = sample;
+        _controller.OnPointerMove(sample);
+    }
+
+    private void OnPointerEntered(object sender, PointerRoutedEventArgs args)
+    {
+        if (_controller is not null) _controller.OnPointerHover(Translate(args));
     }
 
     private void OnPointerReleased(object sender, PointerRoutedEventArgs e)
     {
         if (_controller is null) return;
+        if (!_activePointers.Remove(e.Pointer.PointerId)) return;
         _controller.OnPointerUp(Translate(e));
+        ReleasePointerCapture(e.Pointer);
         e.Handled = true;
     }
 
     private void OnPointerCanceled(object sender, PointerRoutedEventArgs e)
     {
         if (_controller is null) return;
-        _controller.OnPointerUp(Translate(e));
+        // Capture-lost may no longer carry a current point, and follows normal up too.
+        if (_activePointers.Remove(e.Pointer.PointerId, out var last)) _controller.OnPointerCanceled(last);
     }
 
     private OverlayPointer Translate(PointerRoutedEventArgs e)
@@ -127,6 +198,33 @@ public sealed class InkSurface : UserControl
             (float)contact.Width,
             (float)contact.Height,
             kind,
-            (uint)point.Timestamp / 1000);
+            (uint)(point.Timestamp / 1000),
+            (e.KeyModifiers & Windows.System.VirtualKeyModifiers.Shift) != 0,
+            (e.KeyModifiers & Windows.System.VirtualKeyModifiers.Control) != 0);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _dotClock?.Dispose();
+        _dotClock = null;
+        if (_controller is not null)
+        {
+            foreach (var sample in _activePointers.Values) _controller.OnPointerCanceled(sample);
+            _controller.HideEraserPreview();
+            _controller.Invalidated -= OnInvalidated;
+            _controller.EraserPreviewChanged -= OnInvalidated;
+            _controller.Document.Changed -= OnDocumentChanged;
+            _controller.PlaybackChanged -= OnPlaybackChanged;
+        }
+        _activePointers.Clear();
+        _controller = null;
+        _canvas.Draw -= OnDraw;
+        _scene?.Dispose();
+        _committed.Dispose();
+        _scene = null;
+        _canvas.RemoveFromVisualTree();
+        Content = null;
     }
 }

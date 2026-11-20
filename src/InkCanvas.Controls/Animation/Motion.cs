@@ -72,6 +72,9 @@ public static class Motion
     public static void PlayEntrance(UIElement element, float offsetPx = 12f)
     {
         if (element is null || !AnimationsEnabled) return;
+        // Offset belongs to XAML layout. Animating it to zero discards the element's arranged
+        // position, moving centred/inset content outside its window. Translation is additive.
+        ElementCompositionPreview.SetIsTranslationEnabled(element, true);
         var visual = ElementCompositionPreview.GetElementVisual(element);
         var compositor = visual.Compositor;
 
@@ -84,10 +87,10 @@ public static class Motion
         rise.InsertKeyFrame(0f, new Vector3(0, offsetPx, 0));
         rise.InsertKeyFrame(1f, Vector3.Zero);
         rise.Duration = Normal;
-        rise.Target = "Offset";
+        rise.Target = "Translation";
 
         visual.StartAnimation("Opacity", fade);
-        visual.StartAnimation("Offset", rise);
+        visual.StartAnimation("Translation", rise);
     }
 
     /// <summary>Spring-like scale pulse for selection changes on the floating bar.</summary>

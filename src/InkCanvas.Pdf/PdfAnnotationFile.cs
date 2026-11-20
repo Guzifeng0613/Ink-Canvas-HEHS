@@ -1,0 +1,285 @@
+using System.Globalization;
+using System.IO.Compression;
+using System.Numerics;
+using System.Text;
+using Clipper2Lib;
+using InkCanvas.Core.Ink;
+using PdfSharp.Pdf;
+using PdfSharp.Pdf.Annotations;
+using PdfSharp.Pdf.IO;
+
+namespace InkCanvas.Pdf;
+
+public sealed class PdfPasswordRequiredException(string message, Exception inner) : IOException(message, inner);
+
+/// <summary>Owns an immutable source snapshot. Saves never append duplicate InkCanvas appearances.</summary>
+public sealed class PdfAnnotationFile : IDisposable
+{
+    private readonly string _directory;
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly Dictionary<int, IReadOnlyList<InkStroke>> _stored = new();
+    public string SourcePath { get; }
+    public string RenderPath { get; private set; }
+    public string Password { get; }
+    public IReadOnlyList<PdfPageGeometry> Pages { get; }
+    public IReadOnlyList<PdfBookmark> Bookmarks { get; }
+    public bool ReadOnly { get; }
+    public bool HasSignatures { get; }
+    public int UnrecognizedInkPages { get; private set; }
+    private bool _disposed;
+    private readonly Dictionary<string, (long Length, DateTime Modified)> _savedFiles = new(StringComparer.OrdinalIgnoreCase);
+
+    private PdfAnnotationFile(string path, string password, string directory, PdfDocument document, bool readOnly)
+    {
+        SourcePath = Path.GetFullPath(path); Password = password; _directory = directory; ReadOnly = readOnly;
+        RenderPath = Path.Combine(directory, "source.pdf");
+        RememberFile(SourcePath);
+        Pages = document.Pages.Cast<PdfPage>().Select(page =>
+        {
+            var box = page.CropBox; if (box.Width <= 0 || box.Height <= 0) box = page.MediaBox;
+            double unit = page.Elements.GetReal("/UserUnit"); if (unit <= 0) unit = 1;
+            var geometry = new PdfPageGeometry(box.X1, box.Y1, box.X2, box.Y2, page.Rotate, unit);
+            if (!float.IsFinite(geometry.DipWidth) || !float.IsFinite(geometry.DipHeight) || geometry.DipWidth <= 0 || geometry.DipHeight <= 0)
+                throw new InvalidDataException("PDF 页面尺寸无效。");
+            return geometry;
+        }).ToArray();
+        HasSignatures = document.Internals.Catalog.Elements.GetDictionary("/AcroForm")?.Elements.GetInteger("/SigFlags") > 0;
+        var bookmarks = new List<PdfBookmark>();
+        var pageIndices = document.Pages.Cast<PdfPage>().Select((page, index) => (page, index)).ToDictionary(item => item.page, item => item.index);
+        ReadBookmarks(document.Outlines, 0);
+        Bookmarks = bookmarks;
+        void ReadBookmarks(PdfOutlineCollection outlines, int depth)
+        {
+            if (depth > 24 || bookmarks.Count >= 5000) return;
+            foreach (PdfOutline outline in outlines)
+            {
+                if (outline.DestinationPage is { } page && pageIndices.TryGetValue(page, out int index)) bookmarks.Add(new PdfBookmark(outline.Title, index, depth));
+                if (outline.HasChildren) ReadBookmarks(outline.Outlines, depth + 1);
+                if (bookmarks.Count >= 5000) return;
+            }
+        }
+    }
+    public static async Task<PdfAnnotationFile> OpenAsync(string path, string password = null, CancellationToken token = default)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "InkCanvas-Pdf", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            string copy = Path.Combine(directory, "source.pdf");
+            await using (var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 128 * 1024, true))
+            await using (var output = new FileStream(copy, FileMode.CreateNew, FileAccess.Write, FileShare.None, 128 * 1024, true))
+                await input.CopyToAsync(output, token);
+            return await Task.Run(() =>
+            {
+                token.ThrowIfCancellationRequested();
+                PdfDocument document; bool readOnly = false;
+                try { document = PdfReader.Open(copy, password, PdfDocumentOpenMode.Modify); }
+                catch (PdfReaderException ex) when (ex.Message.Contains("owner", StringComparison.OrdinalIgnoreCase))
+                { document = PdfReader.Open(copy, password, PdfDocumentOpenMode.Import); readOnly = true; }
+                catch (PdfReaderException ex) when (ex.Message.Contains("password", StringComparison.OrdinalIgnoreCase))
+                { throw new PdfPasswordRequiredException("此 PDF 需要正确的打开密码。", ex); }
+                try
+                {
+                    var session = new PdfAnnotationFile(path, password, directory, document, readOnly);
+                    if (session.Pages.Count == 0) throw new InvalidDataException("PDF 没有可显示的页面。");
+                    if (!readOnly && session.ExtractInk(document))
+                    {
+                        session.RenderPath = Path.Combine(directory, "background.pdf");
+                        document.Save(session.RenderPath);
+                    }
+                    document.Dispose();
+                    return session;
+                }
+                catch { document.Dispose(); throw; }
+            }, token);
+        }
+        catch { try { Directory.Delete(directory, true); } catch (IOException) { } throw; }
+    }
+    public IReadOnlyList<InkStroke> GetInk(int pageIndex) => _stored.TryGetValue(pageIndex, out var ink) ? ink : Array.Empty<InkStroke>();
+
+    private bool ExtractInk(PdfDocument document)
+    {
+        bool any = false;
+        for (int index = 0; index < document.PageCount; index++)
+        {
+            var page = document.Pages[index];
+            if (!page.Elements.ContainsKey("/Annots")) continue;
+            var strokes = new List<InkStroke>();
+            for (int a = page.Annotations.Count - 1; a >= 0; a--)
+            {
+                var annotation = page.Annotations[a];
+                if (annotation.Elements.GetInteger("/InkCanvasVersion") != 1) continue;
+                var data = annotation.Elements.GetDictionary("/InkCanvasData");
+                try
+                {
+                    if (data?.Stream is null || data.Elements.GetName("/Filter") != "/FlateDecode") throw new InvalidDataException("Unknown ink metadata encoding.");
+                    strokes.AddRange(PdfInkCodec.Decode(data.Stream.Value));
+                    page.Annotations.Remove(annotation); any = true;
+                }
+                catch (Exception ex) when (ex is IOException or ArgumentException or OverflowException) { UnrecognizedInkPages++; }
+            }
+            if (strokes.Count > 0) _stored[index] = strokes.GroupBy(stroke => stroke.Id).Select(group => group.Last()).OrderBy(stroke => stroke.LayerOrder ?? long.MaxValue).ToArray();
+        }
+        return any;
+    }
+
+    public async Task SaveAsync(string target, IReadOnlyDictionary<int, IReadOnlyList<InkStroke>> pages, CancellationToken token = default)
+    {
+        if (ReadOnly) throw new UnauthorizedAccessException("此 PDF 的权限只允许查看，请使用有编辑权限的文件。 ");
+        target = Path.GetFullPath(target);
+        if (HasSignatures && target.Equals(SourcePath, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("此 PDF 包含数字签名，请另存为批注副本。");
+        foreach (var page in pages)
+        {
+            if (page.Key < 0 || page.Key >= Pages.Count) throw new ArgumentOutOfRangeException(nameof(pages));
+            if (page.Value.Sum(stroke => (long)stroke.Count) > PdfInkCodec.MaximumPoints) throw new InvalidDataException("单页墨迹点数过多，请拆分页保存。");
+        }
+        await _gate.WaitAsync(token);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            await Task.Run(() => SaveCore(target, pages, token), token);
+        }
+        finally { _gate.Release(); }
+    }
+
+    private void SaveCore(string target, IReadOnlyDictionary<int, IReadOnlyList<InkStroke>> pages, CancellationToken token)
+    {
+        if (_savedFiles.TryGetValue(target, out var expected))
+        {
+            var current = new FileInfo(target);
+            if (!current.Exists || current.Length != expected.Length || current.LastWriteTimeUtc != expected.Modified)
+                throw new IOException("文件已被其他程序更改，请另存为以保留双方的修改。");
+        }
+        using var document = PdfReader.Open(RenderPath, Password, PdfDocumentOpenMode.Modify);
+        string temporary = Path.Combine(Path.GetDirectoryName(target)!, "." + Path.GetFileName(target) + "." + Guid.NewGuid().ToString("N") + ".tmp");
+        try
+        {
+            foreach (var pair in pages.OrderBy(pair => pair.Key))
+            {
+                token.ThrowIfCancellationRequested(); if (pair.Value.Count == 0) continue;
+                var page = document.Pages[pair.Key]; var geometry = Pages[pair.Key];
+                var annotation = new InkAnnotation(document) { Rectangle = new PdfRectangle(new PdfSharp.Drawing.XRect(geometry.Left, geometry.Bottom, geometry.Width, geometry.Height)),
+                    Contents = "Ink Canvas 可编辑墨迹", Flags = PdfAnnotationFlags.Print };
+                annotation.Elements.SetInteger("/InkCanvasVersion", 1);
+                var state = CompressedStream(PdfInkCodec.Encode(pair.Value), alreadyCompressed: true);
+                annotation.Elements["/InkCanvasData"] = state.Reference;
+                var appearance = Appearance(pair.Value, geometry);
+                var ap = new PdfDictionary(document); ap.Elements["/N"] = appearance.Reference; annotation.Elements["/AP"] = ap;
+                page.Annotations.Add(annotation);
+            }
+            document.Options.CompressContentStreams = true; document.Options.FlateEncodeMode = PdfFlateEncodeMode.BestCompression;
+            document.Save(temporary);
+            token.ThrowIfCancellationRequested();
+            using (var stream = new FileStream(temporary, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) stream.Flush(true);
+            File.Move(temporary, target, true);
+            RememberFile(target);
+        }
+        finally
+        {
+            if (File.Exists(temporary)) File.Delete(temporary);
+        }
+
+        PdfDictionary CompressedStream(byte[] data, bool alreadyCompressed = false)
+        {
+            var dictionary = new PdfDictionary(document);
+            dictionary.CreateStream(alreadyCompressed ? data : Compress(data)); dictionary.Elements.SetName("/Filter", "/FlateDecode");
+            document.Internals.AddObject(dictionary); return dictionary;
+        }
+        PdfDictionary Appearance(IReadOnlyList<InkStroke> strokes, PdfPageGeometry geometry)
+        {
+            var content = new StringBuilder("q\n"); var states = new PdfDictionary(document);
+            foreach (var alpha in strokes.Select(stroke => stroke.Attributes.EffectiveColor.A).Distinct())
+            {
+                var gs = new PdfDictionary(document); gs.Elements.SetName("/Type", "/ExtGState");
+                gs.Elements.SetReal("/ca", alpha / 255d); gs.Elements.SetReal("/CA", alpha / 255d);
+                states.Elements["/GS" + alpha] = gs;
+            }
+            Span<Vector2> contour = stackalloc Vector2[26];
+            foreach (var stroke in strokes.OrderBy(stroke => stroke.LayerOrder ?? long.MaxValue))
+            {
+                token.ThrowIfCancellationRequested();
+                var color = stroke.Attributes.EffectiveColor;
+                content.Append('/').Append("GS").Append(color.A).Append(" gs\n").Append(Number(color.R / 255d)).Append(' ').Append(Number(color.G / 255d)).Append(' ').Append(Number(color.B / 255d)).Append(" rg\n");
+                var points = stroke.Points; var nib = stroke.Attributes.NibTransform;
+                if (points.Count == 0) continue;
+                // Union bounded groups of the renderer's exact polygon capsules. This removes
+                // covered cap edges from the PDF without fitting a different curve or rasterizing.
+                for (int batch = 0; batch < Math.Max(1, points.Count - 1); batch += 256)
+                {
+                    token.ThrowIfCancellationRequested();
+                    var paths = new Paths64();
+                    int end = Math.Min(batch + 256, Math.Max(1, points.Count - 1));
+                    for (int segment = batch; segment < end; segment++)
+                    {
+                        var first = points[segment]; var last = points[Math.Min(segment + 1, points.Count - 1)];
+                        int length = StrokeGeometry.WriteSegmentOutline(first.Position, MathF.Max(first.Width, .5f) / 2, last.Position, MathF.Max(last.Width, .5f) / 2, contour, nib);
+                        var path = new Path64(length);
+                        for (int p = 0; p < length; p++) path.Add(new Point64(Math.Round(contour[p].X * 10000d), Math.Round(contour[p].Y * 10000d)));
+                        paths.Add(path);
+                    }
+                    foreach (var outline in Clipper.Union(paths, FillRule.NonZero))
+                    {
+                        for (int p = 0; p < outline.Count; p++)
+                        {
+                            var point = geometry.ToPdf(new Vector2(outline[p].X / 10000f, outline[p].Y / 10000f));
+                            content.Append(Number(point.X - geometry.Left)).Append(' ').Append(Number(point.Y - geometry.Bottom)).Append(p == 0 ? " m\n" : " l\n");
+                        }
+                        content.Append("h\n");
+                    }
+                }
+                content.Append("f\n");
+            }
+            content.Append("Q\n");
+            var form = CompressedStream(Encoding.ASCII.GetBytes(content.ToString()));
+            form.Elements.SetName("/Type", "/XObject"); form.Elements.SetName("/Subtype", "/Form"); form.Elements.SetInteger("/FormType", 1);
+            form.Elements["/BBox"] = new PdfRectangle(new PdfSharp.Drawing.XRect(0, 0, geometry.Width, geometry.Height));
+            var resources = new PdfDictionary(document); resources.Elements["/ExtGState"] = states; form.Elements["/Resources"] = resources;
+            return form;
+        }
+    }
+    private void RememberFile(string path)
+    {
+        var file = new FileInfo(path);
+        _savedFiles[path] = (file.Length, file.LastWriteTimeUtc);
+    }
+    private static byte[] Compress(byte[] data)
+    {
+        using var output = new MemoryStream(); using (var stream = new ZLibStream(output, CompressionLevel.SmallestSize, true)) stream.Write(data);
+        return output.ToArray();
+    }
+    private static string Number(double value) => value.ToString("0.####", CultureInfo.InvariantCulture);
+
+    public async Task<IReadOnlyList<PdfSearchHit>> SearchAsync(string query, CancellationToken token = default)
+    {
+        await _gate.WaitAsync(token);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return await Task.Run<IReadOnlyList<PdfSearchHit>>(() =>
+    {
+        if (string.IsNullOrWhiteSpace(query)) return Array.Empty<PdfSearchHit>();
+        using var document = UglyToad.PdfPig.PdfDocument.Open(Path.Combine(_directory, "source.pdf"), new UglyToad.PdfPig.ParsingOptions { Password = Password });
+        var results = new List<PdfSearchHit>();
+        for (int page = 1; page <= document.NumberOfPages; page++)
+        {
+            token.ThrowIfCancellationRequested(); string text = document.GetPage(page).Text;
+            int found = text.IndexOf(query, StringComparison.CurrentCultureIgnoreCase);
+            if (found >= 0) results.Add(new PdfSearchHit(page - 1, text.Substring(Math.Max(0, found - 24), Math.Min(100, text.Length - Math.Max(0, found - 24)))));
+            if (results.Count >= 500) break;
+        }
+        return results;
+            }, token);
+        }
+        finally { _gate.Release(); }
+    }
+    public void Dispose()
+    {
+        _gate.Wait();
+        try { if (_disposed) return; _disposed = true; try { Directory.Delete(_directory, true); } catch (IOException) { } }
+        finally { _gate.Release(); }
+    }
+    private sealed class InkAnnotation : PdfAnnotation
+    {
+        public InkAnnotation(PdfDocument document) : base(document) { Elements.SetName("/Subtype", "/Stamp"); Elements.SetString("/NM", "InkCanvas-" + Guid.NewGuid().ToString("N")); }
+    }
+}

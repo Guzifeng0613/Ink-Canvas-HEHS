@@ -37,6 +37,8 @@ public static class ScreenService
 /// <summary>Identifies the foreground application, used by the auto-fold rules.</summary>
 public static class ForegroundWindowService
 {
+    public static IntPtr GetForegroundWindow() => NativeMethods.GetForegroundWindow();
+
     public static string GetForegroundProcessName()
     {
         try

@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using InkCanvas.Core.Selection;
 
 namespace InkCanvas.Core.Ink;
 
@@ -13,16 +14,22 @@ public sealed class InkStroke
 {
     private readonly List<InkPoint> _points = new();
     private TaperProfile _taper;
+    private OneEuroFilter _filter;
     private bool _boundsDirty = true;
     private Rect _bounds;
+    private Matrix3x2 _boundsNib;
+    private SelectionFrame? _objectFrame;
 
     public InkStroke(StrokeAttributes attributes)
     {
         Attributes = attributes ?? throw new ArgumentNullException(nameof(attributes));
         _taper = TaperProfile.Create(attributes.EffectiveTaper);
+        if (attributes.EffectiveTaper is >= TaperKind.SmoothPen and <= TaperKind.Calligraphy) _filter = new OneEuroFilter();
     }
 
     public Guid Id { get; init; } = Guid.NewGuid();
+    public long? LayerOrder { get; set; }
+    public ShapeSource ShapeSource { get; set; }
 
     public StrokeAttributes Attributes { get; }
 
@@ -31,6 +38,41 @@ public sealed class InkStroke
     public int Count => _points.Count;
 
     public bool IsCompleted { get; private set; }
+
+    /// <summary>Prefix whose widths can no longer change when another sample arrives.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int StablePointCount => IsCompleted ? Count : _taper.StablePointCount(Count);
+
+    public void RestorePrefix(IReadOnlyList<InkPoint> points, int count)
+    {
+        _points.Clear();
+        for (int i = 0; i < Math.Min(count, points.Count); i++) _points.Add(points[i]);
+        _boundsDirty = true; _objectFrame = null; GeometryVersion++;
+    }
+
+    /// <summary>Changes only when point positions or widths change; render caches can retain untouched ink.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public long GeometryVersion { get; private set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public SelectionFrame ObjectFrame
+    {
+        get => _objectFrame ?? new SelectionFrame(Bounds, Matrix3x2.Identity);
+        set => _objectFrame = value;
+    }
+
+    public float[] ExportObjectFrame() => _objectFrame is { } frame ? new[]
+    {
+        frame.Bounds.Left, frame.Bounds.Top, frame.Bounds.Right, frame.Bounds.Bottom,
+        frame.Transform.M11, frame.Transform.M12, frame.Transform.M21, frame.Transform.M22, frame.Transform.M31, frame.Transform.M32,
+    } : null;
+
+    public void ImportObjectFrame(float[] data)
+    {
+        if (data is not { Length: 10 } || data.Any(v => !float.IsFinite(v))) return;
+        var bounds = new Rect(data[0], data[1], data[2], data[3]);
+        var transform = new Matrix3x2(data[4], data[5], data[6], data[7], data[8], data[9]);
+        if (!bounds.IsEmpty && MathF.Abs(transform.GetDeterminant()) > 1e-6f) _objectFrame = new SelectionFrame(bounds, transform);
+    }
 
     /// <summary>Set when the stroke was produced by shape recognition rather than freehand.</summary>
     public bool IsRecognizedShape { get; set; }
@@ -42,6 +84,7 @@ public sealed class InkStroke
         {
             if (_taper.Kind == value) return;
             _taper = TaperProfile.Create(value);
+            _filter = value is >= TaperKind.SmoothPen and <= TaperKind.Calligraphy ? new OneEuroFilter() : null;
             // Re-evaluate from scratch only for an already-finished stroke (e.g. a settings
             // change applied to history). Live strokes never take this path.
             if (IsCompleted) RebuildWidths();
@@ -50,10 +93,18 @@ public sealed class InkStroke
 
     public void AddPoint(float x, float y, float pressure = 0.5f, float timeMs = 0f)
     {
+        if (_filter is not null)
+        {
+            var filtered = _filter.Update(new Vector2(x, y), timeMs);
+            x = filtered.X;
+            y = filtered.Y;
+        }
         // Width starts at 0 so the profile's monotonic "settle" rule can raise it.
         _points.Add(new InkPoint(x, y, pressure, 0f, timeMs));
         _taper.Apply(CollectionsMarshal.AsSpan(_points), _points.Count - 1, Attributes.BaseWidth);
         _boundsDirty = true;
+        GeometryVersion++;
+        _objectFrame = null;
     }
 
     /// <summary>
@@ -67,14 +118,16 @@ public sealed class InkStroke
         for (int i = 0; i < span.Length; i++) span[i].Width = 0f;
         for (int i = 0; i < span.Length; i++) _taper.Apply(span, i, Attributes.BaseWidth);
         _boundsDirty = true;
+        GeometryVersion++;
     }
 
     public Rect Bounds
     {
         get
         {
-            if (_boundsDirty)
+            if (_boundsDirty || _boundsNib != Attributes.NibTransform)
             {
+                _boundsNib = Attributes.NibTransform;
                 _bounds = ComputeBounds();
                 _boundsDirty = false;
             }
@@ -96,8 +149,11 @@ public sealed class InkStroke
             if (p.Y > maxY) maxY = p.Y;
             if (p.Width > maxHalf) maxHalf = p.Width;
         }
-        maxHalf *= 0.5f;
-        return Rect.FromLTRB(minX - maxHalf, minY - maxHalf, maxX + maxHalf, maxY + maxHalf);
+        maxHalf = MathF.Max(maxHalf, .5f) * 0.5f;
+        var nib = Attributes.NibTransform;
+        float rx = maxHalf * MathF.Sqrt(nib.M11 * nib.M11 + nib.M21 * nib.M21);
+        float ry = maxHalf * MathF.Sqrt(nib.M12 * nib.M12 + nib.M22 * nib.M22);
+        return Rect.FromLTRB(minX - rx, minY - ry, maxX + rx, maxY + ry);
     }
 
     /// <summary>Total centreline length, used by replay and by the recogniser.</summary>
@@ -111,6 +167,7 @@ public sealed class InkStroke
 
     public void Transform(Matrix3x2 m, bool scaleWidth = true)
     {
+        var frame = ObjectFrame;
         var span = CollectionsMarshal.AsSpan(_points);
         float widthScale = 1f;
         if (scaleWidth)
@@ -126,7 +183,15 @@ public sealed class InkStroke
             span[i].Width *= widthScale;
         }
         Attributes.BaseWidth *= widthScale;
+        if (Attributes.Nib == PenNib.Ellipse45)
+        {
+            float angle = -MathF.PI / 4 + Attributes.NibRotation;
+            var direction = Vector2.TransformNormal(new Vector2(MathF.Cos(angle), MathF.Sin(angle)), m);
+            Attributes.NibRotation = MathF.Atan2(direction.Y, direction.X) + MathF.PI / 4;
+        }
         _boundsDirty = true;
+        GeometryVersion++;
+        _objectFrame = frame with { Transform = frame.Transform * m };
     }
 
     /// <summary>Shortest distance from a point to this stroke's centreline.</summary>
@@ -152,13 +217,29 @@ public sealed class InkStroke
         return Vector2.Distance(p, a + ab * t);
     }
 
-    public InkStroke Clone()
+    public InkStroke Clone(bool preserveId = true)
     {
-        var copy = new InkStroke(Attributes.Clone()) { Id = Id, IsRecognizedShape = IsRecognizedShape };
+        var copy = new InkStroke(Attributes.Clone()) { Id = preserveId ? Id : Guid.NewGuid(), IsRecognizedShape = IsRecognizedShape, LayerOrder = LayerOrder, ShapeSource = ShapeSource };
         copy._points.AddRange(_points);
         copy.IsCompleted = IsCompleted;
         copy._boundsDirty = true;
+        copy._objectFrame = _objectFrame;
         return copy;
+    }
+
+    public static List<InkStroke> CloneObjects(IEnumerable<InkStroke> strokes)
+    {
+        var groups = new Dictionary<Guid, Guid>();
+        return strokes.Select(stroke =>
+        {
+            var copy = stroke.Clone(preserveId: false);
+            if (stroke.ShapeSource is { } source)
+            {
+                if (!groups.TryGetValue(source.GroupId, out var id)) groups[source.GroupId] = id = Guid.NewGuid();
+                copy.ShapeSource = source with { GroupId = id };
+            }
+            return copy;
+        }).ToList();
     }
 
     /// <summary>Replace all points, preserving already-computed widths (used by persistence).</summary>
@@ -167,6 +248,8 @@ public sealed class InkStroke
         _points.Clear();
         _points.AddRange(points);
         _boundsDirty = true;
+        GeometryVersion++;
+        _objectFrame = null;
     }
 }
 

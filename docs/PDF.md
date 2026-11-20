@@ -1,0 +1,72 @@
+# PDF 阅读与批注模块
+
+PDF 功能位于可独立安装的 `inkcanvas.pdf` 原生模块中。主程序通过 `IDocumentWorkspaceHost` 和 `IPdfWorkspaceService` 接入，PDFsharp、PdfPig 和 Clipper2 随模块分发。主体运行依赖清单不包含 PDF 实现或解析库。
+
+## 安装与使用
+
+将 `inkcanvas.pdf-1.0.0.zip` 内的 `inkcanvas.pdf` 文件夹解压到 Ink Canvas 程序的 `Modules` 目录，退出并重新启动程序。在“设置 → 模块与插件”中可查看和停用该模块，模块开关重启后生效。
+
+模块需要本次增加了文档工作区接口的 WinUI 3 主体版本。
+
+也可使用仓库中的安装脚本。脚本会检查应用是否退出、包结构和依赖文件，在同一磁盘上替换模块目录。
+
+```powershell
+.\tools\install-pdf-module.ps1 -ApplicationDirectory 'D:\Apps\InkCanvas' -Package 'D:\Downloads\inkcanvas.pdf-1.0.0.zip'
+```
+
+主工具栏“更多”增加“打开 PDF”和“PDF 导入画板”。“打开墨迹”文件选择器也包含 PDF。Windows“打开方式”选择 `InkCanvas.exe`，或使用命令行直接打开文件。
+
+```powershell
+.\InkCanvas.exe 'D:\Lessons\课件.pdf'
+.\InkCanvas.exe '--pdf=D:\Lessons\课件.pdf'
+```
+
+安装脚本可加 `-RegisterOpenWith`，将 Ink Canvas 加入当前用户的 PDF 打开方式列表。用户在 Windows 设置中选择默认阅读器。
+
+## 窗口与交互
+
+- 原生 WinUI 3 窗口，采用系统标题栏和圆角，左侧为页码、PDF 目录和文字搜索，顶部按钮至少 54 DIP。
+- 独立分页墨迹和撤销记录。切页时，原浮动主工具栏、笔设置和形状设置绑定到当前 PDF 页。
+- 笔、荧光笔、形状、橡皮和选择工具复用原墨迹引擎。选择后的克隆、属性和层级使用共用选择工具栏。
+- 双指平移和缩放默认可用。阅读模式支持单指平移和双指缩放，窗口不会穿透到桌面。
+- PDF 使用本会话独立的手势选项，可通过原主工具栏切换多指书写。页面保持原始朝向，选择对象仍可使用旋转控制柄。
+- 整页、页宽、缩放按钮、鼠标滚轮平移、Ctrl 加滚轮缩放。Ctrl+S 保存，Ctrl+Shift+S 另存为，Ctrl+F 搜索，PageUp/PageDown 切页。
+- 切到画板时保留 PDF 会话，关闭画板后恢复。关闭有更改的 PDF 或退出程序时，提供保存、放弃和取消。
+
+## 保存格式与保真
+
+保存保留原 PDF 页面内容、文字、图片、目录和其他软件创建的批注。每页的 Ink Canvas 墨迹写入标准 Stamp 批注的矢量外观，其他 PDF 阅读器可以显示和打印。每笔使用一次非零填充，透明笔画自交处保持同一透明度。
+
+矢量轮廓来自现有 `StrokeGeometry`。保存线程以有界批次合并被覆盖的胶囊边缘，以 0.0001 DIP 精度计算轮廓并压缩 PDF 流。原始点、逐点宽度、时间、笔尖变换、颜色、笔锋及对象框另以无损压缩数据嵌入同一批注。用 Ink Canvas 再次打开时，恢复这些可编辑笔画，并从底图中移除对应批注外观，避免重复显示。
+
+每次保存从不可变源快照构建，使用同目录临时文件并在成功后替换目标。重复保存不会追加旧批注。检测到目标文件被其他程序修改时，提示另存为。受权限限制的 PDF 使用只读查看，含数字签名的原件要求另存批注副本，副本中的签名验证状态会因修改而改变。
+
+当前功能围绕 PDF 阅读与墨迹批注。已有第三方批注保留原样。扫描件的文字搜索需要文件预先包含 OCR 文字层。
+
+## PDF 导入画板
+
+支持 `1-5,8,10` 范围选择、去重和两档清晰度。每个 PDF 页导入为新画板页的背景图片，Ink Canvas 自有墨迹同时恢复为可编辑笔画，并置于背景图片上方。已有画板页面保留。
+
+渲染按页进行，单页最多 600 万像素。完成所有页面准备、容量检查和取消检查后再写入画板。导入遵循画板已有的 99 页上限，PDF 阅读窗口可打开更多页面。
+
+## 资源与性能
+
+- Windows PDF 引擎按需渲染当前页。整页预览长边最多 1400 像素，缓存最多 3 页且不超过 16 MiB 压缩数据。
+- 页面与墨迹共用坐标变换。手势期间直接变换已有图像，停止后约 170 ms 请求可见区域高清图。
+- 高清输出每次最多 800 万像素和 8192 像素边长。切页、缩放和关闭会取消过期请求。
+- 只为当前页保留 GPU 墨迹场景、预览图和高清图。原生渲染串行执行，搜索和保存在线程池执行，关闭时释放流、位图和临时快照。
+- 矢量轮廓压缩会增加保存计算量。一个测试样例从约 1.05 MB 降至约 191 KB，扩展笔画测试中的覆盖区域相似度约 99.9%。文件最终大小取决于原 PDF 结构和实际墨迹量。
+
+## 构建与验证
+
+```powershell
+$env:NUGET_PACKAGES='D:\dev-cache\nuget'
+dotnet test tests/InkCanvas.Core.Tests/InkCanvas.Core.Tests.csproj -c Release -p:Platform=x64
+.\tools\pack-extension.ps1 -Project src/InkCanvas.Modules.Pdf/InkCanvas.Modules.Pdf.csproj -Kind Module
+dotnet publish src/InkCanvas.App/InkCanvas.App.csproj -c Release -p:Platform=x64 -p:IncludePdfModule=false -o artifacts/pdf-base
+.\artifacts\pdf-base\InkCanvas.exe --pdfcheck=D:\InkCanvas\artifacts\pdf-check
+```
+
+运行 `--pdfcheck` 前需要安装 PDF 模块。该检查覆盖页面旋转、CropBox、UserUnit、各类笔锋及椭圆笔尖的系统 PDF 渲染对照、透明笔画、往返保存、缓存、主工具栏绑定、画板切换和导入。真实红外屏的接触形态、掌部判定和延迟需要在目标设备上验收。
+
+依赖固定为 PDFsharp 6.2.4、PdfPig 0.1.16、Clipper2 2.0.0，对应许可证随包保存于 `Licenses`。
