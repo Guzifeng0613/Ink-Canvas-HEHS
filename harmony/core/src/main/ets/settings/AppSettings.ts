@@ -206,7 +206,7 @@ export function createDefaultSettings(): AppSettings {
       inkAlpha: 140,
       isCompressPicturesUploaded: false,
       isShowCursor: false,
-      inkStyle: 0,
+      inkStyle: 3,
       eraserSize: 2,
       eraserType: 0,
       hideStrokeWhenSelecting: true,

@@ -80,6 +80,121 @@ function applyVelocity(points: InkPoint[], tipIndex: number, baseWidth: number):
   settle(points, tipIndex, baseWidth * ratio);
 }
 
+// 测试版自然笔锋参数（与 C# NaturalTaper 同值）。调参时只改这里。
+export interface NaturalTuning {
+  tipRatio: number;
+  pressureMinScale: number;
+  pressureMaxScale: number;
+  slowSpeed: number;
+  slowScale: number;
+  fastSpeed: number;
+  fastScale: number;
+  minTotalScale: number;
+  maxTotalScale: number;
+  headTaperWidthFactor: number;
+  headTaperMin: number;
+  headTaperMax: number;
+  tailTaperWidthFactor: number;
+  tailTaperMin: number;
+  tailTaperMax: number;
+  fallbackSegmentMs: number;
+}
+
+export const NATURAL_TUNING: NaturalTuning = {
+  tipRatio: 0.28,
+  pressureMinScale: 0.45,
+  pressureMaxScale: 1.35,
+  slowSpeed: 0.15,
+  slowScale: 1.20,
+  fastSpeed: 3.00,
+  fastScale: 0.55,
+  minTotalScale: 0.35,
+  maxTotalScale: 1.40,
+  headTaperWidthFactor: 0.8,
+  headTaperMin: 6,
+  headTaperMax: 20,
+  tailTaperWidthFactor: 1.5,
+  tailTaperMin: 12,
+  tailTaperMax: 40,
+  fallbackSegmentMs: 10
+};
+
+function deltaMs(a: InkPoint, b: InkPoint): number {
+  const dt = b.TimeMs - a.TimeMs;
+  if (!isFinite(dt) || dt <= 0) {
+    return NATURAL_TUNING.fallbackSegmentMs;
+  }
+  return clamp(dt, 2, 40);
+}
+
+// 最近两段平均速度（DIP/ms）：设备有时间戳用真实时间，否则回退 10 ms 假设。
+function speedAt(points: InkPoint[], index: number): number {
+  if (index < 1) {
+    return 0;
+  }
+  const d1 = distance(points[index - 1], points[index]);
+  const dt1 = deltaMs(points[index - 1], points[index]);
+  if (index < 2) {
+    return d1 / dt1;
+  }
+  const d2 = distance(points[index - 2], points[index - 1]);
+  const dt2 = deltaMs(points[index - 2], points[index - 1]);
+  return (d1 + d2) / (dt1 + dt2);
+}
+
+function pointScale(points: InkPoint[], index: number): number {
+  const pressure = points[index].Pressure;
+  const pressureScale = pressure <= 0.5
+    ? NATURAL_TUNING.pressureMinScale + (1 - NATURAL_TUNING.pressureMinScale) * clamp(pressure / 0.5, 0, 1)
+    : 1 + (NATURAL_TUNING.pressureMaxScale - 1) * clamp((pressure - 0.5) / 0.5, 0, 1);
+
+  const speed = speedAt(points, index);
+  let speedScale: number;
+  if (speed <= NATURAL_TUNING.slowSpeed) {
+    speedScale = NATURAL_TUNING.slowScale;
+  } else if (speed >= NATURAL_TUNING.fastSpeed) {
+    speedScale = NATURAL_TUNING.fastScale;
+  } else {
+    speedScale = NATURAL_TUNING.slowScale + (NATURAL_TUNING.fastScale - NATURAL_TUNING.slowScale) *
+      ((speed - NATURAL_TUNING.slowSpeed) / (NATURAL_TUNING.fastSpeed - NATURAL_TUNING.slowSpeed));
+  }
+
+  return clamp(pressureScale * speedScale, NATURAL_TUNING.minTotalScale, NATURAL_TUNING.maxTotalScale);
+}
+
+function applyNatural(points: InkPoint[], tipIndex: number, baseWidth: number): void {
+  const tailWindow = clamp(baseWidth * NATURAL_TUNING.tailTaperWidthFactor,
+    NATURAL_TUNING.tailTaperMin, NATURAL_TUNING.tailTaperMax);
+  const headWindow = clamp(baseWidth * NATURAL_TUNING.headTaperWidthFactor,
+    NATURAL_TUNING.headTaperMin, NATURAL_TUNING.headTaperMax);
+
+  let accumulated = 0;
+  for (let j = tipIndex; j >= 0; j--) {
+    if (j < tipIndex) {
+      accumulated += distance(points[j], points[j + 1]);
+      if (accumulated > tailWindow) {
+        break;
+      }
+    }
+    const t = clamp(accumulated / tailWindow, 0, 1);
+    const ratio = NATURAL_TUNING.tipRatio + (1 - NATURAL_TUNING.tipRatio) * t;
+    settle(points, j, baseWidth * ratio * pointScale(points, j));
+  }
+
+  let arc = 0;
+  for (let j = 1; j <= tipIndex; j++) {
+    arc += distance(points[j - 1], points[j]);
+    if (arc >= headWindow) {
+      break;
+    }
+  }
+  if (arc < headWindow) {
+    const t = clamp(arc / headWindow, 0, 1);
+    const ratio = NATURAL_TUNING.tipRatio + (1 - NATURAL_TUNING.tipRatio) * t;
+    settle(points, tipIndex, baseWidth * ratio * pointScale(points, tipIndex));
+  }
+}
+
 export function applyTaperAt(
   points: InkPoint[],
   tipIndex: number,
@@ -93,6 +208,10 @@ export function applyTaperAt(
   }
   if (kind === TaperKind.Velocity) {
     applyVelocity(points, tipIndex, baseWidth);
+    return;
+  }
+  if (kind === TaperKind.Natural) {
+    applyNatural(points, tipIndex, baseWidth);
     return;
   }
   // 非法枚举值与 Tail 一样走默认分支（与 C# switch 默认一致）。

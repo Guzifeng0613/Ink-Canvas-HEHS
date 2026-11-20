@@ -327,7 +327,9 @@ struct Index {
     this.taperIndex = this.settings.canvas.inkStyle;
     this.controller.CurrentAttributes.BaseWidth = this.settings.canvas.inkWidth;
     this.controller.CurrentAttributes.HighlighterAlpha = this.settings.canvas.inkAlpha;
-    this.controller.CurrentAttributes.TaperKind = this.settings.canvas.inkStyle === 1 ? 2 : (this.settings.canvas.inkStyle === 2 ? 0 : 1);
+    this.controller.CurrentAttributes.TaperKind =
+      this.settings.canvas.inkStyle === 3 ? 3 :
+        (this.settings.canvas.inkStyle === 1 ? 2 : (this.settings.canvas.inkStyle === 2 ? 0 : 1));
     this.applyGestures();
     this.controller.MultiTouchEnabled = this.settings.gesture.isEnableMultiTouchMode;
     this.controller.GesturesTargetSelection = this.settings.gesture.isEnableTwoFingerRotationOnSelection;
@@ -612,7 +614,7 @@ struct Index {
               this.persistSettings();
             },
             onTaper: (kind: number) => {
-              this.taperIndex = kind === 1 ? 0 : (kind === 2 ? 1 : 2);
+              this.taperIndex = kind === 1 ? 0 : (kind === 2 ? 1 : (kind === 3 ? 3 : 2));
               this.controller.CurrentAttributes.TaperKind = kind;
               this.persistSettings();
             },
@@ -1348,11 +1350,11 @@ struct Index {
       this.touchSettings();
       this.refreshScene();
     })
-    this.SettingOptions('笔迹风格', ['点集笔锋', '速率笔锋', '关闭笔锋'],
+    this.SettingOptions('笔迹风格', ['点集笔锋', '速率笔锋', '关闭笔锋', '自然笔锋（测试）'],
       this.settings.canvas.inkStyle, (i: number) => {
         this.settings.canvas.inkStyle = i;
         this.taperIndex = i;
-        this.controller.CurrentAttributes.TaperKind = i === 1 ? 2 : (i === 2 ? 0 : 1);
+        this.controller.CurrentAttributes.TaperKind = i === 3 ? 3 : (i === 1 ? 2 : (i === 2 ? 0 : 1));
         this.touchSettings();
       })
     this.SettingOptions('笔尖', ['圆形', '椭圆 · 右斜 45°'],
@@ -1938,6 +1940,9 @@ struct Index {
       this.settings.gesture.isEnableTwoFingerTranslate,
       this.settings.gesture.isEnableTwoFingerRotation
     );
+    // 测试版缩放阻尼：每帧只吸收 88% 增量，死区 2 vp。
+    this.controller.ZoomDamping = 0.88;
+    this.controller.ZoomDeadZone = 2;
   }
 
   private boardBackgroundColor(): string {
@@ -2337,7 +2342,14 @@ struct Index {
     const touches = event.changedTouches;
     for (let i = 0; i < touches.length; i++) {
       const touch = touches[i];
-      const pressure = event.pressure > 0 ? event.pressure : 0.5;
+      const touchPressure = touch.pressure === undefined ? 0 : touch.pressure;
+      let pressure = 0.5;
+      if (touchPressure > 0) {
+        // TouchObject.pressure 为 [0,65535)，与 event.pressure([0,1]) 量纲不同。
+        pressure = Math.min(Math.max(touchPressure / 65535, 0), 1);
+      } else if (event.pressure > 0) {
+        pressure = event.pressure;
+      }
       const width = touch.width === undefined ? 0 : touch.width;
       const height = touch.height === undefined ? 0 : touch.height;
       const sample = new PointerSample(

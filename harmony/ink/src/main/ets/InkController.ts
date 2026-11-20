@@ -129,7 +129,7 @@ function createCurrentAttributes(): StrokeAttributes {
   const attributes = new StrokeAttributes();
   attributes.Color = InkColor.black();
   attributes.BaseWidth = 2.5;
-  attributes.TaperKind = TaperKind.Tail;
+  attributes.TaperKind = TaperKind.Natural;
   return attributes;
 }
 
@@ -713,6 +713,26 @@ export class InkController {
     this._manipulator.AllowRotation = rotate;
     this._selectionManipulator.AllowZoom = zoom;
     this._selectionManipulator.AllowTranslate = translate;
+  }
+
+  /** 测试版缩放阻尼：1 = 旧行为，0.85–0.9 有轻微回弹感。 */
+  get ZoomDamping(): number {
+    return this._manipulator.ZoomDamping;
+  }
+
+  set ZoomDamping(value: number) {
+    this._manipulator.ZoomDamping = value;
+    this._selectionManipulator.ZoomDamping = value;
+  }
+
+  /** 双指间距死区（DIP）。 */
+  get ZoomDeadZone(): number {
+    return this._manipulator.ZoomDeadZone;
+  }
+
+  set ZoomDeadZone(value: number) {
+    this._manipulator.ZoomDeadZone = value;
+    this._selectionManipulator.ZoomDeadZone = value;
   }
 
   // ---- 指针路由 ----------------------------------------------------------

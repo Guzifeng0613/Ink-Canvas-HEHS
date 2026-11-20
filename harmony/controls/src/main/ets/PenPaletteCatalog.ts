@@ -47,7 +47,7 @@ export const HIGHLIGHTER_ALPHA_MIN: number = 20;
 export const HIGHLIGHTER_ALPHA_MAX: number = 240;
 export const HIGHLIGHTER_ALPHA_STEP: number = 20;
 export const HIGHLIGHTER_ALPHA_DEFAULT: number = 140;
-export const TAPER_LABELS: string[] = ['点集笔锋', '速率笔锋', '关闭笔锋'];
+export const TAPER_LABELS: string[] = ['点集笔锋', '速率笔锋', '关闭笔锋', '自然笔锋（测试）'];
 
 export function toStoredPenWidth(menuWidth: number): number {
   return menuWidth / 2;
@@ -61,13 +61,16 @@ export function snap(value: number, minimum: number, step: number): number {
   return minimum + Math.round((value - minimum) / step) * step;
 }
 
-// 菜单索引 → TaperKind：0→Tail(1)、1→Velocity(2)、2→None(0)。
+// 菜单索引 → TaperKind：0→Tail(1)、1→Velocity(2)、2→None(0)、3→Natural(3)。
 export function taperKindForIndex(index: number): number {
   if (index === 1) {
     return 2;
   }
   if (index === 2) {
     return 0;
+  }
+  if (index === 3) {
+    return 3;
   }
   return 1;
 }

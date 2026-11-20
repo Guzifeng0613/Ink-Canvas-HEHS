@@ -10,7 +10,8 @@ export enum PenNib {
 export enum TaperKind {
   None = 0,
   Tail = 1,
-  Velocity = 2
+  Velocity = 2,
+  Natural = 3
 }
 
 export class StrokeAttributes {
