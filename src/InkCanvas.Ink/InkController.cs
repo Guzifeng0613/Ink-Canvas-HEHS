@@ -43,7 +43,7 @@ public sealed class InkController : IDisposable
     {
         Color = InkColor.Black,
         BaseWidth = 2.5f,
-        TaperKind = TaperKind.Tail,
+        TaperKind = TaperKind.Natural,
     };
 
     public InkTool Tool { get; set; } = InkTool.Pen;
@@ -110,6 +110,20 @@ public sealed class InkController : IDisposable
         _manipulator.AllowZoom = zoom;
         _manipulator.AllowTranslate = translate;
         _manipulator.AllowRotation = rotate;
+    }
+
+    /// <summary>Test-build zoom damping; 1 = legacy hard 1:1 tracking, 0.85–0.9 adds rubber band.</summary>
+    public float ZoomDamping
+    {
+        get => _manipulator.ZoomDamping;
+        set => _manipulator.ZoomDamping = value;
+    }
+
+    /// <summary>Two-finger contact dead zone in DIP.</summary>
+    public float ZoomDeadZone
+    {
+        get => _manipulator.ZoomDeadZone;
+        set => _manipulator.ZoomDeadZone = value;
     }
 
     // ---- input ------------------------------------------------------------

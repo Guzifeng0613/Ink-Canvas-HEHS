@@ -50,6 +50,7 @@ public sealed class AppServices : IDisposable
         {
             1 => TaperKind.Velocity,
             2 => TaperKind.None,
+            3 => TaperKind.Natural,
             _ => TaperKind.Tail,
         };
 
@@ -59,6 +60,8 @@ public sealed class AppServices : IDisposable
             controller.CurrentAttributes.TaperKind = taper;
             controller.CurrentAttributes.HighlighterAlpha = (byte)Math.Clamp(Settings.Canvas.InkAlpha, 20, 240);
             controller.EraserRadius = 8f + Math.Clamp(Settings.Canvas.EraserSize, 0, 8) * 8f;
+            controller.ZoomDamping = 0.88f;
+            controller.ZoomDeadZone = 2f;
             controller.RecognizeShapes = Settings.InkToShape.IsInkToShapeEnabled;
             controller.MultiTouchEnabled = Settings.Gesture.IsEnableMultiTouchMode;
             controller.ConfigureGestures(
