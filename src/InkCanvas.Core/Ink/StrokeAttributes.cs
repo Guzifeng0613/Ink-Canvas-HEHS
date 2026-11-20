@@ -1,4 +1,8 @@
+using System.Numerics;
+
 namespace InkCanvas.Core.Ink;
+
+public enum PenNib { Round, Ellipse45 }
 
 public sealed class StrokeAttributes
 {
@@ -13,6 +17,14 @@ public sealed class StrokeAttributes
     public byte HighlighterAlpha { get; set; } = 96;
 
     public TaperKind TaperKind { get; set; } = TaperKind.Tail;
+    public PenNib Nib { get; set; }
+    public float NibRotation { get; set; }
+    public InkWashBrushOptions InkWash { get; set; } = InkWashBrushOptions.Default;
+    public int InkWashSeed { get; set; }
+    /// <summary>Width specifies the major diameter. The oval has a 2:1 aspect ratio and rises to the right.</summary>
+    public Matrix3x2 NibTransform => Nib == PenNib.Ellipse45
+        ? Matrix3x2.CreateScale(1, .5f) * Matrix3x2.CreateRotation(-MathF.PI / 4 + NibRotation)
+        : Matrix3x2.Identity;
 
     /// <summary>Highlighter ink is laid down translucent and never tapered.</summary>
     public TaperKind EffectiveTaper => IsHighlighter ? TaperKind.None : TaperKind;
@@ -26,5 +38,9 @@ public sealed class StrokeAttributes
         IsHighlighter = IsHighlighter,
         HighlighterAlpha = HighlighterAlpha,
         TaperKind = TaperKind,
+        Nib = Nib,
+        NibRotation = NibRotation,
+        InkWash = InkWash,
+        InkWashSeed = InkWashSeed,
     };
 }

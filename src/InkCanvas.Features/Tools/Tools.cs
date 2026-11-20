@@ -77,53 +77,7 @@ public sealed class CountdownTimer : IDisposable
     public void Dispose() => _timer.Dispose();
 }
 
-/// <summary>Random name/number picker for classroom use.</summary>
-public sealed class LotteryService
-{
-    private readonly HashSet<int> _used = new();
-    private Random _random = new();
-
-    public List<string> Names { get; } = new();
-
-    public int PeopleCount { get; set; } = 60;
-
-    public bool NoRepeat { get; set; }
-
-    public IReadOnlyCollection<int> Used => _used;
-
-    public void Reseed(int seed) => _random = new Random(seed);
-
-    public void Reset() => _used.Clear();
-
-    /// <summary>Returns the picked display text, or null when the pool is exhausted.</summary>
-    public string Pick()
-    {
-        int poolSize = Names.Count > 0 ? Names.Count : Math.Max(1, PeopleCount);
-        if (NoRepeat && _used.Count >= poolSize) return null;
-
-        int index;
-        int guard = 0;
-        do
-        {
-            index = _random.Next(poolSize);
-            guard++;
-        } while (NoRepeat && _used.Contains(index) && guard < poolSize * 8);
-
-        if (NoRepeat) _used.Add(index);
-        return Names.Count > 0 ? Names[index] : (index + 1).ToString();
-    }
-
-    public void LoadNames(IEnumerable<string> names)
-    {
-        Names.Clear();
-        foreach (var n in names)
-        {
-            var trimmed = n?.Trim();
-            if (!string.IsNullOrEmpty(trimmed)) Names.Add(trimmed);
-        }
-        _used.Clear();
-    }
-}
+public sealed record LotteryDraw(DateTimeOffset Time, IReadOnlyList<string> Names);
 
 /// <summary>Screen capture to PNG, used by the screenshot tool and PPT auto-save.</summary>
 public static class ScreenshotService

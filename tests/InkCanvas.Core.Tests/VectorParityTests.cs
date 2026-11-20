@@ -373,16 +373,19 @@ public sealed class VectorParityTests
         using var doc = Load("recognizer.json");
         foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
         {
-            var pts = c.GetProperty("input")[0].EnumerateArray()
-                .Select(p => new Vector2(p.GetProperty("X").GetSingle(), p.GetProperty("Y").GetSingle()))
-                .ToArray();
-            var stroke = new InkStroke(new StrokeAttributes { BaseWidth = 3f });
-            foreach (var p in pts)
+            var input = c.GetProperty("input")[0];
+            var pointSets = input.GetArrayLength() > 0 && input[0].ValueKind == JsonValueKind.Array
+                ? input.EnumerateArray().ToArray() : new[] { input };
+            var strokes = new List<InkStroke>();
+            foreach (var points in pointSets)
             {
-                stroke.AddPoint(p.X, p.Y);
+                var stroke = new InkStroke(new StrokeAttributes { BaseWidth = 3f });
+                foreach (var point in points.EnumerateArray())
+                    stroke.AddPoint(point.GetProperty("X").GetSingle(), point.GetProperty("Y").GetSingle());
+                stroke.Complete();
+                strokes.Add(stroke);
             }
-            stroke.Complete();
-            var result = ShapeRecognizer.Recognize(new[] { stroke });
+            var result = ShapeRecognizer.Recognize(strokes);
             var actual = new
             {
                 kind = (int)result.Shape,
@@ -773,6 +776,10 @@ public sealed class VectorParityTests
                 Highlighter = s.Attributes.IsHighlighter,
                 HighlighterAlpha = (int)s.Attributes.HighlighterAlpha,
                 Taper = (int)s.Attributes.TaperKind,
+                Nib = (int)s.Attributes.Nib,
+                NibRotation = (double)s.Attributes.NibRotation,
+                s.LayerOrder,
+                s.ShapeSource,
                 Shape = s.IsRecognizedShape,
                 ObjectFrame = s.ExportObjectFrame(),
                 Points = s.Points.Select(p => new double[]
@@ -897,7 +904,8 @@ public sealed class VectorParityTests
         foreach (var c in doc.RootElement.GetProperty("cases").EnumerateArray())
         {
             var actual = ControllerVectorRunner.Run(c.GetProperty("input")[0]);
-            AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble());
+            var error = Record.Exception(() => AssertNear(c.GetProperty("expected"), Node(actual), c.GetProperty("tolerance").GetDouble()));
+            Assert.True(error is null, $"Controller case {c.GetProperty("id").GetString()} failed. {error?.Message}");
         }
     }
 
@@ -1047,6 +1055,25 @@ public sealed class VectorParityTests
             var settings = JsonSerializer.Deserialize<AppSettings>(input, CaseInsensitive)!;
             var actual = JsonNode.Parse(JsonSerializer.Serialize(settings))!;
             var expected = JsonNode.Parse(c.GetProperty("expected").GetRawText())!;
+            // WPF vectors predate the WinUI screen-follow extension, covered by ScreenTrackingTests.
+            if (expected["experimental"] is null) actual.AsObject().Remove("experimental");
+            // Monitor selection is a Windows extension with its own persistence coverage.
+            if (expected["display"] is null) actual.AsObject().Remove("display");
+            // Cache retention is a WinUI extension, covered by StorageManagementTests.
+            if (expected["storage"] is null) actual.AsObject().Remove("storage");
+            // Soft cooldown settings extend the WPF schema and have dedicated persistence tests.
+            foreach (string field in new[] { "samplingMode", "cooldownHalfLifeDays", "cooldownPenaltyStrength" })
+                if (expected["randSettings"]?[field] is null) actual["randSettings"]?.AsObject().Remove(field);
+            // Native pressure, palm routing and hold-to-shape settings extend the legacy schema.
+            foreach (string field in new[] { "UseHardwarePressure", "UsePenTilt", "InkWash", "InkWashWidth" })
+                if (expected["canvas"]?[field] is null) actual["canvas"]?.AsObject().Remove(field);
+            foreach (string field in new[] { "PenHasPriority", "PalmErases" })
+                if (expected["gesture"]?[field] is null) actual["gesture"]?.AsObject().Remove(field);
+            foreach (string field in new[] { "HoldMilliseconds", "AutoAlign", "AlignmentAngle", "RecognizePolygons",
+                "RecognizeRoundShapes", "RecognizeCube", "RecognizeAxes" })
+                if (expected["inkToShape"]?[field] is null) actual["inkToShape"]?.AsObject().Remove(field);
+            // The retired WPF stylus-gesture switch is intentionally absent from WinUI settings.
+            expected["gesture"]?.AsObject().Remove("isEnableStylusGesture");
             Assert.True(JsonNode.DeepEquals(actual, expected), $"settings case {id} mismatch");
         }
     }

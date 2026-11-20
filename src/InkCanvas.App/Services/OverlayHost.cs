@@ -12,9 +12,21 @@ namespace InkCanvas.App.Services;
 /// </summary>
 public sealed class OverlayHost : IDisposable
 {
+    private Core.Settings.DisplaySettings _displaySettings = new();
+    private long _idleSince;
+    private bool _idleResourcesReleased;
+    public void ConfigureDisplays(Core.Settings.DisplaySettings settings)
+    {
+        _displaySettings = settings ?? new();
+        var screens = ScreenService.All();
+        Window.SetScreenLayout(screens);
+        Window.SetInputAreas(_displaySettings.AllDisplays ? null : screens
+            .Where(screen => (_displaySettings.EnabledDevices ?? new()).Contains(screen.DeviceName, StringComparer.OrdinalIgnoreCase))
+            .Select(screen => screen.Bounds));
+    }
     public OverlayHost(InkController controller)
     {
-        var screen = ScreenService.Primary;
+        var screen = ScreenService.Virtual;
         Window = new LayeredInkWindow(screen.X, screen.Y, screen.Width, screen.Height);
         Presenter = new OverlayInkPresenter(Window, controller);
         Hotkeys = new HotkeyService(Window.Handle);
@@ -34,6 +46,33 @@ public sealed class OverlayHost : IDisposable
 
     public InkController Controller { get; }
 
+    /// <summary>Keep saved ink at the same desktop pixel when the virtual desktop origin changes.</summary>
+    public bool RefreshDisplayBounds()
+    {
+        var screen = ScreenService.Virtual;
+        return SetDisplayBounds(screen);
+    }
+
+    internal bool SetDisplayBounds(ScreenRect screen)
+    {
+        if (screen == new ScreenRect(Window.X, Window.Y, Window.Width, Window.Height)) return false;
+        bool visible = Window.IsVisible;
+        Window.CancelInput();
+        Presenter.Suspend();
+        int oldX = Window.X, oldY = Window.Y;
+        try
+        {
+            Window.SetBounds(screen.X, screen.Y, screen.Width, screen.Height);
+            ConfigureDisplays(_displaySettings);
+            Controller.ViewTransform *= System.Numerics.Matrix3x2.CreateTranslation(
+                (oldX - screen.X) / Window.DpiScale, (oldY - screen.Y) / Window.DpiScale);
+            Controller.ViewCenter = new(screen.Width / Window.DpiScale / 2, screen.Height / Window.DpiScale / 2);
+            Presenter.SetScreenTrackingClip(null, false);
+        }
+        finally { if (visible) Presenter.Attach(); }
+        return true;
+    }
+
     public bool ClickThrough
     {
         get => Window.ClickThrough;
@@ -42,35 +81,73 @@ public sealed class OverlayHost : IDisposable
 
     public void SetInteractionMode(bool clickThrough, bool inkVisible)
     {
+        if (inkVisible && !clickThrough) { _idleResourcesReleased = false; _idleSince = 0; }
+        if (clickThrough || !inkVisible) Controller.CancelLassoErase();
+        if (clickThrough || !inkVisible) Controller.HideEraserPreview();
         Window.ClickThrough = clickThrough;
         Presenter.InkVisible = inkVisible;
     }
 
     public void Show()
     {
+        _idleResourcesReleased = false;
+        _idleSince = 0;
         Window.Show();
         Presenter.Attach();
     }
 
-    public void Hide() => Window.Hide();
+    public void Hide()
+    {
+        Controller.CancelLassoErase();
+        Presenter.Suspend();
+        Window.Hide();
+    }
 
-    /// <summary>Register the default hotkey set. Failures are non-fatal (key may be taken).</summary>
-    public void RegisterHotkeys(Action undo, Action redo, Action togglePen, Action toggleEraser, Action clear,
+    internal bool TrimIdleResources(bool force = false)
+    {
+        if (Window.IsVisible && Presenter.InkVisible)
+        {
+            _idleSince = 0;
+            _idleResourcesReleased = false;
+            return false;
+        }
+        if (_idleResourcesReleased || Controller.HasActiveInteraction) return false;
+        if (_idleSince == 0) _idleSince = Environment.TickCount64;
+        if (!force && Environment.TickCount64 - _idleSince < 15_000) return false;
+        Presenter.ReleaseIdleResources();
+        Window.ReleasePixelBuffer();
+        _idleResourcesReleased = true;
+        return true;
+    }
+
+    /// <summary>
+    /// Register the WPF guide's hotkey set (OperatingGuideWindow rows): Ctrl+Z/Y undo/redo,
+    /// Ctrl+E clear, Alt+C screenshot, Alt+V fold, Alt+D draw/palette, Alt+Q mouse mode,
+    /// Alt+B board, Alt+S select, Alt+E eraser, Alt+L line, Shift+Esc exit slideshow.
+    /// PageUp/PageDown remain as slideshow conveniences (documented in ppt-porting-notes).
+    /// Failures are non-fatal (key may be taken).
+    /// </summary>
+    public void RegisterHotkeys(Action undo, Action redo, Action toggleEraser, Action clear,
         Action togglePassThrough = null, Action toggleBoard = null,
-        Action pptNext = null, Action pptPrevious = null, Action pptExit = null)
+        Action pptNext = null, Action pptPrevious = null, Action pptExit = null,
+        Action screenshot = null, Action fold = null, Action select = null, Action line = null, Action draw = null)
     {
         Hotkeys.Register(HotkeyModifiers.Control, 0x5A /* Z */, undo);
         Hotkeys.Register(HotkeyModifiers.Control, 0x59 /* Y */, redo);
-        Hotkeys.Register(HotkeyModifiers.Alt, 0x31 /* 1 */, togglePen);
+        Hotkeys.Register(HotkeyModifiers.Control, 0x45 /* E */, clear);
         Hotkeys.Register(HotkeyModifiers.Alt, 0x45 /* E */, toggleEraser);
-        Hotkeys.Register(HotkeyModifiers.Control | HotkeyModifiers.Shift, 0x43 /* C */, clear);
-        // Escape hatches: the overlay captures the whole screen while writing, so these must
-        // work even if the bar is unreachable.
-        if (togglePassThrough is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x50 /* P */, togglePassThrough);
+        if (select is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x53 /* S */, select);
+        if (line is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x4C /* L */, line);
         if (toggleBoard is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x42 /* B */, toggleBoard);
+        if (fold is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x56 /* V */, fold);
+        if (screenshot is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x43 /* C */, screenshot);
+        if (draw is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x44 /* D */, draw);
+        // Escape hatch: the overlay captures the whole screen while writing, so mouse mode must
+        // work even if the bar is unreachable.
+        if (togglePassThrough is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x51 /* Q */, togglePassThrough);
         if (pptNext is not null) Hotkeys.Register(HotkeyModifiers.None, 0x22 /* PageDown */, pptNext);
         if (pptPrevious is not null) Hotkeys.Register(HotkeyModifiers.None, 0x21 /* PageUp */, pptPrevious);
-        if (pptExit is not null) Hotkeys.Register(HotkeyModifiers.None, 0x1B /* Escape */, pptExit);
+        if (pptExit is not null) Hotkeys.Register(HotkeyModifiers.Shift, 0x1B /* Escape */, pptExit);
     }
 
     public void Dispose()
