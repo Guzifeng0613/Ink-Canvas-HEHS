@@ -1,0 +1,407 @@
+{
+  "id": "taper-natural",
+  "entry": "harmony/core/src/main/ets/ink/TaperProfile.ts",
+  "cases": [
+    {
+      "id": "natural-slow-pressure-ramp",
+      "fn": "effectiveWidths",
+      "input": [
+        10,
+        [
+          {
+            "X": 100,
+            "Y": 100,
+            "Pressure": 0.3,
+            "TimeMs": 0
+          },
+          {
+            "X": 102,
+            "Y": 100,
+            "Pressure": 0.36,
+            "TimeMs": 8
+          },
+          {
+            "X": 104,
+            "Y": 100,
+            "Pressure": 0.42,
+            "TimeMs": 16
+          },
+          {
+            "X": 106,
+            "Y": 100,
+            "Pressure": 0.48,
+            "TimeMs": 24
+          },
+          {
+            "X": 108,
+            "Y": 100,
+            "Pressure": 0.54,
+            "TimeMs": 32
+          },
+          {
+            "X": 110,
+            "Y": 100,
+            "Pressure": 0.6,
+            "TimeMs": 40
+          },
+          {
+            "X": 112,
+            "Y": 100,
+            "Pressure": 0.6599999999999999,
+            "TimeMs": 48
+          },
+          {
+            "X": 114,
+            "Y": 100,
+            "Pressure": 0.72,
+            "TimeMs": 56
+          },
+          {
+            "X": 116,
+            "Y": 100,
+            "Pressure": 0.78,
+            "TimeMs": 64
+          },
+          {
+            "X": 118,
+            "Y": 100,
+            "Pressure": 0.8400000000000001,
+            "TimeMs": 72
+          }
+        ],
+        3
+      ],
+      "expected": [
+        8.91072,
+        9.481018,
+        10.220672,
+        9.855083,
+        9.197173,
+        8.363721,
+        7.435339,
+        6.412029,
+        5.264,
+        3.92
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "natural-fast",
+      "fn": "effectiveWidths",
+      "input": [
+        10,
+        [
+          {
+            "X": 100,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 0
+          },
+          {
+            "X": 120,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 8
+          },
+          {
+            "X": 140,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 16
+          },
+          {
+            "X": 160,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 24
+          },
+          {
+            "X": 180,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 32
+          },
+          {
+            "X": 200,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 40
+          },
+          {
+            "X": 220,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 48
+          },
+          {
+            "X": 240,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 56
+          },
+          {
+            "X": 260,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 64
+          },
+          {
+            "X": 280,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 72
+          },
+          {
+            "X": 300,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 80
+          },
+          {
+            "X": 320,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 88
+          }
+        ],
+        3
+      ],
+      "expected": [
+        3.36,
+        1.859298,
+        1.859298,
+        1.859298,
+        1.859298,
+        1.859298,
+        1.859298,
+        1.859298,
+        1.859298,
+        1.859298,
+        1.859298,
+        1.859298
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "natural-light-pressure",
+      "fn": "effectiveWidths",
+      "input": [
+        6,
+        [
+          {
+            "X": 100,
+            "Y": 100,
+            "Pressure": 0.15,
+            "TimeMs": 0
+          },
+          {
+            "X": 104,
+            "Y": 100,
+            "Pressure": 0.15,
+            "TimeMs": 12
+          },
+          {
+            "X": 108,
+            "Y": 100,
+            "Pressure": 0.15,
+            "TimeMs": 24
+          },
+          {
+            "X": 112,
+            "Y": 100,
+            "Pressure": 0.15,
+            "TimeMs": 36
+          },
+          {
+            "X": 116,
+            "Y": 100,
+            "Pressure": 0.15,
+            "TimeMs": 48
+          },
+          {
+            "X": 120,
+            "Y": 100,
+            "Pressure": 0.15,
+            "TimeMs": 60
+          },
+          {
+            "X": 124,
+            "Y": 100,
+            "Pressure": 0.15,
+            "TimeMs": 72
+          },
+          {
+            "X": 128,
+            "Y": 100,
+            "Pressure": 0.15,
+            "TimeMs": 84
+          }
+        ],
+        3
+      ],
+      "expected": [
+        4.428,
+        4.273711,
+        4.273711,
+        4.273711,
+        4.273711,
+        3.24802,
+        2.222329,
+        1.196639
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "natural-heavy-pressure",
+      "fn": "effectiveWidths",
+      "input": [
+        6,
+        [
+          {
+            "X": 100,
+            "Y": 100,
+            "Pressure": 0.95,
+            "TimeMs": 0
+          },
+          {
+            "X": 104,
+            "Y": 100,
+            "Pressure": 0.95,
+            "TimeMs": 12
+          },
+          {
+            "X": 108,
+            "Y": 100,
+            "Pressure": 0.95,
+            "TimeMs": 24
+          },
+          {
+            "X": 112,
+            "Y": 100,
+            "Pressure": 0.95,
+            "TimeMs": 36
+          },
+          {
+            "X": 116,
+            "Y": 100,
+            "Pressure": 0.95,
+            "TimeMs": 48
+          },
+          {
+            "X": 120,
+            "Y": 100,
+            "Pressure": 0.95,
+            "TimeMs": 60
+          },
+          {
+            "X": 124,
+            "Y": 100,
+            "Pressure": 0.95,
+            "TimeMs": 72
+          },
+          {
+            "X": 128,
+            "Y": 100,
+            "Pressure": 0.95,
+            "TimeMs": 84
+          }
+        ],
+        3
+      ],
+      "expected": [
+        8.4,
+        8.4,
+        8.4,
+        8.4,
+        8.4,
+        6.384,
+        4.368,
+        2.352
+      ],
+      "tolerance": 0.0001
+    },
+    {
+      "id": "natural-no-timestamps",
+      "fn": "effectiveWidths",
+      "input": [
+        10,
+        [
+          {
+            "X": 100,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 0
+          },
+          {
+            "X": 103,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 0
+          },
+          {
+            "X": 106,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 0
+          },
+          {
+            "X": 109,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 0
+          },
+          {
+            "X": 112,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 0
+          },
+          {
+            "X": 115,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 0
+          },
+          {
+            "X": 118,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 0
+          },
+          {
+            "X": 121,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 0
+          },
+          {
+            "X": 124,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 0
+          },
+          {
+            "X": 127,
+            "Y": 100,
+            "Pressure": 0.5,
+            "TimeMs": 0
+          }
+        ],
+        3
+      ],
+      "expected": [
+        12,
+        11.657895,
+        11.657895,
+        11.657895,
+        11.657895,
+        9.979158,
+        8.300421,
+        6.621684,
+        4.942947,
+        3.264211
+      ],
+      "tolerance": 0.0001
+    }
+  ]
+}

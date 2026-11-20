@@ -45,6 +45,7 @@ public sealed class VectorParityTests
     [Theory]
     [InlineData("taper-tail.json")]
     [InlineData("taper-velocity.json")]
+    [InlineData("taper-natural.json")]
     public void TaperVectorsMatch(string file)
     {
         using var doc = Load(file);
