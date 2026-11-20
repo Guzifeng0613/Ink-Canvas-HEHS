@@ -703,7 +703,8 @@ export class InkController {
   }
 
   get ShapePreview(): InkStroke[] {
-    return this._shapePreview;
+    // 对齐 LiveStrokes 的克隆封装，避免外部持有内部数组引用被意外改写。
+    return this._shapePreview.slice();
   }
 
   /** 框选橡皮筋（视图 DIP 矩形 [left, top, right, bottom]）；空矩形返回 null。
@@ -712,10 +713,16 @@ export class InkController {
     if (this._marqueeBounds.isEmpty()) {
       return null;
     }
-    return [
-      this._marqueeBounds.Left, this._marqueeBounds.Top,
-      this._marqueeBounds.Right, this._marqueeBounds.Bottom
-    ];
+    const left = this._marqueeBounds.Left;
+    const top = this._marqueeBounds.Top;
+    const right = this._marqueeBounds.Right;
+    const bottom = this._marqueeBounds.Bottom;
+    // NaN 矩形会因 Rect.isEmpty 的 NaN<=0=false 漏判，导致渲染层每帧全屏重绘；四分量有限性校验兜底。
+    if (!Number.isFinite(left) || !Number.isFinite(top) ||
+        !Number.isFinite(right) || !Number.isFinite(bottom)) {
+      return null;
+    }
+    return [left, top, right, bottom];
   }
 
   /** 切换目标文档（画板页/课件页/批注）：清空历史与活动状态，避免跨文档撤销污染。 */
@@ -2761,6 +2768,8 @@ export class InkController {
   Clear(): void {
     this.CancelLassoErase();
     this.ClearSelection();
+    // 清空时一并清除形状预览，避免空文档早退路径残留预览上屏。
+    this._shapePreview = [];
     if (this.Document.Count === 0) {
       return;
     }
@@ -2927,6 +2936,10 @@ export class InkController {
     this._shapeDragStart.clear();
     this._stepPending = [];
     this._shapePreview = [];
+    this._isMarqueeSelecting = false;
+    this._marqueeBounds = Rect.empty();
+    this._marqueeInitialStrokes = [];
+    this._marqueeInitialElements = [];
   }
 
   // ---- 内部事件/集合辅助 -------------------------------------------------

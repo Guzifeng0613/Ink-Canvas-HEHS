@@ -435,11 +435,17 @@ export class CanvasInkRenderer implements InkRenderer {
     const centerX = (left + right) / 2;
     const centerY = (top + bottom) / 2;
     const context = this.active;
+    // 选框/连接线/手柄描边与半径对齐 C# 屏幕固定像素（InkSceneRenderer.cs:73-88 在屏幕空间以 1.5/6/7 绘制）；
+    // 鸿蒙在视图矩阵下绘制，故除以视图缩放模长抵消缩放，默认 zoom=1 时逐位不变。
+    // 旋转柄 -28 偏移仍为世界单位（C# 同样先取世界坐标再套视图变换），不在此抵消。
+    const vm = scene.View;
+    const rawScale = Math.sqrt(vm[0] * vm[0] + vm[1] * vm[1]);
+    const scale = Number.isFinite(rawScale) && rawScale > 0 ? rawScale : 1;
     context.save();
     context.translate(centerX, centerY);
     context.rotate(selection.RotationRadians);
     context.strokeStyle = 'rgba(0,120,212,1)';
-    context.lineWidth = 1.5;
+    context.lineWidth = 1.5 / scale;
     context.strokeRect(left - centerX, top - centerY, right - left, bottom - top);
     // 旋转柄连接线（R1 InkSceneRenderer.cs:82-86）：顶边中点局部 (0, top-centerY)，
     // 旋转柄局部 (0, top-28-centerY)，与 SceneBuilder 第 5 手柄点一致。
@@ -450,7 +456,7 @@ export class CanvasInkRenderer implements InkRenderer {
     context.fillStyle = '#FFFFFF';
     for (let i = 0; i < selection.Handles.length; i++) {
       const handle = selection.Handles[i];
-      const radius = i === 4 ? 7 : 6;
+      const radius = (i === 4 ? 7 : 6) / scale;
       context.beginPath();
       context.arc(handle.X - centerX, handle.Y - centerY, radius, 0, Math.PI * 2);
       context.fill();
@@ -544,7 +550,8 @@ export class CanvasInkRenderer implements InkRenderer {
         }
       }
     }
-    if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) ||
+        !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
       return null;
     }
     return [minX - padding, minY - padding, maxX + padding, maxY + padding];

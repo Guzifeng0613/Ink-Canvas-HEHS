@@ -1261,15 +1261,20 @@ struct Index {
       this.handleKey(event);
     })
     .onAreaChange((oldValue: Area, newValue: Area) => {
-      this.windowWidth = Number(newValue.width);
-      this.windowHeight = Number(newValue.height);
-      // F3：对齐 C# InkSurface.OnDraw 每帧按视口半尺寸刷新 ViewCenter（vp，与触摸手势同单位）；
-      // 布局尚未给出有效尺寸时保留控制器默认 960×540，默认视口下行为逐位不变。
+      const nextWidth = Number(newValue.width);
+      const nextHeight = Number(newValue.height);
+      const sizeChanged = nextWidth !== this.windowWidth || nextHeight !== this.windowHeight;
+      this.windowWidth = nextWidth;
+      this.windowHeight = nextHeight;
+      // F3：对齐 C# InkSurface.OnDraw 的 ViewCenter 语义，在视口尺寸变化（onAreaChange）时按半尺寸刷新
+      // （vp，与触摸手势同单位）；C# 为每帧刷新，此处事件驱动在默认 1920×1080vp 视口下与旧值逐位相等。
+      // 布局尚未给出有效尺寸时保留控制器默认 960×540。
       if (this.windowWidth > 0 && this.windowHeight > 0) {
         this.controller.ViewCenter.X = this.windowWidth / 2;
         this.controller.ViewCenter.Y = this.windowHeight / 2;
       }
-      if (this.renderer !== null) {
+      // 同尺寸回调跳过 resize+refresh，避免无谓的全量重绘。
+      if (this.renderer !== null && sizeChanged) {
         this.renderer.resize(this.windowWidth, this.windowHeight);
         this.refreshScene();
       }

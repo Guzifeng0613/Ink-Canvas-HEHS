@@ -89,7 +89,7 @@ export function buildScene(
   if (active !== null) {
     scene.Active = commandFor(buildStroke(active));
   }
-  if (preview !== undefined) {
+  if (preview !== undefined && preview !== null) {
     for (let i = 0; i < preview.length; i++) {
       scene.Preview.push(commandFor(buildStroke(preview[i])));
     }
