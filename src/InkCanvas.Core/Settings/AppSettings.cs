@@ -21,8 +21,30 @@ public sealed class AppSettings
     [JsonPropertyName("startup")] public StartupSettings Startup { get; set; } = new();
     [JsonPropertyName("randSettings")] public RandSettings Rand { get; set; } = new();
 
+    private AiSettings _ai = new();
+
+    /// <summary>AI 助教功能开关；旧设置文件缺少该节点或显式写成 null 时回退为默认（全开）。</summary>
+    [JsonPropertyName("ai")]
+    public AiSettings Ai
+    {
+        get => _ai ??= new AiSettings();
+        set => _ai = value ?? new AiSettings();
+    }
+
     public AppSettings Clone() =>
         JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(this)) ?? new AppSettings();
+}
+
+/// <summary>
+/// AI 助教灰度开关：每一项关闭时回退到旧的单段、无圈选、无自检或纯 PNG 贴回行为。
+/// 默认全部开启，便于旧版 Settings.json 直接升级。
+/// </summary>
+public sealed class AiSettings
+{
+    [JsonPropertyName("enableLocalCorrection")] public bool EnableLocalCorrection { get; set; } = true;
+    [JsonPropertyName("enableEditablePaste")] public bool EnableEditablePaste { get; set; } = true;
+    [JsonPropertyName("enableVerification")] public bool EnableVerification { get; set; } = true;
+    [JsonPropertyName("enableTwoStage")] public bool EnableTwoStage { get; set; } = true;
 }
 
 public enum OptionalOperation { Yes, No, Ask }
