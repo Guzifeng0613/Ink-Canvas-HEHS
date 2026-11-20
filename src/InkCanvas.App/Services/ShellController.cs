@@ -192,6 +192,23 @@ public sealed class ShellController : IShellActions, IDisposable
 
         if (Services.Settings.Startup.IsAutoUpdate)
             _ = Updater.CheckAsync(interactive: false);
+
+        // 上次异常退出留下的未完成录制：LoadAll / LoadWithJournal 已能恢复，这里只提示。
+        if (ClassroomSessionStore.PendingJournalIds().Count > 0)
+            _ = NotifyPendingJournalAsync();
+    }
+
+    private async Task NotifyPendingJournalAsync()
+    {
+        try
+        {
+            await NotifyAsync("板书时光机", "检测到未完成的课堂录制，已恢复为最近会话。");
+        }
+        catch (Exception ex)
+        {
+            Core.Diagnostics.FileLog.WriteLogToFile(
+                $"板书时光机恢复提示失败：{ex.Message}", Core.Diagnostics.LogType.Info);
+        }
     }
 
     /// <summary>
@@ -760,6 +777,31 @@ public sealed class ShellController : IShellActions, IDisposable
         _recorder = null;
     }
 
+    /// <summary>暂停录制（仅录制中有效）；暂停期间事件不入时间轴，计时扣除暂停时长。</summary>
+    public void PauseRecording()
+    {
+        var recorder = _recorder;
+        if (recorder is null || !recorder.IsRecording || recorder.IsPaused) return;
+        recorder.Pause();
+    }
+
+    /// <summary>继续录制（仅录制中有效）。</summary>
+    public void ResumeRecording()
+    {
+        var recorder = _recorder;
+        if (recorder is null || !recorder.IsRecording || !recorder.IsPaused) return;
+        recorder.Resume();
+    }
+
+    /// <summary>浮条入口：在暂停 / 继续之间切换；未在录制时静默忽略。</summary>
+    public void ToggleRecordingPause()
+    {
+        var recorder = _recorder;
+        if (recorder is null || !recorder.IsRecording) return;
+        if (recorder.IsPaused) recorder.Resume();
+        else recorder.Pause();
+    }
+
     public void OpenSettings()
     {
         if (_settings is not null) { _settings.Activate(); return; }
@@ -1036,7 +1078,13 @@ public sealed class ShellController : IShellActions, IDisposable
         {
             list.Items.Clear();
             foreach (var s in sessions)
-                list.Items.Add($"{s.Name}  ·  {s.CreatedAt:MM-dd HH:mm}  ·  {s.Events.Count} 事件");
+            {
+                int pageCount = s.Events is { Count: > 0 } ? s.Events.Max(e => e.PageIndex) + 1 : 0;
+                long durationMs = s.Events is { Count: > 0 } ? Math.Max(0, s.Events[^1].TimeMs) : 0;
+                list.Items.Add(
+                    $"{s.Name}  ·  录制 {s.CreatedAt:yyyy-MM-dd HH:mm}  ·  时长 {FormatSessionDuration(durationMs)}"
+                    + $"  ·  {pageCount} 页  ·  {s.Events.Count} 事件");
+            }
         }
         Rebuild();
 
@@ -1102,6 +1150,16 @@ public sealed class ShellController : IShellActions, IDisposable
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return null;
         int index = list.SelectedIndex;
         return index >= 0 && index < sessions.Count ? sessions[index] : null;
+    }
+
+    private static string FormatSessionDuration(long durationMs)
+    {
+        long totalSeconds = Math.Max(0, durationMs) / 1000;
+        long minutes = totalSeconds / 60;
+        long seconds = totalSeconds % 60;
+        return minutes >= 60
+            ? $"{minutes / 60}:{minutes % 60:00}:{seconds:00}"
+            : $"{minutes}:{seconds:00}";
     }
 
     private async Task<StorageFile> PickSessionFileAsync(bool save)

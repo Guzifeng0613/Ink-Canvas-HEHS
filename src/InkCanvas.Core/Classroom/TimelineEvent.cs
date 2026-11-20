@@ -31,6 +31,12 @@ public enum TimelineEventKind
 
     /// <summary>用户手动添加的章节书签。</summary>
     BookmarkAdded,
+
+    /// <summary>
+    /// 视图缩放 / 平移变化；<see cref="TimelineEvent.Payload"/> 存
+    /// <c>{"scale":1.5,"tx":120,"ty":80}</c>（scale 由矩阵行列式推导）。
+    /// </summary>
+    ViewChanged,
 }
 
 /// <summary>

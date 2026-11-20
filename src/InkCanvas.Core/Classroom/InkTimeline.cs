@@ -9,7 +9,13 @@ namespace InkCanvas.Core.Classroom;
 /// </summary>
 public readonly record struct ClassroomScene(
     int PageIndex, string Background, int PptSlideIndex, string RosterName, int TimerRemainingMs,
-    string PptScreenshotPath = "");
+    string PptScreenshotPath = "", double ViewScale = 1, double ViewTx = 0, double ViewTy = 0);
+
+/// <summary>
+/// <see cref="TimelineEventKind.ViewChanged"/> 的载荷解析结果。
+/// <para><see cref="IsValid"/> 为 false 表示载荷无法解析，调用方应忽略该事件。</para>
+/// </summary>
+public readonly record struct TimerViewState(double Scale, double Tx, double Ty, bool IsValid);
 
 /// <summary>
 /// <see cref="TimelineEventKind.PptSlideChanged"/> 的载荷解析结果。
@@ -163,6 +169,7 @@ public sealed class InkTimeline
         string screenshot = "";
         string roster = "";
         int timer = 0;
+        double viewScale = 1, viewTx = 0, viewTy = 0;
 
         for (int i = 0; i <= cutoff; i++)
         {
@@ -192,6 +199,13 @@ public sealed class InkTimeline
                 case TimelineEventKind.TimerEnded:
                     timer = 0;
                     break;
+                case TimelineEventKind.ViewChanged:
+                    TimerViewState view = DecodeViewChanged(e.Payload);
+                    if (!view.IsValid) break;
+                    viewScale = view.Scale;
+                    viewTx = view.Tx;
+                    viewTy = view.Ty;
+                    break;
             }
         }
 
@@ -203,7 +217,8 @@ public sealed class InkTimeline
             }
         }
 
-        return new ClassroomScene(page, background ?? "Black", pptSlide, roster ?? "", timer, screenshot ?? "");
+        return new ClassroomScene(page, background ?? "Black", pptSlide, roster ?? "", timer, screenshot ?? "",
+            viewScale, viewTx, viewTy);
     }
 
     /// <summary>时间 &lt;= <paramref name="timeMs"/> 的最后一个事件索引；没有则返回 -1。</summary>
@@ -221,6 +236,13 @@ public sealed class InkTimeline
 
     public long TimeAtEvent(int index)
         => index >= 0 && index < _events.Count ? _events[index].TimeMs : 0;
+
+    /// <summary>
+    /// 异步定位的回调闸门：token 已取消或版本落后（已有更新请求）时返回 false，
+    /// 调用方不得把该帧应用到界面，保证只呈现最后一次目标。
+    /// </summary>
+    public static bool ShouldApplySeek(CancellationToken token, int requestVersion, int latestVersion)
+        => !token.IsCancellationRequested && requestVersion == latestVersion;
 
     // ---- 章节书签 ---------------------------------------------------------
 
@@ -362,8 +384,165 @@ public sealed class InkTimeline
         return true;
     }
 
+    /// <summary>
+    /// 书签摘要：取书签时刻（或之后最近）的事件类型 / 载荷，最多保留
+    /// <paramref name="maxChars"/> 个字符；没有可用事件时回退到 <see cref="SessionBookmark.Kind"/>。
+    /// </summary>
+    public string BookmarkSummary(SessionBookmark bookmark, int maxChars = 20)
+    {
+        if (bookmark is null) return "";
+
+        string text = EventSummaryAt(bookmark.TimeMs);
+        if (string.IsNullOrWhiteSpace(text)) text = KindLabel(bookmark.Kind);
+        text = (text ?? "").Trim();
+        if (maxChars > 0 && text.Length > maxChars) text = text[..maxChars];
+        return text;
+    }
+
+    /// <summary>书签在轨道上的完整说明：<c>时间 · 第 N 页 · 摘要</c>。</summary>
+    public string DescribeBookmark(SessionBookmark bookmark, int maxChars = 20)
+    {
+        if (bookmark is null) return "";
+        string time = TimeSpan.FromMilliseconds(bookmark.TimeMs).ToString(@"mm\:ss");
+        int page = bookmark.PageIndex >= 0 ? bookmark.PageIndex + 1 : 1;
+        string summary = BookmarkSummary(bookmark, maxChars);
+        return string.IsNullOrEmpty(summary)
+            ? $"{time} · 第 {page} 页"
+            : $"{time} · 第 {page} 页 · {summary}";
+    }
+
+    private string EventSummaryAt(long timeMs)
+    {
+        int index = -1;
+        for (int i = 0; i < _events.Count; i++)
+        {
+            if (_events[i].TimeMs >= timeMs) { index = i; break; }
+        }
+        if (index < 0) index = _events.Count - 1;
+        if (index < 0) return "";
+        return EventSummary(_events[index]);
+    }
+
+    private static string EventSummary(TimelineEvent e)
+    {
+        if (e is null) return "";
+        switch (e.Kind)
+        {
+            case TimelineEventKind.PageChanged:
+                return $"切换页 第 {e.PageIndex + 1} 页";
+            case TimelineEventKind.Cleared:
+                return "清空板书";
+            case TimelineEventKind.PptSlideChanged:
+                PptSlideChange change = DecodePptSlideChanged(e.Payload);
+                return change.IsValid && change.Index > 0 ? $"PPT 第 {change.Index} 页" : "PPT 翻页";
+            case TimelineEventKind.RosterDrawn:
+                return string.IsNullOrWhiteSpace(e.Payload) ? "点名" : $"点名 {e.Payload}";
+            case TimelineEventKind.TimerStarted:
+                return "倒计时开始";
+            case TimelineEventKind.TimerStopped:
+                return "倒计时暂停";
+            case TimelineEventKind.TimerEnded:
+                return "倒计时结束";
+            case TimelineEventKind.StrokeAdded:
+                return "书写";
+            case TimelineEventKind.StrokesRemoved:
+                return "擦除";
+            case TimelineEventKind.Undo:
+                return "撤销";
+            case TimelineEventKind.Redo:
+                return "重做";
+            case TimelineEventKind.BackgroundChanged:
+                return string.IsNullOrWhiteSpace(e.Payload) ? "背景切换" : $"背景 {e.Payload}";
+            case TimelineEventKind.ViewChanged:
+                return "缩放/平移";
+            case TimelineEventKind.BookmarkAdded:
+                return "手动书签";
+            default:
+                return "";
+        }
+    }
+
+    private static string KindLabel(string kind) => kind switch
+    {
+        "page" => "切换页",
+        "cleared" => "清空板书",
+        "ppt" => "PPT 翻页",
+        "roster" => "点名",
+        "timer" => "倒计时",
+        "manual" => "手动书签",
+        _ => "",
+    };
+
     private static int ParseInt(string value, int fallback)
         => int.TryParse(value, out int parsed) ? parsed : fallback;
+
+    // ---- 视图载荷 -----------------------------------------------------------
+
+    /// <summary>
+    /// 构造 <see cref="TimelineEventKind.ViewChanged"/> 的载荷：
+    /// <c>{"scale":1.5,"tx":120,"ty":80}</c>，键统一 camelCase。
+    /// </summary>
+    public static string EncodeViewChanged(double scale, double tx, double ty)
+    {
+        try
+        {
+            return JsonSerializer.Serialize(new ViewChangedDto
+            {
+                scale = double.IsFinite(scale) ? scale : 1,
+                tx = double.IsFinite(tx) ? tx : 0,
+                ty = double.IsFinite(ty) ? ty : 0,
+            });
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>解析 <see cref="TimelineEventKind.ViewChanged"/> 载荷；无法识别时 IsValid 为 false。</summary>
+    public static TimerViewState DecodeViewChanged(string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload)) return new TimerViewState(1, 0, 0, false);
+        try
+        {
+            using var document = JsonDocument.Parse(payload.Trim());
+            JsonElement root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return new TimerViewState(1, 0, 0, false);
+
+            double scale = ReadDouble(root, "scale", "Scale");
+            double tx = ReadDouble(root, "tx", "Tx");
+            double ty = ReadDouble(root, "ty", "Ty");
+            if (!double.IsFinite(scale)) scale = 1;
+            if (!double.IsFinite(tx)) tx = 0;
+            if (!double.IsFinite(ty)) ty = 0;
+            return new TimerViewState(scale, tx, ty, true);
+        }
+        catch
+        {
+            return new TimerViewState(1, 0, 0, false);
+        }
+    }
+
+    private sealed class ViewChangedDto
+    {
+        public double scale { get; set; } = 1;
+        public double tx { get; set; }
+        public double ty { get; set; }
+    }
+
+    private static double ReadDouble(JsonElement root, params string[] names)
+    {
+        foreach (string name in names)
+        {
+            if (!root.TryGetProperty(name, out JsonElement value)) continue;
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out double number))
+                return number;
+            if (value.ValueKind == JsonValueKind.String && double.TryParse(value.GetString(),
+                    System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double parsed))
+                return parsed;
+        }
+        return double.NaN;
+    }
 
     // ---- PPT 翻页载荷 -----------------------------------------------------
 

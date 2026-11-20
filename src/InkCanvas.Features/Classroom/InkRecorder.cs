@@ -3,6 +3,7 @@ using InkCanvas.Core.Ink;
 using InkCanvas.Features.Board;
 using InkCanvas.Ink;
 using System.Diagnostics;
+using System.Numerics;
 
 namespace InkCanvas.Features.Classroom;
 
@@ -30,6 +31,12 @@ public sealed class InkRecorder : IDisposable
     private SessionJournal _journal;
     private long _lastSnapshotTimestamp;
 
+    // 暂停计时：ElapsedMs = 时钟已过 - (已累计暂停 + 当前暂停段)。
+    private long _pausedTotalMs;
+    private long _pauseStartedMs = -1;
+    private const int DedupeSignaturePrefixLength = 64;
+
+
     public InkRecorder(BoardService board)
     {
         _board = board ?? throw new ArgumentNullException(nameof(board));
@@ -38,6 +45,9 @@ public sealed class InkRecorder : IDisposable
     public ClassroomSession Session { get; private set; }
 
     public bool IsRecording { get; private set; }
+
+    /// <summary>录制已暂停：期间 <see cref="Append"/> 与自动事件全部丢弃，计时不计入暂停时长。</summary>
+    public bool IsPaused { get; private set; }
 
     public InkTimeline Timeline => _timeline;
 
@@ -50,8 +60,59 @@ public sealed class InkRecorder : IDisposable
     /// <summary>会话 / 日志 / 快照目录；默认 <see cref="ClassroomSessionStore.DefaultDirectory"/>。</summary>
     public string SessionDirectory { get; set; }
 
-    /// <summary>当前录制时钟（毫秒，相对录制开始）。供外部事件源打时间戳。</summary>
-    public long ElapsedMs => _clock.ElapsedMilliseconds;
+    /// <summary>
+    /// 当前录制时钟（毫秒，相对录制开始，已扣除暂停时长）。供外部事件源打时间戳。
+    /// 暂停期间继续增长，恢复后不产生空档：恢复前暂停的增量会累加进扣除值。
+    /// </summary>
+    public long ElapsedMs
+    {
+        get
+        {
+            long now = _clock.ElapsedMilliseconds;
+            long paused = _pausedTotalMs;
+            if (IsPaused && _pauseStartedMs >= 0) paused += Math.Max(0, now - _pauseStartedMs);
+            return Math.Max(0, now - paused);
+        }
+    }
+
+    /// <summary>暂停录制。暂停/恢复本身不写入时间轴，仅记 Trace 日志。</summary>
+    public void Pause()
+    {
+        lock (_gate)
+        {
+            if (!IsRecording || IsPaused) return;
+            IsPaused = true;
+            _pauseStartedMs = _clock.ElapsedMilliseconds;
+        }
+        Log("板书录制已暂停（暂停期间事件不入时间轴）");
+    }
+
+    /// <summary>继续录制；暂停时长从 <see cref="ElapsedMs"/> 中扣除，时间轴保持连续。</summary>
+    public void Resume()
+    {
+        lock (_gate)
+        {
+            if (!IsRecording || !IsPaused) return;
+            long now = _clock.ElapsedMilliseconds;
+            if (_pauseStartedMs >= 0) _pausedTotalMs += Math.Max(0, now - _pauseStartedMs);
+            _pauseStartedMs = -1;
+            IsPaused = false;
+        }
+
+        // 暂停期间产生的笔画不补录（需求：全部丢弃），但同步已知集合，
+        // 避免恢复后的撤销/重做把它们误判为本次操作差异。
+        if (_controller is not null)
+            _knownIds = new HashSet<string>(_controller.Document.Strokes.Select(s => s.Id.ToString()));
+        SyncHistoryCounts();
+
+        Log("板书录制已继续（暂停时长已扣除）");
+    }
+
+    private static void Log(string message)
+    {
+        try { Core.Diagnostics.FileLog.WriteLogToFile(message, Core.Diagnostics.LogType.Trace); }
+        catch { /* 日志失败不影响录制 */ }
+    }
 
     /// <summary>开始录制。会在 t=0 记录初始页码、背景，并把已有笔画作为起点快照。</summary>
     public void Start(string name = null)
@@ -71,6 +132,9 @@ public sealed class InkRecorder : IDisposable
 
         _clock.Restart();
         IsRecording = true;
+        IsPaused = false;
+        _pausedTotalMs = 0;
+        _pauseStartedMs = -1;
 
         Bind(_board.Current);
 
@@ -91,6 +155,8 @@ public sealed class InkRecorder : IDisposable
     {
         if (!IsRecording) return;
         IsRecording = false;
+        IsPaused = false;
+        _pauseStartedMs = -1;
         _clock.Stop();
 
         _board.PageChanged -= OnBoardPageChanged;
@@ -187,6 +253,7 @@ public sealed class InkRecorder : IDisposable
             _controller.StrokesErased += OnStrokesErased;
             _controller.Cleared += OnCleared;
             _controller.Invalidated += OnControllerInvalidated;
+            _controller.ViewChanged += OnViewChanged;
             _knownIds = new HashSet<string>(_controller.Document.Strokes.Select(s => s.Id.ToString()));
         }
         else
@@ -203,6 +270,20 @@ public sealed class InkRecorder : IDisposable
         _controller.StrokesErased -= OnStrokesErased;
         _controller.Cleared -= OnCleared;
         _controller.Invalidated -= OnControllerInvalidated;
+        _controller.ViewChanged -= OnViewChanged;
+    }
+
+    /// <summary>
+    /// 视图缩放/平移：记录矩阵推导出的 scale=sqrt(|det|)、tx=M31、ty=M32。
+    /// 暂停期间由 <see cref="AddEvent"/> 统一丢弃。
+    /// </summary>
+    private void OnViewChanged(Matrix3x2 transform)
+    {
+        if (!IsRecording || IsPaused) return;
+        double scale = Math.Sqrt(Math.Abs(transform.GetDeterminant()));
+        if (!double.IsFinite(scale)) scale = 1;
+        AddEvent(TimelineEventKind.ViewChanged, _board.CurrentIndex,
+            payload: InkTimeline.EncodeViewChanged(scale, transform.M31, transform.M32));
     }
 
     private void OnBoardPageChanged()
@@ -220,7 +301,7 @@ public sealed class InkRecorder : IDisposable
 
     private void OnStrokeCommitted(InkStroke stroke)
     {
-        if (!IsRecording || stroke is null) return;
+        if (!IsRecording || IsPaused || stroke is null) return;
         string id = stroke.Id.ToString();
         _knownIds.Add(id);
         AddEvent(TimelineEventKind.StrokeAdded, _board.CurrentIndex, id, SerializeStroke(stroke));
@@ -229,7 +310,7 @@ public sealed class InkRecorder : IDisposable
 
     private void OnStrokesErased(IReadOnlyList<InkStroke> strokes)
     {
-        if (!IsRecording || strokes is null || strokes.Count == 0) return;
+        if (!IsRecording || IsPaused || strokes is null || strokes.Count == 0) return;
         var ids = strokes.Select(s => s.Id.ToString()).ToList();
         foreach (var id in ids) _knownIds.Remove(id);
         AddEvent(TimelineEventKind.StrokesRemoved, _board.CurrentIndex, ids: ids);
@@ -238,7 +319,7 @@ public sealed class InkRecorder : IDisposable
 
     private void OnCleared()
     {
-        if (!IsRecording) return;
+        if (!IsRecording || IsPaused) return;
         _knownIds.Clear();
         AddEvent(TimelineEventKind.Cleared, _board.CurrentIndex);
         SyncHistoryCounts();
@@ -247,7 +328,7 @@ public sealed class InkRecorder : IDisposable
     /// <summary>撤销 / 重做：文档 id 集合的差异即本次操作的效果。</summary>
     private void OnControllerInvalidated()
     {
-        if (!IsRecording || _controller is null) return;
+        if (!IsRecording || IsPaused || _controller is null) return;
 
         var current = new HashSet<string>(_controller.Document.Strokes.Select(s => s.Id.ToString()));
         if (current.SetEquals(_knownIds))
@@ -295,11 +376,11 @@ public sealed class InkRecorder : IDisposable
         string strokeId = null, string strokeJson = null,
         IReadOnlyList<string> ids = null, string payload = null)
     {
-        if (!IsRecording || Session is null) return;
+        if (!IsRecording || IsPaused || Session is null) return;
 
         Append(new TimelineEvent
         {
-            TimeMs = _clock.ElapsedMilliseconds,
+            TimeMs = ElapsedMs,
             PageIndex = page,
             Kind = kind,
             StrokeId = strokeId,
@@ -311,7 +392,9 @@ public sealed class InkRecorder : IDisposable
 
     /// <summary>
     /// 线程安全地追加一个外部事件（PPT 翻页 / 点名 / 倒计时等）。
+    /// 暂停期间丢弃；与尾部事件完全同签名（Kind + TimeMs + StrokeId + Payload 前 64 字符）时忽略；
     /// 事件时间早于最后一个事件时按时间插入，并重建检查点（增量游标只支持尾部追加）。
+    /// 非相邻的重复事件是合法重放，予以保留。
     /// 标书签候选事件会自动补一条章节书签。
     /// </summary>
     public void Append(TimelineEvent ev)
@@ -320,8 +403,11 @@ public sealed class InkRecorder : IDisposable
 
         lock (_gate)
         {
-            if (!IsRecording) return;
+            if (!IsRecording || IsPaused) return;
             var events = Session.Events ??= new List<TimelineEvent>();
+
+            // 相邻完全重复事件（同一次手势/切换被多次上报）不再入时间轴。
+            if (events.Count > 0 && SameSignature(events[^1], ev)) return;
 
             if (events.Count > 0 && ev.TimeMs < events[^1].TimeMs)
             {
@@ -342,6 +428,18 @@ public sealed class InkRecorder : IDisposable
             _journal?.Append(ev);
             MaybeSaveSnapshot();
         }
+    }
+
+    private static bool SameSignature(TimelineEvent a, TimelineEvent b)
+    {
+        if (a.Kind != b.Kind || a.TimeMs != b.TimeMs) return false;
+        if (!string.Equals(a.StrokeId, b.StrokeId, StringComparison.Ordinal)) return false;
+
+        string pa = a.Payload ?? "";
+        string pb = b.Payload ?? "";
+        int la = Math.Min(pa.Length, DedupeSignaturePrefixLength);
+        int lb = Math.Min(pb.Length, DedupeSignaturePrefixLength);
+        return la == lb && string.CompareOrdinal(pa, 0, pb, 0, la) == 0;
     }
 
     private static bool IsBookmarkSource(TimelineEventKind kind)
