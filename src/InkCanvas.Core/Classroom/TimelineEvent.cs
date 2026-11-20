@@ -1,0 +1,121 @@
+namespace InkCanvas.Core.Classroom;
+
+/// <summary>笔画级事件类型。板书时光机按这些事件重建任意时刻的画面。</summary>
+public enum TimelineEventKind
+{
+    StrokeAdded,
+    StrokesRemoved,
+    Cleared,
+    PageChanged,
+    BackgroundChanged,
+    Undo,
+    Redo,
+
+    /// <summary>PPT 放映翻页；<see cref="TimelineEvent.Payload"/> 存幻灯片序号（1 起）。</summary>
+    PptSlideChanged,
+
+    /// <summary>PPT 幻灯片批注变化；<see cref="TimelineEvent.Payload"/> 存当前批注笔画数。</summary>
+    PptInkChanged,
+
+    /// <summary>随机点名抽中；<see cref="TimelineEvent.Payload"/> 存姓名。</summary>
+    RosterDrawn,
+
+    /// <summary>倒计时开始 / 继续；<see cref="TimelineEvent.Payload"/> 存剩余毫秒。</summary>
+    TimerStarted,
+
+    /// <summary>倒计时暂停 / 停止；<see cref="TimelineEvent.Payload"/> 存剩余毫秒。</summary>
+    TimerStopped,
+
+    /// <summary>倒计时归零结束。</summary>
+    TimerEnded,
+
+    /// <summary>用户手动添加的章节书签。</summary>
+    BookmarkAdded,
+}
+
+/// <summary>
+/// 板书录制中的单个笔画级事件。
+/// <para>
+/// <see cref="StrokeId"/> + <see cref="StrokeJson"/> 用于 <see cref="TimelineEventKind.StrokeAdded"/>；
+/// <see cref="StrokeIds"/> 在 <see cref="TimelineEventKind.StrokesRemoved"/> 中是删除的笔画；
+/// 在 <see cref="TimelineEventKind.Undo"/> / <see cref="TimelineEventKind.Redo"/> 中是本次操作移除的笔画，
+/// 而 <see cref="Payload"/> 存放本次操作重新出现的笔画 id（JSON 字符串数组）。
+/// </para>
+/// <para>
+/// <see cref="Payload"/> 的其它用途：<see cref="TimelineEventKind.BackgroundChanged"/> 存背景枚举名，
+/// <see cref="TimelineEventKind.PptSlideChanged"/> 存幻灯片序号，
+/// <see cref="TimelineEventKind.RosterDrawn"/> 存姓名，
+/// <see cref="TimelineEventKind.TimerStarted"/> / <see cref="TimelineEventKind.TimerStopped"/> 存剩余毫秒。
+/// </para>
+/// </summary>
+public sealed class TimelineEvent
+{
+    public long TimeMs { get; set; }
+
+    public int PageIndex { get; set; }
+
+    public TimelineEventKind Kind { get; set; }
+
+    public string StrokeId { get; set; }
+
+    public string StrokeJson { get; set; }
+
+    public IReadOnlyList<string> StrokeIds { get; set; }
+
+    public string Payload { get; set; }
+}
+
+/// <summary>录制中的一个检查点，用于让 <see cref="InkTimeline.BuildFrame"/> 从最近处增量重放。</summary>
+public sealed class SessionCheckpoint
+{
+    public long TimeMs { get; set; }
+
+    /// <summary>该检查点已经应用到的事件索引（含）。</summary>
+    public int EventIndex { get; set; }
+
+    public int PageIndex { get; set; }
+
+    public string Background { get; set; }
+
+    /// <summary>该时刻仍存在的全部笔画 id（跨页）。</summary>
+    public IReadOnlyList<string> LiveStrokeIds { get; set; }
+}
+
+/// <summary>
+/// 统一课堂会话时间轴上的章节书签。
+/// <para>
+/// <see cref="Auto"/> 为 true 表示由时间轴规则自动生成；用户重命名后转为手动书签，不再被自动规则覆盖。
+/// <see cref="Kind"/> 记录来源（page / cleared / ppt / roster / timer / manual）。
+/// </para>
+/// </summary>
+public sealed class SessionBookmark
+{
+    public long TimeMs { get; set; }
+
+    public int PageIndex { get; set; }
+
+    public string Name { get; set; } = "";
+
+    public bool Auto { get; set; }
+
+    public string Kind { get; set; } = "";
+}
+
+/// <summary>一次完整的板书录制会话（v2 起带章节书签）。</summary>
+public sealed class ClassroomSession
+{
+    /// <summary>会话格式版本；v1 无此字段且无书签，加载时按默认值兼容。</summary>
+    public int Version { get; set; } = 2;
+
+    public string Id { get; set; }
+
+    public string Name { get; set; }
+
+    public DateTime CreatedAt { get; set; }
+
+    public List<TimelineEvent> Events { get; set; } = new();
+
+    public List<SessionCheckpoint> Checkpoints { get; set; } = new();
+
+    public List<SessionBookmark> Bookmarks { get; set; } = new();
+}

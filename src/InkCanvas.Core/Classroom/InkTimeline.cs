@@ -1,0 +1,668 @@
+using InkCanvas.Core.Ink;
+using System.Text.Json;
+
+namespace InkCanvas.Core.Classroom;
+
+/// <summary>
+/// 某一时刻的课堂场景快照：画板页、背景、PPT 幻灯片（含截图路径）、最近点名与倒计时剩余。
+/// <para><see cref="PptScreenshotPath"/> 为空表示该页没有可用截图，回放时应回退纯色背景。</para>
+/// </summary>
+public readonly record struct ClassroomScene(
+    int PageIndex, string Background, int PptSlideIndex, string RosterName, int TimerRemainingMs,
+    string PptScreenshotPath = "");
+
+/// <summary>
+/// <see cref="TimelineEventKind.PptSlideChanged"/> 的载荷解析结果。
+/// <para><see cref="IsValid"/> 为 false 表示载荷既不是 JSON 也不是旧版纯序号，调用方应忽略该事件。</para>
+/// </summary>
+public readonly record struct PptSlideChange(int SlideId, int Index, string Screenshot, bool IsValid);
+
+/// <summary>
+/// 从 <see cref="ClassroomSession"/> 的事件流重建任意时刻的笔画画面。
+/// <para>
+/// 纯逻辑、无 UI 依赖：<see cref="BuildFrame"/> 只读取事件（不修改会话），
+/// 从最近的 <see cref="SessionCheckpoint"/> 增量重放到目标时刻，并按当时的当前页过滤。
+/// </para>
+/// </summary>
+public sealed class InkTimeline
+{
+    public const int DefaultEventsPerCheckpoint = 200;
+    public const long DefaultCheckpointIntervalMs = 10_000;
+
+    private readonly ClassroomSession _session;
+    private readonly List<TimelineEvent> _events;
+    private readonly int _eventsPerCheckpoint = DefaultEventsPerCheckpoint;
+    private readonly long _checkpointIntervalMs = DefaultCheckpointIntervalMs;
+
+    // id -> 笔画记录（页码 + 添加顺序），由事件流增量构建。
+    private sealed class StrokeRecord
+    {
+        public InkStroke Stroke;
+        public int PageIndex;
+        public int Order;
+    }
+
+    private readonly Dictionary<string, StrokeRecord> _registry = new();
+    private int _registryIndex;
+
+    // 增量生成检查点的游标与状态。
+    private int _checkpointAppliedIndex;
+    private readonly HashSet<string> _checkpointAlive = new();
+    private long _checkpointLastTime = long.MinValue;
+
+    public InkTimeline(ClassroomSession session)
+        : this(session, DefaultEventsPerCheckpoint, DefaultCheckpointIntervalMs)
+    {
+    }
+
+    /// <summary>
+    /// 创建时间轴，并指定检查点策略：每 <paramref name="eventsPerCheckpoint"/> 个事件、
+    /// 或距上一检查点 <paramref name="checkpointIntervalMs"/> 毫秒时生成检查点。
+    /// </summary>
+    public InkTimeline(ClassroomSession session, int eventsPerCheckpoint, long checkpointIntervalMs)
+    {
+        _session = session ?? throw new ArgumentNullException(nameof(session));
+        _eventsPerCheckpoint = eventsPerCheckpoint > 0 ? eventsPerCheckpoint : DefaultEventsPerCheckpoint;
+        _checkpointIntervalMs = checkpointIntervalMs > 0 ? checkpointIntervalMs : DefaultCheckpointIntervalMs;
+        _events = session.Events ??= new List<TimelineEvent>();
+        _session.Bookmarks ??= new List<SessionBookmark>();
+        // 已带检查点的会话（例如从磁盘加载）直接沿用，避免重复生成。
+        if (_session.Checkpoints is { Count: > 0 })
+        {
+            _checkpointAppliedIndex = _events.Count;
+            _checkpointAlive = new HashSet<string>(_session.Checkpoints[^1].LiveStrokeIds ?? Array.Empty<string>());
+            for (int i = 0; i < _events.Count; i++) EnsureEventRegistered(_events[i], i);
+            _registryIndex = _events.Count;
+        }
+        else
+        {
+            _session.Checkpoints ??= new List<SessionCheckpoint>();
+        }
+    }
+
+    public ClassroomSession Session => _session;
+
+    /// <summary>录制总时长（毫秒），等于最后一个事件的时间。</summary>
+    public long Duration => _events.Count == 0 ? 0 : Math.Max(0, _events[^1].TimeMs);
+
+    /// <summary>目标时刻应显示的当前页笔画（按添加顺序）。</summary>
+    public IReadOnlyList<InkStroke> BuildFrame(long timeMs)
+    {
+        EnsureCheckpoints();
+        EnsureRegistry();
+
+        int cutoff = IndexAt(timeMs);
+        if (cutoff < 0) return Array.Empty<InkStroke>();
+
+        int page = PageAt(timeMs);
+        var checkpoint = NearestCheckpoint(timeMs);
+
+        HashSet<string> alive;
+        int start;
+        if (checkpoint is not null && checkpoint.EventIndex <= cutoff)
+        {
+            alive = new HashSet<string>(checkpoint.LiveStrokeIds ?? Array.Empty<string>());
+            start = checkpoint.EventIndex + 1;
+        }
+        else
+        {
+            alive = new HashSet<string>();
+            start = 0;
+        }
+
+        for (int i = start; i <= cutoff; i++) ApplyEvent(alive, _events[i]);
+
+        var result = new List<InkStroke>();
+        foreach (var id in alive)
+        {
+            if (_registry.TryGetValue(id, out var record) && record.PageIndex == page)
+                result.Add(record.Stroke);
+        }
+        result.Sort((a, b) => OrderOf(a).CompareTo(OrderOf(b)));
+        return result;
+    }
+
+    /// <summary>目标时刻所在的页码。</summary>
+    public int PageAt(long timeMs)
+    {
+        int cutoff = IndexAt(timeMs);
+        int page = _events.Count > 0 ? _events[0].PageIndex : 0;
+        for (int i = 0; i <= cutoff; i++)
+        {
+            if (_events[i].Kind == TimelineEventKind.PageChanged) page = _events[i].PageIndex;
+        }
+        return page;
+    }
+
+    /// <summary>目标时刻的背景枚举名（无信息时回退到第一个 BackgroundChanged，再回退 "Black"）。</summary>
+    public string BackgroundAt(long timeMs)
+    {
+        int cutoff = IndexAt(timeMs);
+        string background = null;
+        for (int i = 0; i <= cutoff; i++)
+        {
+            if (_events[i].Kind == TimelineEventKind.BackgroundChanged) background = _events[i].Payload;
+        }
+        if (background is null)
+        {
+            foreach (var e in _events)
+            {
+                if (e.Kind == TimelineEventKind.BackgroundChanged) { background = e.Payload; break; }
+            }
+        }
+        return background ?? "Black";
+    }
+
+    /// <summary>目标时刻的完整课堂场景：按事件顺序累积页 / 背景 / PPT 页 / 点名 / 倒计时剩余。</summary>
+    public ClassroomScene SceneAt(long timeMs)
+    {
+        int cutoff = IndexAt(timeMs);
+        int page = _events.Count > 0 ? _events[0].PageIndex : 0;
+        string background = null;
+        int pptSlide = 0;
+        string screenshot = "";
+        string roster = "";
+        int timer = 0;
+
+        for (int i = 0; i <= cutoff; i++)
+        {
+            var e = _events[i];
+            switch (e.Kind)
+            {
+                case TimelineEventKind.PageChanged:
+                    page = e.PageIndex;
+                    break;
+                case TimelineEventKind.BackgroundChanged:
+                    background = e.Payload;
+                    break;
+                case TimelineEventKind.PptSlideChanged:
+                    PptSlideChange change = DecodePptSlideChanged(e.Payload);
+                    if (!change.IsValid) break;
+                    if (change.Index > 0) pptSlide = change.Index;
+                    // 新页没有截图时显式清空，避免沿用上一页的图片。
+                    screenshot = change.Screenshot ?? "";
+                    break;
+                case TimelineEventKind.RosterDrawn:
+                    roster = e.Payload ?? roster;
+                    break;
+                case TimelineEventKind.TimerStarted:
+                case TimelineEventKind.TimerStopped:
+                    timer = Math.Max(0, ParseInt(e.Payload, timer));
+                    break;
+                case TimelineEventKind.TimerEnded:
+                    timer = 0;
+                    break;
+            }
+        }
+
+        if (background is null)
+        {
+            foreach (var e in _events)
+            {
+                if (e.Kind == TimelineEventKind.BackgroundChanged) { background = e.Payload; break; }
+            }
+        }
+
+        return new ClassroomScene(page, background ?? "Black", pptSlide, roster ?? "", timer, screenshot ?? "");
+    }
+
+    /// <summary>时间 &lt;= <paramref name="timeMs"/> 的最后一个事件索引；没有则返回 -1。</summary>
+    public int IndexAt(long timeMs)
+    {
+        int lo = 0, hi = _events.Count - 1, result = -1;
+        while (lo <= hi)
+        {
+            int mid = (lo + hi) / 2;
+            if (_events[mid].TimeMs <= timeMs) { result = mid; lo = mid + 1; }
+            else hi = mid - 1;
+        }
+        return result;
+    }
+
+    public long TimeAtEvent(int index)
+        => index >= 0 && index < _events.Count ? _events[index].TimeMs : 0;
+
+    // ---- 章节书签 ---------------------------------------------------------
+
+    private const long AutoBookmarkMergeWindowMs = 2_000;
+    private readonly HashSet<long> _suppressedAutoTimes = new();
+
+    /// <summary>
+    /// 按时间轴规则生成自动章节书签（不修改会话）：
+    /// 切页 / 清空 / PPT 翻页 / 点名 / 倒计时结束处生成，与前一个自动书签相距 &lt; 2s 时合并为一个。
+    /// </summary>
+    public IReadOnlyList<SessionBookmark> AutoBookmarks()
+    {
+        var result = new List<SessionBookmark>();
+        int pptSlide = 0;
+
+        foreach (var e in _events)
+        {
+            string name;
+            string kind;
+            switch (e.Kind)
+            {
+                case TimelineEventKind.PageChanged:
+                    name = $"第 {e.PageIndex + 1} 页";
+                    kind = "page";
+                    break;
+                case TimelineEventKind.Cleared:
+                    name = $"清空第 {e.PageIndex + 1} 页";
+                    kind = "cleared";
+                    break;
+                case TimelineEventKind.PptSlideChanged:
+                    PptSlideChange change = DecodePptSlideChanged(e.Payload);
+                    if (change.IsValid && change.Index > 0) pptSlide = change.Index;
+                    name = pptSlide > 0 ? $"PPT 第 {pptSlide} 页" : "PPT 翻页";
+                    kind = "ppt";
+                    break;
+                case TimelineEventKind.RosterDrawn:
+                    name = string.IsNullOrWhiteSpace(e.Payload) ? "点名" : $"点名：{e.Payload}";
+                    kind = "roster";
+                    break;
+                case TimelineEventKind.TimerEnded:
+                    name = "倒计时结束";
+                    kind = "timer";
+                    break;
+                default:
+                    continue;
+            }
+
+            if (_suppressedAutoTimes.Contains(e.TimeMs)) continue;
+
+            if (result.Count > 0 && e.TimeMs >= result[^1].TimeMs
+                && e.TimeMs - result[^1].TimeMs < AutoBookmarkMergeWindowMs)
+            {
+                // 合并到上一书签：保留首个事件的时间，采用最新事件的名称与页码。
+                result[^1].Name = name;
+                result[^1].PageIndex = e.PageIndex;
+                result[^1].Kind = kind;
+                continue;
+            }
+
+            result.Add(new SessionBookmark
+            {
+                TimeMs = e.TimeMs,
+                PageIndex = e.PageIndex,
+                Name = name,
+                Auto = true,
+                Kind = kind,
+            });
+        }
+
+        return result;
+    }
+
+    /// <summary>把自动书签同步进 <see cref="ClassroomSession.Bookmarks"/>，保留用户手动书签。</summary>
+    public void ApplyAutoBookmarks()
+    {
+        var list = _session.Bookmarks ??= new List<SessionBookmark>();
+        var manual = list.Where(b => b is not null && !b.Auto).ToList();
+        var auto = AutoBookmarks();
+        var manualTimes = new HashSet<long>(manual.Select(b => b.TimeMs));
+
+        list.Clear();
+        list.AddRange(manual);
+        foreach (var bookmark in auto)
+        {
+            // 用户已在该时刻保留自定义书签时，不再生成同位的自动书签。
+            if (!manualTimes.Contains(bookmark.TimeMs)) list.Add(bookmark);
+        }
+        list.Sort((a, b) => a.TimeMs.CompareTo(b.TimeMs));
+
+        if (_session.Version < 2) _session.Version = 2;
+    }
+
+    /// <summary>插入一个书签（按时间排序），返回其索引。</summary>
+    public int AddBookmark(long timeMs, string name, string kind = "manual", bool auto = false)
+    {
+        var list = _session.Bookmarks ??= new List<SessionBookmark>();
+        timeMs = Math.Max(0, timeMs);
+        var bookmark = new SessionBookmark
+        {
+            TimeMs = timeMs,
+            PageIndex = PageAt(timeMs),
+            Name = name ?? "",
+            Auto = auto,
+            Kind = kind ?? "",
+        };
+
+        int index = list.FindIndex(b => b is not null && b.TimeMs > timeMs);
+        if (index < 0)
+        {
+            list.Add(bookmark);
+            return list.Count - 1;
+        }
+        list.Insert(index, bookmark);
+        return index;
+    }
+
+    /// <summary>重命名书签。用户重命名后该条转为手动书签，不再被自动规则覆盖。</summary>
+    public bool RenameBookmark(int index, string name)
+    {
+        var list = _session.Bookmarks;
+        if (list is null || index < 0 || index >= list.Count) return false;
+        if (string.IsNullOrWhiteSpace(name)) return false;
+
+        list[index].Name = name.Trim();
+        list[index].Auto = false;
+        list[index].Kind = "manual";
+        return true;
+    }
+
+    /// <summary>删除书签；删除自动书签后它会保持隐藏，直到时间轴重建。</summary>
+    public bool RemoveBookmark(int index)
+    {
+        var list = _session.Bookmarks;
+        if (list is null || index < 0 || index >= list.Count) return false;
+
+        var bookmark = list[index];
+        list.RemoveAt(index);
+        if (bookmark.Auto) _suppressedAutoTimes.Add(bookmark.TimeMs);
+        return true;
+    }
+
+    private static int ParseInt(string value, int fallback)
+        => int.TryParse(value, out int parsed) ? parsed : fallback;
+
+    // ---- PPT 翻页载荷 -----------------------------------------------------
+
+    /// <summary>
+    /// 构造 <see cref="TimelineEventKind.PptSlideChanged"/> 的载荷：
+    /// <c>{"slideId":123,"index":3,"screenshot":"C:\\...\\slide.png"}</c>，键统一 camelCase。
+    /// <paramref name="screenshot"/> 为空表示该页没有可用截图。
+    /// </summary>
+    public static string EncodePptSlideChanged(int slideId, int index, string screenshot)
+    {
+        try
+        {
+            return JsonSerializer.Serialize(new PptSlideChangedDto
+            {
+                slideId = slideId,
+                index = index,
+                screenshot = screenshot ?? "",
+            });
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 解析 <see cref="TimelineEventKind.PptSlideChanged"/> 载荷，兼容旧版纯序号（如 <c>"3"</c>）。
+    /// 无法识别时返回 <see cref="PptSlideChange.IsValid"/> 为 false 的结果。
+    /// </summary>
+    public static PptSlideChange DecodePptSlideChanged(string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload)) return new PptSlideChange(0, 0, "", false);
+        string trimmed = payload.Trim();
+
+        if (int.TryParse(trimmed, out int legacyIndex))
+            return new PptSlideChange(0, legacyIndex, "", true);
+
+        try
+        {
+            using var document = JsonDocument.Parse(trimmed);
+            JsonElement root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return new PptSlideChange(0, 0, "", false);
+
+            int slideId = ReadInt(root, "slideId", "SlideId");
+            int index = ReadInt(root, "index", "Index");
+            string screenshot = ReadString(root, "screenshot", "Screenshot") ?? "";
+            return new PptSlideChange(slideId, index, screenshot, true);
+        }
+        catch
+        {
+            return new PptSlideChange(0, 0, "", false);
+        }
+    }
+
+    private sealed class PptSlideChangedDto
+    {
+        public int slideId { get; set; }
+        public int index { get; set; }
+        public string screenshot { get; set; } = "";
+    }
+
+    private static int ReadInt(JsonElement root, params string[] names)
+    {
+        foreach (string name in names)
+        {
+            if (!root.TryGetProperty(name, out JsonElement value)) continue;
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out int number))
+                return number;
+            if (value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), out int parsed))
+                return parsed;
+        }
+        return 0;
+    }
+
+    private static string ReadString(JsonElement root, params string[] names)
+    {
+        foreach (string name in names)
+        {
+            if (!root.TryGetProperty(name, out JsonElement value)) continue;
+            if (value.ValueKind == JsonValueKind.String) return value.GetString();
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// 距离 <paramref name="timeMs"/> 最近且事件索引不超过目标时刻的检查点；没有则返回 null。
+    /// <para>
+    /// 时间相同的多个事件可能落在同一毫秒，因此同时用 <see cref="InkTimeline.IndexAt"/> 过滤
+    /// <see cref="SessionCheckpoint.EventIndex"/>，避免检查点越过目标时刻（否则会重放多余事件）。
+    /// </para>
+    /// </summary>
+    public SessionCheckpoint NearestCheckpoint(long timeMs)
+    {
+        int cutoff = IndexAt(timeMs);
+        if (cutoff < 0) return null;
+
+        SessionCheckpoint best = null;
+        foreach (var cp in _session.Checkpoints)
+        {
+            if (cp is null || cp.EventIndex > cutoff || cp.TimeMs > timeMs) continue;
+            if (best is null || cp.TimeMs > best.TimeMs
+                || (cp.TimeMs == best.TimeMs && cp.EventIndex > best.EventIndex))
+                best = cp;
+        }
+        return best;
+    }
+
+    /// <summary>在目标时刻生成一个检查点并返回它。</summary>
+    public SessionCheckpoint AddCheckpoint(long timeMs)
+    {
+        EnsureRegistry();
+        int cutoff = IndexAt(timeMs);
+        var alive = new HashSet<string>();
+        for (int i = 0; i <= cutoff; i++) ApplyEvent(alive, _events[i]);
+        var checkpoint = new SessionCheckpoint
+        {
+            TimeMs = cutoff < 0 ? 0 : _events[cutoff].TimeMs,
+            EventIndex = cutoff,
+            PageIndex = PageAt(timeMs),
+            Background = BackgroundAt(timeMs),
+            LiveStrokeIds = alive.ToList(),
+        };
+        _session.Checkpoints.Add(checkpoint);
+        // 同步增量游标，后续 EnsureCheckpoints 从该检查点继续。
+        _checkpointAppliedIndex = cutoff + 1;
+        _checkpointAlive.Clear();
+        foreach (var id in alive) _checkpointAlive.Add(id);
+        _checkpointLastTime = checkpoint.TimeMs;
+        return checkpoint;
+    }
+
+    /// <summary>追加一个现成的检查点。</summary>
+    public void AddCheckpoint(SessionCheckpoint checkpoint)
+    {
+        if (checkpoint is null) return;
+        _session.Checkpoints ??= new List<SessionCheckpoint>();
+        _session.Checkpoints.Add(checkpoint);
+    }
+
+    // ---- 事件应用 ---------------------------------------------------------
+
+    private void ApplyEvent(HashSet<string> alive, TimelineEvent e)
+    {
+        switch (e.Kind)
+        {
+            case TimelineEventKind.StrokeAdded:
+                if (!string.IsNullOrEmpty(e.StrokeId)) alive.Add(e.StrokeId);
+                break;
+
+            case TimelineEventKind.StrokesRemoved:
+                foreach (var id in e.StrokeIds ?? Array.Empty<string>()) alive.Remove(id);
+                break;
+
+            case TimelineEventKind.Cleared:
+                foreach (var id in alive.ToList())
+                {
+                    if (_registry.TryGetValue(id, out var rec) && rec.PageIndex == e.PageIndex)
+                        alive.Remove(id);
+                }
+                break;
+
+            case TimelineEventKind.Undo:
+            case TimelineEventKind.Redo:
+                foreach (var id in e.StrokeIds ?? Array.Empty<string>()) alive.Remove(id);
+                foreach (var id in DecodeAddedIds(e.Payload)) alive.Add(id);
+                break;
+        }
+    }
+
+    private void EnsureRegistry()
+    {
+        while (_registryIndex < _events.Count)
+        {
+            EnsureEventRegistered(_events[_registryIndex], _registryIndex);
+            _registryIndex++;
+        }
+    }
+
+    private void EnsureEventRegistered(TimelineEvent e, int index)
+    {
+        if (e is null) return;
+        if (e.Kind == TimelineEventKind.StrokeAdded && !string.IsNullOrEmpty(e.StrokeId))
+        {
+            if (_registry.ContainsKey(e.StrokeId)) return;
+            var stroke = StrokeJsonCodec.Deserialize(e.StrokeJson);
+            if (stroke is not null)
+                _registry[e.StrokeId] = new StrokeRecord { Stroke = stroke, PageIndex = e.PageIndex, Order = index };
+        }
+        else if (e.Kind is TimelineEventKind.Undo or TimelineEventKind.Redo)
+        {
+            foreach (var (id, json) in DecodeAddedStrokes(e.Payload))
+            {
+                if (string.IsNullOrEmpty(id) || _registry.ContainsKey(id)) continue;
+                // 撤销/重做重新出现的笔画：若其原始 StrokeAdded 未登记（如形状识别替换），
+                // 这里用事件携带的 JSON 补登记，保证回放完整。
+                if (string.IsNullOrEmpty(json)) continue;
+                var stroke = StrokeJsonCodec.Deserialize(json);
+                if (stroke is not null)
+                    _registry[id] = new StrokeRecord { Stroke = stroke, PageIndex = e.PageIndex, Order = index };
+            }
+        }
+    }
+
+    private void EnsureCheckpoints()
+    {
+        // 事件可能新增，先保证 registry 已覆盖，Cleared 应用时能查到页码。
+        EnsureRegistry();
+        while (_checkpointAppliedIndex < _events.Count)
+        {
+            int index = _checkpointAppliedIndex;
+            ApplyEvent(_checkpointAlive, _events[index]);
+            _checkpointAppliedIndex++;
+
+            long time = _events[index].TimeMs;
+            if (_checkpointLastTime == long.MinValue) _checkpointLastTime = time;
+
+            int sinceLast = _session.Checkpoints.Count == 0
+                ? _checkpointAppliedIndex
+                : _checkpointAppliedIndex - (LastCheckpointEventIndex() + 1);
+
+            bool byCount = sinceLast >= _eventsPerCheckpoint;
+            bool byTime = time - _checkpointLastTime >= _checkpointIntervalMs;
+            if (byCount || byTime)
+            {
+                _session.Checkpoints.Add(new SessionCheckpoint
+                {
+                    TimeMs = time,
+                    EventIndex = index,
+                    PageIndex = PageAt(time),
+                    Background = BackgroundAt(time),
+                    LiveStrokeIds = _checkpointAlive.ToList(),
+                });
+                _checkpointLastTime = time;
+            }
+        }
+    }
+
+    private int LastCheckpointEventIndex()
+        => _session.Checkpoints.Count == 0 ? -1 : _session.Checkpoints[^1].EventIndex;
+
+    private int OrderOf(InkStroke stroke)
+    {
+        foreach (var record in _registry.Values)
+            if (ReferenceEquals(record.Stroke, stroke)) return record.Order;
+        return int.MaxValue;
+    }
+
+    // ---- Undo/Redo 载荷（重新出现的笔画）-------------------------------
+
+    private sealed class AddedStrokeDto
+    {
+        public string Id { get; set; }
+        public string Json { get; set; }
+    }
+
+    /// <summary>把重新出现的笔画（含数据）编码为 Undo/Redo 的 <see cref="TimelineEvent.Payload"/>。</summary>
+    public static string EncodeAddedStrokes(IEnumerable<InkStroke> strokes)
+    {
+        if (strokes is null) return null;
+        var dto = strokes.Select(s => new AddedStrokeDto { Id = s.Id.ToString(), Json = StrokeJsonCodec.Serialize(s) }).ToArray();
+        return JsonSerializer.Serialize(dto);
+    }
+
+    /// <summary>仅编码 id 列表（调用方保证这些笔画已有 StrokeAdded 记录）。</summary>
+    public static string EncodeAddedIds(IEnumerable<string> ids)
+        => ids is null ? null : JsonSerializer.Serialize(ids.ToArray());
+
+    /// <summary>解析 Undo/Redo 载荷。兼容纯 id 字符串数组与 {id,json} 对象数组。</summary>
+    public static IReadOnlyList<(string Id, string Json)> DecodeAddedStrokes(string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload)) return Array.Empty<(string, string)>();
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            if (document.RootElement.ValueKind != JsonValueKind.Array) return Array.Empty<(string, string)>();
+            var result = new List<(string, string)>();
+            foreach (var element in document.RootElement.EnumerateArray())
+            {
+                if (element.ValueKind == JsonValueKind.String)
+                {
+                    result.Add((element.GetString(), null));
+                }
+                else if (element.ValueKind == JsonValueKind.Object)
+                {
+                    string id = element.TryGetProperty("Id", out var idProp) ? idProp.GetString()
+                        : element.TryGetProperty("id", out var idProp2) ? idProp2.GetString() : null;
+                    string json = element.TryGetProperty("Json", out var jsonProp) ? jsonProp.GetString()
+                        : element.TryGetProperty("json", out var jsonProp2) ? jsonProp2.GetString() : null;
+                    if (!string.IsNullOrEmpty(id)) result.Add((id, json));
+                }
+            }
+            return result;
+        }
+        catch
+        {
+            return Array.Empty<(string, string)>();
+        }
+    }
+
+    public static IReadOnlyList<string> DecodeAddedIds(string payload)
+        => DecodeAddedStrokes(payload).Select(x => x.Id).ToList();
+}
