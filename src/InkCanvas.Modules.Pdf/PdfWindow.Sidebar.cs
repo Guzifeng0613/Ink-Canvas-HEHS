@@ -20,7 +20,13 @@ public sealed partial class PdfWindow
     private readonly CancellationTokenSource _thumbnailCancellation = new();
     private IReadOnlyList<PdfSearchHit> _hits = Array.Empty<PdfSearchHit>();
     private readonly TextBlock _searchCount = new() { Text = "输入文字后搜索", VerticalAlignment = VerticalAlignment.Center,
-        TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 2, TextWrapping = TextWrapping.Wrap };
+        TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1 };
+    private readonly SegmentedSelector _navigation = new(new[] { "页面", "目录", "搜索" }) { Margin = new Thickness(8, 0, 8, 8) };
+    private readonly TextBlock _navigationEmpty = new() { Margin = new Thickness(20), TextWrapping = TextWrapping.Wrap,
+        HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
+    private readonly Grid _searchNavigation = new() { Margin = new Thickness(8, 4, 8, 8) };
+    private TouchIconButton _previousSearch, _nextSearch;
+    private double _thumbnailScale;
     private readonly Dictionary<int, ThumbnailItem> _realizedThumbnails = new();
     private bool _sidebarUserSet;
     private TouchIconButton _sidebarToggle;
@@ -30,10 +36,12 @@ public sealed partial class PdfWindow
     public int SearchResultCount => _hits.Count;
     public int RealizedThumbnailCount => _realizedThumbnails.Values.Count(item => item.Preview is not null);
 
-    private sealed class ThumbnailItem(int index) : INotifyPropertyChanged
+    private sealed class ThumbnailItem(int index, PdfPageGeometry geometry, double scale) : INotifyPropertyChanged
     {
         public int Index => index;
         public string Title => "第 " + (index + 1) + " 页";
+        public double Width => geometry.DipWidth * scale;
+        public double Height => geometry.DipHeight * scale;
         public CancellationTokenSource Cancellation;
         private ImageSource _preview;
         public ImageSource Preview
@@ -44,7 +52,7 @@ public sealed partial class PdfWindow
         public event PropertyChangedEventHandler PropertyChanged;
     }
 
-    private StackPanel CreateSidebarHeader()
+    private Grid CreateSidebarHeader()
     {
         var header = new Grid { Margin = new Thickness(12, 4, 4, 0) };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -53,19 +61,20 @@ public sealed partial class PdfWindow
         var collapse = Command("收起", "\uE76B", () => SetSidebarOpen(false));
         AutomationProperties.SetName(collapse, "收起 PDF 侧栏");
         Grid.SetColumn(collapse, 1); header.Children.Add(collapse);
-        var panel = new StackPanel();
-        panel.Children.Add(header); panel.Children.Add(_search);
-        return panel;
+        return header;
     }
 
     private void ConfigureSidebar()
     {
-        _pages.ItemsSource = Enumerable.Range(0, _file.Pages.Count).Select(index => new ThumbnailItem(index)).ToArray();
+        // One document scale preserves both page aspect and relative physical page sizes.
+        // Page-local annotation extents do not participate in thumbnail sizing.
+        _thumbnailScale = Math.Min(176 / _layout.Width, 216 / _file.Pages.Max(page => page.DipHeight));
+        _pages.ItemsSource = Enumerable.Range(0, _file.Pages.Count).Select(index => new ThumbnailItem(index, _file.Pages[index], _thumbnailScale)).ToArray();
         _pages.ItemTemplate = (DataTemplate)XamlReader.Load("""
             <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
-                <StackPanel Width="164" Spacing="6" Margin="4,8">
-                    <Border Height="148" Background="White" BorderBrush="#FFD0D0D0" BorderThickness="1">
-                        <Image Source="{Binding Preview}" Stretch="Uniform" />
+                <StackPanel Width="190" Spacing="8" Margin="0,10" UseLayoutRounding="False">
+                    <Border HorizontalAlignment="Center" Background="White" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" UseLayoutRounding="False">
+                        <Image Width="{Binding Width}" Height="{Binding Height}" Source="{Binding Preview}" Stretch="Fill" UseLayoutRounding="False" />
                     </Border>
                     <TextBlock Text="{Binding Title}" HorizontalAlignment="Center" />
                 </StackPanel>
@@ -83,27 +92,67 @@ public sealed partial class PdfWindow
                 _ = LoadThumbnailAsync(item);
             }
         };
-        _sidebar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        var searchRow = new Grid { Margin = new Thickness(8, 0, 8, 4) };
-        searchRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        searchRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        searchRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        searchRow.Children.Add(_searchCount);
-        var previous = new Button { Content = "↑", MinWidth = 40, MinHeight = 44, Padding = new Thickness(4) };
-        var next = new Button { Content = "↓", MinWidth = 40, MinHeight = 44, Padding = new Thickness(4) };
-        AutomationProperties.SetName(previous, "上一个搜索结果"); AutomationProperties.SetName(next, "下一个搜索结果");
-        ToolTipService.SetToolTip(previous, "上一个结果 (Shift+F3)"); ToolTipService.SetToolTip(next, "下一个结果 (F3)");
-        previous.Click += (_, _) => NextSearchResult(-1); next.Click += (_, _) => NextSearchResult(1);
-        Grid.SetColumn(previous, 1); Grid.SetColumn(next, 2); searchRow.Children.Add(previous); searchRow.Children.Add(next);
-        Grid.SetRow(searchRow, 3); _sidebar.Children.Add(searchRow);
+        for (int row = 0; row < 5; row++) _sidebar.RowDefinitions.Add(new() { Height = row == 3 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
+        _sidebar.Children.Add(CreateSidebarHeader());
+        Grid.SetRow(_navigation, 1); _sidebar.Children.Add(_navigation);
+        Grid.SetRow(_search, 2); _sidebar.Children.Add(_search);
+        _searchNavigation.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+        _searchNavigation.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        _searchNavigation.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        _searchNavigation.Children.Add(_searchCount);
+        _previousSearch = Command("上一个结果", "\uE70E", () => NextSearchResult(-1));
+        _nextSearch = Command("下一个结果", "\uE70D", () => NextSearchResult(1));
+        foreach (var button in new[] { _previousSearch, _nextSearch })
+        { button.ShowLabel = false; button.MinWidth = button.Width = 40; button.MinHeight = button.Height = 40; }
+        AutomationProperties.SetName(_previousSearch, "上一个搜索结果"); AutomationProperties.SetName(_nextSearch, "下一个搜索结果");
+        ToolTipService.SetToolTip(_previousSearch, "上一个结果 (Shift+F3)"); ToolTipService.SetToolTip(_nextSearch, "下一个结果 (F3)");
+        Grid.SetColumn(_previousSearch, 1); Grid.SetColumn(_nextSearch, 2);
+        _searchNavigation.Children.Add(_previousSearch); _searchNavigation.Children.Add(_nextSearch);
+        Grid.SetRow(_searchNavigation, 4); _sidebar.Children.Add(_searchNavigation);
+        foreach (var content in new FrameworkElement[] { _pages, _bookmarks, _searchResults, _navigationEmpty })
+        { Grid.SetRow(content, 3); _sidebar.Children.Add(content); }
+        _pages.Margin = _bookmarks.Margin = _searchResults.Margin = new Thickness(4, 0, 4, 0);
+        _pages.ItemContainerStyle = new Style(typeof(ListViewItem));
+        _pages.ItemContainerStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Center));
+        _pages.ItemContainerStyle.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(4)));
         _searchResults.ItemTemplate = (DataTemplate)XamlReader.Load("""
             <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
                 <TextBlock Text="{Binding}" TextWrapping="Wrap" MaxLines="5" Margin="4,8" />
             </DataTemplate>
             """);
         _root.SizeChanged += (_, _) => UpdateSidebarLayout();
+        AutomationProperties.SetName(_navigation, "PDF 导航视图");
+        AutomationProperties.SetName(_navigationEmpty, "PDF 导航空状态");
+        AutomationProperties.SetName(_searchCount, "PDF 搜索匹配计数");
+        _navigation.SelectionChanged += UpdateSidebarView;
+        _navigation.SelectedIndex = 0;
+        UpdateSearchNavigation();
         _split.PaneClosed += (_, _) => { _sidebarToggle.IsSelected = false; SuspendThumbnails(); };
         _split.PaneOpened += (_, _) => { _sidebarToggle.IsSelected = true; RefreshThumbnails(); };
+    }
+
+    private void UpdateSidebarView()
+    {
+        if (_closed) return;
+        int selected = _navigation.SelectedIndex;
+        _pages.Visibility = selected == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _bookmarks.Visibility = selected == 1 && _file.Bookmarks.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        _search.Visibility = _searchNavigation.Visibility = selected == 2 ? Visibility.Visible : Visibility.Collapsed;
+        _searchResults.Visibility = selected == 2 && _hits.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        _navigationEmpty.Text = selected == 1 ? "此 PDF 没有目录书签" : _searching ? "正在搜索…"
+            : string.IsNullOrWhiteSpace(_search.Text) ? "输入文字后搜索文档" : "没有匹配结果";
+        _navigationEmpty.Visibility = selected == 1 && _file.Bookmarks.Count == 0 || selected == 2 && _hits.Count == 0
+            ? Visibility.Visible : Visibility.Collapsed;
+        if (selected == 0) RefreshThumbnails();
+    }
+
+    private void UpdateSearchNavigation()
+    {
+        if (_closed) return;
+        _previousSearch.IsEnabled = _nextSearch.IsEnabled = !_searching && _hits.Count > 0;
+        _searchCount.Text = _searching ? "搜索中…" : _hits.Count > 0 ? (_searchIndex + 1) + " / " + _hits.Count
+            : string.IsNullOrWhiteSpace(_search.Text) ? "输入关键词" : "无匹配结果";
+        UpdateSidebarView();
     }
 
     public void SetSidebarOpen(bool open)
@@ -135,13 +184,13 @@ public sealed partial class PdfWindow
 
     private void RefreshThumbnails()
     {
-        if (!_split.IsPaneOpen || !_idleResources.IsActive) return;
+        if (!_split.IsPaneOpen || _idleResources?.IsActive != true) return;
         foreach (var item in _realizedThumbnails.Values) _ = LoadThumbnailAsync(item);
     }
 
     private async Task LoadThumbnailAsync(ThumbnailItem item)
     {
-        if (_closed || !_split.IsPaneOpen || !_idleResources.IsActive) return;
+        if (_closed || !_split.IsPaneOpen || _idleResources?.IsActive != true) return;
         item.Cancellation?.Cancel();
         var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_thumbnailCancellation.Token);
         item.Cancellation = cancellation;
@@ -149,7 +198,7 @@ public sealed partial class PdfWindow
         {
             await Task.Delay(80, cancellation.Token);
             var geometry = _file.Pages[item.Index];
-            double scale = Math.Min(160 / geometry.DipWidth, 148 / geometry.DipHeight);
+            double scale = _thumbnailScale;
             var bytes = await _rasterizer.RenderAsync(item.Index, geometry, new(0, 0, geometry.DipWidth, geometry.DipHeight), scale, cancellation.Token);
             cancellation.Token.ThrowIfCancellationRequested();
             var strokes = _controllers.TryGetValue(item.Index, out var controller) ? controller.Document.Strokes : _file.GetInk(item.Index);
@@ -173,7 +222,7 @@ public sealed partial class PdfWindow
                 writer.WriteBytes(bytes); await writer.StoreAsync().AsTask(cancellation.Token); writer.DetachStream();
             }
             stream.Seek(0);
-            var image = new BitmapImage { DecodePixelWidth = 160 };
+            var image = new BitmapImage();
             await image.SetSourceAsync(stream).AsTask(cancellation.Token);
             if (!_closed && !cancellation.IsCancellationRequested) item.Preview = image;
         }
@@ -189,18 +238,19 @@ public sealed partial class PdfWindow
     private void OpenSearch()
     {
         SetSidebarOpen(true);
+        _navigation.SelectedIndex = 2;
+        UpdateSidebarView();
         _search.Focus(FocusState.Programmatic);
-        _searchResults.Visibility = _hits.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        if (_hits.Count > 0) _pages.Visibility = _bookmarks.Visibility = Visibility.Collapsed;
     }
 
     private void ClearSearch()
     {
         _searchCancellation?.Cancel();
+        _searching = false;
         _hits = Array.Empty<PdfSearchHit>(); _searchIndex = -1;
         _searchResults.ItemsSource = null;
-        _searchCount.Text = "输入文字后搜索";
-        _searchResults.Visibility = _bookmarks.Visibility = Visibility.Collapsed; _pages.Visibility = Visibility.Visible;
+        _statusMessage = null;
+        UpdateSearchNavigation(); UpdateStatusBar();
         _paper.Invalidate();
     }
 
@@ -226,7 +276,7 @@ public sealed partial class PdfWindow
             _fitMode = FitMode.Free;
             Controller.NotifyElementsChanged();
         }
-        _searchCount.Text = (_searchIndex + 1) + " / " + _hits.Count;
+        UpdateSearchNavigation();
         _paper.Invalidate();
     }
 

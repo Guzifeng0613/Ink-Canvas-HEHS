@@ -30,8 +30,8 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
     private readonly PdfAnnotationFile _file;
     private readonly PdfRasterizer _rasterizer;
     private readonly Dictionary<int, InkController> _controllers = new();
-    private readonly Grid _root = new(), _viewport = new();
-    private readonly SplitView _split = new() { DisplayMode = SplitViewDisplayMode.Inline, IsPaneOpen = true, OpenPaneLength = 220 };
+    private readonly Grid _root = new(), _viewport = new(), _commandHost = new();
+    private readonly SplitView _split = new() { DisplayMode = SplitViewDisplayMode.Inline, IsPaneOpen = true, OpenPaneLength = 240 };
     private readonly Grid _sidebar = new();
     private readonly List<TouchIconButton> _commandButtons = new();
     private readonly CanvasControl _paper = new() { IsHitTestVisible = false, ClearColor = Microsoft.UI.Colors.Transparent };
@@ -43,7 +43,6 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
     private readonly NumberBox _pageNumber = new() { Minimum = 1, Value = 1, Width = 112, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact, SmallChange = 1 };
     private readonly TextBlock _pageCount = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 12, 0) };
     private readonly TextBlock _zoom = new() { Width = 68, VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center };
-    private readonly TextBlock _status = new() { Margin = new Thickness(12, 4, 12, 6), TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly ListView _pages = new() { SelectionMode = ListViewSelectionMode.Single };
     private readonly ListView _searchResults = new() { SelectionMode = ListViewSelectionMode.Single, Visibility = Visibility.Collapsed };
     private readonly ListView _bookmarks = new() { SelectionMode = ListViewSelectionMode.Single, Visibility = Visibility.Collapsed };
@@ -103,30 +102,14 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
         commands.Children.Add(Command("导入画板", "\uE8B5", async () => await import()));
         var commandScroll = new ScrollViewer { Content = commands, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
             VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollMode = ScrollMode.Enabled };
-        var commandHost = new Grid();
-        commandHost.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        commandHost.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        commandHost.Children.Add(_sidebarToggle);
-        Grid.SetColumn(commandScroll, 1); commandHost.Children.Add(commandScroll);
-        _root.Children.Add(commandHost);
+        _commandHost.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        _commandHost.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        _commandHost.Children.Add(_sidebarToggle);
+        Grid.SetColumn(commandScroll, 1); _commandHost.Children.Add(commandScroll);
+        _root.Children.Add(_commandHost);
         Grid.SetRow(_split, 1); _root.Children.Add(_split);
-        _sidebar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        _sidebar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        _sidebar.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        _sidebar.Children.Add(CreateSidebarHeader());
         ConfigureSidebar();
         _pages.SelectedIndex = 0;
-        var tabs = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
-        tabs.Children.Add(Command("预览", "\uE8A5", () => { _pages.Visibility = Visibility.Visible; _bookmarks.Visibility = _searchResults.Visibility = Visibility.Collapsed; }));
-        tabs.Children.Add(Command("目录", "\uE8A4", () =>
-        {
-            _bookmarks.Visibility = Visibility.Visible; _pages.Visibility = _searchResults.Visibility = Visibility.Collapsed;
-            if (_file.Bookmarks.Count == 0) SetStatus("此 PDF 没有目录书签");
-        }));
-        Grid.SetRow(tabs, 1); _sidebar.Children.Add(tabs);
-        Grid.SetRow(_pages, 2); _sidebar.Children.Add(_pages);
-        Grid.SetRow(_searchResults, 2); _sidebar.Children.Add(_searchResults);
-        Grid.SetRow(_bookmarks, 2); _sidebar.Children.Add(_bookmarks);
         _bookmarks.ItemsSource = file.Bookmarks.Select(bookmark => new BookmarkItem(bookmark)).ToArray();
         _bookmarks.SelectionChanged += (_, _) => { if (_bookmarks.SelectedItem is BookmarkItem item) GoToPage(item.Bookmark.PageIndex); };
         _split.Pane = _sidebar;
@@ -147,10 +130,10 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
         _selectionBorder.Child = _selection; _selectionHost.Children.Add(_selectionBorder);
         _selection.LayoutChanged += QueueSelection;
         _selectionBorder.SizeChanged += (_, _) => QueueSelection();
-        Grid.SetRow(_status, 2); _root.Children.Add(_status);
+        ConfigureStatusBar();
         Content = _root;
         _host.ConfigureWindow(this);
-        WindowFrame.Attach(this, _root);
+        WindowFrame.Attach(this, _root).UseMica();
         if (AppWindow.Presenter is OverlappedPresenter presenter) presenter.IsAlwaysOnTop = false;
         InkCanvas.Platform.Interop.NativeMethods.SetWindowPos(WinRT.Interop.WindowNative.GetWindowHandle(this),
             InkCanvas.Platform.Interop.NativeMethods.HWND_NOTOPMOST, 0, 0, 0, 0,
@@ -206,7 +189,6 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
         _pageNumber.Maximum = file.Pages.Count; _pageCount.Text = "/ " + file.Pages.Count;
         GoToPage(0);
         UpdateTitle();
-        SetStatus(file.ReadOnly ? "此文件只允许查看" : file.HasSignatures ? "含数字签名，批注请另存为副本" : "使用主工具栏批注 · 双指平移和缩放 · 阅读模式支持单指拖动");
         if (file.UnrecognizedInkPages > 0) SetStatus("部分旧墨迹数据无法编辑，原批注外观已保留");
     }
 
@@ -293,6 +275,7 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
             if (preserveView) { next.ViewTransform = _layout.PageView(index, documentView); OnInvalidated(); }
             else if (_viewHasLayout) Fit(_fitMode == FitMode.Free ? FitMode.Page : _fitMode);
             ControllerChanged?.Invoke(); QueueSelection(); _paper.Invalidate();
+            UpdateStatusBar();
             UpdateScrollbar();
             QueuePageRendering();
             _pages.ScrollIntoView(_pages.SelectedItem);
@@ -308,11 +291,12 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
     {
         StopScrollMotion();
         if (_file.ReadOnly && Controller.Tool != InkTool.Pan) Controller.Tool = InkTool.Pan;
+        UpdateStatusBar();
         QueueSelection();
     }
     private void OnInkChanged(int index)
     {
-        _version++; UpdateTitle();
+        _version++; _statusMessage = null; UpdateTitle();
         UpdateInkBounds(index);
         _paper.Invalidate();
         if (_realizedThumbnails.TryGetValue(index, out var item)) _ = LoadThumbnailAsync(item);
@@ -321,8 +305,8 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
     {
         Title = (IsDirty ? "● " : "") + Path.GetFileName(_targetPath) + " — Ink Canvas PDF";
         (Content as WindowFrame)?.RefreshTitle();
+        UpdateStatusBar();
     }
-    private void SetStatus(string text) { if (!_closed) _status.Text = text; }
 
     private void OnInvalidated()
     {
@@ -489,20 +473,26 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
             query = query?.Trim();
             if (string.IsNullOrEmpty(query)) { _search.Text = ""; ClearSearch(); return; }
             _search.Text = query;
-            SetStatus("正在搜索文字…");
+            _searching = true; UpdateSearchNavigation(); UpdateStatusBar();
             var hits = await _file.SearchAsync(query, cancellation.Token);
             if (_closed || cancellation.IsCancellationRequested) return;
             _hits = hits;
             _searchResults.ItemsSource = hits.Select(hit => new SearchItem(hit)).ToArray();
             SetSidebarOpen(true);
+            _navigation.SelectedIndex = 2;
             if (hits.Count > 0) _searchResults.SelectedIndex = 0;
             _paper.Invalidate();
-            _searchResults.Visibility = Visibility.Visible; _pages.Visibility = _bookmarks.Visibility = Visibility.Collapsed;
+            UpdateSidebarView();
             if (hits.Count == 0) _searchCount.Text = "没有匹配结果";
             SetStatus("找到 " + hits.Count + " 个匹配结果" + (hits.Count == 0 ? " · 扫描件需要先进行文字识别" : hits.Count == 500 ? " · 最多显示 500 个结果" : ""));
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { if (!_closed && !cancellation.IsCancellationRequested) SetStatus("搜索失败 · " + ex.Message); }
+        finally
+        {
+            if (ReferenceEquals(_searchCancellation, cancellation))
+            { _searching = false; UpdateSearchNavigation(); UpdateStatusBar(); }
+        }
     }
 
     public async Task<bool> SaveAsync(bool saveAs = false)
@@ -510,6 +500,7 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
         if (_closed || _saving || _file.ReadOnly) return false;
         if (_controllers.Values.Any(controller => controller.HasActiveInteraction)) { SetStatus("请先完成当前笔画或拖动，再保存"); return false; }
         _saving = true;
+        UpdateStatusBar();
         try
         {
             _searchCancellation?.Cancel();
@@ -530,12 +521,17 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
             SetStatus("正在保存 PDF 矢量批注…");
             await _file.SaveAsync(path, pages, _lifetime.Token);
             _targetPath = path; _savedVersion = version; UpdateTitle();
-            SetStatus("已保存 · " + Path.GetFileName(path) + " · " + (new FileInfo(path).Length / 1024d).ToString("N0") + " KB");
+            SetStatus(IsDirty ? "已保存快照，新的批注尚未保存"
+                : "已保存 · " + Path.GetFileName(path) + " · " + (new FileInfo(path).Length / 1024d).ToString("N0") + " KB");
             return true;
         }
         catch (OperationCanceledException) { return false; }
-        catch (Exception ex) { if (!_closed) await MessageAsync("保存 PDF 失败", ex.GetBaseException().Message); return false; }
-        finally { _saving = false; }
+        catch (Exception ex)
+        {
+            if (!_closed) { SetStatus("保存失败 · " + ex.GetBaseException().Message); await MessageAsync("保存 PDF 失败", ex.GetBaseException().Message); }
+            return false;
+        }
+        finally { _saving = false; UpdateStatusBar(); }
     }
     private Task<ContentDialogResult> MessageAsync(string title, string message)
     {

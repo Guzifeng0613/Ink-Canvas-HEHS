@@ -52,6 +52,8 @@ internal static class OptionPopupCoordinator
             appWindow.Changed -= Changed;
             header.PinChanged -= PinChanged;
             Panes.Remove(pane);
+            // Unregister first so resetting a closed pane cannot dismiss another open pane.
+            header.IsPinned = false;
         };
     }
 }

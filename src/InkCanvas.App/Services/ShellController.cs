@@ -874,8 +874,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private void RefreshPaletteNibModes()
     {
         _board?.RefreshToolSettings();
-        if (_palette is not null) ConfigurePaletteNibMode(_palette);
-        foreach (var palette in _detachedPalettes) ConfigurePaletteNibMode(palette);
+        if (_palette is not null) { ConfigurePaletteNibMode(_palette); _palette.RefreshFromController(); }
+        foreach (var palette in _detachedPalettes) { ConfigurePaletteNibMode(palette); palette.RefreshFromController(); }
     }
 
     private void ConfigurePaletteNibMode(PenPaletteWindow palette) => palette.ConfigureNibMode(
@@ -1144,6 +1144,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
             InkWidthChanged = width =>
             {
                 if (highlighter) Services.Settings.Canvas.HighlighterWidth = width;
+                else if (controller.CurrentAttributes.TaperKind == Core.Ink.TaperKind.InkWash) Services.Settings.Canvas.InkWashWidth = width;
                 else Services.Settings.Canvas.InkWidth = width;
                 Services.ApplySettings();
                 Services.SaveSettings();

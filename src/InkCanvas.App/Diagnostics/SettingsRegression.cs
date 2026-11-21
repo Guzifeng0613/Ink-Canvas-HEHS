@@ -136,7 +136,10 @@ internal static class SettingsRegression
             Find<ToggleSwitch>("进入“希沃轻白板”时自动收纳").IsOn = false;
             Check("annotation exception requires a parent autofold rule", !Find<ToggleSwitch>("自动收纳忽略桌面EN批注窗口").IsEnabled);
             Find<ToggleSwitch>("进入“希沃轻白板”时自动收纳").IsOn = true;
+            Check("light whiteboard rule keeps the desktop annotation exception disabled", !Find<ToggleSwitch>("自动收纳忽略桌面EN批注窗口").IsEnabled);
+            Find<ToggleSwitch>("进入“希沃白板”时自动收纳").IsOn = true;
             Check("annotation exception enables immediately", Find<ToggleSwitch>("自动收纳忽略桌面EN批注窗口").IsEnabled);
+            Find<ToggleSwitch>("进入“希沃白板”时自动收纳").IsOn = false;
             Find<ToggleSwitch>("进入“希沃轻白板”时自动收纳").IsOn = false;
             string missingPath = Path.Combine(directory, "missing-cleanup-directory");
             Find<TextBox>("墨迹、截图自动保存位置").Text = missingPath;

@@ -80,7 +80,7 @@ public sealed partial class GeometryWorkbenchWindow : Window
         BuildInterface();
         Content = _root;
         host.ConfigureWindow(this, 1360, 940);
-        WindowFrame.Attach(this, _root);
+        WindowFrame.Attach(this, _root).UseMica();
         Document.Changed += QueueCalculation;
         _view.GestureStarted += Document.BeginGesture;
         _view.GestureEnded += Document.EndGesture;
@@ -103,7 +103,8 @@ public sealed partial class GeometryWorkbenchWindow : Window
         _root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
         _root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         _root.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        var toolbar = new CommandBar { DefaultLabelPosition = CommandBarDefaultLabelPosition.Right, IsOpen = false };
+        var toolbar = new CommandBar { DefaultLabelPosition = CommandBarDefaultLabelPosition.Right, IsOpen = false,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
         AppBarButton Action(string label, Symbol symbol, Action action)
         {
             var button = new AppBarButton { Label = label, Icon = new SymbolIcon(symbol) };

@@ -94,6 +94,50 @@ public static class PdfDiagnostics
                 && !Platform.Interop.NativeMethods.HasExStyle(WinRT.Interop.WindowNative.GetWindowHandle(window), Platform.Interop.NativeMethods.WS_EX_TOPMOST));
             Check("sidebar generates realized page thumbnails", window.SidebarOpen && window.RealizedThumbnailCount > 0,
                 new { thumbnails = window.RealizedThumbnailCount });
+            var pageList = FindVisual<ListView>(window.Content, "PDF 页面列表");
+            var navigation = FindVisual<Controls.Controls.SegmentedSelector>(window.Content, "PDF 导航视图");
+            var pageImage = FindVisual<Microsoft.UI.Xaml.Controls.Image>((DependencyObject)pageList.ContainerFromIndex(0), "");
+            var landscapeImage = FindVisual<Microsoft.UI.Xaml.Controls.Image>((DependencyObject)pageList.ContainerFromIndex(1), "");
+            Check("thumbnail paper follows portrait and landscape page aspect", Math.Abs(pageImage.ActualWidth / pageImage.ActualHeight
+                - workspaceFile.Pages[0].DipWidth / workspaceFile.Pages[0].DipHeight) < .001
+                && Math.Abs(landscapeImage.ActualWidth / landscapeImage.ActualHeight - workspaceFile.Pages[1].DipWidth / workspaceFile.Pages[1].DipHeight) < .001,
+                new { portraitWidth = pageImage.ActualWidth, portraitHeight = pageImage.ActualHeight, landscapeWidth = landscapeImage.ActualWidth, landscapeHeight = landscapeImage.ActualHeight });
+            Check("thumbnail pages use the same document scale", Math.Abs(pageImage.ActualWidth / workspaceFile.Pages[0].DipWidth
+                - landscapeImage.ActualWidth / workspaceFile.Pages[1].DipWidth) < .001);
+            var pageFrame = (Border)pageImage.Parent;
+            Check("thumbnail paper frame has no fixed aspect padding", Math.Abs(pageFrame.ActualWidth - pageImage.ActualWidth - 2) < .01
+                && Math.Abs(pageFrame.ActualHeight - pageImage.ActualHeight - 2) < .01);
+            var pixelsBeforeMargin = await PixelsAsync(pageImage);
+            double originalThumbnailWidth = pageImage.ActualWidth, originalThumbnailHeight = pageImage.ActualHeight;
+            var outsideInk = new InkStroke(new() { TaperKind = TaperKind.None, BaseWidth = 24 });
+            outsideInk.AddPoint(-300, 100); outsideInk.AddPoint(-100, 250); outsideInk.Complete();
+            window.Controller.Document.Add(outsideInk);
+            await Task.Delay(400);
+            var pixelsAfterMargin = await PixelsAsync(pageImage);
+            Check("page exterior annotations do not resize or enter document thumbnail", pageImage.ActualWidth == originalThumbnailWidth
+                && pageImage.ActualHeight == originalThumbnailHeight && pixelsBeforeMargin.SequenceEqual(pixelsAfterMargin));
+            window.Controller.Document.Remove(outsideInk);
+            pageList.ScrollIntoView(pageList.Items[4]); await Task.Delay(400);
+            var largePageImage = FindVisual<Microsoft.UI.Xaml.Controls.Image>((DependencyObject)pageList.ContainerFromIndex(4), "");
+            Check("thumbnail preserves relative physical page sizes and user units", Math.Abs(largePageImage.ActualWidth / originalThumbnailWidth - 2) < .01
+                && Math.Abs(largePageImage.ActualHeight / originalThumbnailHeight - 2) < .01,
+                new { width = largePageImage.ActualWidth, height = largePageImage.ActualHeight, originalThumbnailWidth, originalThumbnailHeight });
+            pageList.ScrollIntoView(pageList.Items[0]); await Task.Delay(250);
+            var searchPrevious = FindVisual<Controls.Controls.TouchIconButton>(window.Content, "上一个搜索结果");
+            var searchNext = FindVisual<Controls.Controls.TouchIconButton>(window.Content, "下一个搜索结果");
+            Check("page sidebar hides search-only controls", searchPrevious.Parent is FrameworkElement { Visibility: Visibility.Collapsed }
+                && !searchPrevious.IsEnabled && !searchNext.IsEnabled);
+            navigation.SelectedIndex = 1;
+            Check("contents tab has its own navigation view", pageList.Visibility == Visibility.Collapsed);
+            navigation.SelectedIndex = 0;
+            var saveState = FindVisual<TextBlock>(window.Content, "PDF 保存状态");
+            var toolState = FindVisual<TextBlock>(window.Content, "PDF 当前工具");
+            var statusMessage = FindVisual<TextBlock>(window.Content, "PDF 状态信息");
+            var statusBar = FindVisual<Border>(window.Content, "PDF 状态栏");
+            Check("status bar reserves its own full-width layout", statusBar.ActualHeight >= 44 && statusBar.ActualWidth >= window.ViewportSize.X);
+            window.Controller.Tool = InkTool.Pan;
+            Check("status bar tracks the active PDF tool", toolState.Text == "阅读");
+            window.Controller.Tool = InkTool.Pen;
             await ScreenshotAsync(window, Path.Combine(directory, "pdf-thumbnails.png"));
             float expandedWidth = window.ViewportSize.X;
             window.SetSidebarOpen(false); await Task.Delay(150);
@@ -105,6 +149,10 @@ public static class PdfDiagnostics
             window.AppWindow.ResizeClient(new Windows.Graphics.SizeInt32((int)Math.Ceiling(620 * windowDpi),
                 (int)Math.Ceiling(720 * windowDpi))); await Task.Delay(150);
             Check("narrow window folds sidebar to preserve page width", !window.SidebarOpen && window.ViewportSize.X > 550);
+            var narrowMessage = statusMessage.TransformToVisual(statusBar).TransformBounds(new(0, 0, statusMessage.ActualWidth, statusMessage.ActualHeight));
+            var narrowSave = saveState.TransformToVisual(statusBar).TransformBounds(new(0, 0, saveState.ActualWidth, saveState.ActualHeight));
+            Check("narrow status bar keeps message and save state separate", narrowMessage.Right <= narrowSave.Left
+                && narrowSave.Right <= statusBar.ActualWidth && statusBar.ActualHeight >= 44);
             window.SetSidebarOpen(true); await Task.Delay(150);
             Check("narrow window uses overlay sidebar", window.SidebarOpen && window.ViewportSize.X > 550,
                 new { window.SidebarOpen, window.SidebarMode, width = window.ViewportSize.X });
@@ -132,15 +180,15 @@ public static class PdfDiagnostics
             var originalTheme = body.RequestedTheme;
             body.RequestedTheme = ElementTheme.Dark; await Task.Delay(180);
             var darkBackground = (SolidColorBrush)viewport.Background;
-            Check("dark PDF workspace has a black themed outer background", darkBackground.Color.R == 0 && darkBackground.Color.G == 0 && darkBackground.Color.B == 0
-                && window.AnnotationSurface.ActualTheme == ElementTheme.Dark);
+            Check("dark PDF workspace exposes its Mica foundation through a content layer", window.SystemBackdrop is MicaBackdrop
+                && darkBackground.Color == Windows.UI.Color.FromArgb(76, 58, 58, 58) && window.AnnotationSurface.ActualTheme == ElementTheme.Dark);
             Check("dark PDF commands retain readable foreground", ((SolidColorBrush)toggle.ContentForeground).Color == Microsoft.UI.Colors.White);
             await ScreenshotAsync(window, Path.Combine(directory, "pdf-dark-navigation.png"));
             var backdrop = window.SystemBackdrop;
             window.SystemBackdrop = null;
             body.RequestedTheme = ElementTheme.Light; await Task.Delay(180);
             var lightBackground = (SolidColorBrush)viewport.Background;
-            Check("light PDF workspace falls back to solid white without transparency", lightBackground.Color == Microsoft.UI.Colors.White);
+            Check("light PDF workspace has a solid themed fallback when the backdrop is unavailable", lightBackground.Color == Windows.UI.Color.FromArgb(255, 243, 243, 243));
             await ScreenshotAsync(window, Path.Combine(directory, "pdf-light-navigation.png"));
             window.SystemBackdrop = backdrop;
             body.RequestedTheme = originalTheme;
@@ -272,16 +320,29 @@ public static class PdfDiagnostics
             window.GoToPage(0);
             Check("page changes restore independent ink and history", !ReferenceEquals(pen, second) && ReferenceEquals(pen, window.Controller) && pen.Document.Count == 1 && second.Document.Count == 0);
             Check("native window save", await window.SaveAsync() && !window.IsDirty);
+            Check("status bar reports successful save", saveState.Text == "已保存");
+            var concurrentInk = new InkStroke(new() { TaperKind = TaperKind.None });
+            concurrentInk.AddPoint(300, 300); concurrentInk.AddPoint(330, 330); concurrentInk.Complete();
+            var concurrentSave = window.SaveAsync();
+            window.Controller.Document.Add(concurrentInk);
+            await concurrentSave;
+            Check("editing during a save leaves a truthful unsaved status", window.IsDirty && saveState.Text == "未保存"
+                && !statusMessage.Text.StartsWith("已保存 ·", StringComparison.Ordinal));
+            window.Controller.Document.Remove(concurrentInk); await window.SaveAsync();
             using (var restored = await PdfAnnotationFile.OpenAsync(source)) Check("workspace edits persist inside PDF", restored.GetInk(0).Single().Points.SequenceEqual(expectedPoints));
             await window.SearchAsync("classroom");
             Check("search opens sidebar and navigates to highlighted result", window.SidebarOpen && window.SearchResultCount == 1 && window.PageIndex == 5);
+            Check("search sidebar activates matching controls", navigation.SelectedIndex == 2 && searchPrevious.IsEnabled && searchNext.IsEnabled);
             window.NextSearchResult(1); window.NextSearchResult(-1);
             Check("search previous next wraps around results", window.PageIndex == 5);
             await Task.Delay(250); await ScreenshotAsync(window, Path.Combine(directory, "pdf-search.png"));
             await window.SearchAsync("missing classroom phrase");
             Check("search clears stale highlights when no match", window.SearchResultCount == 0);
+            Check("empty search result disables navigation buttons", !searchPrevious.IsEnabled && !searchNext.IsEnabled);
             await window.SearchAsync("");
-            Check("empty search restores page previews", window.SearchResultCount == 0);
+            Check("clearing search resets transient status and keeps input available", window.SearchResultCount == 0 && !statusMessage.Text.StartsWith("找到", StringComparison.Ordinal)
+                && navigation.SelectedIndex == 2);
+            navigation.SelectedIndex = 0;
             for (int i = 0; i < 16; i++) { window.GoToPage(i % 6); await Task.Delay(40); }
             window.GoToPage(0); await Task.Delay(800);
             Check("preview cache remains bounded", window.PreviewCacheBytes <= 16 * 1024 * 1024 && window.VisiblePreviewBytes <= 104 * 1024 * 1024,
@@ -506,6 +567,13 @@ public static class PdfDiagnostics
         using var memory = new InMemoryRandomAccessStream(); var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, memory);
         encoder.SetPixelData(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied, (uint)bitmap.PixelWidth, (uint)bitmap.PixelHeight, 96, 96, bytes); await encoder.FlushAsync();
         memory.Seek(0); using var output = File.Create(path); await memory.AsStreamForRead().CopyToAsync(output);
+    }
+
+    private static async Task<byte[]> PixelsAsync(FrameworkElement element)
+    {
+        var bitmap = new RenderTargetBitmap(); await bitmap.RenderAsync(element);
+        var buffer = await bitmap.GetPixelsAsync(); var bytes = new byte[buffer.Length]; DataReader.FromBuffer(buffer).ReadBytes(bytes);
+        return bytes;
     }
 
     private static T FindVisual<T>(DependencyObject root, string name) where T : DependencyObject

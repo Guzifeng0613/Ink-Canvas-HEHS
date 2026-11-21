@@ -1344,7 +1344,7 @@ public sealed class BoardWindow : Window
         foreach (var panel in _toolPanels.Values) panel.Fit();
     }
 
-    internal void RefreshToolSettings() => _boardPenPalette?.RefreshNibMode();
+    internal void RefreshToolSettings() => _boardPenPalette?.RefreshSettings();
 
     private void RefreshBackground()
     {

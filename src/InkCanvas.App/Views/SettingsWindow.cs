@@ -7,6 +7,7 @@ using InkCanvas.Core.Settings;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Markup;
 using Microsoft.UI.Xaml.Media;
 using Windows.UI;
 
@@ -16,6 +17,12 @@ namespace InkCanvas.App.Views;
 public sealed partial class SettingsWindow : Window
 {
     private static readonly FontFamily IconFont = new("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons");
+    private static readonly Style SettingsCardStyle = (Style)XamlReader.Load("""
+        <Style xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+        </Style>
+        """);
     private static readonly string[] SilenceTimes = BuildSilenceTimes();
     private readonly AppServices _services;
     private readonly UpdateCoordinator _updater;
@@ -132,6 +139,8 @@ public sealed partial class SettingsWindow : Window
         _theme = S.Appearance.Theme;
         _workspace = new WindowWorkspace { IsTitleBarAutoPaddingEnabled = false };
         _workspace.Resources["NavigationViewHeaderMargin"] = new Thickness(24, 24, 24, 12);
+        _workspace.Resources["NavigationViewContentBackground"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        _workspace.Resources["NavigationViewContentGridBorderBrush"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
         string[] icons = { "\uE768", "\uE70F", "\uE815", "\uE7F4", "\uE8A5", "\uE790", "\uE8A1", "\uE713", "\uE77C", "\uE713", "\uE8F1", "\uE946", "\uE8D4", "\uE8B7" };
         for (int index = 0; index < Categories.Length; index++)
         {
@@ -140,7 +149,7 @@ public sealed partial class SettingsWindow : Window
         }
         _workspace.SearchBox = CreateSearchBox(searchText);
         _notification = new InfoBar { IsOpen = false, IsClosable = true, Severity = InfoBarSeverity.Success, Margin = new Thickness(24) };
-        var root = new Grid { Background = PopupBrushes.WindowSurface(BrushTheme) };
+        var root = new Grid { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
         root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         root.Children.Add(_workspace);
@@ -152,7 +161,7 @@ public sealed partial class SettingsWindow : Window
         root.KeyDown += SearchKeyDown;
         _notification.VerticalAlignment = VerticalAlignment.Bottom;
         root.Children.Add(_notification);
-        WindowFrame.Attach(this, root);
+        WindowFrame.Attach(this, root).UseMica();
         WindowChrome.ApplyTheme(this, _theme);
         _workspace.SelectPage(selected);
     }
@@ -748,14 +757,7 @@ public sealed partial class SettingsWindow : Window
 
     private Border Card(UIElement child) => new()
     {
-        // 与 Tokens.xaml 的 IcSurfaceAlt/IcStroke 同值，但按窗口主题取值，
-        // 避免 Application.Current.Resources 按应用主题解析造成明暗错位。
-        Background = new SolidColorBrush(PopupBrushes.IsDark(BrushTheme)
-            ? Color.FromArgb(255, 43, 44, 47)
-            : Color.FromArgb(255, 255, 255, 255)),
-        BorderBrush = new SolidColorBrush(PopupBrushes.IsDark(BrushTheme)
-            ? Color.FromArgb(0x24, 255, 255, 255)
-            : Color.FromArgb(0x1F, 0, 0, 0)),
+        Style = SettingsCardStyle,
         BorderThickness = new Thickness(1),
         CornerRadius = new CornerRadius(8),
         Padding = new Thickness(16),
