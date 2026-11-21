@@ -37,6 +37,12 @@ public enum TimelineEventKind
     /// <c>{"scale":1.5,"tx":120,"ty":80}</c>（scale 由矩阵行列式推导）。
     /// </summary>
     ViewChanged,
+
+    /// <summary>
+    /// AI 助教过程事件（公式识别 / 求解 / 贴回 / 局部纠错）。作为独立事件类型记录，
+    /// 只用于复盘标注，不参与基础板书回放，缺失时旧数据与回放均不受影响。
+    /// </summary>
+    AiStep,
 }
 
 /// <summary>
@@ -56,9 +62,24 @@ public enum TimelineEventKind
 /// </summary>
 public sealed class TimelineEvent
 {
+    /// <summary>
+    /// 所属课堂会话 id。旧版会话没有该字段，加载时由 <see cref="InkTimeline"/> 按
+    /// <see cref="ClassroomSession.Id"/> 补齐；跨会话导入时用于拒绝串数据。
+    /// </summary>
+    public string SessionId { get; set; }
+
+    /// <summary>
+    /// 会话内单调递增的事件序号，同毫秒事件的稳定排序键。
+    /// 旧版数据缺该字段（0）时由时间轴按原数组顺序补齐。
+    /// </summary>
+    public int Seq { get; set; }
+
     public long TimeMs { get; set; }
 
     public int PageIndex { get; set; }
+
+    /// <summary>课件归属：事件发生时所处 PPT 幻灯片 id；0 表示不属于课件。</summary>
+    public int PptSlideId { get; set; }
 
     public TimelineEventKind Kind { get; set; }
 
@@ -78,6 +99,9 @@ public sealed class SessionCheckpoint
 
     /// <summary>该检查点已经应用到的事件索引（含）。</summary>
     public int EventIndex { get; set; }
+
+    /// <summary>该检查点已应用到的最后一个事件的稳定序号；0 表示旧检查点仅按索引锚定。</summary>
+    public int Seq { get; set; }
 
     public int PageIndex { get; set; }
 

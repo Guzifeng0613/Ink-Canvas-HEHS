@@ -18,6 +18,7 @@ using Line = Microsoft.UI.Xaml.Shapes.Line;
 using System.Diagnostics;
 using System.Numerics;
 using Windows.Storage.Pickers;
+using VirtualKey = Windows.System.VirtualKey;
 using WinRT.Interop;
 
 namespace InkCanvas.App.Views;
@@ -116,6 +117,10 @@ public sealed class TimeMachineWindow : Window
     private readonly SemaphoreSlim _seekGate = new(1, 1);
     private ExportOptions _lastExportOptions;
     private bool _boardOnly;
+    private readonly ComboBox _speed;
+    private readonly ComboBox _zoom;
+    private readonly Canvas _keyframeCanvas = new() { Height = 8, Width = BookmarkTrackWidth };
+    private double _timelineZoom = 1;
 
     public TimeMachineWindow(ClassroomSession session, BoardService board, int theme)
     {
@@ -172,15 +177,24 @@ public sealed class TimeMachineWindow : Window
         _boardToggle.Checked += (_, _) => SetBoardOnly(true);
         _boardToggle.Unchecked += (_, _) => SetBoardOnly(false);
 
-        var speed = new ComboBox { Width = 96, SelectedIndex = 1, VerticalAlignment = VerticalAlignment.Center };
-        foreach (var s in new[] { "0.5x", "1x", "2x", "4x", "8x" }) speed.Items.Add(s);
-        speed.SelectionChanged += (_, _) => _clock.Speed = speed.SelectedIndex switch
+        _speed = new ComboBox { Width = 96, SelectedIndex = 1, VerticalAlignment = VerticalAlignment.Center };
+        foreach (var s in new[] { "0.5x", "1x", "2x", "4x", "8x" }) _speed.Items.Add(s);
+        _speed.SelectionChanged += (_, _) => _clock.Speed = _speed.SelectedIndex switch
         {
             0 => 0.5f,
             2 => 2f,
             3 => 4f,
             4 => 8f,
             _ => 1f,
+        };
+
+        _zoom = new ComboBox { Width = 76, SelectedIndex = 0, VerticalAlignment = VerticalAlignment.Center };
+        foreach (var z in new[] { "1x", "2x", "4x" }) _zoom.Items.Add(z);
+        ToolTipService.SetToolTip(_zoom, "时间轴缩放：长课可按 1× / 2× / 4× 展开，便于精确定位");
+        _zoom.SelectionChanged += (_, _) =>
+        {
+            _timelineZoom = _zoom.SelectedIndex switch { 1 => 2, 2 => 4, _ => 1 };
+            ApplyTimelineZoom();
         };
 
         var close = Icon(Glyphs.Close, "关闭时光机");
@@ -209,7 +223,7 @@ public sealed class TimeMachineWindow : Window
         topBar.Children.Add(next);
         topBar.Children.Add(previousEvent);
         topBar.Children.Add(nextEvent);
-        topBar.Children.Add(speed);
+        topBar.Children.Add(_speed);
         topBar.Children.Add(_boardToggle);
         topBar.Children.Add(_timeLabel);
         topBar.Children.Add(_exportButton);
@@ -263,13 +277,41 @@ public sealed class TimeMachineWindow : Window
         exportRow.Children.Add(_exportStatus);
         exportRow.Children.Add(_retryExport);
 
+        var timelineRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        timelineRow.Children.Add(new TextBlock
+        {
+            Text = "时间轴",
+            FontSize = 12,
+            Opacity = 0.75,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        timelineRow.Children.Add(_keyframeCanvas);
+        timelineRow.Children.Add(_zoom);
+
+        var shortcutHint = new TextBlock
+        {
+            Text = "空格 播放/暂停 · ← → 逐事件 · ↑ ↓ 章节 · + / - 倍速 · Home 回到开头",
+            FontSize = 11,
+            Opacity = 0.6,
+            TextWrapping = TextWrapping.Wrap,
+        };
+
         var bottomPanel = new StackPanel { Spacing = 4 };
         bottomPanel.Children.Add(bookmarkRow);
         bottomPanel.Children.Add(bottomBar);
+        bottomPanel.Children.Add(timelineRow);
         bottomPanel.Children.Add(exportRow);
+        bottomPanel.Children.Add(shortcutHint);
 
         var topHost = Wrap(topBar, bottom: true);
-        var bottomHost = Wrap(bottomPanel, bottom: false);
+        var bottomHost = Wrap(new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollMode = ScrollMode.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollMode = ScrollMode.Disabled,
+            Content = bottomPanel,
+        }, bottom: false);
 
         var canvasHost = new Grid();
         canvasHost.Children.Add(_background);
@@ -295,12 +337,14 @@ public sealed class TimeMachineWindow : Window
         root.Children.Add(canvasHost);
         root.Children.Add(bottomHost);
         Content = root;
+        AttachKeyboardShortcuts(root);
 
         WindowChrome.MakeBorderless(this, topmost: false, resizable: true);
         WindowChrome.CenterOnPrimary(this, 980, 680);
         WindowChrome.ApplyTheme(this, theme);
 
         RebuildBookmarks();
+        RebuildKeyframes();
 
         _timer = DispatcherQueue.GetForCurrentThread().CreateTimer();
         _timer.Interval = TimeSpan.FromMilliseconds(33);
@@ -356,6 +400,99 @@ public sealed class TimeMachineWindow : Window
     }
 
     private void SyncPlayGlyph() => _playPause.Glyph = _clock.IsPlaying ? Glyphs.Pause : Glyphs.Play;
+
+    // ---- 键盘与时间轴缩放 ---------------------------------------------------
+
+    /// <summary>
+    /// 键盘操作：空格播放/暂停、方向键逐事件、上下键跳章节、加减号切换倍速、Home 回到开头。
+    /// 全部标记为已处理，避免同时触发滚动或按钮默认行为。
+    /// </summary>
+    private void AttachKeyboardShortcuts(UIElement root)
+    {
+        AddAccelerator(root, VirtualKey.Space, () =>
+        {
+            _seekCts?.Cancel();
+            _clock.Toggle();
+            SyncPlayGlyph();
+        });
+        AddAccelerator(root, VirtualKey.Left, () => StepEvent(-1));
+        AddAccelerator(root, VirtualKey.Right, () => StepEvent(+1));
+        AddAccelerator(root, VirtualKey.Up, () => JumpBookmark(-1));
+        AddAccelerator(root, VirtualKey.Down, () => JumpBookmark(+1));
+        AddAccelerator(root, VirtualKey.Home, () => SeekAsync(0));
+        AddAccelerator(root, VirtualKey.Add, () => CycleSpeed(+1));
+        AddAccelerator(root, VirtualKey.Subtract, () => CycleSpeed(-1));
+    }
+
+    private static void AddAccelerator(UIElement root, VirtualKey key, Action action)
+    {
+        var accelerator = new KeyboardAccelerator { Key = key };
+        accelerator.Invoked += (_, args) =>
+        {
+            args.Handled = true;
+            action();
+        };
+        root.KeyboardAccelerators.Add(accelerator);
+    }
+
+    private void CycleSpeed(int direction)
+    {
+        int index = Math.Clamp(_speed.SelectedIndex + direction, 0, _speed.Items.Count - 1);
+        _speed.SelectedIndex = index;
+    }
+
+    private void JumpBookmark(int direction)
+    {
+        var bookmarks = _session.Bookmarks;
+        if (bookmarks is null || bookmarks.Count == 0) return;
+
+        long time = (long)_clock.ElapsedMs;
+        int index = direction > 0
+            ? bookmarks.FindIndex(b => b is not null && b.TimeMs > time)
+            : bookmarks.FindLastIndex(b => b is not null && b.TimeMs < time);
+        if (index < 0) return;
+
+        SeekAsync(bookmarks[index].TimeMs);
+    }
+
+    /// <summary>按缩放档位同步进度条、书签轨道与关键位置刻度。</summary>
+    private void ApplyTimelineZoom()
+    {
+        double width = BookmarkTrackWidth * _timelineZoom;
+        _progress.Width = width;
+        _bookmarkCanvas.Width = width;
+        _keyframeCanvas.Width = width;
+        RebuildBookmarks();
+        RebuildKeyframes();
+    }
+
+    /// <summary>
+    /// 关键位置刻度：每 10% 时长一条刻度并标注时间，长课时配合缩放档位做快速粗定位。
+    /// 不渲染画面缩略图，避免为长会话构建额外位图内存。
+    /// </summary>
+    private void RebuildKeyframes()
+    {
+        _keyframeCanvas.Children.Clear();
+        long duration = Math.Max(1, _timeline.Duration);
+        double width = _keyframeCanvas.Width > 0 ? _keyframeCanvas.Width : BookmarkTrackWidth;
+        var tickBrush = (Brush)Application.Current.Resources["IcStrokeBrush"];
+
+        for (int i = 0; i <= 10; i++)
+        {
+            var tick = new Border
+            {
+                Width = 1,
+                Height = i % 5 == 0 ? 8 : 5,
+                Background = tickBrush,
+                Opacity = 0.45,
+                VerticalAlignment = VerticalAlignment.Bottom,
+            };
+            double x = width / 10.0 * i;
+            Canvas.SetLeft(tick, Math.Clamp(x, 0, Math.Max(0, width - 1)));
+            ToolTipService.SetToolTip(tick, Format(duration / 10 * i));
+            _keyframeCanvas.Children.Add(tick);
+        }
+    }
 
     // ---- 书签轨道 ---------------------------------------------------------
 
@@ -862,7 +999,7 @@ public sealed class TimeMachineWindow : Window
         };
         var hint = new TextBlock
         {
-            Text = $"总时长 {Format(durationMs)}，默认导出全段。",
+            Text = $"总时长 {Format(durationMs)}，默认导出全段。姓名、头像与讲解音频均在本机处理，不会上传。",
             FontSize = 12,
             Opacity = 0.75,
             TextWrapping = TextWrapping.Wrap,
@@ -883,6 +1020,27 @@ public sealed class TimeMachineWindow : Window
             Content = "仅导出板书（不含 PPT 截图）",
             IsChecked = false,
         };
+
+        var showCursor = new CheckBox
+        {
+            Content = "显示书写光标",
+            IsChecked = false,
+        };
+        var showChapter = new CheckBox
+        {
+            Content = "显示章节信息",
+            IsChecked = false,
+        };
+
+        // 按章节选片段：以书签时间为区间边界，仍可手动微调开始 / 结束秒。
+        var chapterCombo = new ComboBox { Header = "片段（按章节）", Width = 240, SelectedIndex = 0 };
+        chapterCombo.Items.Add("完整会话");
+        var chapterList = _session.Bookmarks ??= new List<SessionBookmark>();
+        foreach (var bookmark in chapterList)
+        {
+            if (bookmark is null) continue;
+            chapterCombo.Items.Add(_timeline.DescribeBookmark(bookmark, 18));
+        }
 
         var hintText = new TextBlock
         {
@@ -923,7 +1081,9 @@ public sealed class TimeMachineWindow : Window
                 var preview = new ExportOptions(
                     "preview.mp4", startMsPreview, endMsPreview, Fps: 30,
                     Width: width, Height: height, Speed: SelectedSpeed(),
-                    BoardOnly: boardOnly.IsChecked == true);
+                    BoardOnly: boardOnly.IsChecked == true,
+                    ShowCursor: showCursor.IsChecked == true,
+                    ShowChapterInfo: showChapter.IsChecked == true);
                 int frames = TimeMachineExporter.EstimateFrameCount(preview);
                 double outputSeconds = TimeMachineExporter.EffectiveDurationMs(preview) / 1000.0;
                 hintText.Text = $"预计 {frames} 帧 · 输出时长 {outputSeconds:0.0} 秒 · "
@@ -942,6 +1102,24 @@ public sealed class TimeMachineWindow : Window
         speedCombo.SelectionChanged += (_, _) => UpdateHint();
         boardOnly.Checked += (_, _) => UpdateHint();
         boardOnly.Unchecked += (_, _) => UpdateHint();
+        showCursor.Checked += (_, _) => UpdateHint();
+        showCursor.Unchecked += (_, _) => UpdateHint();
+        showChapter.Checked += (_, _) => UpdateHint();
+        showChapter.Unchecked += (_, _) => UpdateHint();
+        chapterCombo.SelectionChanged += (_, _) =>
+        {
+            int index = chapterCombo.SelectedIndex - 1;
+            if (index < 0 || index >= chapterList.Count) return;
+
+            SessionBookmark bookmark = chapterList[index];
+            if (bookmark is null) return;
+            startBox.Value = Math.Clamp(bookmark.TimeMs / 1000.0, 0, durationSec);
+            long next = index + 1 < chapterList.Count && chapterList[index + 1] is not null
+                ? chapterList[index + 1].TimeMs
+                : durationMs;
+            endBox.Value = Math.Clamp(next / 1000.0, 0, durationSec);
+            UpdateHint();
+        };
 
         var panel = new StackPanel { Spacing = 12 };
         panel.Children.Add(hint);
@@ -949,7 +1127,10 @@ public sealed class TimeMachineWindow : Window
         panel.Children.Add(endBox);
         panel.Children.Add(resolution);
         panel.Children.Add(speedCombo);
+        panel.Children.Add(chapterCombo);
         panel.Children.Add(boardOnly);
+        panel.Children.Add(showCursor);
+        panel.Children.Add(showChapter);
         panel.Children.Add(hintText);
         panel.Children.Add(audio);
         panel.Children.Add(audioHint);
@@ -990,7 +1171,9 @@ public sealed class TimeMachineWindow : Window
         var options = new ExportOptions(
             file.Path, startMs, endMs, IncludeAudio: audio.IsChecked == true,
             Width: outputWidth, Height: outputHeight, Speed: SelectedSpeed(),
-            BoardOnly: boardOnly.IsChecked == true);
+            BoardOnly: boardOnly.IsChecked == true,
+            ShowCursor: showCursor.IsChecked == true,
+            ShowChapterInfo: showChapter.IsChecked == true);
         await RunExportAsync(options);
     }
 

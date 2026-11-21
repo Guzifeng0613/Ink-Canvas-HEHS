@@ -3,6 +3,7 @@ using InkCanvas.Core.Ink;
 using InkCanvas.Features.Board;
 using InkCanvas.Ink.Rendering;
 using Microsoft.Graphics.Canvas;
+using Microsoft.Graphics.Canvas.Text;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -38,7 +39,9 @@ public sealed record ExportOptions(
     int Width = 1920,
     int Height = 1080,
     double Speed = 1.0,
-    bool BoardOnly = false);
+    bool BoardOnly = false,
+    bool ShowCursor = false,
+    bool ShowChapterInfo = false);
 
 /// <summary>导出结果（含音频状态说明，避免把「只有视频」静默当成成功）。</summary>
 public sealed record ExportResult(
@@ -469,6 +472,34 @@ public static class TimeMachineExporter
                             DrawGrid(drawing, scene.Background, options.Width, options.Height);
                             foreach (var stroke in timeline.BuildFrame(timeMs))
                                 renderer.Draw(drawing, stroke, Matrix3x2.Identity);
+
+                            // 可选叠加：章节信息与书写光标。二者都不改变笔画集合，
+                            // 只影响像素外观，因此 BoardOnly / 区间语义不受影响。
+                            if (options.ShowChapterInfo)
+                            {
+                                string chapter = ChapterLabelAt(timeline, timeMs);
+                                if (!string.IsNullOrEmpty(chapter))
+                                {
+                                    using var chapterFormat = new CanvasTextFormat
+                                    {
+                                        FontSize = 26,
+                                        WordWrapping = CanvasWordWrapping.NoWrap,
+                                    };
+                                    drawing.FillRectangle(
+                                        new Windows.Foundation.Rect(20, 16, 560, 46),
+                                        Windows.UI.Color.FromArgb(0x99, 0, 0, 0));
+                                    drawing.DrawText(chapter, 32, 24,
+                                        Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF), chapterFormat);
+                                }
+                            }
+
+                            if (options.ShowCursor && timeline.CursorPointAt(timeMs) is { } cursor)
+                            {
+                                drawing.FillCircle(cursor.X, cursor.Y, 6,
+                                    Windows.UI.Color.FromArgb(0xCC, 0x00, 0x67, 0xC0));
+                                drawing.DrawCircle(cursor.X, cursor.Y, 10,
+                                    Windows.UI.Color.FromArgb(0xAA, 0xFF, 0xFF, 0xFF), 1.5f);
+                            }
                         }
 
                         byte[] pixels = target.GetPixelBytes();
@@ -536,6 +567,22 @@ public static class TimeMachineExporter
 
     private static void Report(IProgress<ExportProgress> progress, ExportStage stage, double value, string message)
         => progress?.Report(new ExportProgress(stage, Math.Clamp(value, 0, 1), message));
+
+    /// <summary>导出叠加的章节标题：取目标时刻之前最近的书签，没有书签时返回空串。</summary>
+    private static string ChapterLabelAt(InkTimeline timeline, long timeMs)
+    {
+        var bookmarks = timeline.Session?.Bookmarks;
+        if (bookmarks is null || bookmarks.Count == 0) return "";
+
+        SessionBookmark best = null;
+        foreach (var bookmark in bookmarks)
+        {
+            if (bookmark is null) continue;
+            if (bookmark.TimeMs > timeMs) break;
+            best = bookmark;
+        }
+        return best is null ? "" : timeline.DescribeBookmark(best, 24);
+    }
 
     private static Windows.UI.Color BackgroundColor(string name)
     {

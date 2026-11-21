@@ -30,6 +30,7 @@ public sealed class InkRecorder : IDisposable
     private InkTimeline _timeline;
     private SessionJournal _journal;
     private long _lastSnapshotTimestamp;
+    private int _nextSeq = 1;
 
     // 暂停计时：ElapsedMs = 时钟已过 - (已累计暂停 + 当前暂停段)。
     private long _pausedTotalMs;
@@ -135,6 +136,7 @@ public sealed class InkRecorder : IDisposable
         IsPaused = false;
         _pausedTotalMs = 0;
         _pauseStartedMs = -1;
+        _nextSeq = 1;
 
         Bind(_board.Current);
 
@@ -405,6 +407,18 @@ public sealed class InkRecorder : IDisposable
         {
             if (!IsRecording || IsPaused) return;
             var events = Session.Events ??= new List<TimelineEvent>();
+
+            // 归属与序号由录制器统一分配：外部事件源（PPT / 点名 / 倒计时）只需给出
+            // 时间、页与载荷，禁止自行编号，避免同毫秒事件在恢复后失去稳定顺序。
+            ev.SessionId = Session.Id;
+            if (ev.Seq <= 0) ev.Seq = _nextSeq++;
+            else if (ev.Seq >= _nextSeq) _nextSeq = ev.Seq + 1;
+
+            if (ev.PptSlideId <= 0 && ev.Kind == TimelineEventKind.PptSlideChanged)
+            {
+                PptSlideChange change = InkTimeline.DecodePptSlideChanged(ev.Payload);
+                if (change.IsValid && change.SlideId > 0) ev.PptSlideId = change.SlideId;
+            }
 
             // 相邻完全重复事件（同一次手势/切换被多次上报）不再入时间轴。
             if (events.Count > 0 && SameSignature(events[^1], ev)) return;

@@ -48,8 +48,23 @@ public sealed class InkTimeline
         public int Order;
     }
 
+    // 已解析笔画缓存。为避免长会话首次定位把全部 StrokeJson 反序列化进内存，
+    // 该缓存只保存「最近需要过的」笔画，并由 MaxCachedStrokes 限制上限。
     private readonly Dictionary<string, StrokeRecord> _registry = new();
     private int _registryIndex;
+
+    // 笔画缓存上限：超出后淘汰当前帧未使用的旧记录，避免 90 分钟课堂的
+    // 数万笔画长期驻留内存（淘汰后再次需要时按需重新解析）。
+    private const int MaxCachedStrokes = 4096;
+
+    // 笔画 id -> 所属页码。注册 StrokeAdded 时只读取事件的 PageIndex，不解析 StrokeJson。
+    private readonly Dictionary<string, int> _strokePages = new();
+
+    // 笔画 id -> 首次登记的事件索引，用于保持帧内笔画顺序，也作为按需解析时查找 JSON 的起点。
+    private readonly Dictionary<string, int> _strokeOrder = new();
+
+    // 缓存插入顺序（FIFO），超出上限时据此淘汰最旧的未使用记录。
+    private readonly Queue<string> _cacheQueue = new();
 
     // 增量生成检查点的游标与状态。
     private int _checkpointAppliedIndex;
@@ -72,8 +87,14 @@ public sealed class InkTimeline
         _checkpointIntervalMs = checkpointIntervalMs > 0 ? checkpointIntervalMs : DefaultCheckpointIntervalMs;
         _events = session.Events ??= new List<TimelineEvent>();
         _session.Bookmarks ??= new List<SessionBookmark>();
+
+        // 旧数据可能缺 Seq，导入或手工编辑过的会话可能时间乱序。先做一次稳定归一化，
+        // 否则 IndexAt 的二分查找与「同时间按序号排序」都会失真。
+        bool reordered = NormalizeEventOrder();
+        if (reordered) _session.Checkpoints = new List<SessionCheckpoint>();
+
         // 已带检查点的会话（例如从磁盘加载）直接沿用，避免重复生成。
-        if (_session.Checkpoints is { Count: > 0 })
+        if (!reordered && _session.Checkpoints is { Count: > 0 })
         {
             _checkpointAppliedIndex = _events.Count;
             _checkpointAlive = new HashSet<string>(_session.Checkpoints[^1].LiveStrokeIds ?? Array.Empty<string>());
@@ -84,6 +105,57 @@ public sealed class InkTimeline
         {
             _session.Checkpoints ??= new List<SessionCheckpoint>();
         }
+    }
+
+    /// <summary>
+    /// 补齐会话归属与事件序号，并把时间乱序的事件稳定重排为
+    /// <c>(TimeMs, Seq, 原索引)</c> 顺序。返回是否发生了重排（重排后索引失效，需重建检查点）。
+    /// </summary>
+    private bool NormalizeEventOrder()
+    {
+        if (_events.Count == 0) return false;
+
+        if (_events.Any(e => e is null))
+        {
+            _events.RemoveAll(e => e is null);
+            if (_events.Count == 0) return false;
+        }
+
+        bool hasMissingSeq = false;
+        bool timeOrdered = true;
+        long previousTime = long.MinValue;
+        int previousSeq = 0;
+
+        for (int i = 0; i < _events.Count; i++)
+        {
+            TimelineEvent e = _events[i];
+            if (string.IsNullOrEmpty(e.SessionId)) e.SessionId = _session.Id;
+            if (e.Seq <= 0) hasMissingSeq = true;
+            if (e.TimeMs < previousTime) timeOrdered = false;
+            else if (e.TimeMs == previousTime && e.Seq < previousSeq) timeOrdered = false;
+            previousTime = e.TimeMs;
+            previousSeq = e.Seq;
+        }
+
+        // 只有缺序号（旧数据）时才按当前数组顺序补号；已有序号即使非递增也保留，
+        // 由下面的排序把它放到正确位置，避免重编号改变「同毫秒先后」的语义。
+        if (hasMissingSeq)
+        {
+            for (int i = 0; i < _events.Count; i++) _events[i].Seq = i + 1;
+        }
+
+        if (timeOrdered) return false;
+
+        var ordered = _events
+            .Select((e, index) => (Event: e, Index: index))
+            .OrderBy(x => x.Event.TimeMs)
+            .ThenBy(x => x.Event.Seq)
+            .ThenBy(x => x.Index)
+            .Select(x => x.Event)
+            .ToList();
+        _events.Clear();
+        _events.AddRange(ordered);
+        return true;
     }
 
     public ClassroomSession Session => _session;
@@ -118,14 +190,25 @@ public sealed class InkTimeline
 
         for (int i = start; i <= cutoff; i++) ApplyEvent(alive, _events[i]);
 
-        var result = new List<InkStroke>();
+        var result = new List<(InkStroke Stroke, int Order)>();
+        var frameIds = new HashSet<string>();
         foreach (var id in alive)
         {
-            if (_registry.TryGetValue(id, out var record) && record.PageIndex == page)
-                result.Add(record.Stroke);
+            // 先用轻量页码索引过滤，避免为其它页的笔画做无谓的反序列化。
+            if (!_strokePages.TryGetValue(id, out int strokePage) || strokePage != page) continue;
+
+            // 按需解析：仅对当前帧真正需要的笔画反序列化，成功后进入缓存。
+            InkStroke stroke = ResolveStroke(id);
+            if (stroke is null) continue; // 载荷为空或解析失败：跳过该笔画，不抛异常
+
+            // 顺序仍取首次登记的事件索引，与是否命中缓存无关。
+            int order = _strokeOrder.TryGetValue(id, out int knownOrder) ? knownOrder : int.MaxValue;
+            result.Add((stroke, order));
+            frameIds.Add(id);
         }
-        result.Sort((a, b) => OrderOf(a).CompareTo(OrderOf(b)));
-        return result;
+        result.Sort((a, b) => a.Order.CompareTo(b.Order));
+        TrimCache(frameIds);
+        return result.Select(x => x.Stroke).ToList();
     }
 
     /// <summary>目标时刻所在的页码。</summary>
@@ -236,6 +319,35 @@ public sealed class InkTimeline
 
     public long TimeAtEvent(int index)
         => index >= 0 && index < _events.Count ? _events[index].TimeMs : 0;
+
+    /// <summary>
+    /// 目标时刻的书写光标位置：当前页最近一笔的最后一个点；没有可用笔画时返回 null。
+    /// 仅用于导出 / 回放的可选光标叠加，不参与笔画集合计算。
+    /// </summary>
+    public (float X, float Y)? CursorPointAt(long timeMs)
+    {
+        EnsureRegistry();
+        int cutoff = IndexAt(timeMs);
+        if (cutoff < 0) return null;
+        int page = PageAt(timeMs);
+
+        for (int i = cutoff; i >= 0; i--)
+        {
+            TimelineEvent e = _events[i];
+            if (e.Kind != TimelineEventKind.StrokeAdded) continue;
+            if (e.PageIndex != page || string.IsNullOrEmpty(e.StrokeId)) continue;
+
+            // 不再依赖全量缓存：需要时按需解析该笔画。
+            InkStroke stroke = ResolveStroke(e.StrokeId);
+            if (stroke is null) continue;
+
+            var points = stroke.Points;
+            if (points.Count == 0) continue;
+            InkPoint last = points[^1];
+            return (last.X, last.Y);
+        }
+        return null;
+    }
 
     /// <summary>
     /// 异步定位的回调闸门：token 已取消或版本落后（已有更新请求）时返回 false，
@@ -457,6 +569,8 @@ public sealed class InkTimeline
                 return "缩放/平移";
             case TimelineEventKind.BookmarkAdded:
                 return "手动书签";
+            case TimelineEventKind.AiStep:
+                return "AI 助教";
             default:
                 return "";
         }
@@ -661,6 +775,7 @@ public sealed class InkTimeline
         {
             TimeMs = cutoff < 0 ? 0 : _events[cutoff].TimeMs,
             EventIndex = cutoff,
+            Seq = cutoff < 0 ? 0 : _events[cutoff].Seq,
             PageIndex = PageAt(timeMs),
             Background = BackgroundAt(timeMs),
             LiveStrokeIds = alive.ToList(),
@@ -699,7 +814,9 @@ public sealed class InkTimeline
             case TimelineEventKind.Cleared:
                 foreach (var id in alive.ToList())
                 {
-                    if (_registry.TryGetValue(id, out var rec) && rec.PageIndex == e.PageIndex)
+                    // 清空按页码删除笔画；用轻量页码索引判断，避免依赖尚未解析的缓存记录，
+                    // 否则未解析的笔画会被漏删。
+                    if (_strokePages.TryGetValue(id, out int strokePage) && strokePage == e.PageIndex)
                         alive.Remove(id);
                 }
                 break;
@@ -726,23 +843,123 @@ public sealed class InkTimeline
         if (e is null) return;
         if (e.Kind == TimelineEventKind.StrokeAdded && !string.IsNullOrEmpty(e.StrokeId))
         {
-            if (_registry.ContainsKey(e.StrokeId)) return;
-            var stroke = StrokeJsonCodec.Deserialize(e.StrokeJson);
-            if (stroke is not null)
-                _registry[e.StrokeId] = new StrokeRecord { Stroke = stroke, PageIndex = e.PageIndex, Order = index };
+            // 只登记页码与顺序，不解析 StrokeJson：长会话首次定位不再全量反序列化。
+            if (_strokePages.ContainsKey(e.StrokeId)) return;
+            _strokePages[e.StrokeId] = e.PageIndex;
+            _strokeOrder[e.StrokeId] = index;
         }
         else if (e.Kind is TimelineEventKind.Undo or TimelineEventKind.Redo)
         {
             foreach (var (id, json) in DecodeAddedStrokes(e.Payload))
             {
-                if (string.IsNullOrEmpty(id) || _registry.ContainsKey(id)) continue;
-                // 撤销/重做重新出现的笔画：若其原始 StrokeAdded 未登记（如形状识别替换），
+                if (string.IsNullOrEmpty(id)) continue;
+
+                bool known = _strokePages.ContainsKey(id);
+                if (!known)
+                {
+                    _strokePages[id] = e.PageIndex;
+                    _strokeOrder[id] = index;
+                }
+
+                // 撤销/重做重新出现的笔画：若此前从未登记（如形状识别替换），
                 // 这里用事件携带的 JSON 补登记，保证回放完整。
-                if (string.IsNullOrEmpty(json)) continue;
-                var stroke = StrokeJsonCodec.Deserialize(json);
+                // 已有来源的笔画留给 BuildFrame 按需解析，避免重复反序列化。
+                if (known || string.IsNullOrEmpty(json) || _registry.ContainsKey(id)) continue;
+                InkStroke stroke = TryDeserialize(json);
                 if (stroke is not null)
-                    _registry[id] = new StrokeRecord { Stroke = stroke, PageIndex = e.PageIndex, Order = index };
+                    CacheStroke(id, stroke, _strokePages[id], _strokeOrder[id]);
             }
+        }
+    }
+
+    /// <summary>
+    /// 按需解析笔画：命中缓存直接返回；否则从首次登记的事件索引起查找可用的 JSON，
+    /// 解析成功后写入缓存。载荷为空或解析失败时返回 null（调用方跳过，不抛异常）。
+    /// </summary>
+    private InkStroke ResolveStroke(string id)
+    {
+        if (_registry.TryGetValue(id, out StrokeRecord cached)) return cached.Stroke;
+        if (!_strokeOrder.TryGetValue(id, out int start)) return null;
+
+        for (int i = start; i < _events.Count; i++)
+        {
+            TimelineEvent e = _events[i];
+            if (e is null) continue;
+
+            string json;
+            if (e.Kind == TimelineEventKind.StrokeAdded)
+            {
+                if (e.StrokeId != id) continue;
+                json = e.StrokeJson;
+            }
+            else if (e.Kind is TimelineEventKind.Undo or TimelineEventKind.Redo)
+            {
+                json = FindAddedStrokeJson(e.Payload, id);
+            }
+            else
+            {
+                continue;
+            }
+
+            if (string.IsNullOrEmpty(json)) continue;
+            InkStroke stroke = TryDeserialize(json);
+            if (stroke is null) continue;
+
+            int page = _strokePages.TryGetValue(id, out int knownPage) ? knownPage : e.PageIndex;
+            int order = _strokeOrder.TryGetValue(id, out int knownOrder) ? knownOrder : i;
+            CacheStroke(id, stroke, page, order);
+            return stroke;
+        }
+        return null;
+    }
+
+    private static InkStroke TryDeserialize(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            return StrokeJsonCodec.Deserialize(json);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string FindAddedStrokeJson(string payload, string id)
+    {
+        foreach (var (addedId, json) in DecodeAddedStrokes(payload))
+        {
+            if (addedId == id && !string.IsNullOrEmpty(json)) return json;
+        }
+        return null;
+    }
+
+    private void CacheStroke(string id, InkStroke stroke, int pageIndex, int order)
+    {
+        _registry[id] = new StrokeRecord { Stroke = stroke, PageIndex = pageIndex, Order = order };
+        _cacheQueue.Enqueue(id);
+    }
+
+    /// <summary>
+    /// 缓存上限控制：仅淘汰不在 <paramref name="keepIds"/>（当前帧结果集）中的旧记录，
+    /// 保证当前帧正在使用的笔画绝不会被移除。
+    /// </summary>
+    private void TrimCache(HashSet<string> keepIds)
+    {
+        if (_registry.Count <= MaxCachedStrokes) return;
+
+        // 最多遍历一轮初始队列长度，避免被保护项占满队列时无限重排。
+        int attempts = _cacheQueue.Count;
+        while (attempts-- > 0 && _registry.Count > MaxCachedStrokes && _cacheQueue.Count > 0)
+        {
+            string id = _cacheQueue.Dequeue();
+            if (keepIds.Contains(id) || !_registry.ContainsKey(id))
+            {
+                _cacheQueue.Enqueue(id);
+                continue;
+            }
+            _registry.Remove(id);
         }
     }
 
@@ -771,6 +988,7 @@ public sealed class InkTimeline
                 {
                     TimeMs = time,
                     EventIndex = index,
+                    Seq = _events[index].Seq,
                     PageIndex = PageAt(time),
                     Background = BackgroundAt(time),
                     LiveStrokeIds = _checkpointAlive.ToList(),
@@ -783,12 +1001,6 @@ public sealed class InkTimeline
     private int LastCheckpointEventIndex()
         => _session.Checkpoints.Count == 0 ? -1 : _session.Checkpoints[^1].EventIndex;
 
-    private int OrderOf(InkStroke stroke)
-    {
-        foreach (var record in _registry.Values)
-            if (ReferenceEquals(record.Stroke, stroke)) return record.Order;
-        return int.MaxValue;
-    }
 
     // ---- Undo/Redo 载荷（重新出现的笔画）-------------------------------
 

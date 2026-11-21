@@ -1,4 +1,5 @@
 using InkCanvas.Core.Classroom;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace InkCanvas.Features.Classroom;
@@ -30,6 +31,12 @@ public static class ClassroomSessionStore
     public static string PathForSnapshot(string id, string directory = null)
         => Path.Combine(directory ?? DefaultDirectory, id + ".snapshot.json");
 
+    /// <summary>会话文件的 SHA-256 旁车文件；旧会话没有该文件，加载时按「未校验」处理。</summary>
+    public static string PathForChecksum(string path) => path + ".sha256";
+
+    /// <summary>会话文件的迁移前备份；首次加载旧版会话时写入，后续不再覆盖。</summary>
+    public static string PathForBackup(string path) => path + ".bak";
+
     public static string Save(ClassroomSession session, string directory = null)
     {
         if (session is null) throw new ArgumentNullException(nameof(session));
@@ -37,9 +44,7 @@ public static class ClassroomSessionStore
         string path = PathFor(session.Id, directory);
         string dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        string tmp = path + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(session, Options));
-        File.Move(tmp, path, overwrite: true);
+        WriteAtomic(path, JsonSerializer.Serialize(session, Options));
         return path;
     }
 
@@ -51,16 +56,65 @@ public static class ClassroomSessionStore
         string path = PathForSnapshot(session.Id, directory);
         string dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        string tmp = path + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(session, Options));
-        File.Move(tmp, path, overwrite: true);
+        WriteAtomic(path, JsonSerializer.Serialize(session, Options));
         return path;
+    }
+
+    /// <summary>
+    /// 原子写入：先写临时文件并刷盘，再替换正式文件，最后写旁车校验。
+    /// 任一步失败都不会留下「半文件被当作正式文件」的状态。
+    /// </summary>
+    private static void WriteAtomic(string path, string json)
+    {
+        string tmp = path + ".tmp";
+        File.WriteAllText(tmp, json);
+        File.Move(tmp, path, overwrite: true);
+        WriteChecksum(path);
+    }
+
+    private static void WriteChecksum(string path)
+    {
+        try
+        {
+            string hash = ComputeSha256(path);
+            string checksumPath = PathForChecksum(path);
+            string tmp = checksumPath + ".tmp";
+            File.WriteAllText(tmp, hash);
+            File.Move(tmp, checksumPath, overwrite: true);
+        }
+        catch
+        {
+            // 校验文件写失败不影响会话本身；下次保存会重试。
+        }
+    }
+
+    private static string ComputeSha256(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(stream));
+    }
+
+    private static bool VerifyChecksum(string path)
+    {
+        try
+        {
+            string checksumPath = PathForChecksum(path);
+            if (!File.Exists(checksumPath)) return true; // 旧会话没有旁车文件：按未校验放行。
+            string expected = File.ReadAllText(checksumPath).Trim();
+            if (string.IsNullOrEmpty(expected)) return true;
+            return string.Equals(expected, ComputeSha256(path), StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return true; // 校验器自身不可用时不应把可读会话判死。
+        }
     }
 
     public static ClassroomSession LoadSnapshot(string id, string directory = null)
     {
         if (string.IsNullOrWhiteSpace(id)) return null;
-        return Load(PathForSnapshot(id, directory));
+        try { return Load(PathForSnapshot(id, directory)); }
+        catch { return null; } // 快照损坏时回退到正式会话 / 增量日志。
     }
 
     /// <summary>
@@ -101,10 +155,70 @@ public static class ClassroomSessionStore
     public static ClassroomSession Load(string path)
     {
         if (!File.Exists(path)) return null;
-        var session = JsonSerializer.Deserialize<ClassroomSession>(File.ReadAllText(path), Options);
-        session?.Events ??= new List<TimelineEvent>();
-        session?.Checkpoints ??= new List<SessionCheckpoint>();
+
+        // 完整性校验：有旁车文件且不匹配时，优先用迁移前备份，其次拒绝加载损坏内容。
+        bool integrityOk = VerifyChecksum(path);
+        string source = path;
+        if (!integrityOk)
+        {
+            string backup = PathForBackup(path);
+            if (!File.Exists(backup))
+                throw new InvalidDataException("会话文件完整性校验失败，且没有可用备份：" + path);
+            source = backup;
+        }
+
+        string json = File.ReadAllText(source);
+        var session = JsonSerializer.Deserialize<ClassroomSession>(json, Options);
+        if (session is null) return null;
+
+        session.Events ??= new List<TimelineEvent>();
+        session.Checkpoints ??= new List<SessionCheckpoint>();
+
+        if (integrityOk) MigrateIfNeeded(path, json, session);
+        else session.Bookmarks ??= new List<SessionBookmark>();
         return session;
+    }
+
+    /// <summary>
+    /// 旧版会话迁移：迁移前把原文件复制为 <c>.bak</c>（只写一次），补齐 v2 字段并把版本提升到 2。
+    /// 迁移本身不写回原文件，失败也不会改动历史记录；下一次正常保存才落新版格式。
+    /// </summary>
+    private static void MigrateIfNeeded(string path, string json, ClassroomSession session)
+    {
+        bool legacy = !HasVersionProperty(json);
+        if (!legacy && session.Version >= 2)
+        {
+            session.Bookmarks ??= new List<SessionBookmark>();
+            return;
+        }
+
+        string backup = PathForBackup(path);
+        try
+        {
+            if (!File.Exists(backup)) File.Copy(path, backup, overwrite: false);
+        }
+        catch
+        {
+            // 备份失败时不写回原文件；内存迁移照常进行，历史文件保持不变。
+        }
+
+        if (session.Version < 2) session.Version = 2;
+        session.Bookmarks ??= new List<SessionBookmark>();
+    }
+
+    private static bool HasVersionProperty(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && (document.RootElement.TryGetProperty("version", out _)
+                    || document.RootElement.TryGetProperty("Version", out _));
+        }
+        catch
+        {
+            return true; // 无法解析时不当作旧版，交给反序列化错误处理。
+        }
     }
 
     /// <summary>
@@ -158,7 +272,10 @@ public static class ClassroomSessionStore
         int removed = 0;
         foreach (string id in PruneOldSessions(keep, directory))
         {
-            bool removedAny = TryDelete(PathFor(id, directory));
+            string path = PathFor(id, directory);
+            bool removedAny = TryDelete(path);
+            removedAny |= TryDelete(PathForChecksum(path));
+            removedAny |= TryDelete(PathForBackup(path));
             removedAny |= TryDelete(PathForSnapshot(id, directory));
             removedAny |= TryDelete(SessionJournal.PathFor(id, directory));
             if (removedAny) removed++;
@@ -242,6 +359,8 @@ public static class ClassroomSessionStore
         string path = PathFor(id, directory);
         if (!File.Exists(path)) return false;
         File.Delete(path);
+        TryDelete(PathForChecksum(path));
+        TryDelete(PathForBackup(path));
         return true;
     }
 
