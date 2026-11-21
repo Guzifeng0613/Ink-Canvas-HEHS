@@ -1,341 +1,365 @@
 {
-  "note": "target: sys.symbol.<name>（IconGlyph.ets 映射，需真机核对）或 custom:text 兜底",
+  "note": "target: Symbol 名或 custom:<id>，Phase D 填充",
   "glyphs": [
     {
       "name": "Pen",
       "codepoint": "U+E70F",
       "char": "",
-      "target": "sys.symbol.pencil_tip"
+      "target": null
     },
     {
       "name": "Highlight",
       "codepoint": "U+E7E6",
       "char": "",
-      "target": "sys.symbol.highlighter_tip"
+      "target": null
     },
     {
       "name": "Eraser",
       "codepoint": "U+E75C",
       "char": "",
-      "target": "sys.symbol.eraser_line"
+      "target": null
     },
     {
       "name": "Select",
       "codepoint": "U+E8B3",
       "char": "",
-      "target": "custom:text"
+      "target": null
     },
     {
       "name": "Shapes",
       "codepoint": "U+25B3",
       "char": "△",
-      "target": "custom:text"
+      "target": null
     },
     {
       "name": "Undo",
       "codepoint": "U+E7A7",
       "char": "",
-      "target": "sys.symbol.undo"
+      "target": null
     },
     {
       "name": "Redo",
       "codepoint": "U+E7A6",
       "char": "",
-      "target": "sys.symbol.redo"
+      "target": null
     },
     {
       "name": "Delete",
       "codepoint": "U+E74D",
       "char": "",
-      "target": "sys.symbol.trash"
+      "target": null
     },
     {
       "name": "Add",
       "codepoint": "U+E710",
       "char": "",
-      "target": "sys.symbol.plus"
+      "target": null
     },
     {
       "name": "Settings",
       "codepoint": "U+E713",
       "char": "",
-      "target": "sys.symbol.gearshape"
+      "target": null
     },
     {
       "name": "Camera",
       "codepoint": "U+E722",
       "char": "",
-      "target": "sys.symbol.camera"
+      "target": null
+    },
+    {
+      "name": "Video",
+      "codepoint": "U+E714",
+      "char": "",
+      "target": "sys.symbol.video"
     },
     {
       "name": "Stopwatch",
       "codepoint": "U+E916",
       "char": "",
-      "target": "sys.symbol.timer"
+      "target": null
     },
     {
       "name": "People",
       "codepoint": "U+E716",
       "char": "",
-      "target": "sys.symbol.person_2"
+      "target": null
     },
     {
       "name": "Board",
       "codepoint": "U+E7F4",
       "char": "",
-      "target": "custom:text"
+      "target": null
     },
     {
       "name": "ChevronUp",
       "codepoint": "U+E70E",
       "char": "",
-      "target": "sys.symbol.chevron_up"
+      "target": null
     },
     {
       "name": "ChevronDown",
       "codepoint": "U+E70D",
       "char": "",
-      "target": "sys.symbol.chevron_down"
+      "target": null
     },
     {
       "name": "ChevronLeft",
       "codepoint": "U+E76B",
       "char": "",
-      "target": "sys.symbol.chevron_left"
+      "target": null
     },
     {
       "name": "ChevronRight",
       "codepoint": "U+E76C",
       "char": "",
-      "target": "sys.symbol.chevron_right"
+      "target": null
     },
     {
       "name": "Lock",
       "codepoint": "U+E72E",
       "char": "",
-      "target": "sys.symbol.lock"
+      "target": null
     },
     {
       "name": "Unlock",
       "codepoint": "U+E785",
       "char": "",
-      "target": "sys.symbol.lock_open"
+      "target": null
     },
     {
       "name": "Close",
       "codepoint": "U+E711",
       "char": "",
-      "target": "sys.symbol.xmark"
+      "target": null
     },
     {
       "name": "Exit",
       "codepoint": "U+E8BB",
       "char": "",
-      "target": "custom:text"
+      "target": null
     },
     {
       "name": "Play",
       "codepoint": "U+E768",
       "char": "",
-      "target": "sys.symbol.play"
+      "target": null
     },
     {
       "name": "Pause",
       "codepoint": "U+E769",
       "char": "",
-      "target": "sys.symbol.pause"
+      "target": null
     },
     {
       "name": "Restart",
       "codepoint": "U+E72C",
       "char": "",
-      "target": "sys.symbol.arrow_counterclockwise"
+      "target": null
     },
     {
       "name": "Replay",
       "codepoint": "U+E823",
       "char": "",
-      "target": "sys.symbol.arrow_counterclockwise"
+      "target": null
     },
     {
       "name": "Help",
       "codepoint": "U+E897",
       "char": "",
-      "target": "sys.symbol.questionmark_circle"
+      "target": null
     },
     {
       "name": "Info",
       "codepoint": "U+E946",
       "char": "",
-      "target": "sys.symbol.info_circle"
+      "target": null
     },
     {
       "name": "Download",
       "codepoint": "U+E896",
       "char": "",
-      "target": "sys.symbol.arrow_down_circle"
+      "target": null
+    },
+    {
+      "name": "Pdf",
+      "codepoint": "U+EA90",
+      "char": "",
+      "target": "sys.symbol.doc_text"
+    },
+    {
+      "name": "Import",
+      "codepoint": "U+E8B5",
+      "char": "",
+      "target": "sys.symbol.import"
+    },
+    {
+      "name": "Calculator",
+      "codepoint": "U+E8EF",
+      "char": "",
+      "target": "sys.symbol.calculator"
     },
     {
       "name": "Cursor",
       "codepoint": "U+E8B0",
       "char": "",
-      "target": "sys.symbol.mouse"
+      "target": null
     },
     {
       "name": "PenWpf",
       "codepoint": "U+EE56",
       "char": "",
-      "target": "sys.symbol.pencil_tip"
+      "target": null
     },
     {
       "name": "HighlightWpf",
       "codepoint": "U+E7E6",
       "char": "",
-      "target": "sys.symbol.highlighter_tip"
+      "target": null
     },
     {
       "name": "EraserOverlayCircle",
       "codepoint": "U+F0B6",
       "char": "",
-      "target": "custom:text"
+      "target": null
     },
     {
       "name": "EraserOverlayStroke",
       "codepoint": "U+F128",
       "char": "",
-      "target": "custom:text"
+      "target": null
     },
     {
       "name": "SelectWpf",
       "codepoint": "U+E958",
       "char": "",
-      "target": "sys.symbol.square_dashed"
+      "target": null
     },
     {
       "name": "SelectOverlay",
       "codepoint": "U+F8AF",
       "char": "",
-      "target": "custom:text"
+      "target": null
     },
     {
       "name": "ShapesWpf",
       "codepoint": "U+F158",
       "char": "",
-      "target": "sys.symbol.rectangle_stack"
+      "target": null
     },
     {
       "name": "InsertMedia",
       "codepoint": "U+EE71",
       "char": "",
-      "target": "sys.symbol.picture"
+      "target": null
     },
     {
       "name": "BoardWpf",
       "codepoint": "U+E929",
       "char": "",
-      "target": "sys.symbol.square_and_pencil"
+      "target": null
     },
     {
       "name": "Tools",
       "codepoint": "U+E8A9",
       "char": "",
-      "target": "sys.symbol.wrench_and_screwdriver"
+      "target": null
     },
     {
       "name": "FoldWpf",
       "codepoint": "U+ED1A",
       "char": "",
-      "target": "sys.symbol.arrow_left_to_line"
+      "target": null
     },
     {
       "name": "Emoji",
       "codepoint": "U+E76E",
       "char": "",
-      "target": "custom:text"
+      "target": null
     },
     {
       "name": "EmojiDrag",
       "codepoint": "U+E899",
       "char": "",
-      "target": "sys.symbol.move"
+      "target": null
     },
     {
       "name": "Gesture",
       "codepoint": "U+F271",
       "char": "",
-      "target": "sys.symbol.hand_tap"
+      "target": null
     },
     {
       "name": "TimerWpf",
       "codepoint": "U+EA8F",
       "char": "",
-      "target": "custom:text"
+      "target": null
     },
     {
       "name": "Rand",
       "codepoint": "U+E8B1",
       "char": "",
-      "target": "custom:text"
+      "target": null
     },
     {
       "name": "SaveStrokes",
       "codepoint": "U+E74E",
       "char": "",
-      "target": "sys.symbol.save"
+      "target": null
     },
     {
       "name": "OpenStrokes",
       "codepoint": "U+ED25",
       "char": "",
-      "target": "sys.symbol.folder"
+      "target": null
     },
     {
       "name": "ReplayWpf",
       "codepoint": "U+EC57",
       "char": "",
-      "target": "custom:text"
+      "target": null
     },
     {
       "name": "GuideWpf",
       "codepoint": "U+E82D",
       "char": "",
-      "target": "sys.symbol.doc_plaintext"
+      "target": null
     },
     {
       "name": "ExitWpf",
       "codepoint": "U+E7E8",
       "char": "",
-      "target": "sys.symbol.arrow_right_to_line"
+      "target": null
     },
     {
       "name": "HideControl",
       "codepoint": "U+E7B3",
       "char": "",
-      "target": "sys.symbol.eye_slash"
+      "target": null
     },
     {
       "name": "LRSwitch",
       "codepoint": "U+E8AB",
       "char": "",
-      "target": "sys.symbol.arrow_left_arrow_right"
+      "target": null
     },
     {
       "name": "GestureTranslate",
       "codepoint": "U+E7C2",
       "char": "",
-      "target": "sys.symbol.move"
+      "target": null
     },
     {
       "name": "GestureZoom",
       "codepoint": "U+E740",
       "char": "",
-      "target": "sys.symbol.magnifyingglass"
+      "target": null
     },
     {
       "name": "GestureRotate",
       "codepoint": "U+E7AD",
       "char": "",
-      "target": "sys.symbol.arrow_clockwise"
+      "target": null
     }
   ]
 }
