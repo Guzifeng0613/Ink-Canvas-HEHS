@@ -152,6 +152,7 @@ internal sealed class BoardPageNavigator : UserControl, IDisposable
             if (scroll is not null && _scrollHosts.Add(scroll)) scroll.ViewChanged += OnScrollChanged;
             Schedule();
         };
+        view.SizeChanged += (_, _) => Schedule();
         view.ItemTemplate = (DataTemplate)XamlReader.Load("""
             <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
                 <StackPanel Width="192" Spacing="6" Margin="4,8">

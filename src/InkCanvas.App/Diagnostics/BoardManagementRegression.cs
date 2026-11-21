@@ -60,9 +60,11 @@ internal static class BoardManagementRegression
             var open = Descendants(root).OfType<Button>().First(button => AutomationProperties.GetName(button) == "页面管理与总览");
             Invoke(open); await Task.Delay(1500);
             var navigator = window.PageNavigator;
+            for (int attempt = 0; attempt < 60 && navigator.CachedThumbnailCount == 0; attempt++) await Task.Delay(50);
             Check("page button opens the 1000-page navigator", window.PagePaneOpen && navigator.ItemCount == 1000);
             Check("opening sidebar preserves the canvas transform", board.Current.ViewTransform == view);
-            Check("only a bounded visible subset has decoded thumbnails", navigator.CachedThumbnailCount > 0 && navigator.CachedThumbnailCount <= 24);
+            Check("only a bounded visible subset has decoded thumbnails", navigator.CachedThumbnailCount > 0 && navigator.CachedThumbnailCount <= 24,
+                new { cached = navigator.CachedThumbnailCount, width = navigator.ActiveView.ActualWidth, height = navigator.ActiveView.ActualHeight });
             Check("touch and mouse reordering are enabled", navigator.ActiveView.CanDragItems && navigator.ActiveView.CanReorderItems
                 && navigator.ActiveView.AllowDrop && navigator.ActiveView.IsSwipeEnabled);
             await BoardWindowRegression.SaveVisual(root, Path.Combine(directory, "page-sidebar.png"));
@@ -117,7 +119,7 @@ internal static class BoardManagementRegression
             await File.WriteAllTextAsync(Path.Combine(directory, "page-management.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
             shell.Dispose(); Application.Current.Exit();
         }
-        void Check(string name, bool passed) => checks.Add(new { check = name, passed });
+        void Check(string name, bool passed, object detail = null) => checks.Add(new { check = name, passed, detail });
     }
 
     private static void Invoke(Button button) => ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke();
