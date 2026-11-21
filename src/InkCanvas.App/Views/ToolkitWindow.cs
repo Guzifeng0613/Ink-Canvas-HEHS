@@ -12,22 +12,31 @@ namespace InkCanvas.App.Views;
 
 /// <summary>
 /// 统一课堂工具箱浮窗：可拖动、可收起的圆角半透明浮窗，集中提供点名、抽奖、倒计时、
-/// 聚光灯、放大镜、画板、AI 助教入口。点击按钮只转发到 <see cref="IShellActions"/>。
+/// 聚光灯、放大镜、画板、AI 助教与例题库入口。点击按钮只转发到 <see cref="IShellActions"/>
+/// 或构造时传入的回调。
 /// </summary>
 public sealed class ToolkitWindow : Window
 {
-    private const double WindowWidth = 300;
-    private const double ExpandedHeight = 366;
+    private const double WindowWidth = 320;
+    private const double ExpandedHeight = 434;
     private const double CollapsedHeight = 56;
 
     private readonly IShellActions _shell;
+    private readonly Action _openExampleLibrary;
+    private readonly Action _openResourceBundle;
     private readonly Border _body;
     private readonly Button _collapseButton;
     private bool _collapsed;
 
-    public ToolkitWindow(IShellActions shell, int theme)
+    public ToolkitWindow(
+        IShellActions shell,
+        int theme,
+        Action openExampleLibrary = null,
+        Action openResourceBundle = null)
     {
         _shell = shell;
+        _openExampleLibrary = openExampleLibrary;
+        _openResourceBundle = openResourceBundle;
         Title = "课堂工具";
 
         var title = new TextBlock
@@ -84,15 +93,22 @@ public sealed class ToolkitWindow : Window
         var grid = new Grid { ColumnSpacing = 8, RowSpacing = 8, Margin = new Thickness(0, 6, 0, 0) };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        for (int i = 0; i < 4; i++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        for (int i = 0; i < 5; i++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         AddTool(grid, 0, 0, Glyphs.People, "点名", () => _shell?.OpenRoster());
         AddTool(grid, 0, 1, Glyphs.Replay, "抽奖", () => _shell?.OpenLottery());
-        AddTool(grid, 1, 0, Glyphs.Stopwatch, "倒计时", () => _shell?.OpenTimer());
-        AddTool(grid, 1, 1, Glyphs.Select, "聚光灯", () => _shell?.OpenSpotlight());
-        AddTool(grid, 2, 0, Glyphs.Add, "放大镜", () => _shell?.OpenMagnifier());
-        AddTool(grid, 2, 1, Glyphs.Board, "画板", () => _shell?.ToggleBoard());
-        AddTool(grid, 3, 0, Glyphs.Ai, "AI 助教", () => _shell?.OpenAiAssistant());
+        AddTool(grid, 0, 2, Glyphs.Stopwatch, "倒计时", () => _shell?.OpenTimer());
+        AddTool(grid, 1, 0, Glyphs.Select, "聚光灯", () => _shell?.OpenSpotlight());
+        AddTool(grid, 1, 1, Glyphs.Add, "放大镜", () => _shell?.OpenMagnifier());
+        AddTool(grid, 1, 2, Glyphs.Board, "画板", () => _shell?.ToggleBoard());
+        AddTool(grid, 2, 0, Glyphs.Ai, "AI 助教", () => _shell?.OpenAiAssistant());
+        AddTool(grid, 2, 1, Glyphs.People, "分组积分", () => _shell?.OpenGroupScore());
+        AddTool(grid, 2, 2, Glyphs.Download, "讲义导出", () => _shell?.OpenHandout());
+        AddTool(grid, 3, 0, Glyphs.SlideList, "切换场景", () => _shell?.CyclePreset());
+        AddTool(grid, 3, 1, Glyphs.Settings, "编辑场景", () => _shell?.OpenPresetEditor());
+        AddTool(grid, 3, 2, Glyphs.SlideList, "例题库", () => _openExampleLibrary?.Invoke());
+        AddTool(grid, 4, 0, Glyphs.Download, "资源包", () => _openResourceBundle?.Invoke());
 
         _body = new Border { Child = grid, Padding = new Thickness(0, 0, 0, 8) };
 
@@ -137,16 +153,7 @@ public sealed class ToolkitWindow : Window
         FrameworkElement icon;
         if (glyph == Glyphs.Ai)
         {
-            var aiHost = new Grid { Width = 24, Height = 22 };
-            aiHost.Children.Add(new TextBlock
-            {
-                Text = "AI",
-                FontSize = 15,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            });
-            icon = aiHost;
+            icon = AiGlyph.CreateFramed(AiGlyph.ToolTileWidth, AiGlyph.ToolTileHeight);
         }
         else
         {
@@ -196,7 +203,24 @@ public sealed class ToolkitWindow : Window
 
     private void ToggleCollapse()
     {
-        _collapsed = !_collapsed;
+        SetCollapsed(!_collapsed);
+    }
+
+    public bool IsCollapsed => _collapsed;
+
+    public int PositionX => AppWindow.Position.X;
+
+    public int PositionY => AppWindow.Position.Y;
+
+    public void MoveTo(int x, int y)
+    {
+        try { AppWindow.Move(new Windows.Graphics.PointInt32(x, y)); }
+        catch (Exception) { }
+    }
+
+    public void SetCollapsed(bool collapsed)
+    {
+        _collapsed = collapsed;
         _body.Visibility = _collapsed ? Visibility.Collapsed : Visibility.Visible;
         _collapseButton.Content = _collapsed ? "▢" : "—";
 
@@ -206,5 +230,12 @@ public sealed class ToolkitWindow : Window
         WindowChrome.Place(this, position.X, position.Y,
             (int)Math.Round(WindowWidth * dpi),
             (int)Math.Round((_collapsed ? CollapsedHeight : ExpandedHeight) * dpi));
+    }
+
+    /// <summary>不激活窗口地显示，避免抢走正在书写的白板焦点。</summary>
+    public void ShowWithoutActivating()
+    {
+        NativeMethods.ShowWindow(
+            WindowChrome.GetHwnd(this), NativeMethods.SW_SHOWNOACTIVATE);
     }
 }

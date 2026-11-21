@@ -47,4 +47,5 @@ public static class Glyphs
     public const string Info = "";
     public const string Download = "";
     public const string TimeMachine = "\uE81C";
+    public const string SlideList = "\uE8FD";
 }

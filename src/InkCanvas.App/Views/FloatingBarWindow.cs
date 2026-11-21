@@ -2,6 +2,7 @@ using InkCanvas.Controls.Animation;
 using InkCanvas.Controls.Controls;
 using InkCanvas.App.Services;
 using InkCanvas.Platform.Interop;
+using InkCanvas.Platform.System;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -100,6 +101,16 @@ public sealed class FloatingBarWindow : Window
     }
 
     /// <summary>
+    /// Applies an explicit appearance theme to the window chrome and to the hosted bar.
+    /// 0 = follow system, 1 = light, 2 = dark.
+    /// </summary>
+    public void ApplyTheme(int theme)
+    {
+        WindowChrome.ApplyTheme(this, theme);
+        _bar.ApplyTheme(theme);
+    }
+
+    /// <summary>
     /// Size the window to the bar's measured content and place it bottom-centre. Sizing to
     /// content matters: any leftover window area is transparent but still hit-testable.
     /// </summary>
@@ -116,16 +127,56 @@ public sealed class FloatingBarWindow : Window
     private (int Width, int Height, double DpiScale) GetPhysicalSize(double dpiScale)
     {
         double userScale = Math.Clamp(_scalePercent, 50, 200) / 100.0;
-        _bar.RenderTransformOrigin = new Windows.Foundation.Point(0, 0);
-        _bar.RenderTransform = new ScaleTransform { ScaleX = userScale, ScaleY = userScale };
+
+        // raster 是 XAML 内容真实的栅格化比例（每个 DIP 对应的物理像素）。启动阶段
+        // WindowChrome.GetDpiScale 可能仍返回 1，而 RenderTransform 缩放的是 DIP 内容，
+        // 若用错误的 dpiScale 换算物理尺寸，就会出现窗口偏小、右侧按钮被裁切的问题。
+        double raster = _bar.XamlRoot?.RasterizationScale ?? dpiScale;
+        if (raster <= 0) raster = dpiScale;
+        if (raster <= 0) raster = 1;
 
         // AppWindow is physical pixels; WinUI layout and FontIcon sizes are DIPs.
         var (buttons, separators) = _bar.CountVisibleItems();
         const double chromeDip = 16;
         double rowDip = buttons * 54.0 + separators * 11.0 + chromeDip;
         bool folded = _bar.IsFolded;
-        int widthPx = (int)Math.Ceiling(rowDip * userScale * dpiScale);
-        int heightPx = (int)Math.Ceiling((40 + chromeDip + (folded ? 44 : 0)) * userScale * dpiScale);
+        double heightDip = 40 + chromeDip + (folded ? 44 : 0);
+
+        // 缩放降级只影响本次渲染与窗口尺寸，不改用户设置的原值 _scalePercent。
+        int maxWidthPx = int.MaxValue, maxHeightPx = int.MaxValue;
+        try
+        {
+            var work = ScreenService.WorkArea;
+            maxWidthPx = Math.Max(320, work.Width - 16);
+            maxHeightPx = Math.Max(80, work.Height - 16);
+        }
+        catch (Exception)
+        {
+            // 读取工作区失败时不做限制，保持原有尺寸行为。
+            maxWidthPx = int.MaxValue;
+            maxHeightPx = int.MaxValue;
+        }
+
+        // 先算出工作区允许的最大比例：所需宽度本身小于工作区（大屏）时保持 userScale
+        // 原值（含 200%）；仅在宽度或高度受限时降级，且实际渲染不超过 150%。
+        // 在单屏 1536 宽等空间不足时，实际渲染不超过 150%，用户设置值 _scalePercent 保留。
+        double effectiveScale = userScale;
+        double maxScaleByWidth = maxWidthPx / (rowDip * raster);
+        if (userScale > maxScaleByWidth)
+            effectiveScale = Math.Clamp(maxScaleByWidth, 0.5, 1.5);
+
+        double maxScaleByHeight = maxHeightPx / (heightDip * raster);
+        if (effectiveScale > maxScaleByHeight)
+            effectiveScale = Math.Clamp(maxScaleByHeight, 0.5, 1.5);
+
+        // 单屏空间不足时，实际渲染上限 150%，避免浮条超出屏幕；用户设置值 _scalePercent 保留不变。
+        effectiveScale = Math.Min(effectiveScale, 1.5);
+
+        _bar.RenderTransformOrigin = new Windows.Foundation.Point(0, 0);
+        _bar.RenderTransform = new ScaleTransform { ScaleX = effectiveScale, ScaleY = effectiveScale };
+
+        int widthPx = (int)Math.Ceiling(rowDip * effectiveScale * raster);
+        int heightPx = (int)Math.Ceiling(heightDip * effectiveScale * raster);
         return (widthPx, heightPx, dpiScale);
     }
 

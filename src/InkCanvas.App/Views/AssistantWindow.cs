@@ -1,5 +1,8 @@
 using InkCanvas.App.Services;
+using InkCanvas.Controls.Controls;
 using InkCanvas.Core.AiAssistant;
+using InkCanvas.Core.Classroom;
+using InkCanvas.Core.Settings;
 using Microsoft.UI;
 using Microsoft.UI.Text;
 using Microsoft.UI.Windowing;
@@ -40,13 +43,24 @@ public sealed class AssistantWindow : Window
     private readonly Ellipse _statusDot;
     private readonly TextBlock _statusText;
     private readonly TextBlock _titleText;
-    private readonly Border _modeCapsule;
+    private readonly Button _modeCapsule;
     private readonly TextBlock _modeText;
     private readonly ProgressRing _progressRing;
     private readonly Border _thumbnailHost;
     private readonly Image _thumbnail;
+    private readonly ScrollViewer _problemScroll;
+    private readonly StackPanel _problemList;
+    private readonly Button _addRegionLink;
+    private readonly Dictionary<string, BitmapImage> _problemImages = new();
+    private readonly List<InMemoryRandomAccessStream> _problemStreams = new();
     private readonly Canvas _selectionOverlay;
     private readonly Rectangle _selectionRect;
+    private readonly Canvas _annotationCanvas = new() { IsHitTestVisible = false };
+    private readonly Button _variantBasic;
+    private readonly Button _variantAdvanced;
+    private readonly Button _toggleAnnotations;
+    private readonly StackPanel _studyRow;
+    private bool _annotationsVisible = true;
     private readonly Border _hintRow;
     private readonly TextBlock _hintText;
     private readonly Border _statusBadge;
@@ -63,6 +77,8 @@ public sealed class AssistantWindow : Window
     private readonly Button _retry;
     private readonly Button _copy;
     private readonly Button _paste;
+    private readonly Button _favorite;
+    private readonly Button _revealNext;
     private readonly Button _close;
     private readonly TextBlock _cursor;
     private readonly DispatcherTimer _cursorTimer;
@@ -90,6 +106,7 @@ public sealed class AssistantWindow : Window
 
     private InMemoryRandomAccessStream _thumbStream;
     private string _thumbBase64 = "";
+    private ProblemContext _problem;
     private AssistantSession _lastSession;
     private AssistantRect _anchor;
     private Windows.Foundation.Point _thumbStart;
@@ -100,6 +117,11 @@ public sealed class AssistantWindow : Window
     private bool _busy;
     private bool _pasted;
     private bool _hasCopyable;
+    private readonly FeatureSettings _features;
+    private bool _aiTeachingEnabled = true;
+    private string _sourcePresentation = "";
+    private int _sourceSlideId;
+    private int _sourceBoardPage;
 
     public new event Action Closed;
 
@@ -113,15 +135,35 @@ public sealed class AssistantWindow : Window
 
     public event Action<string> FollowUpRequested;
 
+    /// <summary>讲题模式切换请求；由 ShellController 决定是否重发请求。</summary>
+    public event Action<AssistantTeachingMode> TeachingModeRequested;
+
+    /// <summary>分步引导下请求展示下一步。</summary>
+    public event Action RevealNextRequested;
+
+    /// <summary>请求生成同知识点变式题；参数 true 表示提高难度。</summary>
+    public event Action<bool> VariantRequested;
+
+    /// <summary>把画布当前选区追加进拼题上下文。</summary>
+    public event Action AddRegionRequested;
+
+    public event Action<string> RemoveRegionRequested;
+
+    /// <summary>请求只重新识别某个选区（不改变其他选区与顺序）。</summary>
+    public event Action<string> ReRecognizeRegionRequested;
+
+    public event Action<string, int> MoveRegionRequested;
+
     /// <summary>缩略图上框选完成；矩形为原选区锚点的屏幕 DIP 坐标。</summary>
     public event Action<AssistantRect> RegionSelected;
 
     /// <summary>关闭“局部纠错”开关时禁用缩略图圈选交互。</summary>
     public bool RegionSelectionEnabled { get; set; } = true;
 
-    public AssistantWindow(int theme)
+    public AssistantWindow(int theme, FeatureSettings features = null)
     {
         Title = "AI 助教";
+        _features = features;
 
         bool light = theme == 1 || (theme != 2 && Application.Current.RequestedTheme == ApplicationTheme.Light);
         if (light)
@@ -164,32 +206,22 @@ public sealed class AssistantWindow : Window
         };
         _titleText = new TextBlock
         {
+            Text = "AI 助教",
             FontSize = 15,
             FontWeight = FontWeights.SemiBold,
             Foreground = _textPrimary,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        // 标题内嵌「AI」徽标：标题控件本身的起点不变，不挤占关闭按钮与头部高度。
-        _titleText.Inlines.Add(new InlineUIContainer
+        // 标题前缀「AI」徽标独立成控件：WinUI 3 的 TextBlock.Inlines 不接受
+        // InlineUIContainer 时会抛 E_INVALIDARG，直接把徽标放进标题行更稳。
+        var titleBadge = new Border
         {
-            Child = new Border
-            {
-                Background = _accentSoftBrush,
-                CornerRadius = new CornerRadius(4),
-                Padding = new Thickness(4, 1, 4, 1),
-                Margin = new Thickness(0, 0, 6, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-                Child = new TextBlock
-                {
-                    Text = "AI",
-                    FontSize = 10,
-                    FontWeight = FontWeights.SemiBold,
-                    Foreground = _accentBrush,
-                    VerticalAlignment = VerticalAlignment.Center,
-                },
-            },
-        });
-        _titleText.Inlines.Add(new Run { Text = "AI 助教" });
+            Background = _accentSoftBrush,
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(4, 1, 4, 1),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = AiGlyph.CreateLabel(AiGlyph.BadgeLabelSize, _accentBrush),
+        };
         _modeText = new TextBlock
         {
             Text = "自动",
@@ -197,13 +229,22 @@ public sealed class AssistantWindow : Window
             Foreground = _accentBrush,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        _modeCapsule = new Border
+        _modeCapsule = new Button
         {
+            Content = _modeText,
             Background = Solid(0x0F, 0x00, 0x67, 0xC0),
             CornerRadius = new CornerRadius(8),
             Padding = new Thickness(8, 2, 8, 2),
+            MinHeight = 24,
+            MinWidth = 0,
+            BorderThickness = new Thickness(0),
             VerticalAlignment = VerticalAlignment.Center,
-            Child = _modeText,
+        };
+        ToolTipService.SetToolTip(_modeCapsule, "切换讲题模式：只给提示 → 分步引导 → 完整解答 → 教师解析");
+        _modeCapsule.Click += (_, _) =>
+        {
+            if (_lastSession is null) return;
+            TeachingModeRequested?.Invoke(AssistantTeachingPolicy.Next(_lastSession.TeachingMode));
         };
 
         var headerLeft = new StackPanel
@@ -214,6 +255,7 @@ public sealed class AssistantWindow : Window
             Margin = new Thickness(12, 0, 0, 0),
         };
         headerLeft.Children.Add(_statusDot);
+        headerLeft.Children.Add(titleBadge);
         headerLeft.Children.Add(_titleText);
         headerLeft.Children.Add(_modeCapsule);
 
@@ -308,6 +350,7 @@ public sealed class AssistantWindow : Window
 
         var thumbGrid = new Grid();
         thumbGrid.Children.Add(_thumbnail);
+        thumbGrid.Children.Add(_annotationCanvas);
         thumbGrid.Children.Add(_selectionOverlay);
         _thumbnailHost = new Border
         {
@@ -319,6 +362,7 @@ public sealed class AssistantWindow : Window
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Child = thumbGrid,
         };
+        _thumbnailHost.SizeChanged += (_, _) => ApplyAnnotations(_lastSession);
 
         _highlightTimer = new DispatcherTimer { Interval = HighlightDuration };
         _highlightTimer.Tick += (_, _) =>
@@ -326,6 +370,27 @@ public sealed class AssistantWindow : Window
             _highlightTimer.Stop();
             _selectionRect.Visibility = Visibility.Collapsed;
         };
+
+        _problemList = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+        };
+        _problemScroll = new ScrollViewer
+        {
+            Content = _problemList,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Visibility = Visibility.Collapsed,
+            MaxHeight = MaxThumbnailHeight + 12,
+        };
+
+        _addRegionLink = CreateSecondaryButton("＋ 追加选区");
+        _addRegionLink.Height = 28;
+        _addRegionLink.HorizontalAlignment = HorizontalAlignment.Left;
+        _addRegionLink.Visibility = Visibility.Collapsed;
+        ToolTipService.SetToolTip(_addRegionLink, "先回画布用选择工具框选题干/图形/条件，再点此追加为同一题");
+        _addRegionLink.Click += (_, _) => AddRegionRequested?.Invoke();
         _noticeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.6) };
         _noticeTimer.Tick += (_, _) =>
         {
@@ -404,8 +469,11 @@ public sealed class AssistantWindow : Window
 
         _body = new StackPanel { Spacing = 10 };
         _body.Children.Add(_thumbnailHost);
+        _body.Children.Add(_problemScroll);
+        _body.Children.Add(_addRegionLink);
         _body.Children.Add(_hintRow);
         _body.Children.Add(_content);
+
         _body.Children.Add(_formulaCard);
 
         _scroll = new ScrollViewer
@@ -418,9 +486,35 @@ public sealed class AssistantWindow : Window
 
         // ---- footer actions ---------------------------------------------
         _paste = CreatePrimaryButton("贴回白板");
+        _favorite = CreateSecondaryButton("收藏例题");
         _stop = CreateSecondaryButton("停止生成");
         _copy = CreateSecondaryButton("复制");
         _retry = CreateSecondaryButton("重试");
+        _revealNext = CreateSecondaryButton("下一步");
+        _variantBasic = CreateSecondaryButton("基础变式");
+        _variantAdvanced = CreateSecondaryButton("提高变式");
+        _toggleAnnotations = CreateSecondaryButton("隐藏标注");
+
+        _toggleAnnotations.Visibility = Visibility.Collapsed;
+        _variantBasic.Click += (_, _) => VariantRequested?.Invoke(false);
+        _variantAdvanced.Click += (_, _) => VariantRequested?.Invoke(true);
+        _toggleAnnotations.Click += (_, _) =>
+        {
+            _annotationsVisible = !_annotationsVisible;
+            _toggleAnnotations.Content = _annotationsVisible ? "隐藏标注" : "显示标注";
+            ApplyAnnotations(_lastSession);
+        };
+
+        _studyRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            Visibility = Visibility.Collapsed,
+        };
+        _studyRow.Children.Add(_variantBasic);
+        _studyRow.Children.Add(_variantAdvanced);
+        _studyRow.Children.Add(_toggleAnnotations);
+        _body.Children.Insert(0, _studyRow);
         _close = new Button
         {
             Content = new TextBlock { Text = "✕", FontSize = 12, Foreground = _textPrimary },
@@ -437,12 +531,16 @@ public sealed class AssistantWindow : Window
         _stop.Visibility = Visibility.Collapsed;
         _retry.Visibility = Visibility.Collapsed;
         _paste.Visibility = Visibility.Collapsed;
+        _favorite.Visibility = Visibility.Collapsed;
         _copy.IsEnabled = false;
+        _revealNext.Visibility = Visibility.Collapsed;
 
         _stop.Click += (_, _) => StopRequested?.Invoke();
         _retry.Click += (_, _) => RetryRequested?.Invoke();
         _copy.Click += (_, _) => CopyRequested?.Invoke();
         _paste.Click += (_, _) => PasteRequested?.Invoke();
+        _favorite.Click += (_, _) => FavoriteExample();
+        _revealNext.Click += (_, _) => RevealNextRequested?.Invoke();
         _close.Click += (_, _) => Close();
 
         var actionRow = new StackPanel
@@ -452,16 +550,30 @@ public sealed class AssistantWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
         };
         actionRow.Children.Add(_paste);
+        actionRow.Children.Add(_favorite);
         actionRow.Children.Add(_stop);
+        actionRow.Children.Add(_revealNext);
         actionRow.Children.Add(_copy);
         actionRow.Children.Add(_retry);
+
+        // 底部最多同时出现「贴回/收藏/停止/下一步/复制/重试」，380 宽卡片放不下，
+        // 放进横向滚动容器避免新增按钮把「重试」挤出可视区，纵向仍不滚动。
+        var actionScroll = new ScrollViewer
+        {
+            Content = actionRow,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            HorizontalScrollMode = ScrollMode.Enabled,
+            VerticalScrollMode = ScrollMode.Disabled,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
 
         _actions = new Grid { VerticalAlignment = VerticalAlignment.Center };
         _actions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         _actions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        Grid.SetColumn(actionRow, 0);
+        Grid.SetColumn(actionScroll, 0);
         Grid.SetColumn(_close, 1);
-        _actions.Children.Add(actionRow);
+        _actions.Children.Add(actionScroll);
         _actions.Children.Add(_close);
 
         _followUp = new TextBox
@@ -535,6 +647,7 @@ public sealed class AssistantWindow : Window
 
         WindowChrome.ApplyTheme(this, theme);
         ApplyRoundedCorners();
+        UpdateActionState();
 
         base.Closed += (_, _) =>
         {
@@ -543,6 +656,14 @@ public sealed class AssistantWindow : Window
             _noticeTimer.Stop();
             _thumbStream?.Dispose();
             _thumbStream = null;
+            foreach (InMemoryRandomAccessStream stream in _problemStreams)
+            {
+                try { stream.Dispose(); }
+                catch (Exception) { }
+            }
+
+            _problemStreams.Clear();
+            _problemImages.Clear();
             Closed?.Invoke();
         };
     }
@@ -563,6 +684,9 @@ public sealed class AssistantWindow : Window
             (int)Math.Round(placement.Y * dpi),
             (int)Math.Round(CardWidth * dpi),
             (int)Math.Round(cardHeight * dpi)));
+        // 窗口可能在隐藏状态创建；AppWindow.Show 后再 Activate，
+        // 否则首次打开只显示空白原生边框。
+        AppWindow.Show();
         Activate();
         ApplyRoundedCorners();
     }
@@ -577,12 +701,16 @@ public sealed class AssistantWindow : Window
         UpdateStatus(session);
         UpdateVerification(session);
         UpdateHint(session);
-        _modeText.Text = ModeLabel(session.Mode);
+        _modeText.Text = AssistantTeachingPolicy.Label(session.TeachingMode);
+        _modeText.Foreground = session.TeachingMode == AssistantTeachingMode.Hint
+            ? Solid(0xFF, 0xB8, 0x86, 0x0B)
+            : _accentBrush;
 
         if (!string.IsNullOrEmpty(thumbnailBase64) && thumbnailBase64 != _thumbBase64)
             _ = LoadThumbnailAsync(thumbnailBase64);
 
         UpdateThumbnailSize();
+        ApplyAnnotations(session);
 
         _content.Children.Clear();
         _hasCopyable = !string.IsNullOrEmpty(session.Text) || !string.IsNullOrEmpty(session.Formula);
@@ -607,7 +735,7 @@ public sealed class AssistantWindow : Window
         if (session.State == AssistantState.Error)
             AddError(session);
 
-        if (!string.IsNullOrEmpty(session.Formula))
+        if (!string.IsNullOrEmpty(session.Formula) && ShowFinalAnswer(session))
         {
             _formulaText.Text = AssistantText.LatexToPlain(session.Formula);
             _formulaCard.Visibility = Visibility.Visible;
@@ -641,6 +769,209 @@ public sealed class AssistantWindow : Window
     {
         _anchor = anchor;
         UpdateThumbnailSize();
+        ApplyAnnotations(_lastSession);
+    }
+
+    /// <summary>
+    /// 渲染拼题选区列表。单选区保持原有大图与圈选纠错；多选区改为横向缩略图，
+    /// 支持按顺序追加、删除与前后移动，重排后由 ShellController 重新请求。
+    /// </summary>
+    public void ApplyProblem(ProblemContext problem, string notice = null)
+    {
+        if (!string.IsNullOrWhiteSpace(notice)) ShowNotice(notice);
+
+        _problem = problem;
+
+        _problemList.Children.Clear();
+        if (problem is null || problem.Count <= 1)
+        {
+            _problemScroll.Visibility = Visibility.Collapsed;
+            _thumbnailHost.Visibility = string.IsNullOrEmpty(_thumbBase64)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+            _addRegionLink.Visibility = problem is { Count: 1 }
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            return;
+        }
+
+        _addRegionLink.Visibility = Visibility.Collapsed;
+
+        foreach (ProblemRegion region in ProblemContextPolicy.Ordered(problem))
+            _problemList.Children.Add(CreateProblemCard(region));
+
+        _problemList.Children.Add(CreateAddRegionCard());
+        _problemScroll.Visibility = Visibility.Visible;
+        _thumbnailHost.Visibility = Visibility.Collapsed;
+    }
+
+    private FrameworkElement CreateProblemCard(ProblemRegion region)
+    {
+        var image = new Image
+        {
+            Height = 64,
+            Stretch = Stretch.Uniform,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+
+        if (!string.IsNullOrEmpty(region.ImageBase64))
+        {
+            if (_problemImages.TryGetValue(region.ImageBase64, out BitmapImage cached))
+            {
+                image.Source = cached;
+            }
+            else
+            {
+                _ = LoadProblemImageAsync(region.ImageBase64, image);
+            }
+        }
+
+        var badge = new Border
+        {
+            Background = _accentSolidBrush,
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(4, 0, 4, 0),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(2, 2, 0, 0),
+            Child = new TextBlock
+            {
+                Text = region.Order.ToString(),
+                FontSize = 10,
+                Foreground = WhiteBrush,
+            },
+        };
+
+        var moveLeft = ProblemCardButton("◀", "前移", () => MoveRegionRequested?.Invoke(region.Id, -1));
+        var moveRight = ProblemCardButton("▶", "后移", () => MoveRegionRequested?.Invoke(region.Id, 1));
+        var remove = ProblemCardButton("✕", "移除此选区", () => RemoveRegionRequested?.Invoke(region.Id));
+        var retry = ProblemCardButton("↻", "重新识别此选区",
+            () => ReRecognizeRegionRequested?.Invoke(region.Id));
+        var controls = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 2,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        controls.Children.Add(moveLeft);
+        controls.Children.Add(moveRight);
+        controls.Children.Add(retry);
+        controls.Children.Add(remove);
+
+        var layout = new Grid();
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(64) });
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        Grid.SetRow(image, 0);
+        Grid.SetRow(badge, 0);
+        Grid.SetRow(controls, 1);
+        layout.Children.Add(image);
+        layout.Children.Add(badge);
+        layout.Children.Add(controls);
+
+        return new Border
+        {
+            Width = 104,
+            Background = _inputBgBrush,
+            BorderBrush = _controlStrokeBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(3),
+            Child = layout,
+        };
+    }
+
+    private FrameworkElement CreateAddRegionCard()
+    {
+        var content = new StackPanel
+        {
+            Spacing = 2,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        content.Children.Add(new TextBlock
+        {
+            Text = "＋",
+            FontSize = 20,
+            Foreground = _accentBrush,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = "追加选区",
+            FontSize = 10.5,
+            Foreground = _textSecondary,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        });
+
+        var button = new Button
+        {
+            Width = 104,
+            Height = 88,
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(8),
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderBrush = _controlStrokeBrush,
+            BorderThickness = new Thickness(1),
+            Content = content,
+        };
+        ToolTipService.SetToolTip(button, "先回画布框选题干/图形/条件，再点此追加为同一题");
+        button.Click += (_, _) => AddRegionRequested?.Invoke();
+        return button;
+    }
+
+    private Button ProblemCardButton(string glyph, string tip, Action invoke)
+    {
+        var button = new Button
+        {
+            Content = new TextBlock
+            {
+                Text = glyph,
+                FontSize = 9.5,
+                Foreground = _textSecondary,
+            },
+            Width = 28,
+            Height = 22,
+            MinWidth = 28,
+            MinHeight = 22,
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(4),
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+        };
+        ToolTipService.SetToolTip(button, tip);
+        button.Click += (_, _) => invoke();
+        return button;
+    }
+
+    private async Task LoadProblemImageAsync(string base64, Image target)
+    {
+        try
+        {
+            byte[] bytes = Convert.FromBase64String(base64);
+            var stream = new InMemoryRandomAccessStream();
+            using (var writer = new DataWriter(stream))
+            {
+                writer.WriteBytes(bytes);
+                await writer.StoreAsync();
+                await writer.FlushAsync();
+                writer.DetachStream();
+            }
+
+            stream.Seek(0);
+            var bitmap = new BitmapImage();
+            await bitmap.SetSourceAsync(stream);
+
+            _problemImages[base64] = bitmap;
+            _problemStreams.Add(stream);
+            target.Source = bitmap;
+        }
+        catch (Exception)
+        {
+            // 单个缩略图损坏不影响其他选区与正文。
+        }
     }
 
     /// <summary>状态行临时提示（例如局部纠错失败），不改变会话状态。</summary>
@@ -666,6 +997,74 @@ public sealed class AssistantWindow : Window
         UpdateActionState();
     }
 
+    /// <summary>
+    /// 设置「收藏为例题」可取得的来源信息：课件名、幻灯片 id、画板页。
+    /// 由 ShellController 在创建/更新浮窗时注入；取不到时传空或 0。
+    /// boardPage 语义原样透传：0 = 第 1 页，-1 = 无白板，N = 第 N+1 页。
+    /// </summary>
+    public void SetFavoriteSource(string presentation, int slideId, int boardPage)
+    {
+        _sourcePresentation = presentation ?? "";
+        _sourceSlideId = slideId > 0 ? slideId : 0;
+        _sourceBoardPage = boardPage;
+    }
+
+    private void FavoriteExample()
+    {
+        AssistantSession session = _lastSession;
+        if (session is null || session.State != AssistantState.Done) return;
+
+        string answer = BuildFavoriteAnswer(session);
+        if (string.IsNullOrWhiteSpace(answer)) return;
+
+        try
+        {
+            var entry = new ExampleEntry
+            {
+                Title = FavoriteTitle(answer),
+                Answer = answer,
+                Topic = "",
+                KnowledgePoints = new List<string>(),
+                SourcePresentation = _sourcePresentation,
+                SourceSlideId = _sourceSlideId,
+                BoardPage = _sourceBoardPage,
+                CorrectedText = "",
+                CreatedAt = DateTime.Now,
+            };
+
+            bool added = ExampleLibraryStore.Add(entry, settings: _features);
+            ShowNotice(added ? "已收藏为例题" : "收藏失败");
+        }
+        catch (Exception ex)
+        {
+            InkCanvas.Core.Diagnostics.FileLog.WriteLogToFile(
+                $"收藏为例题失败：{ex.Message}", InkCanvas.Core.Diagnostics.LogType.Error);
+            ShowNotice("收藏失败");
+        }
+    }
+
+    /// <summary>完整讲评文本；公式为 LaTeX 源，追加在正文之后以保留来源。</summary>
+    private static string BuildFavoriteAnswer(AssistantSession session)
+    {
+        string text = session.Text ?? "";
+        string formula = session.Formula ?? "";
+        if (string.IsNullOrEmpty(formula)) return text;
+        return string.IsNullOrEmpty(text) ? formula : text.TrimEnd() + "\n" + formula;
+    }
+
+    /// <summary>标题取当前回答的首个非空行并截断到 60 字符；为空时回退默认标题。</summary>
+    private static string FavoriteTitle(string answer)
+    {
+        foreach (string line in answer.Split('\n'))
+        {
+            string trimmed = (line ?? "").Trim();
+            if (trimmed.Length == 0) continue;
+            return trimmed.Length <= 60 ? trimmed : trimmed.Substring(0, 60);
+        }
+
+        return "AI 讲题收藏";
+    }
+
     private static string ModeLabel(AssistantMode mode) => mode switch
     {
         AssistantMode.Formula => "公式",
@@ -674,6 +1073,10 @@ public sealed class AssistantWindow : Window
         AssistantMode.Chat => "问答",
         _ => "自动",
     };
+
+    private static bool ShowFinalAnswer(AssistantSession session)
+        => AssistantTeachingPolicy.ShowsFinalAnswer(
+            session.TeachingMode, session.RevealedSteps, session.Steps?.Count ?? 0);
 
     private Border CreateBadge(out TextBlock text)
     {
@@ -800,6 +1203,7 @@ public sealed class AssistantWindow : Window
 
     private void SendFollowUp()
     {
+        if (!_aiTeachingEnabled) return;
         if (_busy) return;
         string text = _followUp.Text?.Trim();
         if (string.IsNullOrEmpty(text)) return;
@@ -841,7 +1245,7 @@ public sealed class AssistantWindow : Window
                 break;
         }
 
-        _statusText.Text = text;
+        _statusText.Text = _aiTeachingEnabled ? text : "AI 讲题已关闭";
         _statusText.Foreground = textForeground;
         _statusDot.Fill = dot;
         _progressRing.IsActive = ring;
@@ -850,21 +1254,57 @@ public sealed class AssistantWindow : Window
 
     private void UpdateActionState()
     {
+        bool aiTeachingEnabled = _features?.EnableAiTeaching ?? true;
+        bool exerciseFlowEnabled = _features?.EnableExerciseFlow ?? true;
+        _aiTeachingEnabled = aiTeachingEnabled;
+
         bool active = _lastSession is not null && IsActive(_lastSession.State);
         bool error = _lastSession?.State == AssistantState.Error;
         bool done = _lastSession?.State == AssistantState.Done;
+        bool moreSteps = _lastSession is not null && AssistantTeachingPolicy.HasMoreSteps(
+            _lastSession.TeachingMode,
+            _lastSession.RevealedSteps,
+            _lastSession.Steps?.Count ?? 0);
 
         _stop.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
         _retry.Visibility = error ? Visibility.Visible : Visibility.Collapsed;
         _paste.Visibility = done ? Visibility.Visible : Visibility.Collapsed;
+        _revealNext.Visibility = moreSteps ? Visibility.Visible : Visibility.Collapsed;
+
+        bool hasAnnotations = _lastSession?.Annotations is { Count: > 0 };
+        _studyRow.Visibility = done ? Visibility.Visible : Visibility.Collapsed;
+        _toggleAnnotations.Visibility = hasAnnotations ? Visibility.Visible : Visibility.Collapsed;
+        _toggleAnnotations.Content = _annotationsVisible ? "隐藏标注" : "显示标注";
+
+        // 例题库开关关闭时不出现入口；忙碌/出错/无内容时与既有按钮一样禁用。
+        bool exampleLibraryEnabled = _features is null || _features.EnableExampleLibrary;
+        bool hasFavoriteContent = !string.IsNullOrWhiteSpace(_lastSession?.Text)
+            || !string.IsNullOrWhiteSpace(_lastSession?.Formula);
+        _favorite.Visibility = done && exampleLibraryEnabled ? Visibility.Visible : Visibility.Collapsed;
+        _favorite.IsEnabled = !_busy && done && hasFavoriteContent;
 
         _stop.IsEnabled = active;
         _retry.IsEnabled = !_busy && error;
+        _revealNext.IsEnabled = !_busy && moreSteps;
         _copy.IsEnabled = !_busy && _hasCopyable;
         _paste.IsEnabled = !_busy && done && !_pasted;
         _paste.Content = _pasted ? "已贴回" : "贴回白板";
-        _send.IsEnabled = !_busy;
-        _followUp.IsEnabled = !_busy;
+        _send.IsEnabled = !_busy && aiTeachingEnabled;
+        _followUp.IsEnabled = !_busy && aiTeachingEnabled;
+        _variantBasic.IsEnabled = exerciseFlowEnabled;
+        _variantAdvanced.IsEnabled = exerciseFlowEnabled;
+        if (!exerciseFlowEnabled)
+        {
+            ToolTipService.SetToolTip(_variantBasic, "随堂练习已关闭");
+            ToolTipService.SetToolTip(_variantAdvanced, "随堂练习已关闭");
+        }
+
+        if (!aiTeachingEnabled)
+        {
+            _statusText.Text = "AI 讲题已关闭";
+            _statusText.Foreground = _textSecondary;
+        }
+
         _close.IsEnabled = true;
     }
 
@@ -1043,7 +1483,11 @@ public sealed class AssistantWindow : Window
     {
         if (session.Steps is null || session.Steps.Count == 0) return;
 
-        for (int i = 0; i < session.Steps.Count; i++)
+        int total = session.Steps.Count;
+        int visible = AssistantTeachingPolicy.VisibleSteps(
+            session.TeachingMode, session.RevealedSteps, total);
+
+        for (int i = 0; i < visible && i < total; i++)
         {
             AssistantStep step = session.Steps[i];
             string latex = AssistantText.LatexToPlain(step.Latex ?? "");
@@ -1105,6 +1549,71 @@ public sealed class AssistantWindow : Window
             row.Children.Add(right);
             _content.Children.Add(row);
         }
+
+        int hidden = total - visible;
+        if (hidden > 0) AddStepsHint(session, hidden, visible, total);
+    }
+
+    /// <summary>
+    /// 把解释步骤涉及的顶点/边/角绘制为缩略图上的高亮层。定位不可靠时不绘制，
+    /// 只保留文字解释，避免误导学生。
+    /// </summary>
+    private void ApplyAnnotations(AssistantSession session)
+    {
+        _annotationCanvas.Children.Clear();
+        if (session is null) return;
+
+        AnnotationLayer layer = AnnotationLayerPolicy.Build(session, _anchor);
+        AnnotationLayerPolicy.SyncVisibility(layer, session);
+        if (!_annotationsVisible) AnnotationLayerPolicy.SetAllVisible(layer, false);
+
+        double width = _annotationCanvas.ActualWidth;
+        double height = _annotationCanvas.ActualHeight;
+        if (width <= 0) width = _thumbnailHost.ActualWidth;
+        if (height <= 0) height = _thumbnailHost.ActualHeight;
+        if (!layer.CanLocate || width <= 0 || height <= 0) return;
+
+        foreach (AnnotationHighlightItem item in layer.Items)
+        {
+            if (!item.Visible) continue;
+
+            List<ShapeAnnotationPoint> projected = ShapeAnnotationGeometry.Project(
+                item.Points, 0, 0, width, height);
+            if (projected.Count < 2) continue;
+
+            var line = new Polyline
+            {
+                Stroke = _accentBrush,
+                StrokeThickness = 2,
+                StrokeLineJoin = PenLineJoin.Round,
+                IsHitTestVisible = false,
+            };
+            foreach (ShapeAnnotationPoint point in projected)
+                line.Points.Add(new Windows.Foundation.Point(point.X, point.Y));
+            _annotationCanvas.Children.Add(line);
+        }
+    }
+
+    private void AddStepsHint(AssistantSession session, int hidden, int visible, int total)
+    {
+        string text = session.TeachingMode == AssistantTeachingMode.Hint
+            ? $"只给提示模式：已隐藏 {hidden} 个步骤与最终答案，点上方模式标签切换"
+            : $"还有 {hidden} 步未展开（{visible}/{total}），点「下一步」继续";
+
+        _content.Children.Add(new Border
+        {
+            Background = _inputBgBrush,
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(8, 5, 8, 5),
+            Margin = new Thickness(0, 2, 0, 0),
+            Child = new TextBlock
+            {
+                Text = text,
+                FontSize = 11.5,
+                Foreground = _textSecondary,
+                TextWrapping = TextWrapping.Wrap,
+            },
+        });
     }
 
     private void AddError(AssistantSession session)
@@ -1289,7 +1798,9 @@ public sealed class AssistantWindow : Window
             _thumbStream?.Dispose();
             _thumbStream = stream;
             _thumbnail.Source = bitmap;
-            _thumbnailHost.Visibility = Visibility.Visible;
+            _thumbnailHost.Visibility = _problem is { Count: > 1 }
+                ? Visibility.Collapsed
+                : Visibility.Visible;
             _thumbBase64 = base64;
             UpdateThumbnailSize();
         }

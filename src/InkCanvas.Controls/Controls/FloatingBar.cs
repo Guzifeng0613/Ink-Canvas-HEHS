@@ -6,7 +6,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
-using Microsoft.UI.Xaml.Media;
+
 
 namespace InkCanvas.Controls.Controls;
 
@@ -26,6 +26,12 @@ public interface IShellActions
     void ToggleRecordingPause();
     void OpenGuide();
     void OpenAiAssistant();
+    void OpenGroupScore();
+    void OpenHandout();
+    void CyclePreset();
+    void OpenPresetEditor();
+    void PasteSpotlightToBoard();
+    void AskAiFromSpotlight();
     void OpenPenPalette(bool highlighter);
     void OpenShapePicker();
     Task ScreenshotAsync();
@@ -36,6 +42,8 @@ public interface IShellActions
     void PptPrevious();
     void PptExit();
     void PptOpenNavigation();
+    void PptGotoSlide(int oneBasedIndex);
+    void ToggleSlideNavigator();
     void RotatePptNavigationCorner();
     void CollapsePptNavigation();
     void TogglePptNavigationWindow();
@@ -52,12 +60,15 @@ public sealed class FloatingBar : UserControl
     private readonly StackPanel _secondary = new() { Orientation = Orientation.Horizontal, Spacing = 2 };
     private readonly Border _secondaryHost;
     private readonly StackPanel _pptGroup = new() { Orientation = Orientation.Horizontal, Spacing = 2 };
+    private readonly List<Border> _separators = new();
+    private readonly Border _barBorder;
     private TouchIconButton _penButton, _highlighterButton, _eraserButton, _selectButton, _shapeButton;
     private TouchIconButton _foldButton, _passThroughButton, _deleteSelectionButton;
     private TouchIconButton _pptExitButton;
     private bool _pptMode;
     private InkController _controller;
     private bool _folded;
+    private int _theme = 0;
 
     public FloatingBar()
     {
@@ -72,24 +83,64 @@ public sealed class FloatingBar : UserControl
         root.Children.Add(_secondaryHost);
         root.Children.Add(_primary);
 
-        Content = new Border
+        _barBorder = new Border
         {
             // Fill the host window: the window is sized from the button count, so stretching
             // avoids both clipping and an invisible hit-testable strip beside the bar.
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch,
-            Background = (Brush)Application.Current.Resources["IcSurfaceAltBrush"],
-            BorderBrush = (Brush)Application.Current.Resources["IcStrokeBrush"],
+            Background = ThemeBrushes.Resolve(_theme, "IcSurfaceAltBrush"),
+            BorderBrush = ThemeBrushes.Resolve(_theme, "IcStrokeBrush"),
             BorderThickness = new Thickness(0),
             // Square: the host window's corners are rounded by DWM. A rounded content border
             // inside an opaque rectangular window would leave white corner slivers.
             CornerRadius = new CornerRadius(0),
-            Padding = (Thickness)Application.Current.Resources["IcBarPadding"],
+            Padding = BarPadding(),
             Child = root,
         };
+        Content = _barBorder;
 
-        Loaded += (_, _) => Motion.PlayEntrance(this);
+        Loaded += (_, _) =>
+        {
+            // ActualTheme is not settled yet while the constructor runs, so re-resolve once
+            // the bar is in the visual tree.
+            ApplyThemeBrushes();
+
+            Motion.PlayEntrance(this);
+        };
+        ActualThemeChanged += (_, _) => ApplyThemeBrushes();
     }
+
+    /// <summary>
+    /// Applies an explicit appearance theme. 0 = follow system, 1 = light, 2 = dark.
+    /// The bar resolves its brushes from this value rather than from ActualTheme, because a
+    /// UserControl does not reliably inherit the parent window's theme on every activation.
+    /// </summary>
+    public void ApplyTheme(int theme)
+    {
+        _theme = theme;
+        RequestedTheme = theme switch
+        {
+            1 => ElementTheme.Light,
+            2 => ElementTheme.Dark,
+            _ => ElementTheme.Default,
+        };
+        ApplyThemeBrushes();
+
+    }
+
+    private void ApplyThemeBrushes()
+    {
+        _barBorder.Background = ThemeBrushes.Resolve(_theme, "IcSurfaceAltBrush");
+        _barBorder.BorderBrush = ThemeBrushes.Resolve(_theme, "IcStrokeBrush");
+        foreach (var separator in _separators)
+            separator.Background = ThemeBrushes.Resolve(_theme, "IcStrokeBrush");
+    }
+
+    private static Thickness BarPadding() =>
+        Application.Current.Resources.TryGetValue("IcBarPadding", out object value) && value is Thickness padding
+            ? padding
+            : new Thickness(8, 6, 8, 6);
 
     public InkController Controller
     {
@@ -226,6 +277,7 @@ public sealed class FloatingBar : UserControl
         _primary.Children.Clear();
         _secondary.Children.Clear();
         _pptGroup.Children.Clear();
+        _separators.Clear();
 
         _penButton = Add(_primary, Glyphs.Pen, "画笔（点击打开颜色与粗细）", () =>
         {
@@ -298,12 +350,17 @@ public sealed class FloatingBar : UserControl
         return button;
     }
 
-    private static Border Separator() => new()
+    private Border Separator()
     {
-        Width = 1,
-        Margin = new Thickness(4, 6, 4, 6),
-        Background = (Brush)Application.Current.Resources["IcStrokeBrush"],
-    };
+        var separator = new Border
+        {
+            Width = 1,
+            Margin = new Thickness(4, 6, 4, 6),
+            Background = ThemeBrushes.Resolve(_theme, "IcStrokeBrush"),
+        };
+        _separators.Add(separator);
+        return separator;
+    }
 
     private void SetTool(InkTool tool)
     {

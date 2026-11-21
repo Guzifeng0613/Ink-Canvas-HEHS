@@ -44,15 +44,7 @@ public sealed class TouchIconButton : Button
             // does not raise the change callback, which would leave the icon blank.
             Glyph = Glyph,
         };
-        _aiText = new TextBlock
-        {
-            Text = "AI",
-            FontSize = 12,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-
-        };
+        _aiText = AiGlyph.CreateLabel(AiGlyph.ButtonLabelSize);
         Content = _icon;
 
         PointerPressed += (_, _) => { if (Motion.AnimationsEnabled) Motion.Pulse(this, 0.92f); };
@@ -61,6 +53,7 @@ public sealed class TouchIconButton : Button
             UpdateContent();
             ApplyVisualState();
         };
+        ActualThemeChanged += (_, _) => ApplyVisualState();
     }
 
     public bool IsSelected
@@ -156,8 +149,7 @@ public sealed class TouchIconButton : Button
 
     private void ApplyIconForeground()
     {
-        var brush = (Brush)Microsoft.UI.Xaml.Application.Current.Resources[
-            IsSelected ? "IcAccentBrush" : "IcTextPrimaryBrush"];
+        var brush = ThemeBrushes.Resolve(this, IsSelected ? "IcAccentBrush" : "IcTextPrimaryBrush");
         _icon.Foreground = brush;
         _aiText.Foreground = brush;
     }
@@ -165,15 +157,14 @@ public sealed class TouchIconButton : Button
     private void ApplyVisualState()
     {
         if (IsSelected)
-            Background = (Brush)Microsoft.UI.Xaml.Application.Current.Resources["IcAccentSoftBrush"];
+            Background = ThemeBrushes.Resolve(this, "IcAccentSoftBrush");
         else
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
 
         ApplyIconForeground();
 
         if (_customIconOutline is not null)
-            _customIconOutline.Stroke = IsSelected
-                ? (Brush)Microsoft.UI.Xaml.Application.Current.Resources["IcAccentBrush"]
-                : (Brush)Microsoft.UI.Xaml.Application.Current.Resources["IcTextPrimaryBrush"];
+            _customIconOutline.Stroke = ThemeBrushes.Resolve(
+                this, IsSelected ? "IcAccentBrush" : "IcTextPrimaryBrush");
     }
 }
