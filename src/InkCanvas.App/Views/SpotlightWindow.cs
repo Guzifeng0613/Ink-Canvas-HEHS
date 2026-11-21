@@ -32,6 +32,57 @@ public sealed class SpotlightWindow : Window
     private bool _initialized;
     private bool _dragging;
 
+    /// <summary>请求把当前聚焦区贴到白板（false）或交给 AI 识别（true）。</summary>
+    public event Action<bool> CaptureRequested;
+
+    /// <summary>请求保存当前聚焦区；参数为屏幕像素矩形。</summary>
+    public event Action<ScreenRect> SaveRegionRequested;
+
+    /// <summary>请求按顺序切换已保存的聚焦区（±1）。</summary>
+    public event Action<int> CycleRegionRequested;
+
+    /// <summary>从屏幕像素矩形恢复聚焦区，用于切换已保存区域。</summary>
+    public void SetRegion(ScreenRect screenRect)
+    {
+        if (screenRect.Width <= 0 || screenRect.Height <= 0) return;
+
+        double dpi = WindowChrome.GetDpiScale(this);
+        if (dpi <= 0) dpi = 1.0;
+        var work = ScreenService.WorkArea;
+
+        _centerX = (screenRect.X - work.X) / dpi + screenRect.Width / dpi / 2.0;
+        _centerY = (screenRect.Y - work.Y) / dpi + screenRect.Height / dpi / 2.0;
+        _radius = Math.Max(screenRect.Width, screenRect.Height) / dpi / 2.0;
+        _initialized = true;
+        UpdateGeometry();
+    }
+
+    /// <summary>当前亮区的屏幕像素矩形；未初始化时为空矩形。</summary>
+    public ScreenRect CurrentScreenRect
+    {
+        get
+        {
+            if (!_initialized) return default;
+            double dpi = WindowChrome.GetDpiScale(this);
+            if (dpi <= 0) dpi = 1.0;
+            var work = ScreenService.WorkArea;
+            double left = _centerX - _radius;
+            double top = _centerY - _radius;
+            double size = _radius * 2;
+            return new ScreenRect(
+                work.X + (int)Math.Round(left * dpi),
+                work.Y + (int)Math.Round(top * dpi),
+                (int)Math.Round(size * dpi),
+                (int)Math.Round(size * dpi));
+        }
+    }
+
+    /// <summary>截图前临时隐藏遮罩，避免把黑幕一起截进板书或 AI 请求。</summary>
+    public void SetMaskVisible(bool visible)
+    {
+        _mask.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     public SpotlightWindow()
     {
         Title = "聚光灯";
@@ -91,11 +142,31 @@ public sealed class SpotlightWindow : Window
         var exit = new Button { Content = "退出", MinHeight = 32, MinWidth = 56, Margin = new Thickness(2) };
         exit.Click += (_, _) => Close();
 
+        var paste = new Button { Content = "贴图", MinHeight = 32, MinWidth = 56, Margin = new Thickness(2) };
+        paste.Click += (_, _) => CaptureRequested?.Invoke(false);
+
+        var ask = new Button { Content = "问 AI", MinHeight = 32, MinWidth = 56, Margin = new Thickness(2) };
+        ask.Click += (_, _) => CaptureRequested?.Invoke(true);
+
+        var save = new Button { Content = "保存区", MinHeight = 32, MinWidth = 60, Margin = new Thickness(2) };
+        save.Click += (_, _) => SaveRegionRequested?.Invoke(CurrentScreenRect);
+
+        var previous = new Button { Content = "◀ 区", MinHeight = 32, MinWidth = 52, Margin = new Thickness(2) };
+        previous.Click += (_, _) => CycleRegionRequested?.Invoke(-1);
+
+        var next = new Button { Content = "区 ▶", MinHeight = 32, MinWidth = 52, Margin = new Thickness(2) };
+        next.Click += (_, _) => CycleRegionRequested?.Invoke(1);
+
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
         row.Children.Add(circle);
         row.Children.Add(rect);
         row.Children.Add(dimmer);
         row.Children.Add(lighter);
+        row.Children.Add(paste);
+        row.Children.Add(ask);
+        row.Children.Add(save);
+        row.Children.Add(previous);
+        row.Children.Add(next);
         row.Children.Add(exit);
 
         return new Border

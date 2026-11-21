@@ -31,6 +31,7 @@ public sealed class PptNavigationWindow : Window
     private readonly Button _next;
     private readonly Button _counter;
     private readonly Button _penToggle;
+    private readonly Button _slideList;
     private readonly Button _rotate;
     private readonly Button _collapse;
     private readonly TextBlock _counterText;
@@ -70,6 +71,7 @@ public sealed class PptNavigationWindow : Window
         _counter.Click += (_, _) => _shell.PptOpenNavigation();
 
         _penToggle = NavButton(Glyphs.Pen, "切换批注/穿透（鼠标）模式", () => _shell.ToggleClickThrough());
+        _slideList = NavButton(Glyphs.SlideList, "课件页导航：按批注/收藏跳页", () => _shell.ToggleSlideNavigator());
         _rotate = NavButton(RotateGlyph, "切换导航栏位置", () => _shell.RotatePptNavigationCorner());
         _collapse = NavButton(CollapseGlyph, "收起导航栏", () => _shell.CollapsePptNavigation());
 
@@ -77,6 +79,7 @@ public sealed class PptNavigationWindow : Window
         _panel.Children.Add(_previous);
         _panel.Children.Add(_counter);
         _panel.Children.Add(_next);
+        _panel.Children.Add(_slideList);
         _panel.Children.Add(_penToggle);
         _panel.Children.Add(_rotate);
         _panel.Children.Add(_collapse);
@@ -224,7 +227,7 @@ public sealed class PptNavigationWindow : Window
     private static (int Width, int Height) ContentSize(bool vertical, double dpiScale)
     {
         double scale = dpiScale > 0 ? dpiScale : 1;
-        int length = ButtonDip * 5 + SpacingDip * 5 + (vertical ? 48 : 52);
+        int length = ButtonDip * 6 + SpacingDip * 6 + (vertical ? 48 : 52);
         int contentWidth = vertical ? ButtonDip : length;
         int contentHeight = vertical ? length : ButtonDip;
         return ((int)Math.Ceiling((contentWidth + 6) * scale),

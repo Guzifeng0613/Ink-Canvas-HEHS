@@ -107,6 +107,35 @@ public static class AssistantMachine
         return session != null && session.State == AssistantState.Error;
     }
 
+    /// <summary>切换讲题模式。分步模式从零开始揭示，其余模式直接展开全部步骤。</summary>
+    public static void SetTeachingMode(AssistantSession session, AssistantTeachingMode mode)
+    {
+        if (session == null || session.TeachingMode == mode) return;
+
+        session.TeachingMode = mode;
+        session.RevealedSteps = mode == AssistantTeachingMode.StepByStep
+            ? 0
+            : session.Steps?.Count ?? 0;
+    }
+
+    public static bool RevealNextStep(AssistantSession session)
+    {
+        if (session == null) return false;
+        if (session.TeachingMode != AssistantTeachingMode.StepByStep) return false;
+
+        int total = session.Steps?.Count ?? 0;
+        if (session.RevealedSteps >= total) return false;
+
+        session.RevealedSteps++;
+        return true;
+    }
+
+    public static void RevealAllSteps(AssistantSession session)
+    {
+        if (session == null) return;
+        session.RevealedSteps = session.Steps?.Count ?? 0;
+    }
+
     public static void BeginFollowUp(AssistantSession session, string question, long nowMs)
     {
         if (session == null) return;

@@ -24,6 +24,9 @@ public sealed class LotteryWindow : Window
         FontSize = 12,
     };
 
+    /// <summary>抽取成功后触发，参数为抽中的姓名/编号。</summary>
+    public event Action<string> Picked;
+
     public LotteryWindow(LotteryService lottery)
     {
         _lottery = lottery;
@@ -36,6 +39,7 @@ public sealed class LotteryWindow : Window
             _result.Text = value ?? "已抽完";
             Motion.Pulse(_result, 1.18f);
             UpdateStatus();
+            if (!string.IsNullOrEmpty(value)) Picked?.Invoke(value);
         };
 
         var reset = new Button { Content = "重置", MinHeight = 48, MinWidth = 96 };

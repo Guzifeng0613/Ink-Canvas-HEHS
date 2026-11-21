@@ -30,7 +30,7 @@ public sealed class CountdownWindow : Window, IDisposable
     /// <summary>倒计时归零结束。</summary>
     public event Action TimerEnded;
 
-    public CountdownWindow()
+    public CountdownWindow(int defaultMinutes = 0)
     {
         Title = "倒计时";
         _dispatcher = DispatcherQueue.GetForCurrentThread();
@@ -45,7 +45,10 @@ public sealed class CountdownWindow : Window, IDisposable
         });
 
         var presets = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center };
-        foreach (int minutes in new[] { 1, 3, 5, 10, 15 })
+        int[] minutesOptions = defaultMinutes > 0
+            ? new[] { defaultMinutes, 1, 3, 5, 10, 15 }.Distinct().OrderBy(value => value).ToArray()
+            : new[] { 1, 3, 5, 10, 15 };
+        foreach (int minutes in minutesOptions)
         {
             int captured = minutes;
             var b = new Button { Content = $"{minutes} 分钟", MinHeight = 40 };
@@ -105,6 +108,29 @@ public sealed class CountdownWindow : Window, IDisposable
         Render(TimeSpan.Zero);
         Closed += (_, _) => _timer.Dispose();
         Activated += (_, _) => Motion.PlayEntrance(panel, 14f);
+    }
+
+    public bool IsRunning => _timer.IsRunning;
+
+    public TimeSpan Remaining => _timer.Remaining;
+
+    /// <summary>由练习闭环启动指定时长；与点击预设等价，会触发 TimerStarted。</summary>
+    public void StartCountdown(TimeSpan duration)
+    {
+        if (duration <= TimeSpan.Zero) return;
+        _timer.Start(duration);
+        _startPause.Content = "暂停";
+        Render(_timer.Remaining);
+        TimerStarted?.Invoke(duration);
+    }
+
+    public void StopCountdown()
+    {
+        if (!_timer.IsRunning) return;
+        _timer.Stop();
+        _startPause.Content = "开始";
+        _display.Text = "00:00";
+        TimerStopped?.Invoke(TimeSpan.Zero);
     }
 
     private void Render(TimeSpan remaining)

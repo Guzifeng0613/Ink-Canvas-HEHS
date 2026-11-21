@@ -93,6 +93,21 @@ public sealed class AssistantRequest
     public AssistantStage Stage { get; set; } = AssistantStage.WithImage;
 
     public AssistantRegion Region { get; set; }
+
+    /// <summary>跨选区拼题的附加图片；为空时退回单图 <see cref="ImageBase64"/>。</summary>
+    public IReadOnlyList<ProblemRegion> Images { get; set; } = Array.Empty<ProblemRegion>();
+
+    /// <summary>讲题模式；服务端据此裁剪答案与分步。</summary>
+    public AssistantTeachingMode Teaching { get; set; } = AssistantTeachingMode.StepByStep;
+
+    /// <summary>请求用途：空为普通讲题，<c>variant</c> 表示生成同知识点变式题。</summary>
+    public string Purpose { get; set; } = "";
+
+    /// <summary>变式题难度：basic / advanced；普通讲题为空。</summary>
+    public string Difficulty { get; set; } = "";
+
+    /// <summary>课件上下文（标题/本页/前后页文本），仅作辅助，不覆盖框选。</summary>
+    public SlideContext SlideContext { get; set; }
 }
 
 public enum AssistantEventKind
@@ -138,6 +153,11 @@ public sealed class AssistantSession
     public AssistantState State { get; set; }
 
     public AssistantMode Mode { get; set; }
+
+    public AssistantTeachingMode TeachingMode { get; set; } = AssistantTeachingMode.StepByStep;
+
+    /// <summary>分步引导模式中已向学生揭示的步骤数。</summary>
+    public int RevealedSteps { get; set; }
 
     public string SessionId { get; set; } = "";
 

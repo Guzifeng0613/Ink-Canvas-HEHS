@@ -45,7 +45,9 @@ public sealed class AiClient : IDisposable
         request ??= new AssistantRequest();
         if (string.IsNullOrEmpty(_config.Endpoint))
         {
-            var mock = new MockStream(request.Mode, onEvent, onError, onDone);
+            var mock = new MockStream(
+                request.Mode, request.Teaching, request.Purpose, request.Difficulty,
+                onEvent, onError, onDone);
             return new AiStreamHandle(mock.Abort);
         }
 
@@ -167,6 +169,11 @@ public sealed class AiClient : IDisposable
             SessionId = request.SessionId ?? "",
             Stage = stage,
             Region = request.Region,
+            Images = request.Images,
+            Teaching = request.Teaching,
+            Purpose = request.Purpose ?? "",
+            Difficulty = request.Difficulty ?? "",
+            SlideContext = request.SlideContext,
         };
     }
 
@@ -201,10 +208,34 @@ public sealed class AiClient : IDisposable
             writer.WritePropertyName("viewport");
             WriteViewport(writer, request.Viewport ?? new AssistantViewport());
             writer.WriteString("stage", StageText(request.Stage));
+            writer.WriteString("teaching", AssistantTeachingPolicy.Wire(request.Teaching));
+            if (!string.IsNullOrEmpty(request.Purpose))
+                writer.WriteString("purpose", request.Purpose);
+            if (!string.IsNullOrEmpty(request.Difficulty))
+                writer.WriteString("difficulty", request.Difficulty);
+            if (request.SlideContext is not null)
+            {
+                writer.WritePropertyName("slideContext");
+                WriteSlideContext(writer, request.SlideContext);
+            }
+
             if (request.Region != null)
             {
                 writer.WritePropertyName("region");
                 WriteRegion(writer, request.Region);
+            }
+
+            if (request.Images is { Count: > 0 })
+            {
+                writer.WritePropertyName("images");
+                writer.WriteStartArray();
+                foreach (ProblemRegion image in request.Images)
+                {
+                    if (image is null) continue;
+                    WriteImage(writer, image, request.Stage);
+                }
+
+                writer.WriteEndArray();
             }
 
             writer.WriteEndObject();
@@ -220,6 +251,36 @@ public sealed class AiClient : IDisposable
         WriteRect(writer, region.Rect);
         writer.WriteNumber("textStart", region.TextStart);
         writer.WriteNumber("textLength", region.TextLength);
+        writer.WriteEndObject();
+    }
+
+    private static void WriteImage(Utf8JsonWriter writer, ProblemRegion image, AssistantStage stage)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("id", image.Id ?? "");
+        writer.WriteNumber("order", image.Order);
+        writer.WriteString("text", image.Text ?? "");
+        writer.WriteString(
+            "imageBase64",
+            stage == AssistantStage.InkOnly ? "" : (image.ImageBase64 ?? ""));
+        writer.WritePropertyName("rect");
+        WriteRect(writer, image.Anchor);
+        writer.WriteEndObject();
+    }
+
+    private static void WriteSlideContext(Utf8JsonWriter writer, SlideContext context)
+    {
+        writer.WriteStartObject();
+        writer.WriteNumber("version", context.Version);
+        writer.WriteString("title", context.Title ?? "");
+        writer.WriteNumber("slideId", context.SlideId);
+        writer.WriteNumber("slideIndex", context.SlideIndex);
+        writer.WriteNumber("animationStep", context.AnimationStep);
+        writer.WriteString("currentText", context.CurrentText ?? "");
+        writer.WriteString("previousText", context.PreviousText ?? "");
+        writer.WriteString("nextText", context.NextText ?? "");
+        writer.WriteString("selectionText", context.SelectionText ?? "");
+        writer.WriteString("prompt", context.ToPrompt());
         writer.WriteEndObject();
     }
 
@@ -291,6 +352,9 @@ internal sealed class MockStream
 
     public MockStream(
         AssistantMode mode,
+        AssistantTeachingMode teaching,
+        string purpose,
+        string difficulty,
         Action<AssistantEvent> onEvent,
         Action<string> onError,
         Action onDone)
@@ -298,7 +362,7 @@ internal sealed class MockStream
         _onEvent = onEvent;
         _onError = onError;
         _onDone = onDone;
-        _ = RunAsync(AiMockScript.Build(mode));
+        _ = RunAsync(AiMockScript.Build(mode, teaching, purpose, difficulty));
     }
 
     public void Abort()

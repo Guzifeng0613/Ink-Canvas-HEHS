@@ -42,6 +42,36 @@ public sealed class MagnifierWindow : Window
     private int _lastY;
     private bool _hasLast;
     private bool _disposed;
+    private ScreenRect _sourceRect;
+
+    /// <summary>请求把当前取景贴到白板（false）或交给 AI 识别（true）。</summary>
+    public event Action<bool> CaptureRequested;
+
+    /// <summary>当前取景的屏幕像素矩形；尚未取景时为空矩形。</summary>
+    public ScreenRect CurrentScreenRect => _sourceRect;
+
+    public int PositionX => AppWindow.Position.X;
+
+    public int PositionY => AppWindow.Position.Y;
+
+    public void MoveTo(int x, int y)
+    {
+        try { AppWindow.Move(new PointInt32(x, y)); }
+        catch (Exception) { }
+    }
+
+    /// <summary>截图前隐藏透镜窗口，避免取景框本身被截进取景内容。</summary>
+    public void HideForCapture()
+    {
+        InkCanvas.Platform.Interop.NativeMethods.ShowWindow(
+            WindowChrome.GetHwnd(this), InkCanvas.Platform.Interop.NativeMethods.SW_HIDE);
+    }
+
+    public void ShowAfterCapture()
+    {
+        InkCanvas.Platform.Interop.NativeMethods.ShowWindow(
+            WindowChrome.GetHwnd(this), InkCanvas.Platform.Interop.NativeMethods.SW_SHOWNOACTIVATE);
+    }
 
     public MagnifierWindow()
     {
@@ -141,9 +171,17 @@ public sealed class MagnifierWindow : Window
         var close = SmallButton("✕");
         close.Click += (_, _) => Close();
 
+        var paste = SmallButton("贴图");
+        paste.Click += (_, _) => CaptureRequested?.Invoke(false);
+
+        var ask = SmallButton("问 AI");
+        ask.Click += (_, _) => CaptureRequested?.Invoke(true);
+
         row.Children.Add(smaller);
         row.Children.Add(bigger);
         row.Children.Add(follow);
+        row.Children.Add(paste);
+        row.Children.Add(ask);
         row.Children.Add(close);
         return row;
     }
@@ -197,6 +235,8 @@ public sealed class MagnifierWindow : Window
 
             var (pixels, width, height) = ScreenshotService.Capture(sx, sy, srcSize, srcSize);
             if (width <= 0 || height <= 0) return;
+
+            _sourceRect = new ScreenRect(sx, sy, width, height);
 
             var bitmap = CanvasBitmap.CreateFromBytes(device, pixels, width, height,
                 DirectXPixelFormat.B8G8R8A8UIntNormalized);

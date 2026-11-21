@@ -9,10 +9,39 @@ namespace InkCanvas.Platform.Ai;
 /// </summary>
 public static class AiMockScript
 {
-    /// <summary>按模式返回固定的 mock 事件序列，最后一条恒为 <see cref="AssistantEventKind.Done"/>。</summary>
-    public static IReadOnlyList<AssistantEvent> Build(AssistantMode mode)
+    /// <summary>
+    /// 按模式返回固定的 mock 事件序列，最后一条恒为 <see cref="AssistantEventKind.Done"/>。
+    /// 讲题模式为 <see cref="AssistantTeachingMode.Hint"/> 时只回放文字提示，
+    /// 不产生公式、分步与图形标注，模拟服务端按模式裁剪回答。
+    /// </summary>
+    public static IReadOnlyList<AssistantEvent> Build(
+        AssistantMode mode,
+        AssistantTeachingMode teaching = AssistantTeachingMode.StepByStep,
+        string purpose = "",
+        string difficulty = "")
     {
         var events = new List<AssistantEvent>();
+
+        if (string.Equals(purpose, "region", StringComparison.OrdinalIgnoreCase))
+        {
+            events.Add(Token("已知条件与所求已重新识别。\n"));
+            events.Add(new AssistantEvent { Kind = AssistantEventKind.Done });
+            return events;
+        }
+
+        if (string.Equals(purpose, "variant", StringComparison.OrdinalIgnoreCase))
+        {
+            bool advanced = string.Equals(difficulty, "advanced", StringComparison.OrdinalIgnoreCase);
+            events.Add(Token(advanced ? "【提高变式】\n" : "【基础变式】\n"));
+            events.Add(Token(advanced
+                ? "已知函数 f(x)=x^3-3x，讨论其单调性与极值。\n"
+                : "已知函数 f(x)=x^2-2x+1，求 f(3) 的值。\n"));
+            events.Add(Token(advanced ? "答案：极小值 f(1)=-2，极大值 f(-1)=2。\n" : "答案：4\n"));
+            events.Add(Token("知识点：函数求值与单调性。\n"));
+            events.Add(Step(1, "先整理已知条件与所求", ""));
+            events.Add(new AssistantEvent { Kind = AssistantEventKind.Done });
+            return events;
+        }
 
         switch (mode)
         {
@@ -46,13 +75,24 @@ public static class AiMockScript
                 events.Add(Token("1. 先识别手写公式的结构与符号；\n"));
                 events.Add(Token("2. 再给出可验证的推导步骤；\n"));
                 events.Add(Token("3. 最后给出一句话结论。\n\n"));
+                events.Add(Step(1, "先确认题目条件与所求", ""));
+                events.Add(Step(2, "按条件逐步推导，并回代检验", ""));
+                events.Add(Shape("题目图形",
+                    new double[] { 0.18, 0.22 },
+                    new double[] { 0.46, 0.22 },
+                    new double[] { 0.46, 0.56 },
+                    new double[] { 0.18, 0.22 }));
                 events.Add(Formula("E = mc^2"));
                 events.Add(Token("如需更精确的识别，可重新框选更清晰的区域。"));
                 break;
         }
 
         events.Add(new AssistantEvent { Kind = AssistantEventKind.Done });
-        return events;
+        if (teaching != AssistantTeachingMode.Hint) return events;
+
+        return events
+            .Where(ev => ev.Kind is AssistantEventKind.Token or AssistantEventKind.Done)
+            .ToList();
     }
 
     private static AssistantEvent Token(string text) => new()
