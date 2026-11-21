@@ -279,6 +279,8 @@ public sealed class GestureSettings
     [JsonPropertyName("AutoSwitchTwoFingerGesture")] public bool AutoSwitchTwoFingerGesture { get; set; } = true;
     [JsonPropertyName("isEnableTwoFingerRotation")] public bool IsEnableTwoFingerRotation { get; set; }
     [JsonPropertyName("isEnableTwoFingerRotationOnSelection")] public bool IsEnableTwoFingerRotationOnSelection { get; set; }
+    /// <summary>HarmonyOS port: stylus double-tap/squeeze tool cycling (PR #4). Unused on Windows but persisted for cross-platform Settings.json parity.</summary>
+    [JsonPropertyName("isEnableStylusGesture")] public bool IsEnableStylusGesture { get; set; } = true;
     [JsonPropertyName("matrixTransformCenterPoint")] public MatrixTransformCenterPointOptions MatrixTransformCenterPoint { get; set; } = MatrixTransformCenterPointOptions.CanvasCenterPoint;
 
     [JsonIgnore]

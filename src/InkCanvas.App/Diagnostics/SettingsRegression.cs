@@ -114,7 +114,7 @@ internal static class SettingsRegression
                 ("显示隐藏控制按钮", () => services.Settings.Appearance.IsShowHideControlButton),
                 ("显示左右切换按钮", () => services.Settings.Appearance.IsShowLRSwitchButton),
                 ("显示手指模式切换按钮", () => services.Settings.Appearance.IsShowModeFingerToggleSwitch),
-                ("PPT 放映时关闭批注后隐藏墨迹", () => services.Settings.PowerPoint.HideStrokesAfterLeavingAnnotation),
+                ("关闭批注模式后隐藏墨迹", () => services.Settings.PowerPoint.HideStrokesAfterLeavingAnnotation),
                 ("显示画笔光标", () => services.Settings.Canvas.IsShowCursor),
                 ("在调色盘窗口中显示 启用笔尖模式 切换按钮", () => services.Settings.Appearance.IsEnableDisPlayNibModeToggler),
                 ("关闭软件时二次弹窗确认", () => services.Settings.Advanced.IsSecondConfimeWhenShutdownApp),

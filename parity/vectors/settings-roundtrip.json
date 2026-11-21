@@ -110,6 +110,7 @@
           "AutoSwitchTwoFingerGesture": false,
           "isEnableTwoFingerRotation": false,
           "isEnableTwoFingerRotationOnSelection": false,
+          "isEnableStylusGesture": true,
           "matrixTransformCenterPoint": 2
         },
         "inkToShape": {
@@ -296,6 +297,7 @@
           "AutoSwitchTwoFingerGesture": true,
           "isEnableTwoFingerRotation": false,
           "isEnableTwoFingerRotationOnSelection": false,
+          "isEnableStylusGesture": true,
           "matrixTransformCenterPoint": 0
         },
         "inkToShape": {
@@ -482,6 +484,7 @@
           "AutoSwitchTwoFingerGesture": true,
           "isEnableTwoFingerRotation": false,
           "isEnableTwoFingerRotationOnSelection": false,
+          "isEnableStylusGesture": true,
           "matrixTransformCenterPoint": 0
         },
         "inkToShape": {
@@ -668,6 +671,7 @@
           "AutoSwitchTwoFingerGesture": true,
           "isEnableTwoFingerRotation": false,
           "isEnableTwoFingerRotationOnSelection": false,
+          "isEnableStylusGesture": true,
           "matrixTransformCenterPoint": 0
         },
         "inkToShape": {
@@ -855,6 +859,7 @@
           "AutoSwitchTwoFingerGesture": true,
           "isEnableTwoFingerRotation": false,
           "isEnableTwoFingerRotationOnSelection": false,
+          "isEnableStylusGesture": true,
           "matrixTransformCenterPoint": 0
         },
         "inkToShape": {
@@ -1041,6 +1046,7 @@
           "AutoSwitchTwoFingerGesture": true,
           "isEnableTwoFingerRotation": false,
           "isEnableTwoFingerRotationOnSelection": false,
+          "isEnableStylusGesture": true,
           "matrixTransformCenterPoint": 0
         },
         "inkToShape": {
