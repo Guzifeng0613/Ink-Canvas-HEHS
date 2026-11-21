@@ -27,7 +27,7 @@ foreach ($plugin in @('src\InkCanvas.Plugins.LegacyImport\InkCanvas.Plugins.Lega
 }
 $docs = Join-Path $app 'Docs'
 New-Item -ItemType Directory -Path $docs -Force | Out-Null
-foreach ($name in @('ANALYTIC-GEOMETRY.md', 'PDF.md', 'EXTENSIONS.md', 'SCREEN-TRACKING.md', 'UPDATES.md')) { Copy-Item -LiteralPath (Join-Path $repoRoot ('docs\' + $name)) -Destination $docs }
+foreach ($name in @('ANALYTIC-GEOMETRY.md', 'PDF.md', 'EXTENSIONS.md', 'SCREEN-TRACKING.md', 'UPDATES.md', 'teaching-loop-user-guide.md', 'timemachine-user-guide.md', 'ai-magic-lasso.md')) { Copy-Item -LiteralPath (Join-Path $repoRoot ('docs\' + $name)) -Destination $docs }
 $archive = Join-Path $outputRoot ('InkCanvas-WinUI3-' + $Version + '-win-x64.zip')
 Compress-Archive -LiteralPath $app -DestinationPath $archive
 $lines = Get-ChildItem -LiteralPath $outputRoot -Filter '*.zip' -File | Sort-Object Name | ForEach-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $_.Name }
