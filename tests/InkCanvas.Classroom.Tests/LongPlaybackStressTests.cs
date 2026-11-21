@@ -13,6 +13,7 @@ namespace InkCanvas.Classroom.Tests;
 /// 纯逻辑路径：不经过 Win2D 栅格化、UI 线程与真实设备，数字仅代表本机的合成负载。
 /// </para>
 /// </summary>
+[Collection("Playback performance")]
 public sealed class LongPlaybackStressTests
 {
     private const long TotalMs = 5_400_000;      // 90 分钟
@@ -159,11 +160,18 @@ public sealed class LongPlaybackStressTests
 
         Assert.Equal(durationMs, lastFrameTimeMs);
         Assert.True(totalMs < 180_000, $"逐帧总耗时 {totalMs:F1} ms 超过 180 秒上界");
-        Assert.True(peakBytes - lastSampleBytes < 256L * 1024 * 1024,
-            $"内存峰值与最后采样相差 {(peakBytes - lastSampleBytes) / 1024.0 / 1024.0:F1} MB，超过 256MB");
+        // Compare growth to the initial live heap. A falling heap can reflect trimming buffers
+        // retained by previous tests and must not be reported as an increase in memory use.
+        Assert.True(peakBytes - memorySamples[0] < 256L * 1024 * 1024,
+            $"相对初始采样的内存增长 {(peakBytes - memorySamples[0]) / 1024.0 / 1024.0:F1} MB，超过 256MB");
         Assert.True(lastFrame.Count > 0, "最后一帧未取到笔画");
 
         IReadOnlyList<InkStroke> endFrame = timeline.BuildFrame(durationMs);
         Assert.Equal(endFrame.Count, lastFrame.Count);
     }
 }
+
+// This test measures process-wide managed memory and wall time. Other test collections
+// must not allocate recordings/export buffers concurrently and pollute those measurements.
+[CollectionDefinition("Playback performance", DisableParallelization = true)]
+public sealed class PlaybackPerformanceCollection;

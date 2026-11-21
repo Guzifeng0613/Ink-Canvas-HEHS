@@ -5,6 +5,7 @@
     <Platform Name="x64" />
   </Configurations>
   <Folder Name="/src/">
+    <Project Path="src/InkCanvas.Plugins.LegacyImport/InkCanvas.Plugins.LegacyImport.csproj"><Platform Project="x64" /></Project>
     <Project Path="src/InkCanvas.UpdateHost/InkCanvas.UpdateHost.csproj"><Platform Project="x64" /></Project>
     <Project Path="src/InkCanvas.Extensibility/InkCanvas.Extensibility.csproj"><Platform Project="x64" /></Project>
     <Project Path="src/InkCanvas.Extensions/InkCanvas.Extensions.csproj"><Platform Project="x64" /></Project>
@@ -35,6 +36,10 @@
     </Project>
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/InkCanvas.Ai.Tests/InkCanvas.Ai.Tests.csproj"><Platform Project="x64" /></Project>
+    <Project Path="tests/InkCanvas.Classroom.Tests/InkCanvas.Classroom.Tests.csproj"><Platform Project="x64" /></Project>
+    <Project Path="tests/InkCanvas.P0.Tests/InkCanvas.P0.Tests.csproj"><Platform Project="x64" /></Project>
+    <Project Path="tests/InkCanvas.LegacyImport.Tests/InkCanvas.LegacyImport.Tests.csproj"><Platform Project="x64" /></Project>
     <Project Path="tests/InkCanvas.PluginFixture/InkCanvas.PluginFixture.csproj"><Platform Project="x64" /></Project>
     <Project Path="tests/InkCanvas.Core.Tests/InkCanvas.Core.Tests.csproj">
       <Platform Project="x64" />

@@ -3547,7 +3547,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
     {
         if (_aiAssistant is not null) _aiAssistant.Close();
 
-        var window = new AssistantWindow(Services.Settings.Appearance.Theme, Services.Settings.Features);
+        var window = new AssistantWindow(Services.Settings.Appearance.Theme, Services.Settings.Features,
+            demoMode: string.IsNullOrEmpty(AiConfig.ReadFromEnvironment().Endpoint));
         _aiAssistant = window;
         window.StopRequested += OnAiStopRequested;
         window.RetryRequested += OnAiRetryRequested;

@@ -244,7 +244,7 @@ public sealed class RecordingEnhancementTests
     }
 
     [Fact]
-    public void Append_DedupeUsesFirst64PayloadChars()
+    public void Append_KeepsDifferentPayloadsWithTheSamePrefix()
     {
         string dir = TempDir();
         try
@@ -254,8 +254,8 @@ public sealed class RecordingEnhancementTests
             recorder.Append(Ev(500, TimelineEventKind.RosterDrawn, prefix + "-first"));
             recorder.Append(Ev(500, TimelineEventKind.RosterDrawn, prefix + "-second"));
 
-            // 初始 PageChanged + BackgroundChanged 各一条，重复事件只入一条。
-            Assert.Equal(3, recorder.Session.Events.Count);
+            // 相同前缀不能把不同的完整结果误判为重复事件。
+            Assert.Equal(4, recorder.Session.Events.Count);
         }
         finally { RemoveDir(dir); }
     }

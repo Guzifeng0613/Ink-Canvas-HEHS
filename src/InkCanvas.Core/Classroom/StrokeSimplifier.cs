@@ -55,6 +55,13 @@ public static class StrokeSimplifier
             for (int i = first + 1; i < last; i++)
             {
                 float distance = InkStroke.DistanceToSegment(points[i].Position, a, b);
+                var segment = b - a;
+                float lengthSquared = segment.LengthSquared();
+                float fraction = lengthSquared > 1e-6f
+                    ? Math.Clamp(System.Numerics.Vector2.Dot(points[i].Position - a, segment) / lengthSquared, 0, 1)
+                    : (float)(i - first) / (last - first);
+                float interpolatedWidth = points[first].Width + (points[last].Width - points[first].Width) * fraction;
+                distance = MathF.Max(distance, MathF.Abs(points[i].Width - interpolatedWidth) * .5f);
                 if (distance > maxDistance)
                 {
                     maxDistance = distance;
@@ -89,12 +96,13 @@ public static class StrokeSimplifier
     {
         if (stroke is null) throw new ArgumentNullException(nameof(stroke));
 
-        var copy = new InkStroke(stroke.Attributes.Clone())
-        {
-            Id = stroke.Id,
-            IsRecognizedShape = stroke.IsRecognizedShape,
-        };
+        var copy = stroke.Clone();
+        // Pressure/tilt and water-ink texture depend on the original sampling. Shape geometry
+        // also owns its contour; retain those samples instead of changing their appearance.
+        if (stroke.IsRecognizedShape || stroke.ShapeSource is not null || stroke.TaperKind == TaperKind.InkWash
+            || stroke.Points.Any(point => point.HasPressure || point.TiltX != 0 || point.TiltY != 0)) return copy;
         copy.RestorePoints(Simplify(stroke.Points, tolerance));
+        copy.ImportObjectFrame(stroke.ExportObjectFrame());
         if (stroke.IsCompleted) copy.Complete();
         return copy;
     }

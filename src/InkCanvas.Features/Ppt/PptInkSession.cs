@@ -148,8 +148,12 @@ public sealed class PptInkSession : IDisposable
     public void ClearPresentationInk()
     {
         ThrowIfDisposed();
-        _slides.Clear();
-        _slideIndexes.Clear();
+        foreach (int slideId in _slides.Keys.ToArray()) _slides[slideId] = new();
+        if (_last.IsSlideShowRunning && _last.Slide is { SlideId: > 0, Index: > 0 } slide)
+        {
+            _slides[slide.SlideId] = new();
+            _slideIndexes[slide.SlideId] = slide.Index;
+        }
         _inkCache.Clear();
         _prefetchGate.BeginSession();
         _lastSlideIndex = null;

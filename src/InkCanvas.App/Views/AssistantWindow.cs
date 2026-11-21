@@ -160,7 +160,7 @@ public sealed class AssistantWindow : Window
     /// <summary>关闭“局部纠错”开关时禁用缩略图圈选交互。</summary>
     public bool RegionSelectionEnabled { get; set; } = true;
 
-    public AssistantWindow(int theme, FeatureSettings features = null)
+    public AssistantWindow(int theme, FeatureSettings features = null, bool demoMode = false)
     {
         Title = "AI 助教";
         _features = features;
@@ -468,6 +468,13 @@ public sealed class AssistantWindow : Window
         _cursorTimer.Tick += (_, _) => _cursor.Opacity = _cursor.Opacity < 0.5 ? 1 : 0.15;
 
         _body = new StackPanel { Spacing = 10 };
+        if (demoMode) _body.Children.Add(new TextBlock
+        {
+            Text = "演示模式：当前显示固定示例，尚未连接 AI 服务。",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = _textSecondary,
+            FontSize = 12,
+        });
         _body.Children.Add(_thumbnailHost);
         _body.Children.Add(_problemScroll);
         _body.Children.Add(_addRegionLink);

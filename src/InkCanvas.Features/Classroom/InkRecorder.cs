@@ -35,7 +35,6 @@ public sealed class InkRecorder : IDisposable
     // 暂停计时：ElapsedMs = 时钟已过 - (已累计暂停 + 当前暂停段)。
     private long _pausedTotalMs;
     private long _pauseStartedMs = -1;
-    private const int DedupeSignaturePrefixLength = 64;
 
 
     public InkRecorder(BoardService board)
@@ -394,7 +393,7 @@ public sealed class InkRecorder : IDisposable
 
     /// <summary>
     /// 线程安全地追加一个外部事件（PPT 翻页 / 点名 / 倒计时等）。
-    /// 暂停期间丢弃；与尾部事件完全同签名（Kind + TimeMs + StrokeId + Payload 前 64 字符）时忽略；
+    /// 暂停期间丢弃；与尾部事件的归属和完整内容相同时忽略；
     /// 事件时间早于最后一个事件时按时间插入，并重建检查点（增量游标只支持尾部追加）。
     /// 非相邻的重复事件是合法重放，予以保留。
     /// 标书签候选事件会自动补一条章节书签。
@@ -446,14 +445,11 @@ public sealed class InkRecorder : IDisposable
 
     private static bool SameSignature(TimelineEvent a, TimelineEvent b)
     {
-        if (a.Kind != b.Kind || a.TimeMs != b.TimeMs) return false;
+        if (a.Kind != b.Kind || a.TimeMs != b.TimeMs || a.PageIndex != b.PageIndex || a.PptSlideId != b.PptSlideId) return false;
         if (!string.Equals(a.StrokeId, b.StrokeId, StringComparison.Ordinal)) return false;
-
-        string pa = a.Payload ?? "";
-        string pb = b.Payload ?? "";
-        int la = Math.Min(pa.Length, DedupeSignaturePrefixLength);
-        int lb = Math.Min(pb.Length, DedupeSignaturePrefixLength);
-        return la == lb && string.CompareOrdinal(pa, 0, pb, 0, la) == 0;
+        return string.Equals(a.StrokeJson, b.StrokeJson, StringComparison.Ordinal)
+            && string.Equals(a.Payload, b.Payload, StringComparison.Ordinal)
+            && (a.StrokeIds ?? Array.Empty<string>()).SequenceEqual(b.StrokeIds ?? Array.Empty<string>());
     }
 
     private static bool IsBookmarkSource(TimelineEventKind kind)

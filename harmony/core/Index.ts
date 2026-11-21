@@ -210,7 +210,7 @@ export {
   usableSelection,
   lassoProbe
 } from './src/main/ets/assistant/LassoGeometry';
-export type { LassoPoint, LassoSummary } from './src/main/ets/assistant/LassoGeometry';
+export type { LassoPoint as AssistantLassoPoint, LassoSummary } from './src/main/ets/assistant/LassoGeometry';
 export {
   SAFE_MARGIN,
   CARD_GAP,

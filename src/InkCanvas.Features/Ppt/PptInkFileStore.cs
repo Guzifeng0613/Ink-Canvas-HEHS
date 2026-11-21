@@ -411,8 +411,10 @@ public sealed class PptInkFileStore : IPptInkStore
         };
         foreach (PptStoredSlide item in archive.Slides ?? Array.Empty<PptStoredSlide>())
         {
-            if (item is null || item.SlideId <= 0 || item.SlideIndex <= 0 || item.Strokes is null || item.Strokes.Count == 0)
+            if (item is null || item.SlideId <= 0 || item.SlideIndex <= 0 || item.Strokes is null)
                 continue;
+            // An explicitly empty slide is a saved erase, not a missing partial update.
+            // Retain its manifest entry so a later merge cannot resurrect the previous ink.
             string fileName = $"slide-{item.SlideId}.icink";
             InkFileStore.Save(Path.Combine(directory, fileName), item.Strokes);
             manifest.Slides.Add(new ManifestSlide { SlideId = item.SlideId, SlideIndex = item.SlideIndex, File = fileName });

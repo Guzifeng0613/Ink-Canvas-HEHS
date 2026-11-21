@@ -119,7 +119,6 @@ import { promptAction, matrix4, componentSnapshot, font, window } from '@kit.Ark
 import { textRecognition } from '@kit.CoreVisionKit';
 import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
-import { pasteboard } from '@kit.BasicServicesKit';
 import { util } from '@kit.ArkTS';
 import { image } from '@kit.ImageKit';
 
@@ -1563,6 +1562,7 @@ this.ToolEntry('AI 圈选识题', 'aiCapture')
 
       if (this.assistantOpen) {
         AssistantCard({
+          demoMode: readAiConfig().Endpoint.length === 0,
           dark: this.dark,
           state: this.assistantState,
           mode: this.assistantMode,
@@ -4462,6 +4462,7 @@ this.rebuildAutoSave();
     this.assistantSeq += 1;
     const asset: BoardAsset = {
       Id: 'ai-card-' + this.assistantSeq,
+      LayerOrder: null,
       Name: 'AI 助教',
       Data: result.Data,
       ContentType: result.ContentType,
