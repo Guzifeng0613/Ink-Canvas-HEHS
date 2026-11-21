@@ -1,0 +1,192 @@
+{
+  "id": "plot-sampler",
+  "entry": "harmony/features/src/main/ets/analytic/PlotSampler.ts",
+  "cases": [
+    {
+      "id": "function-y-parabola",
+      "fn": "plotSampleProbe",
+      "input": [
+        0,
+        "a*x^2+b*x+c",
+        "",
+        -10,
+        10,
+        -7.5,
+        7.5,
+        0,
+        6.283185307179586,
+        0.1,
+        0,
+        0
+      ],
+      "expected": {
+        "Paths": 1,
+        "FirstPoint": [
+          42.88288288288288,
+          0
+        ],
+        "LastPoint": [
+          597.1171171171171,
+          0
+        ],
+        "PointCount": 113
+      },
+      "tolerance": 1E-06
+    },
+    {
+      "id": "function-y-line",
+      "fn": "plotSampleProbe",
+      "input": [
+        0,
+        "y=x",
+        "",
+        -10,
+        10,
+        -7.5,
+        7.5,
+        0,
+        6.283185307179586,
+        1,
+        0,
+        0
+      ],
+      "expected": {
+        "Paths": 1,
+        "FirstPoint": [
+          80,
+          480
+        ],
+        "LastPoint": [
+          560,
+          0
+        ],
+        "PointCount": 97
+      },
+      "tolerance": 1E-06
+    },
+    {
+      "id": "implicit-circle",
+      "fn": "plotSampleProbe",
+      "input": [
+        0,
+        "x^2+y^2=25",
+        "",
+        -10,
+        10,
+        -7.5,
+        7.5,
+        0,
+        6.283185307179586,
+        1,
+        0,
+        0
+      ],
+      "expected": {
+        "Paths": 1,
+        "FirstPoint": [
+          292.5,
+          82.38099738866967
+        ],
+        "LastPoint": [
+          292.5,
+          82.38099738866967
+        ],
+        "PointCount": 509
+      },
+      "tolerance": 1E-06
+    },
+    {
+      "id": "parametric-circle",
+      "fn": "plotSampleProbe",
+      "input": [
+        1,
+        "x=5*cos(t)",
+        "y=5*sin(t)",
+        -10,
+        10,
+        -7.5,
+        7.5,
+        0,
+        6.283185307179586,
+        1,
+        0,
+        0
+      ],
+      "expected": {
+        "Paths": 1,
+        "FirstPoint": [
+          480,
+          240
+        ],
+        "LastPoint": [
+          480,
+          240.00000000000003
+        ],
+        "PointCount": 129
+      },
+      "tolerance": 1E-06
+    },
+    {
+      "id": "polar-cardioid",
+      "fn": "plotSampleProbe",
+      "input": [
+        2,
+        "r=1+cos(t)",
+        "",
+        -10,
+        10,
+        -7.5,
+        7.5,
+        0,
+        6.283185307179586,
+        1,
+        0,
+        0
+      ],
+      "expected": {
+        "Paths": 1,
+        "FirstPoint": [
+          384,
+          240
+        ],
+        "LastPoint": [
+          384,
+          240.00000000000003
+        ],
+        "PointCount": 129
+      },
+      "tolerance": 1E-06
+    },
+    {
+      "id": "function-discontinuity-splits",
+      "fn": "plotSampleProbe",
+      "input": [
+        0,
+        "y=1/x",
+        "",
+        -10,
+        10,
+        -7.5,
+        7.5,
+        0,
+        6.283185307179586,
+        1,
+        0,
+        0
+      ],
+      "expected": {
+        "Paths": 2,
+        "FirstPoint": [
+          0,
+          243.2
+        ],
+        "LastPoint": [
+          640,
+          236.8
+        ],
+        "PointCount": 158
+      },
+      "tolerance": 1E-06
+    }
+  ]
+}

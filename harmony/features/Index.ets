@@ -34,6 +34,16 @@ export type { CoursewareBundle, CoursewarePageFile, CoursewareSummary } from './
 export { CountdownEngine, countdownInterval, countdownDisplay, countdownTick } from './src/main/ets/tools/CountdownEngine';
 export type { CountdownTickResult } from './src/main/ets/tools/CountdownEngine';
 export { LotteryEngine, lotterySequence } from './src/main/ets/tools/LotteryEngine';
+export type { LotteryDraw } from './src/main/ets/tools/LotteryEngine';
+export { parseRoster, splitFields, rosterProbe } from './src/main/ets/tools/ClassroomRoster';
+export { normalizeExpression, compileExpression, FormatError } from './src/main/ets/analytic/MathExpression';
+export type { Evaluator, CompiledExpression } from './src/main/ets/analytic/MathExpression';
+export {
+  PlotKind, CompiledPlotKind, createDefaultPlotDefinition, validatePlotDefinition, compilePlot
+} from './src/main/ets/analytic/PlotCompiler';
+export type { PlotDefinition, CompiledPlot } from './src/main/ets/analytic/PlotCompiler';
+export { samplePlot, PLOT_WIDTH, PLOT_HEIGHT, MAXIMUM_PLOT_POINTS, MAXIMUM_PLOT_EVALUATIONS } from './src/main/ets/analytic/PlotSampler';
+export type { PlotPoint, PlotMesh } from './src/main/ets/analytic/PlotSampler';
 export {
   applyReplaceRules,
   lotteryDisplayName,

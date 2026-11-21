@@ -58,6 +58,10 @@
       "csharp": "src/InkCanvas.Core/Imaging/PixelCompositing.cs"
     },
     {
+      "arkts": "harmony/core/src/main/ets/imaging/SvgSize.ts",
+      "csharp": "src/InkCanvas.Core/Imaging/SvgImage.cs"
+    },
+    {
       "arkts": "harmony/core/src/main/ets/ink/InkColor.ts",
       "csharp": "src/InkCanvas.Core/Ink/InkColor.cs"
     },
@@ -116,6 +120,14 @@
     {
       "arkts": "harmony/core/src/main/ets/math/Matrix3x2.ts",
       "csharp": "src/InkCanvas.Core/Selection/SelectionGeometry.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/pdf/PdfInkCodec.ts",
+      "csharp": "src/InkCanvas.Pdf/PdfInkCodec.cs"
+    },
+    {
+      "arkts": "harmony/core/src/main/ets/pdf/PdfLayout.ts",
+      "csharp": "src/InkCanvas.Pdf/PdfPageGeometry.cs"
     },
     {
       "arkts": "harmony/core/src/main/ets/persistence/BoardPackCodec.ts",
@@ -202,6 +214,18 @@
       "csharp": "src/InkCanvas.App/Services/ShellController.cs"
     },
     {
+      "arkts": "harmony/features/src/main/ets/analytic/MathExpression.ts",
+      "csharp": "src/InkCanvas.AnalyticGeometry/MathExpression.cs"
+    },
+    {
+      "arkts": "harmony/features/src/main/ets/analytic/PlotCompiler.ts",
+      "csharp": "src/InkCanvas.AnalyticGeometry/PlotDefinition.cs"
+    },
+    {
+      "arkts": "harmony/features/src/main/ets/analytic/PlotSampler.ts",
+      "csharp": "src/InkCanvas.AnalyticGeometry/PlotSampler.cs"
+    },
+    {
       "arkts": "harmony/features/src/main/ets/board/BoardDocument.ts",
       "csharp": "src/InkCanvas.Features/Board/BoardService.cs"
     },
@@ -226,6 +250,10 @@
       "csharp": "src/InkCanvas.Features/Ppt/PptInkSession.cs"
     },
     {
+      "arkts": "harmony/features/src/main/ets/tools/ClassroomRoster.ts",
+      "csharp": "src/InkCanvas.Features/Tools/ClassroomRoster.cs"
+    },
+    {
       "arkts": "harmony/features/src/main/ets/tools/CountdownEngine.ts",
       "csharp": "src/InkCanvas.App/Views/CountdownWindow.cs"
     },
@@ -240,6 +268,10 @@
     {
       "arkts": "harmony/ink/src/main/ets/ControllerTypes.ts",
       "csharp": "src/InkCanvas.Platform/Windows/LayeredInkWindow.cs"
+    },
+    {
+      "arkts": "harmony/ink/src/main/ets/DrawingObject.ts",
+      "csharp": "src/InkCanvas.Ink/DrawingObject.cs"
     },
     {
       "arkts": "harmony/ink/src/main/ets/InkController.ts",
@@ -292,6 +324,10 @@
     {
       "arkts": "harmony/platform/src/main/ets/media/SoundService.ts",
       "csharp": "src/InkCanvas.App/Views/CountdownWindow.cs"
+    },
+    {
+      "arkts": "harmony/platform/src/main/ets/pdf/PdfAnnotationWriter.ets",
+      "csharp": "src/InkCanvas.Pdf/PdfAnnotationFile.cs"
     },
     {
       "arkts": "harmony/platform/src/main/ets/pdf/PdfPageSource.ets",

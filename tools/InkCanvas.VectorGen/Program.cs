@@ -22,4 +22,5 @@ PersistenceVectors.Write(outDir);
 InkCoreVectors.Write(outDir);
 ControllerVectors.Write(outDir);
 BoardVectors.Write(outDir);
+AnalyticVectors.Write(outDir);
 Console.WriteLine($"vectors written to {outDir}");

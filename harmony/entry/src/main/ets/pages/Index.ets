@@ -17,6 +17,9 @@ import {
   COMPRESS_MAX_DIM,
   CountdownPiPService,
   CountdownPiPParams,
+  writeAnnotatedPdf,
+  readPdfGeometries,
+  containPlacement,
   openInWps,
   openAppGalleryDetail,
   checkForUpdate,
@@ -27,7 +30,9 @@ import {
   is2in1,
   breakpointForWidth,
   isFullLayout,
-  InkCastClient
+  InkCastClient,
+  StrokePredictor,
+  StylusBinding
 } from '@inkcanvas/platform';
 import {
   FloatingBar,
@@ -58,10 +63,11 @@ import {
   Invalidation
 } from '@inkcanvas/ink';
 import type { SceneStrokeInput, SceneSelectionInput, ISelectionElement } from '@inkcanvas/ink';
+import type { PagePlacement } from '@inkcanvas/platform';
 import { InkStroke, InkColor, InkDocument, parseSettings, stringifySettings, createDefaultSettings, matrixToArray, transformPointByMatrix, PenNib, calibrationMultiplier, toTaperKind, toPenStyle, toEraserRadius, resetToRecommendation, TaperKind, placeToolbar, summarizeInk, recognizeFromText, buildLectureNotes, shapeSnapOptions } from '@inkcanvas/core';
 import type { ShapeKind, StrokePointInput, AppSettings, AdvancedTouchInput, Matrix3x2 } from '@inkcanvas/core';
 import type { AiRegion, AiInkSummary, AiRecognizeResult, LectureNotes, LectureNoteCard, ShapeSnapOption } from '@inkcanvas/core';
-import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground, renderMatrix4Values, applyReplaceRules, lotteryDisplayName, lotteryFlicker, lotteryDrawUnique, lotterySplitGroups, appendTransform, transformedBounds, snapshotGeometry, recordTransform, BoardSelectionElement } from '@inkcanvas/features';
+import { CoursewareSession, CountdownEngine, LotteryEngine, BoardDocument, BoardBackground, renderMatrix4Values, applyReplaceRules, lotteryDisplayName, lotteryFlicker, lotteryDrawUnique, lotterySplitGroups, appendTransform, transformedBounds, snapshotGeometry, recordTransform, BoardSelectionElement, parseRoster } from '@inkcanvas/features';
 import type { CoursewarePageFile } from '@inkcanvas/features';
 import type { BoardAsset, ElementGeometry } from '@inkcanvas/features';
 import { ReplayClock } from '@inkcanvas/core';
@@ -241,10 +247,13 @@ struct Index {
   private blurEnabled: boolean = false;
   private symbolIcons: boolean = true;
   private renderer: CanvasInkRenderer | null = null;
+  private strokePredictor: StrokePredictor = new StrokePredictor();
   private controller: InkController = new InkController();
   private annotateDocument: InkDocument = new InkDocument();
   private pdfSource: PdfPageSource = new PdfPageSource();
   private courseware: CoursewareSession = new CoursewareSession();
+  // D8：课件源 PDF 沙箱路径（保存批注 PDF 用）。
+  private coursewareSourcePath: string = '';
   private storage: StorageService | null = null;
   private countdown: CountdownEngine = new CountdownEngine();
   private countdownPiP: CountdownPiPService = new CountdownPiPService();
@@ -257,6 +266,8 @@ struct Index {
   private dotTimer: number = -1;
   private settings: AppSettings = createDefaultSettings();
   private autoSave: AutoSaveService | null = null;
+  // 手写笔手势订阅句柄（双击/轻捏轮转工具）；页面销毁时成对释放。
+  private stylusBinding: StylusBinding | null = null;
   private board: BoardDocument = new BoardDocument();
   private boardGridSettings: RenderingContextSettings = new RenderingContextSettings(true);
   private boardGridContext: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.boardGridSettings);
@@ -331,6 +342,7 @@ struct Index {
     this.stopLotteryTimer();
     this.stopReplayTimer();
     this.countdownPiP.stop();
+    this.releaseStylusGesture();
   }
 
   aboutToAppear(): void {
@@ -373,6 +385,8 @@ struct Index {
     };
     // 选区变化：元素在场/离场需刷新画板 ForEach；选区工具条（G3）随动。
     this.controller.SelectionChanged = () => {
+      // D1：元素在场/离场与选区变化都可能改变层序 → 置脏 + 画板重排。
+      this.controller.MarkLayerOrderDirty();
       this.boardImagesVersion++;
       this.selectionToolbarOpen = this.controller.HasSelection;
       if (this.selectionToolbarOpen) {
@@ -420,6 +434,7 @@ struct Index {
         this.showCoursewarePage(this.coursewareIndex + (next ? 1 : -1));
       }
     };
+    this.setupStylusGesture();
   }
 
   private loadUiPrefs(): void {
@@ -678,11 +693,12 @@ struct Index {
       }
 
       if (this.boardOpen) {
-        ForEach(this.board.Current.Images, (asset: BoardAsset) => {
-          this.BoardImage(asset)
-        }, (asset: BoardAsset) => asset.Id + ':' + this.boardImagesVersion)
-        ForEach(this.board.Current.Media, (asset: BoardAsset) => {
-          this.BoardVideo(asset)
+        ForEach(this.orderedBoardAssets(), (asset: BoardAsset) => {
+          if (this.board.Current.Media.indexOf(asset) >= 0) {
+            this.BoardVideo(asset)
+          } else {
+            this.BoardImage(asset)
+          }
         }, (asset: BoardAsset) => asset.Id + ':' + this.boardImagesVersion)
       }
 
@@ -697,6 +713,10 @@ struct Index {
         InkCanvasSurface({
           onRendererReady: (renderer: CanvasInkRenderer) => {
             this.renderer = renderer;
+            if (this.windowWidth > 0 && this.windowHeight > 0) {
+              this.controller.ViewCenter.X = this.windowWidth / 2;
+              this.controller.ViewCenter.Y = this.windowHeight / 2;
+            }
             this.renderer.resize(this.windowWidth, this.windowHeight);
             this.refreshScene();
           }
@@ -744,6 +764,18 @@ struct Index {
             .onClick(() => { this.controller.ScaleSelectionWidth(0.8); })
           Text('恢复').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
             .onClick(() => { this.controller.RestoreSelectionWidth(); })
+          Text('顶层').fontSize(12).fontColor(Color.White).padding(6)
+            .backgroundColor(this.controller.CanArrangeSelection(0) ? '#99000000' : '#4D000000').borderRadius(4)
+            .onClick(() => { this.controller.ArrangeSelection(0); })
+          Text('上移').fontSize(12).fontColor(Color.White).padding(6)
+            .backgroundColor(this.controller.CanArrangeSelection(1) ? '#99000000' : '#4D000000').borderRadius(4)
+            .onClick(() => { this.controller.ArrangeSelection(1); })
+          Text('下移').fontSize(12).fontColor(Color.White).padding(6)
+            .backgroundColor(this.controller.CanArrangeSelection(2) ? '#99000000' : '#4D000000').borderRadius(4)
+            .onClick(() => { this.controller.ArrangeSelection(2); })
+          Text('底层').fontSize(12).fontColor(Color.White).padding(6)
+            .backgroundColor(this.controller.CanArrangeSelection(3) ? '#99000000' : '#4D000000').borderRadius(4)
+            .onClick(() => { this.controller.ArrangeSelection(3); })
           Text('删除').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#FFC0392B').borderRadius(4)
             .onClick(() => { this.controller.DeleteSelection(); })
           Text('✕').fontSize(12).fontColor(Color.White).padding(6).backgroundColor('#99000000').borderRadius(4)
@@ -1064,6 +1096,8 @@ struct Index {
                   .onClick(() => { this.lotterySingle = !this.lotterySingle; })
                 Text(this.lotteryReplaceOpen ? '收起替换' : '替换名单').fontSize(13).fontColor(this.dark ? Color.White : Color.Black)
                   .onClick(() => { this.lotteryReplaceOpen = !this.lotteryReplaceOpen; })
+                Text('导入名单').fontSize(13).fontColor(Color.White).padding(6).backgroundColor('#FF0067C0').borderRadius(4)
+                  .onClick(() => { this.importRoster(); })
               }
             }
             if (this.lotteryGroups.length > 0) {
@@ -1344,10 +1378,13 @@ struct Index {
           Column({ space: 6 }) {
             this.ToolEntry('课件（PDF）', 'courseware')
             this.ToolEntry('PPT（WPS）', 'pptWps')
-            this.ToolEntry('AI 圈选识题', 'aiCapture')
+this.ToolEntry('AI 圈选识题', 'aiCapture')
             this.ToolEntry('AI 圈选识别公式', 'aiCaptureFormula')
             this.ToolEntry('AI 课堂纪要', 'aiNotes')
             this.ToolEntry('智能图形规整', 'aiSnap')
+            if (this.mode === 'courseware') {
+              this.ToolEntry('保存批注 PDF', 'saveAnnotatedPdf')
+            }
             this.ToolEntry('截图', 'screenshot')
             this.ToolEntry('Desmos', 'desmos')
             this.ToolEntry('检查更新', 'update')
@@ -1563,9 +1600,20 @@ struct Index {
       this.handleKey(event);
     })
     .onAreaChange((oldValue: Area, newValue: Area) => {
-      this.windowWidth = Number(newValue.width);
-      this.windowHeight = Number(newValue.height);
-      if (this.renderer !== null) {
+      const nextWidth = Number(newValue.width);
+      const nextHeight = Number(newValue.height);
+      const sizeChanged = nextWidth !== this.windowWidth || nextHeight !== this.windowHeight;
+      this.windowWidth = nextWidth;
+      this.windowHeight = nextHeight;
+      // F3：对齐 C# InkSurface.OnDraw 的 ViewCenter 语义，在视口尺寸变化（onAreaChange）时按半尺寸刷新
+      // （vp，与触摸手势同单位）；C# 为每帧刷新，此处事件驱动在默认 1920×1080vp 视口下与旧值逐位相等。
+      // 布局尚未给出有效尺寸时保留控制器默认 960×540。
+      if (this.windowWidth > 0 && this.windowHeight > 0) {
+        this.controller.ViewCenter.X = this.windowWidth / 2;
+        this.controller.ViewCenter.Y = this.windowHeight / 2;
+      }
+      // 同尺寸回调跳过 resize+refresh，避免无谓的全量重绘。
+      if (this.renderer !== null && sizeChanged) {
         this.renderer.resize(this.windowWidth, this.windowHeight);
         this.refreshScene();
       }
@@ -1620,6 +1668,7 @@ struct Index {
         .position({ x: asset.Left, y: asset.Top })
         .width(asset.Width)
         .height(asset.Height)
+        .opacity(asset.Opacity === undefined ? 1 : asset.Opacity)
         .transform(this.boardAssetMatrix(asset))
     }
   }
@@ -1767,13 +1816,7 @@ struct Index {
   @Builder
   SettingsStartup() {
     this.SettingSection('启动选项')
-    this.SettingInfo('HarmonyOS 无三方自更新/自启动通道：更新经应用市场；开机自启为唯一 not-ported 功能。')
-    this.SettingDeferred('自动检查更新', '无 HAP 自更新 API，请经应用市场更新。')
-    this.SettingDeferred('静默更新', '自更新不可用；静默时间窗策略仅保留配置值。')
-    this.SettingDeferred('静默更新起始/终止时间',
-      '当前值：' + this.settings.startup.isAutoUpdateWithSilenceStartTime + ' – ' +
-      this.settings.startup.isAutoUpdateWithSilenceEndTime + '（仅保留配置）。')
-    this.SettingDeferred('开机时运行', '无三方自启 API；替代路径：桌面快捷方式/服务卡片。')
+    this.SettingInfo('更新经应用市场（工具面板「检查更新」）；内置升级/静默安装/开机自启已按决策禁用（平台限制，不再迁移）。')
     this.SettingToggle('开机运行后收纳到侧边栏', this.settings.startup.isFoldAtStartup, (v: boolean) => {
       this.settings.startup.isFoldAtStartup = v;
       this.touchSettings();
@@ -1888,6 +1931,15 @@ struct Index {
     this.SettingToggle('双指旋转', this.settings.gesture.isEnableTwoFingerRotation, (v: boolean) => {
       this.settings.gesture.isEnableTwoFingerRotation = v;
       this.applyGestures();
+      this.touchSettings();
+    })
+    this.SettingToggle('手写笔手势切换（双击/轻捏轮转工具）', this.settings.gesture.isEnableStylusGesture, (v: boolean) => {
+      this.settings.gesture.isEnableStylusGesture = v;
+      if (v) {
+        this.setupStylusGesture();
+      } else {
+        this.releaseStylusGesture();
+      }
       this.touchSettings();
     })
   }
@@ -2017,19 +2069,16 @@ struct Index {
       this.settings.behavior.isShowPPTNavigationSides = v;
       this.touchSettings();
     })
-    this.SettingInfo('WPS 支持：工具面板「PPT（WPS）」拉起 WPS 鸿蒙版（手机/Pad 包自适应）；未安装引导应用市场。放映控制待 WPS 官方开放。')
-    this.SettingDeferred('进入放映时自动批注', '无放映状态检测。')
-    this.SettingDeferred('放映模式双指手势', '放映专属手势门控尚未移植（与基线一致）。')
+    this.SettingInfo('WPS 支持：工具面板「PPT（WPS）」拉起 WPS 鸿蒙版（手机/Pad 包自适应）；未安装引导应用市场。')
+    this.SettingInfo('PPT 放映控制（放映状态联动/自动批注/放映手势门控/自动截屏/播放记忆）已按决策禁用（平台限制，不再迁移）。')
     this.SettingToggle('允许手指手势翻页', this.settings.behavior.isEnableFingerGestureSlideShowControl, (v: boolean) => {
       this.settings.behavior.isEnableFingerGestureSlideShowControl = v;
       this.touchSettings();
     })
-    this.SettingDeferred('自动幻灯片截屏', '无自动放映截屏。')
     this.SettingToggle('自动保存课件墨迹', this.settings.behavior.isAutoSaveStrokesInPowerPoint, (v: boolean) => {
       this.settings.behavior.isAutoSaveStrokesInPowerPoint = v;
       this.touchSettings();
     })
-    this.SettingDeferred('记忆上次播放位置 / 提示隐藏幻灯片 / 提示自动播放', '无 PPT 状态通知。')
     this.SettingToggle('选择时不清除墨迹（课件）', this.settings.behavior.isNoClearStrokeOnSelectWhenInPowerPoint, (v: boolean) => {
       this.settings.behavior.isNoClearStrokeOnSelectWhenInPowerPoint = v;
       this.settings.behavior.isShowStrokeOnSelectInPowerPoint = v;
@@ -2106,7 +2155,7 @@ struct Index {
       this.settings.advanced.isSecondConfimeWhenShutdownApp = v;
       this.touchSettings();
     })
-    this.SettingDeferred('阻止系统边缘手势', '无边缘手势抑制 API；沉浸式全屏下系统手势由系统决定。')
+    this.SettingInfo('边缘手势抑制已按决策禁用（平台限制）；沉浸式全屏下系统手势由系统管理。')
     this.SettingInfo('特殊屏幕与触摸参数按原 WPF 算法移植；请在实际触控屏与压感笔上复核（需真机验证）。')
   }
 
@@ -2114,19 +2163,7 @@ struct Index {
   SettingsAutomation() {
     this.SettingSection('自动选项')
     this.SettingInfo('无法获取其他应用前台状态：自动收纳/进程查杀类设置仅保留值。')
-    this.SettingDeferred('进入“希沃白板”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('自动收纳忽略桌面 EN 批注窗口', '窗口识别排除规则不可用。')
-    this.SettingDeferred('进入“希沃视频展台”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“希沃轻白板”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“希沃品课”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“鸿合白板”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“鸿合视频展台”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“文香白板”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“中原旧白板”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入“微软 Whiteboard”时自动收纳', '前台应用识别不可用。')
-    this.SettingDeferred('进入 PPT 放映时自动收纳', '无放映状态检测；手动收纳可用（Alt+V）。')
-    this.SettingDeferred('自动查杀希沃“PPT 小工具”', '无进程查杀能力。')
-    this.SettingDeferred('自动查杀希沃白板 5', '无进程查杀能力。')
+    this.SettingInfo('自动收纳（前台识别）与进程查杀已按决策禁用（平台限制，不再迁移）；手动收纳可用（Alt+V 或浮条「隐藏」）。')
     this.SettingToggle('清屏时自动保存墨迹', this.settings.automation.isAutoSaveStrokesAtClear, (v: boolean) => {
       this.settings.automation.isAutoSaveStrokesAtClear = v;
       this.touchSettings();
@@ -2222,6 +2259,47 @@ struct Index {
         .fontSize(13).fontColor(Color.White).padding(10)
         .backgroundColor('#FF0067C0').borderRadius(6)
         .onClick(() => { this.settingsOpen = false; this.changelogOpen = true; })
+    }
+  }
+
+  // D8：保存批注 PDF——当前会话各页墨迹写为标准 INK 批注的 PDF 副本（沙箱）+ sidecar .icink（权威层）。
+  private async saveAnnotatedCoursewarePdf(): Promise<void> {
+    if (this.storage === null || this.coursewareSourcePath.length === 0) {
+      promptAction.showToast({ message: '请先打开课件 PDF', duration: 2000 });
+      return;
+    }
+    const geometries = readPdfGeometries(this.coursewareSourcePath);
+    if (geometries === null) {
+      promptAction.showToast({ message: 'PDF Kit 不可用（仅中国大陆设备），已保留 .icink 批注层', duration: 2500 });
+      this.saveCoursewareBundle();
+      return;
+    }
+    const pages = new Map<number, InkStroke[]>();
+    const placements = new Map<number, PagePlacement>();
+    for (let i = 0; i < this.courseware.PageCount; i++) {
+      const doc = this.courseware.pageDocument(i);
+      if (doc.Strokes.length > 0) {
+        pages.set(i, doc.Strokes);
+        const size = this.pdfSource.pageSize(i);
+        const dipWidth = size[0] * 96 / 72;
+        const dipHeight = size[1] * 96 / 72;
+        placements.set(i, containPlacement(this.windowWidth, this.windowHeight, dipWidth, dipHeight));
+      }
+    }
+    const stamp = Date.now();
+    const target = this.storage.fullPathPublic('annotated-' + stamp + '.pdf');
+    const result = await writeAnnotatedPdf(this.coursewareSourcePath, target, pages, geometries, placements);
+    // sidecar：会话级 .icink 清单照常保存（权威可编辑层）。
+    this.saveCoursewareBundle();
+    if (result.Ok) {
+      promptAction.showToast({
+        message: '批注 PDF 已保存（' + result.Annotations + ' 条墨迹' + (result.Limited ? '，部分页跳过' : '') + '）',
+        duration: 2500
+      });
+    } else if (result.Annotations > 0) {
+      promptAction.showToast({ message: '批注写入失败，.icink 批注层已保存', duration: 2500 });
+    } else {
+      promptAction.showToast({ message: '无可写墨迹，.icink 批注层已保存', duration: 2000 });
     }
   }
 
@@ -2523,6 +2601,57 @@ struct Index {
       this.settings.gesture.isEnableTwoFingerTranslate,
       this.settings.gesture.isEnableTwoFingerRotation
     );
+    // 缩放阻尼：吸收 88% 的对数缩放增量，死区 2 vp。
+    this.controller.ZoomDamping = 0.88;
+    this.controller.ZoomDeadZone = 2;
+  }
+
+  // 手写笔手势（双击 doubleTap / 轻捏 squeeze）工具轮转：画笔类（铅笔/荧光笔/形状/漫游）
+  // → 区域橡皮 → 选择 → 回到铅笔。荧光笔/整笔擦/套索擦等不在环内，经 else 分支先进入区域橡皮，
+  // 随后沿环回到铅笔，不存在死循环或不可达状态。
+  // 轮转直接复用现有 handleAction(id)，完整沿用其工具状态、面板与 UI 逻辑，不另写一套切换；
+  // 当前工具状态取自 controller.Tool（与工具栏选中态同源）。
+  private rotateToolByStylusGesture(): void {
+    // 切工具瞬间活体笔画即将提交/已不存在，先清预测段，避免旧颜色旧宽度的临时段残留到新工具帧。
+    if (this.renderer !== null) {
+      this.renderer.clearPrediction();
+    }
+    const tool = this.controller.Tool;
+    let nextId: string;
+    if (tool === InkTool.Select) {
+      nextId = 'pen';
+    } else if (tool === InkTool.Eraser) {
+      nextId = 'select';
+    } else {
+      nextId = 'eraserCircle';
+    }
+    this.handleAction(nextId);
+  }
+
+  // 订阅手写笔手势；设置关闭或设备不支持时由 StylusBinding 内部静默降级。
+  private setupStylusGesture(): void {
+    if (!this.settings.gesture.isEnableStylusGesture) {
+      return;
+    }
+    // 重复进入先释放旧订阅，避免同一手势注册多份回调导致轮转触发多次。
+    this.releaseStylusGesture();
+    this.stylusBinding = new StylusBinding();
+    // 现有设置结构未提供区分双击/轻捏的独立开关位，故两种手势当前触发同一轮转；
+    // 回调入口已按手势分开预留，未来可分别绑定不同行为。
+    this.stylusBinding.on('doubleTap', () => {
+      this.rotateToolByStylusGesture();
+    });
+    this.stylusBinding.on('squeeze', () => {
+      this.rotateToolByStylusGesture();
+    });
+  }
+
+  // 释放手写笔手势订阅，与 setupStylusGesture 成对，避免监听泄漏。
+  private releaseStylusGesture(): void {
+    if (this.stylusBinding !== null) {
+      this.stylusBinding.release();
+      this.stylusBinding = null;
+    }
   }
 
   private boardBackgroundColor(): string {
@@ -2731,6 +2860,45 @@ struct Index {
   // 选区工具条动作（G3：Recolor/ScaleWidth/RestoreWidth/Delete/克隆开关/取消）。
   private recolorSelection(packed: number): void {
     this.controller.RecolorSelection(InkColor.fromPackedArgb(packed));
+  }
+
+  // D1：画板元素按 DrawingObjects 层序渲染（墨迹仍整体画在独立画布——单画布架构下的
+  // 已记录简化；元素间 z 序完整保留）。空层序时回退 图片→视频 页序。
+  private orderedBoardAssets(): BoardAsset[] {
+    const images = this.board.Current.Images;
+    const media = this.board.Current.Media;
+    const byId = new Map<string, BoardAsset>();
+    for (let i = 0; i < images.length; i++) {
+      byId.set(images[i].Id, images[i]);
+    }
+    for (let i = 0; i < media.length; i++) {
+      byId.set(media[i].Id, media[i]);
+    }
+    const result: BoardAsset[] = [];
+    const objects = this.controller.DrawingObjects;
+    for (let i = 0; i < objects.length; i++) {
+      const element = objects[i].Element;
+      if (element !== null && element.isPresent()) {
+        const asset = byId.get(element.id());
+        if (asset !== undefined) {
+          result.push(asset);
+          byId.delete(element.id());
+        }
+      }
+    }
+    // 未入层序体系（无 GetSelectableElements 数据）的剩余元素按页序补尾。
+    const rest: BoardAsset[] = [];
+    for (let i = 0; i < images.length; i++) {
+      if (byId.has(images[i].Id)) {
+        rest.push(images[i]);
+      }
+    }
+    for (let i = 0; i < media.length; i++) {
+      if (byId.has(media[i].Id)) {
+        rest.push(media[i]);
+      }
+    }
+    return result.concat(rest);
   }
 
   // 应用触摸校准：乘数 = 目标参考宽度 / 平均接触宽度，写入 advanced.touchMultiplier。
@@ -2950,25 +3118,8 @@ struct Index {
   }
 
   private finishLotteryDraw(names: string[], pool: number, count: number): void {
-    const outputs: string[] = [];
-    if (this.lotteryNoRepeat) {
-      for (let i = 0; i < count; i++) {
-        const picked = this.lottery.pick();
-        if (picked === null) {
-          break;
-        }
-        outputs.push(picked);
-      }
-    } else {
-      const drawRandoms: number[] = [];
-      for (let i = 0; i < count * 8 + 8; i++) {
-        drawRandoms.push(Math.random());
-      }
-      const numbers = lotteryDrawUnique(pool, count, drawRandoms);
-      for (let i = 0; i < numbers.length; i++) {
-        outputs.push(lotteryDisplayName(names, numbers[i]));
-      }
-    }
+    // D5：多次抽取走引擎 draw（部分 Fisher-Yates：抽取内唯一 + 不重复池 + 历史封顶 20）。
+    const outputs = this.lottery.draw(count);
     this.lotteryGroups = lotterySplitGroups(outputs);
     this.lotteryResult = outputs.length === 0 ? '已抽完' : this.lotteryGroups[0];
     this.lotteryRolling = false;
@@ -2978,6 +3129,51 @@ struct Index {
         this.stopLotteryTimer();
       }, 1500);
     }
+  }
+
+  // D5：从 CSV/TSV/每行一名文件导入名单（UTF-8 优先，失败回退 GBK 解码）。
+  private async importRoster(): Promise<void> {
+    let uris: string[] = [];
+    try {
+      const docPicker = new picker.DocumentViewPicker();
+      uris = await docPicker.select({ maxSelectNumber: 1, fileSuffixFilters: ['.csv', '.txt', '.tsv'] });
+    } catch (e) {
+      return;
+    }
+    if (uris.length === 0) {
+      return;
+    }
+    const path = this.storage === null ? null : this.storage.importUriToSandbox(uris[0], 'roster.txt');
+    if (path === null) {
+      promptAction.showToast({ message: '名单导入失败', duration: 2000 });
+      return;
+    }
+    let text = '';
+    try {
+      const file = fileIo.openSync(path, fileIo.OpenMode.READ_ONLY);
+      const stat = fileIo.statSync(file.fd);
+      const buffer = new ArrayBuffer(stat.size);
+      fileIo.readSync(file.fd, buffer);
+      fileIo.closeSync(file);
+      const bytes = new Uint8Array(buffer);
+      try {
+        text = new util.TextDecoder('utf-8').decodeToString(bytes);
+      } catch (e) {
+        text = new util.TextDecoder('gbk').decodeToString(bytes);
+      }
+    } catch (e) {
+      promptAction.showToast({ message: '名单读取失败', duration: 2000 });
+      return;
+    }
+    const names = parseRoster(text);
+    if (names.length === 0) {
+      promptAction.showToast({ message: '未解析到名字（支持每行一名或带姓名列的 CSV）', duration: 2500 });
+      return;
+    }
+    this.lotteryNames = names.join('\n');
+    this.lotteryGroups = [];
+    this.lotteryResult = '';
+    promptAction.showToast({ message: '已导入 ' + names.length + ' 个名字', duration: 2000 });
   }
 
   private openReplay(): void {
@@ -3109,9 +3305,25 @@ struct Index {
     }
     const timeMs = event.timestamp / 1000000;
     const touches = event.changedTouches;
+    // ArkUI SourceTool.Pen=2；pressure/tiltX/tiltY 定义在 BaseEvent 上（API9，已归一化 [0,1]），
+    // TouchObject 自身不携带倾角；同一次 TouchEvent 内各触点共享该笔状态。
+    // 压感：优先触点级采样（TouchObject.pressure 为 [0,65535)，与 event.pressure [0,1] 量纲不同），
+    // 回退事件级，均无则 0.5；hasPressure 仅手写笔通道为真（笔宽调制/报点预测按笔门控，融合两线语义）。
+    const isStylus = event.sourceTool === 2;
+    const tiltX = event.tiltX;
+    const tiltY = event.tiltY;
     for (let i = 0; i < touches.length; i++) {
       const touch = touches[i];
-      const pressure = event.pressure > 0 ? event.pressure : 0.5;
+      const touchPressure = touch.pressure === undefined ? 0 : touch.pressure;
+      let pressure = 0.5;
+      let hasPressure = false;
+      if (touchPressure > 0) {
+        pressure = Math.min(Math.max(touchPressure / 65535, 0), 1);
+        hasPressure = isStylus;
+      } else if (event.pressure > 0) {
+        pressure = event.pressure;
+        hasPressure = isStylus;
+      }
       const width = touch.width === undefined ? 0 : touch.width;
       const height = touch.height === undefined ? 0 : touch.height;
       let px = touch.x;
@@ -3161,7 +3373,12 @@ struct Index {
         width,
         height,
         pointerKind(event.source, event.sourceTool),
-        timeMs
+        timeMs,
+        false,
+        false,
+        tiltX,
+        tiltY,
+        hasPressure
       );
       if (this.settings.canvas.isShowCursor) {
         this.cursorX = px;
@@ -3171,17 +3388,62 @@ struct Index {
       if (this.routeBoardImageDrag(event.type, touch.id, px, py)) {
         continue;
       }
+      // Down/Up/Cancel 在派发给控制器之前清空预测段：Invalidated 是同步回调，
+      // 若先派发，提交帧会把上一帧残留的预测段又画回活动层且之后无帧清除。
       if (event.type === TouchType.Down) {
+        if (this.renderer !== null) {
+          this.renderer.clearPrediction();
+        }
         this.controller.onPointerDown(sample);
       } else if (event.type === TouchType.Move) {
         this.controller.onPointerMove(sample);
+        this.updateStrokePrediction(event, isStylus);
       } else if (event.type === TouchType.Up) {
+        if (this.renderer !== null) {
+          this.renderer.clearPrediction();
+        }
         this.controller.onPointerUp(sample);
         this.castLastStroke();
       } else if (event.type === TouchType.Cancel) {
+        if (this.renderer !== null) {
+          this.renderer.clearPrediction();
+        }
         this.controller.onPointerCanceled(sample);
       }
     }
+  }
+
+  // Pen Kit 报点预测：仅手写笔在铅笔/荧光笔书写时，把“最后真实点 → 预测点”的临时段
+  // 交给活动层渲染，用于抵消触控采样到上屏的链路延迟。预测点永远不进入 InkDocument、
+  // 活体笔画、离屏缓存与持久化；其余工具/通道一律立即清空，保证手指与鼠标路径零变化。
+  // 仅在 TouchType.Move 后调用（Down/Up/Cancel 已在派发到控制器前清空）。
+  private updateStrokePrediction(event: TouchEvent, isStylus: boolean): void {
+    if (this.renderer === null) {
+      return;
+    }
+    if (!isStylus
+      || (this.controller.Tool !== InkTool.Pen && this.controller.Tool !== InkTool.Highlighter)) {
+      this.renderer.clearPrediction();
+      return;
+    }
+    const predicted = this.strokePredictor.predict(event);
+    const active = this.controller.ActiveStroke;
+    if (predicted === null || active === null || active.Count === 0) {
+      this.renderer.clearPrediction();
+      return;
+    }
+    const last = active.Points[active.Count - 1];
+    const world = this.controller.toWorld(predicted.X, predicted.Y);
+    const width = last.Width > 0 ? last.Width : active.Attributes.BaseWidth;
+    this.renderer.setPrediction(
+      [last.X, last.Y, world.X, world.Y],
+      // 与本体同管线：荧光笔经 effectiveColor 套 HighlighterAlpha，避免预测段比落墨更浓。
+      active.Attributes.effectiveColor().packedArgb(),
+      width
+    );
+    // onPointerMove 的同步出帧发生在 setPrediction 之前，这里补一帧让预测段当帧上屏，
+    // 否则预测恒滞后一个采样、且抬笔前最后一段会被 Up 分支直接清掉而永不显示。
+    this.refreshScene();
   }
 
   // 画板元素拖拽路由：Select/Pan 工具下，Down 命中图片则接管该指针；Move 平移；Up/Cancel 记撤销。
@@ -3320,6 +3582,13 @@ struct Index {
     }
     const activeStroke = this.controller.ActiveStroke;
     const active = activeStroke === null ? null : this.toSceneStroke(activeStroke);
+    // F3：形状拖动预览（控制器每 move 已算好，此处只做场景透传，不改识别/生成算法）。
+    const previewInputs: SceneStrokeInput[] = [];
+    for (let i = 0; i < this.controller.ShapePreview.length; i++) {
+      previewInputs.push(this.toSceneStroke(this.controller.ShapePreview[i]));
+    }
+    // F3：框选橡皮筋（视图 DIP 矩形；命中与选择结果仍由控制器负责）。
+    const marquee = this.controller.MarqueeBounds;
     let selection: SceneSelectionInput | null = null;
     if (this.controller.Selection.length > 0) {
       const frame = this.controller.selectionFrameSummary();
@@ -3330,7 +3599,10 @@ struct Index {
         RotationRadians: Math.atan2(m[1], m[0])
       };
     }
-    this.renderer.render(buildScene(committed, active, selection, matrixToArray(this.controller.ViewTransform)), Invalidation.full());
+    this.renderer.render(buildScene(
+      committed, active, selection, matrixToArray(this.controller.ViewTransform),
+      previewInputs, marquee
+    ), Invalidation.full());
     this.drawLassoOverlay();
     this.drawDotAnimations();
     this.ensureDotTimer();
@@ -3355,6 +3627,7 @@ struct Index {
       promptAction.showToast({ message: 'PDF 打开失败', duration: 2000 });
       return;
     }
+    this.coursewareSourcePath = path;
     if (this.mode !== 'courseware') {
       this.annotateDocument = this.controller.Document;
     }
@@ -3780,6 +4053,9 @@ struct Index {
       this.changelogOpen = true;
     } else if (id === 'courseware') {
       this.openCourseware();
+    } else if (id === 'saveAnnotatedPdf') {
+      this.toolsOpen = false;
+      this.saveAnnotatedCoursewarePdf();
     } else if (id === 'pptWps') {
       this.toolsOpen = false;
       this.openPptInWps();

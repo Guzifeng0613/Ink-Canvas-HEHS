@@ -31,6 +31,7 @@ public sealed class PptInkSession : IDisposable
     }
 
     public Func<IReadOnlyList<InkStroke>> CaptureCurrentInk { get; set; } = () => Array.Empty<InkStroke>();
+    public Func<bool> InkManagedExternally { get; set; } = () => false;
     public Action<IReadOnlyList<InkStroke>> ApplyCurrentInk { get; set; }
     public Func<int> MinimumScreenshotStrokeCount { get; set; } = () => 0;
     public Func<bool> AutoSavePresentationInk { get; set; } = () => true;
@@ -44,6 +45,15 @@ public sealed class PptInkSession : IDisposable
 
     public PptSnapshot Snapshot => _last;
     public IReadOnlyList<InkStroke> CurrentStrokes => Clone(CaptureCurrentInk());
+
+    /// <summary>
+    /// Events request immediate refreshes. Polling covers missed events and hosts that
+    /// cannot expose the Office connection point.
+    /// </summary>
+    public TimeSpan RecommendedPollInterval =>
+        _last.IsSlideShowRunning && (!_interop.EventsConnected || _last.IsWindowedShow)
+            ? TimeSpan.FromMilliseconds(80) : TimeSpan.FromMilliseconds(900);
+
     public event Action<PptInkTransition> InkTransition;
     public event Action<PptPresentationNotice> PresentationNotice;
     public event Action<PptScreenshotRequest> ScreenshotRequested;
@@ -57,11 +67,19 @@ public sealed class PptInkSession : IDisposable
         PptSnapshot current = _interop.Poll();
         if (SameSlideState(_last, current))
         {
+            // Slides can be added/removed without moving the current slide.
+            if (current.IsAttached && current.Presentation?.SlideCount != _last.Presentation?.SlideCount)
+                RefreshSlideIndexes(_interop.GetPresentationDetails());
             if (DateTime.UtcNow > _suppressTransitionScreenshotUntilUtc) _suppressTransitionScreenshotUntilUtc = DateTime.MinValue;
             _last = current;
             return current;
         }
-        if (current.IsAttached) RefreshSlideIndexes(_interop.GetPresentationDetails());
+        // A full O(slides) COM inventory is only needed when the presentation or its slide
+        // count changes; re-reading it on every slide change would delay ink switching.
+        if (current.IsAttached &&
+            (current.Presentation?.Identity != _last.Presentation?.Identity ||
+             current.Presentation?.SlideCount != _last.Presentation?.SlideCount))
+            RefreshSlideIndexes(_interop.GetPresentationDetails());
         ProcessTransition(current);
         return current;
     }
@@ -151,7 +169,7 @@ public sealed class PptInkSession : IDisposable
             Persist();
             if (newPresentation || !isShow)
             {
-                ApplyCurrentInk?.Invoke(Array.Empty<InkStroke>());
+                if (!InkManagedExternally()) ApplyCurrentInk?.Invoke(Array.Empty<InkStroke>());
                 RaiseTransition(PptInkTransitionKind.End, previous, current, Array.Empty<InkStroke>());
                 _showActive = false;
             }
@@ -195,10 +213,13 @@ public sealed class PptInkSession : IDisposable
         {
             bool began = !_showActive || newPresentation;
             bool slideChanged = previous.IsSlideShowRunning && isShow &&
-                (previous.Slide?.SlideId != current.Slide?.SlideId || previous.Presentation?.Identity != current.Presentation?.Identity);
+                (previous.Slide?.SlideId != current.Slide?.SlideId || !SamePresentation(previous.Presentation, current.Presentation));
             if (began)
             {
                 _showActive = true;
+                // MW_PPT.cs:402 resets the per-show state; a leftover navigation suppression
+                // from the previous show must not eat the first external-change screenshot.
+                _suppressTransitionScreenshotUntilUtc = DateTime.MinValue;
                 ApplySlide(current, previous, PptInkTransitionKind.Begin);
                 OfferPresentationNotice(current);
             }
@@ -222,9 +243,9 @@ public sealed class PptInkSession : IDisposable
     private void ApplySlide(PptSnapshot current, PptSnapshot previous, PptInkTransitionKind kind)
     {
         CaptureOutgoing(previous);
-        List<InkStroke> incoming = current.Slide is not null && _slides.TryGetValue(current.Slide.SlideId, out var found)
-            ? Clone(found).ToList() : new List<InkStroke>();
-        ApplyCurrentInk?.Invoke(Clone(incoming));
+        IReadOnlyList<InkStroke> incoming = current.Slide is not null && _slides.TryGetValue(current.Slide.SlideId, out var found)
+            ? found : Array.Empty<InkStroke>();
+        if (!InkManagedExternally()) ApplyCurrentInk?.Invoke(Clone(incoming));
         if (current.Slide is not null && current.Slide.Index > 0)
             _slideIndexes[current.Slide.SlideId] = current.Slide.Index;
         _lastSlideIndex = current.Slide?.Index > 0 ? current.Slide.Index : _lastSlideIndex;
@@ -234,6 +255,7 @@ public sealed class PptInkSession : IDisposable
 
     private void CaptureOutgoing(PptSnapshot snapshot)
     {
+        if (InkManagedExternally()) return;
         if (snapshot?.IsSlideShowRunning != true || snapshot.Slide is null || snapshot.Presentation is null || !_showActive) return;
         if (snapshot.Slide.Index > 0) _slideIndexes[snapshot.Slide.SlideId] = snapshot.Slide.Index;
         try { _slides[snapshot.Slide.SlideId] = Clone(CaptureCurrentInk()).ToList(); }
@@ -243,6 +265,7 @@ public sealed class PptInkSession : IDisposable
     private void RaiseTransition(PptInkTransitionKind kind, PptSnapshot previous, PptSnapshot current,
         IReadOnlyList<InkStroke> incoming)
     {
+        if (InkTransition is null) return;
         IReadOnlyList<InkStroke> outgoing = Array.Empty<InkStroke>();
         if (previous?.Slide is not null && _slides.TryGetValue(previous.Slide.SlideId, out var found)) outgoing = Clone(found);
         InkTransition?.Invoke(new PptInkTransition(kind, previous, current, outgoing, Clone(incoming)));
@@ -294,6 +317,7 @@ public sealed class PptInkSession : IDisposable
 
     private void Persist()
     {
+        if (InkManagedExternally()) return;
         if (_store is null || _loadedPresentation is null || !AutoSavePresentationInk()) return;
         try { _store.Save(BuildArchive()); }
         catch (Exception ex) { Failed?.Invoke(new PptFailure("Save presentation ink", ex.Message, 0)); }
@@ -324,7 +348,7 @@ public sealed class PptInkSession : IDisposable
     }
 
     private static bool SameSlideState(PptSnapshot a, PptSnapshot b) =>
-        a.State == b.State && a.Presentation?.Identity == b.Presentation?.Identity &&
+        a.State == b.State && SamePresentation(a.Presentation, b.Presentation) &&
         a.Slide?.SlideId == b.Slide?.SlideId && a.Slide?.Index == b.Slide?.Index &&
         a.ShowPosition == b.ShowPosition && a.WindowHandle == b.WindowHandle;
 

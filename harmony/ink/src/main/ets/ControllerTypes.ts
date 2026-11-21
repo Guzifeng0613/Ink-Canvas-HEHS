@@ -59,7 +59,7 @@ export interface ElementSnapshot {
   Transform: number[] | null;
 }
 
-/** 可选元素契约（C# ISelectionElement）。 */
+/** 可选元素契约（C# ISelectionElement；D1 增 layerOrder/isImageElement）。 */
 export interface ISelectionElement {
   id(): string;
   isPresent(): boolean;
@@ -73,11 +73,18 @@ export interface ISelectionElement {
   duplicate(): ISelectionElement;
   capture(): ElementSnapshot;
   restore(snapshot: ElementSnapshot): void;
+  /** D1 层序：与墨迹共享的自后向前 z 序（null = 未分层，按类型默认位）。 */
+  layerOrder(): number | null;
+  setLayerOrder(order: number | null): void;
+  /** 图片元素（排最底层的默认位）；视频等其它元素返回 false。 */
+  isImageElement(): boolean;
 }
 
 /**
  * C# OverlayPointer 的 ArkTS 等价物（视图 DIP）。
  * 宿主必须完成：ns→ms 时间戳、pressure 0→0.5 回退、source/sourceTool→Kind、接触宽高、鼠标过滤。
+ * TiltX/TiltY 为手写笔硬件倾角（度），无硬件数据时传 0；HasPressure=true 表示 Pressure 为
+ * 手写笔真实压感（sourceTool=Pen 且 pressure>0），宽度管线据此启用压感调制。
  */
 export class PointerSample {
   Id: number;
@@ -90,6 +97,9 @@ export class PointerSample {
   TimeMs: number;
   Shift: boolean;
   Control: boolean;
+  TiltX: number;
+  TiltY: number;
+  HasPressure: boolean;
 
   constructor(
     id: number,
@@ -101,7 +111,10 @@ export class PointerSample {
     kind: number = PointerKind.Pen,
     timeMs: number = 0,
     shift: boolean = false,
-    control: boolean = false
+    control: boolean = false,
+    tiltX: number = 0,
+    tiltY: number = 0,
+    hasPressure: boolean = false
   ) {
     this.Id = id;
     this.X = x;
@@ -113,6 +126,9 @@ export class PointerSample {
     this.TimeMs = timeMs;
     this.Shift = shift;
     this.Control = control;
+    this.TiltX = tiltX;
+    this.TiltY = tiltY;
+    this.HasPressure = hasPressure;
   }
 }
 
