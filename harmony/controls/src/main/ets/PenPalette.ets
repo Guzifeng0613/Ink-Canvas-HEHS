@@ -11,6 +11,7 @@ import {
   PEN_WIDTH_MIN,
   PEN_WIDTH_STEP,
   packedSwatch,
+  quickTaperStyleForIndex,
   snap,
   taperKindForIndex,
   toStoredPenWidth
@@ -91,6 +92,7 @@ export struct PenPalette {
       .padding(12 * this.uiScale)
     }
     .width((this.highlighter ? 208 : 248) * this.uiScale)
+    .constraintSize({ maxWidth: '90%' })
     .backgroundColor(this.tokens().floatBarBackground)
     .backgroundBlurStyle(this.materialBlur ? BlurStyle.Thin : BlurStyle.NONE)
     .border({ width: 1, color: this.tokens().floatBarBorder })
@@ -130,6 +132,8 @@ export struct PenPalette {
       Text('×')
         .fontSize(14 * this.uiScale)
         .fontColor(this.tokens().textSecondary)
+        .constraintSize({ minWidth: 44, minHeight: 44 })
+        .textAlign(TextAlign.Center)
         .onClick(() => {
           this.onClose();
         })
@@ -148,15 +152,17 @@ export struct PenPalette {
         .fontColor(this.tokens().textPrimary)
         .margin({ right: 10 * this.uiScale })
       Row({ space: 6 * this.uiScale }) {
-        ForEach(['点集', '速率', '关闭'], (label: string, index: number) => {
+        ForEach(['点集', '速率', '关闭', '自然'], (label: string, index: number) => {
           Text(label)
             .fontSize(13 * this.uiScale)
-            .fontColor(this.taperIndex === index ? Color.White : this.tokens().textPrimary)
-            .backgroundColor(this.taperIndex === index ? this.tokens().accent : Color.Transparent)
+            .fontColor(this.taperIndex === quickTaperStyleForIndex(index) ? Color.White : this.tokens().textPrimary)
+            .backgroundColor(this.taperIndex === quickTaperStyleForIndex(index) ? this.tokens().accent : Color.Transparent)
             .borderRadius(4 * this.uiScale)
             .padding({ left: 8 * this.uiScale, right: 8 * this.uiScale, top: 4 * this.uiScale, bottom: 4 * this.uiScale })
+            .constraintSize({ minWidth: 44, minHeight: 44 })
+            .textAlign(TextAlign.Center)
             .onClick(() => {
-              this.onTaper(taperKindForIndex(index));
+              this.onTaper(taperKindForIndex(quickTaperStyleForIndex(index)));
             })
         }, (label: string) => label)
       }
@@ -164,7 +170,7 @@ export struct PenPalette {
       .justifyContent(FlexAlign.End)
     }
     .width('100%')
-    .height(32 * this.uiScale)
+    .height(44 * this.uiScale)
   }
 
   @Builder
@@ -192,7 +198,7 @@ export struct PenPalette {
         .textAlign(TextAlign.End)
     }
     .width('100%')
-    .height(32 * this.uiScale)
+    .height(44 * this.uiScale)
   }
 
   @Builder
@@ -219,7 +225,7 @@ export struct PenPalette {
         .textAlign(TextAlign.End)
     }
     .width('100%')
-    .height(32 * this.uiScale)
+    .height(44 * this.uiScale)
   }
 
   @Builder
@@ -234,12 +240,12 @@ export struct PenPalette {
             .fontSize(9 * this.uiScale)
             .fontColor(this.tokens().textSecondary)
         }
-        .width(40 * this.uiScale)
-        .height(40 * this.uiScale)
+        .width(44 * this.uiScale)
+        .height(44 * this.uiScale)
         .margin(2 * this.uiScale)
         .justifyContent(FlexAlign.Center)
         .border({ width: 1.5, color: this.tokens().floatBarBorder })
-        .borderRadius(20 * this.uiScale)
+        .borderRadius(22 * this.uiScale)
         .onClick(() => {
           this.onToggleScheme();
         })

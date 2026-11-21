@@ -61,7 +61,7 @@ public sealed class AiGlyphResourceTests
             root, "src/InkCanvas.Controls/Controls/FloatingBar.cs"));
 
         Assert.Contains("Glyphs.Ai", bar);
-        Assert.Contains("Glyphs.Help", bar);
-        Assert.Contains("操作指南", bar);
+        Assert.Contains("Glyphs.GuideWpf", bar);
+        Assert.Contains("() => Shell?.OpenGuide()", bar);
     }
 }

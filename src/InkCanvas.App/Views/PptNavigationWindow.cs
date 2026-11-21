@@ -224,10 +224,10 @@ public sealed class PptNavigationWindow : Window
     }
 
     /// <summary>Physical pixel size needed by the six controls plus border/padding chrome.</summary>
-    private static (int Width, int Height) ContentSize(bool vertical, double dpiScale)
+    private static (int Width, int Height) ContentSize(bool vertical, double dpiScale, bool counterVisible)
     {
         double scale = dpiScale > 0 ? dpiScale : 1;
-        int length = ButtonDip * 6 + SpacingDip * 6 + (vertical ? 48 : 52);
+        int length = ButtonDip * 6 + SpacingDip * 5 + (counterVisible ? SpacingDip + (vertical ? 48 : 52) : 0);
         int contentWidth = vertical ? ButtonDip : length;
         int contentHeight = vertical ? length : ButtonDip;
         return ((int)Math.Ceiling((contentWidth + 6) * scale),
@@ -236,16 +236,16 @@ public sealed class PptNavigationWindow : Window
 
     private void Place(bool counterVisible)
     {
-        var work = Platform.System.ScreenService.WorkArea;
+        var work = WindowChrome.GetWorkArea(this);
         ScreenBox box = _showBounds.Width > 0 && _showBounds.Height > 0
             ? new ScreenBox(_showBounds.X, _showBounds.Y, _showBounds.Width, _showBounds.Height)
             : new ScreenBox(work.X, work.Y, work.Width, work.Height);
 
-        double dpi = WindowChrome.GetDpiScale(this);
+        double dpi = _trackedRoot?.RasterizationScale ?? WindowChrome.GetDpiScale(this);
         NavigationPlacementResult placement = NavigationLayout.Place(Corner, box, dpi, counterVisible);
 
         bool vertical = IsVertical;
-        var (neededWidth, neededHeight) = ContentSize(vertical, dpi);
+        var (neededWidth, neededHeight) = ContentSize(vertical, dpi, counterVisible);
         int width = Math.Max(placement.Width, neededWidth);
         int height = Math.Max(placement.Height, neededHeight);
 
