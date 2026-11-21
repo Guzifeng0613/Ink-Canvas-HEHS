@@ -120,6 +120,7 @@ public sealed class AppSettings
         PowerPoint.IsShowCanvasAtNewSlideShow = true;
         PowerPoint.IsNoClearStrokeOnSelectWhenInPowerPoint = true;
         PowerPoint.IsShowStrokeOnSelectInPowerPoint = false;
+        PowerPoint.HideStrokesAfterLeavingAnnotation = false;
         PowerPoint.IsAutoSaveStrokesInPowerPoint = true;
         PowerPoint.IsAutoSaveScreenShotInPowerPoint = true;
         PowerPoint.IsNotifyPreviousPage = false;
@@ -312,6 +313,8 @@ public sealed class AppearanceSettings
     [JsonPropertyName("enableViewboxBlackBoardScaleTransform")] public double BlackboardScale { get; set; } = 100.0;
     [JsonPropertyName("floatingBarBottomMargin")] public double FloatingBarBottomMargin { get; set; } = 100.0;
     [JsonPropertyName("isTransparentButtonBackground")] public bool IsTransparentButtonBackground { get; set; } = true;
+    /// <summary>Icon style: Fluent System Icons Regular (line) vs Filled (solid, default).</summary>
+    [JsonPropertyName("isIconRegularStyle")] public bool IsIconRegularStyle { get; set; }
     [JsonPropertyName("isShowExitButton")] public bool IsShowExitButton { get; set; } = true;
     [JsonPropertyName("isShowEraserButton")] public bool IsShowEraserButton { get; set; } = true;
     [JsonPropertyName("isShowHideControlButton")] public bool IsShowHideControlButton { get; set; }
@@ -332,6 +335,7 @@ public sealed class PowerPointSettings
     [JsonPropertyName("isShowCanvasAtNewSlideShow")] public bool IsShowCanvasAtNewSlideShow { get; set; } = true;
     [JsonPropertyName("isNoClearStrokeOnSelectWhenInPowerPoint")] public bool IsNoClearStrokeOnSelectWhenInPowerPoint { get; set; } = true;
     [JsonPropertyName("isShowStrokeOnSelectInPowerPoint")] public bool IsShowStrokeOnSelectInPowerPoint { get; set; }
+    [JsonPropertyName("hideStrokesAfterLeavingAnnotation")] public bool HideStrokesAfterLeavingAnnotation { get; set; }
     [JsonPropertyName("isAutoSaveStrokesInPowerPoint")] public bool IsAutoSaveStrokesInPowerPoint { get; set; } = true;
     [JsonPropertyName("isAutoSaveScreenShotInPowerPoint")] public bool IsAutoSaveScreenShotInPowerPoint { get; set; }
     [JsonPropertyName("isNotifyPreviousPage")] public bool IsNotifyPreviousPage { get; set; }

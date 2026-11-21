@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Numerics;
 using InkCanvas.Controls.Controls;
@@ -82,10 +82,10 @@ internal sealed class BoardPageNavigator : UserControl, IDisposable
         _root.Children.Add(_header);
         var commands = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(6, 0, 6, 6), Children =
         {
-            Command("加页", Glyphs.Add, _add), Command("复制", "\uE8C8", _duplicate),
-            Command("删除", Glyphs.Delete, _delete), Command("总览", "\uE80A", () => SetOverview(!_overview)),
+            Command("加页", Glyphs.Add, _add), Command("复制", "\uF32C", _duplicate),
+            Command("删除", Glyphs.Delete, _delete), Command("总览", "\uF149", () => SetOverview(!_overview)),
         } };
-        var renamePage = Command("重命名", "\uE70F", rename);
+        var renamePage = Command("重命名", "\uF3DD", rename);
         var undoPage = Command("撤销页面操作", Glyphs.Undo, () => _board.UndoPage());
         var redoPage = Command("重做页面操作", Glyphs.Redo, () => _board.RedoPage());
         var naming = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(6, 0, 6, 6),

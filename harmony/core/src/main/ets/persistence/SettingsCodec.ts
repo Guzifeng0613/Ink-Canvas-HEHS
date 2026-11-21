@@ -67,6 +67,7 @@ const DEF_APPEARANCE = new SectionDef('appearance', [
   new FieldDef('enableViewboxBlackBoardScaleTransform', NUM),
   new FieldDef('floatingBarBottomMargin', NUM),
   new FieldDef('isTransparentButtonBackground', BOOL),
+  new FieldDef('isIconRegularStyle', BOOL),
   new FieldDef('isShowExitButton', BOOL),
   new FieldDef('isShowEraserButton', BOOL),
   new FieldDef('isShowHideControlButton', BOOL),

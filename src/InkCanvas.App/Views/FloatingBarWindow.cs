@@ -103,6 +103,7 @@ public sealed class FloatingBarWindow : Window
     }
 
     internal double UserScale => Math.Clamp(_scalePercent, 50, 200) / 100.0;
+    internal double EffectiveScale => _scaledBar.Height > 0 ? _scaledBar.Height / _bar.ComputeLayoutSize().Height : UserScale;
 
     private void SwitchSide()
     {
@@ -186,7 +187,7 @@ public sealed class FloatingBarWindow : Window
         CreateFoldHandles();
     }
 
-    private ScreenRect GetPlacementArea()
+    internal ScreenRect GetPlacementArea()
     {
         if (!_presentationMode)
         {

@@ -16,7 +16,7 @@ namespace InkCanvas.App.Views;
 /// <summary>Standard settings window with on-demand category pages.</summary>
 public sealed partial class SettingsWindow : Window
 {
-    private static readonly FontFamily IconFont = new("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons");
+    private static FontFamily IconFont => IconFontStyle.Font;
     private static readonly Style SettingsCardStyle = (Style)XamlReader.Load("""
         <Style xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" TargetType="Border">
             <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
@@ -141,7 +141,7 @@ public sealed partial class SettingsWindow : Window
         _workspace.Resources["NavigationViewHeaderMargin"] = new Thickness(24, 24, 24, 12);
         _workspace.Resources["NavigationViewContentBackground"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
         _workspace.Resources["NavigationViewContentGridBorderBrush"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-        string[] icons = { "\uE768", "\uE70F", "\uE815", "\uE7F4", "\uE8A5", "\uE790", "\uE8A1", "\uE713", "\uE77C", "\uE713", "\uE8F1", "\uE946", "\uE8D4", "\uE8B7" };
+        string[] icons = { "\uF610", "\uF3DD", "\uE6E5", "\uF1E3", "\uF379", "\uF2F6", "\uE600", "\uF6B3", "\uF576", "\uF6B3", "\uF4DD", "\uF4AB", "\uF5B3", "\uF41D" };
         for (int index = 0; index < Categories.Length; index++)
         {
             string category = Categories[index];
@@ -209,9 +209,9 @@ public sealed partial class SettingsWindow : Window
             ColumnSpacing = 8,
         };
         for (int index = 0; index < 3; index++) buttons.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-        buttons.Children.Add(TopCardButton("重启软件", "\uE72C", 16, RestartApp));
-        buttons.Children.Add(TopCardButton("重置设置", "\uE8F7", 18, ResetSettings));
-        buttons.Children.Add(TopCardButton("关闭软件", "\uE7E8", 18, ExitApp));
+        buttons.Children.Add(TopCardButton("重启软件", "\uF1A0", 16, RestartApp));
+        buttons.Children.Add(TopCardButton("重置设置", "\uF191", 18, ResetSettings));
+        buttons.Children.Add(TopCardButton("关闭软件", "\uF619", 18, ExitApp));
         for (int index = 0; index < buttons.Children.Count; index++) Grid.SetColumn((FrameworkElement)buttons.Children[index], index);
 
         var panel = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
@@ -365,7 +365,7 @@ public sealed partial class SettingsWindow : Window
                     v => S.Canvas.IsCompressPicturesUploaded = v));
                 _content.Children.Add(ToggleRow("退出画板模式后隐藏墨迹", () => S.Canvas.HideStrokeWhenSelecting,
                     v => S.Canvas.HideStrokeWhenSelecting = v,
-                    note: "切换到鼠标模式时是否仍显示墨迹由此开关决定。"));
+                    note: "屏幕批注切换到鼠标模式后的墨迹显示。PPT 放映在 PowerPoint 选项中单独设置。"));
                 _content.Children.Add(ToggleRow("白板背景配色", () => S.Canvas.UsingWhiteboard,
                     v =>
                     {
@@ -477,6 +477,8 @@ public sealed partial class SettingsWindow : Window
                 AddSection("显示的按钮");
                 _content.Children.Add(ToggleRow("按钮背景透明", () => S.Appearance.IsTransparentButtonBackground,
                     v => S.Appearance.IsTransparentButtonBackground = v));
+                _content.Children.Add(ToggleRow("图标使用 Regular 线性风格", () => S.Appearance.IsIconRegularStyle,
+                    v => S.Appearance.IsIconRegularStyle = v));
                 _content.Children.Add(ToggleRow("显示退出按钮", () => S.Appearance.IsShowExitButton,
                     v => S.Appearance.IsShowExitButton = v));
                 _content.Children.Add(ToggleRow("显示橡皮按钮", () => S.Appearance.IsShowEraserButton,
@@ -505,6 +507,11 @@ public sealed partial class SettingsWindow : Window
                     v => { S.PowerPoint.IsSupportWPS = v; _services.Ppt.AllowWps = v; }));
                 _content.Children.Add(ToggleRow("进入 PPT 放映时自动进入批注模式", () => S.PowerPoint.IsShowCanvasAtNewSlideShow,
                     v => S.PowerPoint.IsShowCanvasAtNewSlideShow = v));
+                UIElement hideInkInMouseMode = ToggleRow("关闭批注模式后隐藏墨迹", () => S.PowerPoint.HideStrokesAfterLeavingAnnotation,
+                    v => S.PowerPoint.HideStrokesAfterLeavingAnnotation = v,
+                    note: "切换到鼠标模式后暂时隐藏当前页墨迹，不会清除墨迹。默认保留显示。");
+                if (hideInkInMouseMode is FrameworkElement row) row.Margin = new Thickness(24, 0, 0, 0);
+                _content.Children.Add(hideInkInMouseMode);
                 _content.Children.Add(Require(ToggleRow("允许幻灯片模式下的双指手势", () => S.PowerPoint.IsEnableTwoFingerGestureInPresentationMode,
                     value => S.PowerPoint.IsEnableTwoFingerGestureInPresentationMode = value), () => PresentationRequirement() ?? TouchRequirement()));
                 _content.Children.Add(ToggleRow("允许使用手指手势进行幻灯片翻页", () => S.PowerPoint.IsEnableFingerGestureSlideShowControl,
@@ -524,8 +531,6 @@ public sealed partial class SettingsWindow : Window
                     value => S.PowerPoint.IsNoClearStrokeOnSelectWhenInPowerPoint = value,
                     note: "进入鼠标模式时保留当前幻灯片的批注。"), () => PresentationRequirement()
                         ?? (S.Automation.IsAutoClearWhenExitingWritingMode ? null : "请先在“自动选项”中启用切换到鼠标模式后自动清屏。")));
-                _content.Children.Add(ToggleRow("鼠标模式时在 PPT 上显示墨迹", () => S.PowerPoint.IsShowStrokeOnSelectInPowerPoint,
-                    v => S.PowerPoint.IsShowStrokeOnSelectInPowerPoint = v));
                 break;
             case "高级选项":
                 AddSection("触控屏适配");

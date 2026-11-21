@@ -25,6 +25,8 @@ export interface AppearanceSettings {
   enableViewboxBlackBoardScaleTransform: number;
   floatingBarBottomMargin: number;
   isTransparentButtonBackground: boolean;
+  // 图标风格：Fluent System Icons Regular（true）/ Filled（false，默认）。
+  isIconRegularStyle: boolean;
   isShowExitButton: boolean;
   isShowEraserButton: boolean;
   isShowHideControlButton: boolean;
@@ -171,6 +173,7 @@ export function createDefaultSettings(): AppSettings {
       enableViewboxBlackBoardScaleTransform: 100.0,
       floatingBarBottomMargin: 100.0,
       isTransparentButtonBackground: true,
+      isIconRegularStyle: false,
       isShowExitButton: true,
       isShowEraserButton: true,
       isShowHideControlButton: false,

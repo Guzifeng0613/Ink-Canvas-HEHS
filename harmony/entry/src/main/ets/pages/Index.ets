@@ -59,7 +59,8 @@ import {
   AiResultCard,
   AiNotesPanel,
   ShapeSnapPanel,
-  BoardDock
+  BoardDock,
+  setIconStyleRegular
 } from '@inkcanvas/controls';
 import {
   InkController,
@@ -428,12 +429,17 @@ struct Index {
   }
 
   aboutToAppear(): void {
-    // 注册内置的 Windows 端图标字体（rawfile/fonts/SegoeFluentIcons.ttf），
-    // 工具栏按原始 Segoe 码点渲染，与 Windows 版保持同一套图标。
+    // 注册 MIT 开源图标字体双风格（microsoft/fluentui-system-icons）：
+    // Filled（InkFluentIcons）/ Regular（InkFluentIconsRegular），设置 appearance.isIconRegularStyle 切换。
+    // 图标码点经 parity/icon-map.json 映射，与 Windows 端共用同一字体同码点，跨 Win10/11 与鸿蒙一致。
     try {
       font.registerFont({
-        familyName: 'InkSegoeIcons',
-        familySrc: $rawfile('fonts/SegoeFluentIcons.ttf')
+        familyName: 'InkFluentIcons',
+        familySrc: $rawfile('fonts/FluentSystemIcons.ttf')
+      });
+      font.registerFont({
+        familyName: 'InkFluentIconsRegular',
+        familySrc: $rawfile('fonts/FluentSystemIcons-Regular.ttf')
       });
       setTimeout(() => {
         this.iconFontReady = true;
@@ -649,6 +655,8 @@ struct Index {
 
   private applySettings(): void {
     this.dark = this.resolveDark();
+    // 图标风格（Fluent Filled/Regular）注入 controls 渲染层。
+    setIconStyleRegular(this.settings.appearance.isIconRegularStyle);
     this.widthMenu = this.settings.canvas.inkWidth * 2;
     this.alpha = this.settings.canvas.inkAlpha;
     this.taperIndex = this.settings.canvas.inkStyle;
@@ -2185,6 +2193,12 @@ this.ToolEntry('AI 圈选识题', 'aiCapture')
     this.SettingToggle('按钮背景透明', this.settings.appearance.isTransparentButtonBackground, (v: boolean) => {
       this.settings.appearance.isTransparentButtonBackground = v;
       this.touchSettings();
+    })
+    this.SettingToggle('图标使用 Regular 线性风格（关闭为 Filled 实心）', this.settings.appearance.isIconRegularStyle, (v: boolean) => {
+      this.settings.appearance.isIconRegularStyle = v;
+      setIconStyleRegular(v);
+      this.touchSettings();
+      this.refreshScene();
     })
     this.SettingToggle('显示退出按钮', this.settings.appearance.isShowExitButton, (v: boolean) => {
       this.settings.appearance.isShowExitButton = v;

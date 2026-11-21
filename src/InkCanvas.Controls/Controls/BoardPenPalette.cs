@@ -181,8 +181,8 @@ public sealed class BoardPenPalette : UserControl
     private TextBlock Text(string text, double size) => new() { Text = text, FontSize = size, Foreground = _foreground, VerticalAlignment = VerticalAlignment.Center };
     private Button Swatch(OriginalMenuCatalog.Swatch swatch, bool highlighter)
     {
-        var check = new FontIcon { Glyph = "\uE73E", FontSize = 14, Visibility = Visibility.Collapsed,
-            FontFamily = new("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons") };
+        var check = new FontIcon { Glyph = "\uF295", FontSize = 14, Visibility = Visibility.Collapsed,
+            FontFamily = new(IconFontStyle.Family) };
         var button = new Button { Width = highlighter ? 36 : 40, Height = highlighter ? 25 : 40, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0),
             CornerRadius = new CornerRadius(highlighter ? 4 : 20), BorderBrush = _border, BorderThickness = new Thickness(1), Content = check };
         AutomationProperties.SetName(button, swatch.Name);

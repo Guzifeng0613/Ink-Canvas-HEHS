@@ -51,12 +51,19 @@ export {
 } from './src/main/ets/AiStudio';
 export {
   GLYPH_SYMBOLS,
+  SYMBOL_FLUENT,
   symbolForCodepoint,
   symbolForButton,
   symbolForTool,
+  fluentCpForSymbol,
+  fluentCpForCodepoint,
+  fluentCharFor,
+  fluentGlyph,
+  setIconStyleRegular,
+  iconStyleIsRegular,
   IconGlyph
 } from './src/main/ets/IconGlyph';
-export type { GlyphSymbolEntry, IconGlyphOptions } from './src/main/ets/IconGlyph';
+export type { GlyphSymbolEntry, IconGlyphOptions, SymbolFluentEntry, FluentGlyphResult } from './src/main/ets/IconGlyph';
 export { MagicLassoEntry, LASSO_ENTRY_WIDTH, LASSO_ENTRY_HEIGHT } from './src/main/ets/MagicLassoEntry';
 export { AssistantCard, AI_CARD_WIDTH, AI_CARD_CORNER } from './src/main/ets/AssistantCard';
 export { StreamMessage } from './src/main/ets/StreamMessage';

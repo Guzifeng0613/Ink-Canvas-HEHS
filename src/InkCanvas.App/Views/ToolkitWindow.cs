@@ -1,4 +1,4 @@
-using InkCanvas.App.Services;
+﻿using InkCanvas.App.Services;
 using InkCanvas.Controls.Animation;
 using InkCanvas.Controls.Controls;
 using InkCanvas.Platform.Interop;
@@ -159,7 +159,7 @@ public sealed class ToolkitWindow : Window
         {
             icon = new FontIcon
             {
-                FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
+                FontFamily = IconFontStyle.Font,
                 FontSize = 18,
                 Glyph = glyph,
             };

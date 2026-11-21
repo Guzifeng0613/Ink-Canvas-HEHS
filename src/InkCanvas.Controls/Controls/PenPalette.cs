@@ -1,4 +1,4 @@
-using InkCanvas.Controls.Theming;
+﻿using InkCanvas.Controls.Theming;
 using InkCanvas.Core.Ink;
 using InkCanvas.Core.Settings;
 using InkCanvas.Ink;
@@ -296,8 +296,8 @@ public sealed class PenPalette : UserControl
             var swatch = colors[i];
             var check = new FontIcon
             {
-                Glyph = "\uE73E",
-                FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
+                Glyph = "\uF295",
+                FontFamily = IconFontStyle.Font,
                 FontSize = 16,
                 Foreground = new SolidColorBrush(swatch.Name == "白色"
                     ? Microsoft.UI.Colors.Black : Microsoft.UI.Colors.White),
@@ -358,7 +358,7 @@ public sealed class PenPalette : UserControl
     {
         _themeGlyph = new FontIcon
         {
-            FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
+            FontFamily = IconFontStyle.Font,
             FontSize = 14,
             Foreground = _foreground,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -414,7 +414,7 @@ public sealed class PenPalette : UserControl
     {
         if (_themeGlyph is null) return;
         // 与原版一致：显示将要切换到的目标色系。
-        _themeGlyph.Glyph = _lightColorScheme ? "\uE708" : "\uE706";
+        _themeGlyph.Glyph = _lightColorScheme ? "\uF33C" : "\uF8BA";
         _themeText.Text = _lightColorScheme ? "暗系" : "亮系";
     }
 

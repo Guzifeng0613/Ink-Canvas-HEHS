@@ -1,4 +1,4 @@
-using InkCanvas.Controls.Animation;
+﻿﻿using InkCanvas.Controls.Animation;
 using InkCanvas.Controls.Theming;
 using InkCanvas.Core.Settings;
 using InkCanvas.Core.Shapes;
@@ -138,7 +138,7 @@ public sealed class FloatingBar : UserControl
 
         _dragIcon = new FontIcon
         {
-            FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
+            FontFamily = IconFontStyle.Font,
             Glyph = Glyphs.Emoji,
             FontSize = 20 * S,
             Width = 28 * S,
@@ -438,7 +438,7 @@ public sealed class FloatingBar : UserControl
             SetTool(InkTool.Highlighter);
             if (active) Shell?.OpenPenPalette(true);
         });
-        _highlighterButton.IconFont = "ms-appx:///Assets/SegoeMDL2Assets.ttf#Segoe MDL2 Assets";
+        _highlighterButton.IconFont = IconFontStyle.Family;
         _clearButton = AddPrimary(Glyphs.Delete, "清空", "清空（有选中时删除选中墨迹）— 快捷键 Ctrl+E", ClearOrDeleteSelection);
 
         AddPrimary(Glyphs.Ai, "AI 助教", "AI 识别（先框选内容）", () => Shell?.OpenAiAssistant());
@@ -575,7 +575,7 @@ public sealed class FloatingBar : UserControl
 
     private static FontIcon NewIcon(string glyph, double size) => new()
     {
-        FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
+        FontFamily = IconFontStyle.Font,
         Glyph = glyph,
         FontSize = size,
         IsTextScaleFactorEnabled = false,

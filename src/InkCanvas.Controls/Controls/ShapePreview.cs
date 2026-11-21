@@ -631,8 +631,8 @@ public sealed class ShapePreview : UserControl
             Tag = item,
         };
         cell.Children.Add(icon);
-        cell.Children.Add(new FontIcon { Glyph = "\uE77A", FontSize = 9,
-            FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
+        cell.Children.Add(new FontIcon { Glyph = "\uF60E", FontSize = 9,
+            FontFamily = IconFontStyle.Font,
             Foreground = PopupBrushes.Accent(), HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Top, Visibility = Visibility.Collapsed, IsHitTestVisible = false });
         AutomationProperties.SetName(cell, item.Label);

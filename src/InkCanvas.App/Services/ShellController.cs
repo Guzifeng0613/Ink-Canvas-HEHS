@@ -52,11 +52,10 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private InkRecorder _recorder;
     private readonly NavigationGuard _pptGuard = new();
     private readonly SlideSwitchGate _pptGate = new();
-    private PptNavigationWindow _pptNav;
+    private readonly Dictionary<PptNavigationPlacement, PptNavigationWindow> _pptNavigations = new();
     private SlideNavigatorWindow _slideNav;
     private SlideContentIndex _slideIndex;
     private DateTime _lastSlideIndexRefreshUtc = DateTime.MinValue;
-    private NavigationCorner _pptCorner = NavigationCorner.BottomLeft;
     private bool _pptNavCollapsed;
     private bool _manualPptNav;
     private PptSnapshot _pptShowSnapshot;
@@ -271,6 +270,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         get
         {
             if (_bar is not null) yield return _bar;
+            foreach (var navigation in _pptNavigations.Values) yield return navigation;
             if (_selectionToolbar is not null) yield return _selectionToolbar;
             if (_board is not null) yield return _board;
             if (_documentWorkspace is not null) yield return _documentWorkspace.Window;
@@ -815,7 +815,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
         if (_guide is not null) WindowChrome.EnsureAbove(_guide, Overlay.Window.Handle);
         if (_updateWindow is not null) WindowChrome.EnsureAbove(_updateWindow, Overlay.Window.Handle);
         foreach (var notice in _notices) WindowChrome.EnsureAbove(notice, Overlay.Window.Handle);
-        if (_pptNav is not null) WindowChrome.EnsureAbove(_pptNav, Overlay.Window.Handle);
+        foreach (var navigation in _pptNavigations.Values)
+            if (navigation.AppWindow.IsVisible) WindowChrome.EnsureAbove(navigation, Overlay.Window.Handle);
         if (_toolkit is not null) WindowChrome.EnsureAbove(_toolkit, Overlay.Window.Handle);
         if (_aiAssistant is not null) WindowChrome.EnsureAbove(_aiAssistant, Overlay.Window.Handle);
         if (_palette is not null) WindowChrome.EnsureAbove(_palette, Overlay.Window.Handle);
@@ -867,61 +868,28 @@ public sealed partial class ShellController : IShellActions, IDisposable
         NotifyAiSlideChange(snapshot);
 
         bool inShow = snapshot?.IsSlideShowRunning == true;
-        var s = Services.Settings.PowerPoint;
-        if (!inShow)
+        _pptShowSnapshot = inShow ? snapshot : null;
+        if (inShow) RefreshSlideIndex(snapshot);
+        if (!inShow && !_manualPptNav)
         {
-            _pptShowSnapshot = null;
-            if (_manualPptNav)
-            {
-                // Manual mode: keep the window on the primary display, without touching the
-                // collapsed/corner state the user picked while a show was running.
-                List<NavigationCorner> manualAllowed = AllowedCorners();
-                NavigationCorner corner = manualAllowed.Count == 0
-                    ? NavigationCorner.BottomLeft
-                    : manualAllowed.Contains(_pptCorner) ? _pptCorner : manualAllowed[0];
-
-                _pptNav ??= CreatePptNavigation(MapPlacement(corner));
-                _pptNav.Placement = MapPlacement(corner);
-                // No slide counter outside a show: 0/0 would read as real page numbers.
-                _pptNav.Update(PptSnapshot.Detached, !_pptNavCollapsed, false, default);
-                return;
-            }
-
             ClosePptNavigationWindows();
             _pptNavCollapsed = false;
-            _pptCorner = NavigationCorner.BottomLeft;
             return;
         }
-
-        _pptShowSnapshot = snapshot;
-
-        RefreshSlideIndex(snapshot);
-
-        ShowWindowInfo bounds = default;
-        if (ShowWindowTracker.TryGet(snapshot.WindowHandle, out var measured)) bounds = measured;
-        if (_board is not null || (_bar?.IsFolded == true && !_manualPptNav))
+        bool visible = _board is null && _bar?.IsFolded != true && !_pptNavCollapsed;
+        var settings = Services.Settings.PowerPoint;
+        foreach (var placement in Enum.GetValues<PptNavigationPlacement>())
         {
-            _pptNav?.Update(snapshot, false, false, bounds);
-            return;
+            bool side = placement is PptNavigationPlacement.SideLeft or PptNavigationPlacement.SideRight;
+            bool enabled = side ? settings.IsShowSidePPTNavigationPanel : settings.IsShowBottomPPTNavigationPanel;
+            if (!_pptNavigations.TryGetValue(placement, out var window) && enabled && visible)
+            {
+                window = CreatePptNavigation(placement);
+                _pptNavigations.Add(placement, window);
+            }
+            window?.Update(snapshot, visible && enabled,
+                inShow && (side ? settings.IsShowPPTNavigationSides : settings.IsShowPPTNavigationBottom));
         }
-
-        List<NavigationCorner> allowed = AllowedCorners();
-        if (allowed.Count == 0)
-        {
-            // Both navigation groups are switched off: keep the window hidden.
-            _pptNav?.Update(snapshot, false, false, bounds);
-            return;
-        }
-
-        if (!allowed.Contains(_pptCorner)) _pptCorner = allowed[0];
-
-        bool counterVisible = _pptCorner is NavigationCorner.SideLeft or NavigationCorner.SideRight
-            ? s.IsShowPPTNavigationSides
-            : s.IsShowPPTNavigationBottom;
-
-        _pptNav ??= CreatePptNavigation(MapPlacement(_pptCorner));
-        _pptNav.Placement = MapPlacement(_pptCorner);
-        _pptNav.Update(snapshot, !_pptNavCollapsed, counterVisible, bounds);
     }
 
     /// <summary>
@@ -959,42 +927,16 @@ public sealed partial class ShellController : IShellActions, IDisposable
         _aiAssistant.ShowNotice(notice);
     }
 
-    /// <summary>Corners enabled by the current navigation-panel settings.</summary>
-    private List<NavigationCorner> AllowedCorners()
-    {
-        var s = Services.Settings.PowerPoint;
-        var allowed = new List<NavigationCorner>(4);
-        if (s.IsShowBottomPPTNavigationPanel)
-        {
-            allowed.Add(NavigationCorner.BottomLeft);
-            allowed.Add(NavigationCorner.BottomRight);
-        }
-        if (s.IsShowSidePPTNavigationPanel)
-        {
-            allowed.Add(NavigationCorner.SideLeft);
-            allowed.Add(NavigationCorner.SideRight);
-        }
-        return allowed;
-    }
-
-    private static PptNavigationPlacement MapPlacement(NavigationCorner corner) => corner switch
-    {
-        NavigationCorner.BottomRight => PptNavigationPlacement.BottomRight,
-        NavigationCorner.SideLeft => PptNavigationPlacement.SideLeft,
-        NavigationCorner.SideRight => PptNavigationPlacement.SideRight,
-        _ => PptNavigationPlacement.BottomLeft,
-    };
-
     private PptNavigationWindow CreatePptNavigation(PptNavigationPlacement placement)
     {
-        var window = new PptNavigationWindow(placement, this, Services.Settings.Appearance.Theme);
+        var window = new PptNavigationWindow(placement, this, Services.Settings.Appearance.Theme, _bar);
         return window;
     }
 
     private void ClosePptNavigationWindows()
     {
-        _pptNav?.Close();
-        _pptNav = null;
+        foreach (var window in _pptNavigations.Values) window.Close();
+        _pptNavigations.Clear();
     }
 
     private void ApplyAutoFold()
@@ -2758,7 +2700,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         {
             SaveBeforeMouseMode();
             bool showInk = _lastSlideShowState
-                ? Services.Settings.PowerPoint.IsShowStrokeOnSelectInPowerPoint
+                ? !Services.Settings.PowerPoint.HideStrokesAfterLeavingAnnotation
                 : !Services.Settings.Canvas.HideStrokeWhenSelecting;
             Overlay.SetInteractionMode(clickThrough: true, inkVisible: showInk);
             if (Core.Settings.AutomationPolicy.ShouldClearOnMouseMode(Services.Settings.Automation, Services.Settings.PowerPoint, _lastSlideShowState))
@@ -2926,27 +2868,15 @@ public sealed partial class ShellController : IShellActions, IDisposable
 
     public void RotatePptNavigationCorner()
     {
-        List<NavigationCorner> allowed = AllowedCorners();
-        if (allowed.Count == 0) return;
-
-        NavigationCorner candidate = _pptCorner;
-        for (int i = 0; i < 4; i++)
-        {
-            candidate = NavigationLayout.NextCorner(candidate);
-            if (allowed.Contains(candidate)) break;
-        }
-        _pptCorner = candidate;
-
-        var snapshot = _pptShowSnapshot;
-        if (snapshot is not null) UpdatePptNavigation(snapshot);
+        // Kept for shell action compatibility. All enabled corners are displayed together.
+        UpdatePptNavigation(_pptShowSnapshot ?? PptSnapshot.Detached);
     }
 
     public void CollapsePptNavigation()
     {
-        _pptNavCollapsed = true;
+        _pptNavCollapsed = !_pptNavCollapsed;
         var snapshot = _pptShowSnapshot;
-        if (snapshot is not null) UpdatePptNavigation(snapshot);
-        else _pptNav?.Update(PptSnapshot.Detached, false, false, default);
+        UpdatePptNavigation(snapshot ?? PptSnapshot.Detached);
     }
 
     public void TogglePptNavigationWindow()

@@ -1,4 +1,4 @@
-using InkCanvas.Core.Ink;
+﻿using InkCanvas.Core.Ink;
 using InkCanvas.Core.Settings;
 using InkCanvas.Features.Board;
 using InkCanvas.Features.Persistence;
@@ -9,6 +9,8 @@ using InkCanvas.Extensibility;
 using InkCanvas.Extensions;
 using InkCanvas.Host.Contracts;
 using InkCanvas.Features.Update;
+using Microsoft.UI.Xaml;
+using InkCanvas.Controls.Controls;
 
 namespace InkCanvas.App.Services;
 
@@ -23,6 +25,8 @@ public sealed class AppServices : IDisposable
         Store = new SettingsStore(settingsDirectory);
         Settings = Store.Load();
         Settings.Storage ??= new();
+        // 图标风格（Fluent Filled/Regular，与鸿蒙端同一 MIT 字体集）注入字体族解析。
+        Controls.Controls.IconFontStyle.BindStyleSource(() => Settings.Appearance.IsIconRegularStyle);
         UpdateCache = new UpdateCache(settingsDirectory is null ? null : Path.Combine(settingsDirectory, "UpdateCache"));
         ExtensionStore = new ExtensionPreferencesStore(Store.Directory);
         ExtensionPreferences = ExtensionStore.Load();
@@ -135,7 +139,7 @@ public sealed class AppServices : IDisposable
         var taper = OriginalMenuCatalog.ToTaperKind(Settings.Canvas.InkStyle);
         controller.ConfigurePenWidths((float)Math.Clamp(Settings.Canvas.InkWidth, .5, 60),
             (float)Math.Clamp(Settings.Canvas.HighlighterWidth ?? Settings.Canvas.InkWidth, .5, 60));
-        controller.ConfigurePenColors(Settings.Canvas.PenColor is uint pen ? InkColor.FromPackedArgb(pen) : null,
+        controller.ConfigurePenColors(Settings.Canvas.PenColor is uint pen ? InkColor.FromPackedArgb(pen) : DefaultPenColor(Settings.Appearance.Theme),
             Settings.Canvas.HighlighterColor is uint highlighter ? InkColor.FromPackedArgb(highlighter) : null);
         if (Settings.Canvas.ShapeKind is { } shape && Enum.IsDefined(shape) && controller.ShapeKind != shape)
             controller.ShapeKind = shape;
@@ -177,6 +181,27 @@ public sealed class AppServices : IDisposable
         controller.Palm.Advanced = Settings.Advanced;
         controller.Palm.NibMode = Settings.Startup.IsEnableNibMode;
         controller.TransformCenterOption = Settings.Gesture.MatrixTransformCenterPoint;
+    }
+
+    internal static InkColor DefaultPenColor(int theme)
+    {
+        bool dark = theme switch
+        {
+            1 => false,
+            2 => true,
+            _ => SystemThemeIsDark(),
+        };
+        return dark ? InkColor.White : InkColor.Red;
+    }
+
+    private static bool SystemThemeIsDark()
+    {
+        try
+        {
+            var background = new Windows.UI.ViewManagement.UISettings().GetColorValue(Windows.UI.ViewManagement.UIColorType.Background);
+            return (background.R * 299 + background.G * 587 + background.B * 114) / 1000 < 128;
+        }
+        catch { return Application.Current?.RequestedTheme == Microsoft.UI.Xaml.ApplicationTheme.Dark; }
     }
 
     public IEnumerable<InkController> AllControllers()

@@ -46,11 +46,10 @@
     <ProjectReference Include="..\InkCanvas.PluginHost\InkCanvas.PluginHost.csproj" ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="Assets\**\*.*" Exclude="Assets\SegoeFluentIcons.ttf;Assets\SegoeMDL2Assets.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\**\*.*" Exclude="Assets\FluentSystemIcons.ttf;Assets\SegoeMDL2Assets.ttf" CopyToOutputDirectory="PreserveNewest" />
     <Content Update="Assets\Board\*.png" CopyToPublishDirectory="PreserveNewest" />
-    <!-- Required icon font: ship it with both build and publish outputs, never rely on an OS font. -->
-    <Content Include="Assets\SegoeFluentIcons.ttf" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="Assets\SegoeMDL2Assets.ttf" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- MIT 开源图标字体（microsoft/fluentui-system-icons）：随构建与发布输出，跨 Win10/11 一致渲染。 -->
+    <Content Include="Assets\FluentSystemIcons.ttf" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\CHANGELOG.md" Link="CHANGELOG.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

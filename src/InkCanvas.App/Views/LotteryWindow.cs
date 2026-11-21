@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using InkCanvas.App.Services;
 using InkCanvas.Controls.Animation;
 using InkCanvas.Controls.Controls;
@@ -99,7 +99,7 @@ public sealed class LotteryWindow : Window
             if (_rolling) return;
             _lottery.Reset(); ResetResults();
             _notice.Text = "已开始新一轮，全部人员重新参与抽选。"; RefreshSummary();
-        }, glyph: "\uE72C");
+        }, glyph: "\uF1A0");
         header.Children.Add(_summary); Grid.SetColumn(_resetRound, 1); header.Children.Add(_resetRound);
         page.Children.Add(header);
 
@@ -211,14 +211,14 @@ public sealed class LotteryWindow : Window
             _lottery.PeopleCount = Math.Clamp((int)Math.Round(args.NewValue), 1, 9999);
             OptionsChanged?.Invoke(); RefreshSummary();
         };
-        _optionsButton = ClassroomControls.Button("选项", glyph: "\uE713");
+        _optionsButton = ClassroomControls.Button("选项", glyph: "\uF6B3");
         _optionsButton.Flyout = new Flyout { Content = new StackPanel { Spacing = 12, Width = 300, Children =
         {
             _samplingMode, _cooldownPeriod,
             new TextBlock { Text = "近期抽中越多，概率越低。随时间逐渐恢复，仍可再次抽中。", TextWrapping = TextWrapping.Wrap, FontSize = 13 },
             _poolInput,
         } } };
-        _importButton = ClassroomControls.Button("名单管理", OpenNamesInput, glyph: "\uE77B");
+        _importButton = ClassroomControls.Button("名单管理", OpenNamesInput, glyph: "\uF5C8");
         AutomationProperties.SetName(_importButton, "导入名单");
         _secondaryActions = new Grid { ColumnSpacing = 8 };
         _secondaryActions.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
@@ -242,7 +242,7 @@ public sealed class LotteryWindow : Window
             TextTrimming = TextTrimming.CharacterEllipsis };
         var information = new StackPanel { Spacing = 6, Children = { _notice, _history } };
         footer.Children.Add(information);
-        _copy = ClassroomControls.Button("复制结果", CopyResult, glyph: "\uE8C8");
+        _copy = ClassroomControls.Button("复制结果", CopyResult, glyph: "\uF32C");
         Grid.SetColumn(_copy, 1); footer.Children.Add(_copy);
         Grid.SetRow(footer, 2); page.Children.Add(footer);
         _root.Children.Add(page);

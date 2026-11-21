@@ -1,4 +1,4 @@
-using InkCanvas.Controls.Animation;
+﻿using InkCanvas.Controls.Animation;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -60,7 +60,7 @@ public sealed class TouchIconButton : Button
 
         _icon = new FontIcon
         {
-            FontFamily = new FontFamily("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons"),
+            FontFamily = IconFontStyle.Font,
             FontSize = 20,
             IsTextScaleFactorEnabled = false,
             // Apply the current value explicitly: assigning a value equal to the DP default

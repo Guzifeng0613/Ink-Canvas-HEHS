@@ -1,4 +1,4 @@
-using InkCanvas.App.Services;
+﻿using InkCanvas.App.Services;
 using InkCanvas.Controls.Animation;
 using InkCanvas.Controls.Lifecycle;
 using InkCanvas.Controls.Controls;
@@ -39,25 +39,25 @@ namespace InkCanvas.App.Views;
 public sealed class BoardWindow : Window
 {
     // WPF board glyph codes (Segoe Fluent Icons / MDL2), MainWindow.xaml board regions.
-    private const string GlyphPrev = "";
-    private const string GlyphNext = "";
-    private const string GlyphAddPage = "";
-    private const string GlyphExit = "";
-    private const string GlyphGesture = "";
-    private const string GlyphCanvas = "";
-    private const string GlyphSelect = "";
-    private const string GlyphSelectBadge = "";
-    private const string GlyphPen = "";
-    private const string GlyphHighlighter = "";
-    private const string GlyphEraser = "";
-    private const string GlyphShape = "";
-    private const string GlyphImage = "";
-    private const string GlyphUndo = "";
-    private const string GlyphRedo = "";
-    private const string GlyphMore = "";
-    private const string GlyphClear = "";
+    private const string GlyphPrev = "";
+    private const string GlyphNext = "";
+    private const string GlyphAddPage = "";
+    private const string GlyphExit = "";
+    private const string GlyphGesture = "";
+    private const string GlyphCanvas = "";
+    private const string GlyphSelect = "";
+    private const string GlyphSelectBadge = "";
+    private const string GlyphPen = "";
+    private const string GlyphHighlighter = "";
+    private const string GlyphEraser = "";
+    private const string GlyphShape = "";
+    private const string GlyphImage = "";
+    private const string GlyphUndo = "";
+    private const string GlyphRedo = "";
+    private const string GlyphMore = "";
+    private const string GlyphClear = "";
 
-    private static readonly FontFamily IconFont = new("ms-appx:///Assets/SegoeFluentIcons.ttf#Segoe Fluent Icons");
+    private static FontFamily IconFont => IconFontStyle.Font;
 
     private readonly AppServices _services;
     private readonly BoardService _board;
@@ -906,15 +906,15 @@ public sealed class BoardWindow : Window
         grid.RowSpacing = 6;
         var items = new (string Glyph, string Label, Action Click, bool Badge)[]
         {
-            ("", "倒计时", () => { HideBoardFlyout(flyout); _shell?.OpenTimer(); }, false),
-            ("", "随机抽选", () => { HideBoardFlyout(flyout); _shell?.OpenLottery(); }, false),
-            ("", "单次抽选", () => { HideBoardFlyout(flyout); _shell?.OpenLotteryQuick(); }, true),
-            ("", "保存墨迹", async () => { HideBoardFlyout(flyout); await SavePageAsync(); }, false),
-            ("", "打开墨迹", async () => { HideBoardFlyout(flyout); await OpenPageAsync(); }, false),
-            ("", "播放墨迹", () => { HideBoardFlyout(flyout); _shell?.OpenReplay(); }, false),
-            ("", "截屏", async () => { HideBoardFlyout(flyout); if (_shell is not null) await _shell.ScreenshotAsync(); }, false),
-            ("", "指南", () => { HideBoardFlyout(flyout); _shell?.OpenGuide(); }, false),
-            ("", "设置", () => { HideBoardFlyout(flyout); _shell?.OpenSettings(); }, false),
+            ("", "倒计时", () => { HideBoardFlyout(flyout); _shell?.OpenTimer(); }, false),
+            ("", "随机抽选", () => { HideBoardFlyout(flyout); _shell?.OpenLottery(); }, false),
+            ("", "单次抽选", () => { HideBoardFlyout(flyout); _shell?.OpenLotteryQuick(); }, true),
+            ("", "保存墨迹", async () => { HideBoardFlyout(flyout); await SavePageAsync(); }, false),
+            ("", "打开墨迹", async () => { HideBoardFlyout(flyout); await OpenPageAsync(); }, false),
+            ("", "播放墨迹", () => { HideBoardFlyout(flyout); _shell?.OpenReplay(); }, false),
+            ("", "截屏", async () => { HideBoardFlyout(flyout); if (_shell is not null) await _shell.ScreenshotAsync(); }, false),
+            ("", "指南", () => { HideBoardFlyout(flyout); _shell?.OpenGuide(); }, false),
+            ("", "设置", () => { HideBoardFlyout(flyout); _shell?.OpenSettings(); }, false),
         };
         for (int i = 0; i < items.Length; i++)
         {
@@ -965,7 +965,7 @@ public sealed class BoardWindow : Window
 
         // WPF bottom row: retain the original bundled 视频展台 / Desmos artwork.
         var launcherRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 6) };
-        launcherRow.Children.Add(MakeLauncherButton("", "视频展台", async () =>
+        launcherRow.Children.Add(MakeLauncherButton("", "视频展台", async () =>
         {
             HideBoardFlyout(flyout);
             // Original BoardLaunchEasiCamera_Click first switched back from board mode.
@@ -975,7 +975,7 @@ public sealed class BoardWindow : Window
                 await ShowMessageAsync("未找到希沃视频展台安装路径，或启动器无法运行。");
         }));
         launcherRow.Children.Add(new Border { Width = 1, Height = 25, Margin = new Thickness(4, 0, 4, 0), Background = _barFg, Opacity = 0.6, VerticalAlignment = VerticalAlignment.Center });
-        launcherRow.Children.Add(MakeLauncherButton("", "Desmos", () =>
+        launcherRow.Children.Add(MakeLauncherButton("", "Desmos", () =>
         {
             HideBoardFlyout(flyout);
             if (_shell is not null) _shell.ToggleBoard();
@@ -985,12 +985,12 @@ public sealed class BoardWindow : Window
         // Port additions beyond WPF, relocated out of the center strip.
         var extrasRow1 = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2 };
         var extrasRow2 = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Margin = new Thickness(0, 2, 0, 6) };
-        extrasRow1.Children.Add(MakeExtraButton("", "插入视频", async () => { HideBoardFlyout(flyout); await InsertMediaAsync(); }));
+        extrasRow1.Children.Add(MakeExtraButton("", "插入视频", async () => { HideBoardFlyout(flyout); await InsertMediaAsync(); }));
         Button fileButton = null;
-        fileButton = MakeExtraButton("", "文件", () => ShowBoardFlyout(BuildFileFlyout(), _moreCell.Button));
+        fileButton = MakeExtraButton("", "文件", () => ShowBoardFlyout(BuildFileFlyout(), _moreCell.Button));
         extrasRow1.Children.Add(fileButton);
-        extrasRow2.Children.Add(MakeExtraButton("", "删除本页", () => { HideBoardFlyout(flyout); DeleteCurrentPage(); }));
-        extrasRow2.Children.Add(MakeExtraButton("", _isFullscreen ? "窗口模式" : "全屏", () => { HideBoardFlyout(flyout); SetFullscreen(!_isFullscreen); }));
+        extrasRow2.Children.Add(MakeExtraButton("", "删除本页", () => { HideBoardFlyout(flyout); DeleteCurrentPage(); }));
+        extrasRow2.Children.Add(MakeExtraButton("", _isFullscreen ? "窗口模式" : "全屏", () => { HideBoardFlyout(flyout); SetFullscreen(!_isFullscreen); }));
         Button canvasButton = null;
         canvasButton = MakeExtraButton(GlyphCanvas, "画布纸型", () => ShowBoardFlyout(BuildCanvasFlyout(), _moreCell.Button));
         extrasRow2.Children.Add(canvasButton);
@@ -1010,7 +1010,7 @@ public sealed class BoardWindow : Window
             HideBoardFlyout(flyout); CurrentController.ViewTransform = Matrix3x2.Identity; CurrentController.Document.Touch();
         }));
         panel.Children.Add(navigation);
-        panel.Children.Add(MakeExtraButton("\uE8A5", "页面管理", () => { HideBoardFlyout(flyout); SetPagePaneOpen(true); }));
+        panel.Children.Add(MakeExtraButton("\uF379", "页面管理", () => { HideBoardFlyout(flyout); SetPagePaneOpen(true); }));
         if (_shell is not null)
         foreach (var commands in _shell.ExtensionCommands.Chunk(3))
         {
