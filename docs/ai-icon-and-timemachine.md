@@ -1,5 +1,7 @@
 # AI 图标替换与板书时光机完善交付记录
 
+> 本文为 2026-11-20 的上一轮记录。2026-11-21 的可靠性升级（事件序号、完整性校验、分块加载、主题修复、验收证据）见 `docs/timemachine-reliability-v2.md` 与 `docs/timemachine-test-evidence.md`。
+
 - 目标平台：Windows 桌面端（WinUI 3 / Windows App SDK）
 - 技术栈：C# / .NET 10，渲染沿用 Win2D，未引入 Electron / Web 技术栈
 - 变更性质：增量优化，不改既有数据格式语义、不重写交互、不回退其他语言实现
