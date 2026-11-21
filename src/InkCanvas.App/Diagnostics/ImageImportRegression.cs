@@ -195,11 +195,11 @@ internal static class ImageImportRegression
         void Check(string name, bool passed) => checks.Add(new { check = name, passed });
     }
 
-    private static async Task<IntPtr> FindPickerAsync()
+    internal static async Task<IntPtr> FindPickerAsync(string title = "插入图片")
     {
         for (int i = 0; i < 500; i++)
         {
-            var window = FindPicker();
+            var window = FindPicker(title);
             if (window != IntPtr.Zero) return window;
             await Task.Delay(20);
         }
@@ -224,7 +224,7 @@ internal static class ImageImportRegression
             foreach (var child in Descendants(Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(parent, index))) yield return child;
     }
 
-    private static IntPtr FindPicker()
+    private static IntPtr FindPicker(string expectedTitle = "插入图片")
     {
         IntPtr found = IntPtr.Zero;
         EnumWindows((window, _) =>
@@ -232,13 +232,13 @@ internal static class ImageImportRegression
             NativeMethods.GetWindowThreadProcessId(window, out uint process);
             if (process != Environment.ProcessId || !NativeMethods.IsWindowVisible(window)) return true;
             var title = new StringBuilder(100); GetWindowTextW(window, title, title.Capacity);
-            if (title.ToString() != "插入图片") return true;
+            if (title.ToString() != expectedTitle) return true;
             found = window; return false;
         }, IntPtr.Zero);
         return found;
     }
 
-    private static async Task ChooseFileAsync(IntPtr dialog, string path)
+    internal static async Task ChooseFileAsync(IntPtr dialog, string path)
     {
         IntPtr edit = IntPtr.Zero;
         var controls = new List<string>();

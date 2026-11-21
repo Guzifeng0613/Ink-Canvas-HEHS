@@ -325,7 +325,13 @@ public sealed class LayeredInkWindow : IDisposable
         _legacyContacts.Clear();
     }
 
-    public void SetScreenLayout(IEnumerable<ScreenInfo> screens) => _screens = screens.ToArray();
+    public void SetScreenLayout(IEnumerable<ScreenInfo> screens)
+    {
+        var updated = screens.ToArray();
+        if (_screens.SequenceEqual(updated)) return;
+        CancelInput();
+        _screens = updated;
+    }
 
     public void SetInputAreas(IEnumerable<ScreenRect> areas, bool force = false)
     {
@@ -413,6 +419,7 @@ public sealed class LayeredInkWindow : IDisposable
             case NativeMethods.WM_DISPLAYCHANGE:
             case 0x02E0: // WM_DPICHANGED. The shared ink viewport deliberately keeps a stable scale.
             case 0x001A: // WM_SETTINGCHANGE, including taskbar / work-area changes.
+            case 0x0219 when w.ToInt64() is 0x0007 or 0x0018: // WM_DEVICECHANGE, device nodes / dock configuration.
                 DisplaySettingsChanged?.Invoke();
                 break;
             case NativeMethods.WM_MOUSEACTIVATE:

@@ -18,16 +18,14 @@ public sealed class OverlayHost : IDisposable
     public void ConfigureDisplays(Core.Settings.DisplaySettings settings)
     {
         _displaySettings = settings ?? new();
-        var screens = ScreenService.All();
-        Window.SetScreenLayout(screens);
-        Window.SetInputAreas(_displaySettings.AllDisplays ? null : screens
-            .Where(screen => (_displaySettings.EnabledDevices ?? new()).Contains(screen.DeviceName, StringComparer.OrdinalIgnoreCase))
-            .Select(screen => screen.Bounds));
+        RefreshDisplayBounds();
     }
     public OverlayHost(InkController controller)
     {
-        var screen = ScreenService.Virtual;
+        var screens = ScreenService.All();
+        var screen = screens.Count == 0 ? ScreenService.Virtual : ScreenService.GetVirtualBounds(screens);
         Window = new LayeredInkWindow(screen.X, screen.Y, screen.Width, screen.Height);
+        Window.SetScreenLayout(screens);
         Presenter = new OverlayInkPresenter(Window, controller);
         Hotkeys = new HotkeyService(Window.Handle);
         Controller = controller;
@@ -45,12 +43,23 @@ public sealed class OverlayHost : IDisposable
     public HotkeyService Hotkeys { get; }
 
     public InkController Controller { get; }
+    public event Action InteractionChanged;
 
     /// <summary>Keep saved ink at the same desktop pixel when the virtual desktop origin changes.</summary>
-    public bool RefreshDisplayBounds()
+    public bool RefreshDisplayBounds() => RefreshDisplayBounds(ScreenService.All());
+
+    internal bool RefreshDisplayBounds(IReadOnlyList<ScreenInfo> screens)
     {
-        var screen = ScreenService.Virtual;
-        return SetDisplayBounds(screen);
+        // Enumeration may be empty briefly while Windows applies a projection mode.
+        var screen = ScreenService.GetVirtualBounds(screens);
+        if (screen.Width <= 0 || screen.Height <= 0) return false;
+        Window.SetScreenLayout(screens);
+        bool resized = SetDisplayBounds(screen);
+        // A monitor split, DPI or enabled area can change without changing the outer bounds.
+        Window.SetInputAreas(_displaySettings.AllDisplays ? null : screens
+            .Where(item => (_displaySettings.EnabledDevices ?? new()).Contains(item.DeviceName, StringComparer.OrdinalIgnoreCase))
+            .Select(item => item.Bounds));
+        return resized;
     }
 
     internal bool SetDisplayBounds(ScreenRect screen)
@@ -63,7 +72,6 @@ public sealed class OverlayHost : IDisposable
         try
         {
             Window.SetBounds(screen.X, screen.Y, screen.Width, screen.Height);
-            ConfigureDisplays(_displaySettings);
             Controller.ViewTransform *= System.Numerics.Matrix3x2.CreateTranslation(
                 (oldX - screen.X) / Window.DpiScale, (oldY - screen.Y) / Window.DpiScale);
             Controller.ViewCenter = new(screen.Width / Window.DpiScale / 2, screen.Height / Window.DpiScale / 2);
@@ -86,6 +94,7 @@ public sealed class OverlayHost : IDisposable
         if (clickThrough || !inkVisible) Controller.HideEraserPreview();
         Window.ClickThrough = clickThrough;
         Presenter.InkVisible = inkVisible;
+        InteractionChanged?.Invoke();
     }
 
     public void Show()
@@ -94,6 +103,7 @@ public sealed class OverlayHost : IDisposable
         _idleSince = 0;
         Window.Show();
         Presenter.Attach();
+        InteractionChanged?.Invoke();
     }
 
     public void Hide()
@@ -101,6 +111,7 @@ public sealed class OverlayHost : IDisposable
         Controller.CancelLassoErase();
         Presenter.Suspend();
         Window.Hide();
+        InteractionChanged?.Invoke();
     }
 
     internal bool TrimIdleResources(bool force = false)
@@ -130,14 +141,15 @@ public sealed class OverlayHost : IDisposable
     public void RegisterHotkeys(Action undo, Action redo, Action toggleEraser, Action clear,
         Action togglePassThrough = null, Action toggleBoard = null,
         Action pptNext = null, Action pptPrevious = null, Action pptExit = null,
-        Action screenshot = null, Action fold = null, Action select = null, Action line = null, Action draw = null)
+        Action screenshot = null, Action fold = null, Action select = null, Action line = null, Action draw = null,
+        Func<bool> editingEnabled = null, Func<bool> overlayEditingEnabled = null, Func<bool> presentationEnabled = null)
     {
-        Hotkeys.Register(HotkeyModifiers.Control, 0x5A /* Z */, undo);
-        Hotkeys.Register(HotkeyModifiers.Control, 0x59 /* Y */, redo);
-        Hotkeys.Register(HotkeyModifiers.Control, 0x45 /* E */, clear);
-        Hotkeys.Register(HotkeyModifiers.Alt, 0x45 /* E */, toggleEraser);
-        if (select is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x53 /* S */, select);
-        if (line is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x4C /* L */, line);
+        Hotkeys.Register(HotkeyModifiers.Control, 0x5A /* Z */, undo, overlayEditingEnabled);
+        Hotkeys.Register(HotkeyModifiers.Control, 0x59 /* Y */, redo, overlayEditingEnabled);
+        Hotkeys.Register(HotkeyModifiers.Control, 0x45 /* E */, clear, overlayEditingEnabled);
+        Hotkeys.Register(HotkeyModifiers.Alt, 0x45 /* E */, toggleEraser, editingEnabled);
+        if (select is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x53 /* S */, select, editingEnabled);
+        if (line is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x4C /* L */, line, editingEnabled);
         if (toggleBoard is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x42 /* B */, toggleBoard);
         if (fold is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x56 /* V */, fold);
         if (screenshot is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x43 /* C */, screenshot);
@@ -145,9 +157,9 @@ public sealed class OverlayHost : IDisposable
         // Escape hatch: the overlay captures the whole screen while writing, so mouse mode must
         // work even if the bar is unreachable.
         if (togglePassThrough is not null) Hotkeys.Register(HotkeyModifiers.Alt, 0x51 /* Q */, togglePassThrough);
-        if (pptNext is not null) Hotkeys.Register(HotkeyModifiers.None, 0x22 /* PageDown */, pptNext);
-        if (pptPrevious is not null) Hotkeys.Register(HotkeyModifiers.None, 0x21 /* PageUp */, pptPrevious);
-        if (pptExit is not null) Hotkeys.Register(HotkeyModifiers.Shift, 0x1B /* Escape */, pptExit);
+        if (pptNext is not null) Hotkeys.Register(HotkeyModifiers.None, 0x22 /* PageDown */, pptNext, presentationEnabled);
+        if (pptPrevious is not null) Hotkeys.Register(HotkeyModifiers.None, 0x21 /* PageUp */, pptPrevious, presentationEnabled);
+        if (pptExit is not null) Hotkeys.Register(HotkeyModifiers.Shift, 0x1B /* Escape */, pptExit, presentationEnabled);
     }
 
     public void Dispose()

@@ -14,10 +14,13 @@ internal static class ImageFilePicker
     private delegate IntPtr SubclassProc(IntPtr window, uint message, IntPtr wParam, IntPtr lParam, nuint id, nuint data);
 
     public static Task<string> PickAsync(ScreenRect workArea, CancellationToken token)
+        => PickAsync(workArea, ImageImport.SupportedExtensions, "插入图片", "图片文件", token);
+
+    public static Task<string> PickAsync(ScreenRect workArea, IReadOnlyList<string> extensions, string title, string filterName, CancellationToken token)
     {
         if (Interlocked.CompareExchange(ref _active, 1, 0) != 0) return Task.FromResult<string>(null);
         var completion = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var thread = new Thread(() => Run(workArea, token, completion)) { IsBackground = true, Name = "InkCanvas image picker" };
+        var thread = new Thread(() => Run(workArea, extensions, title, filterName, token, completion)) { IsBackground = true, Name = "InkCanvas media picker" };
         thread.SetApartmentState(ApartmentState.STA);
         try { thread.Start(); }
         catch (Exception ex) { Interlocked.Exchange(ref _active, 0); completion.TrySetException(ex); }
@@ -39,7 +42,7 @@ internal static class ImageFilePicker
         }
     }
 
-    private static void Run(ScreenRect work, CancellationToken token, TaskCompletionSource<string> completion)
+    private static void Run(ScreenRect work, IReadOnlyList<string> extensions, string title, string filterName, CancellationToken token, TaskCompletionSource<string> completion)
     {
         IntPtr owner = IntPtr.Zero;
         IFileDialog dialog = null;
@@ -59,11 +62,11 @@ internal static class ImageFilePicker
             token.ThrowIfCancellationRequested();
             // Only this invisible helper is disabled by Show. The real drawing windows remain enabled.
             owner = NativeMethods.CreateWindowExW(NativeMethods.WS_EX_TOOLWINDOW | NativeMethods.WS_EX_TOPMOST,
-                "STATIC", "Ink Canvas 图片选择", NativeMethods.WS_POPUP,
+                "STATIC", "Ink Canvas " + title, NativeMethods.WS_POPUP,
                 work.X + work.Width / 2, work.Y + work.Height / 2, 1, 1,
                 IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
             if (owner == IntPtr.Zero || !SetWindowSubclass(owner, procedure, 1, 0))
-                throw new InvalidOperationException("无法创建图片选择窗口。");
+                throw new InvalidOperationException("无法创建文件选择窗口。");
             Volatile.Write(ref _owner, owner);
             using var registration = token.Register(() =>
             {
@@ -74,11 +77,12 @@ internal static class ImageFilePicker
             dialog = (IFileDialog)Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7"), true));
             dialog.GetOptions(out uint options);
             dialog.SetOptions(options | 0x40 /* FORCEFILESYSTEM */ | 0x1000 /* FILEMUSTEXIST */ | 0x800 /* PATHMUSTEXIST */ | 0x8 /* NOCHANGEDIR */);
-            dialog.SetTitle("插入图片");
-            dialog.SetFileTypes(1, new[] { new FilterSpec { Name = "图片文件", Pattern = string.Join(';', ImageImport.SupportedExtensions.Select(extension => "*" + extension)) } });
-            var clientId = new Guid("0C64EAE6-C610-4F23-974F-290DD5B6F12D");
+            dialog.SetTitle(title);
+            dialog.SetFileTypes(1, new[] { new FilterSpec { Name = filterName, Pattern = string.Join(';', extensions.Select(extension => "*" + extension)) } });
+            bool video = filterName == "视频文件";
+            var clientId = new Guid(video ? "B21DB3DB-7994-4752-9124-132F0A3B659B" : "0C64EAE6-C610-4F23-974F-290DD5B6F12D");
             dialog.SetClientGuid(ref clientId);
-            string pictures = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+            string pictures = Environment.GetFolderPath(video ? Environment.SpecialFolder.MyVideos : Environment.SpecialFolder.MyPictures);
             if (Directory.Exists(pictures))
             {
                 Guid itemId = typeof(IShellItem).GUID;

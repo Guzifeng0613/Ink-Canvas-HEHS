@@ -156,6 +156,28 @@ public sealed class StrokeRenderer : IDisposable
         // One native path per stroke avoids allocating a COM geometry for every sample pair.
         using var builder = new CanvasPathBuilder(session);
         builder.SetFilledRegionDetermination(CanvasFilledRegionDetermination.Winding);
+        if (stroke.ShapeSource?.Geometry?.IsFill == true)
+        {
+            builder.BeginFigure(stroke.Points[0].Position);
+            foreach (var point in stroke.Points.Skip(1)) builder.AddLine(point.Position);
+            builder.EndFigure(CanvasFigureLoop.Closed);
+            return CanvasGeometry.CreatePath(builder);
+        }
+        if (stroke.ShapeSource?.Geometry is { Construction: InkCanvas.Core.Shapes.ShapeConstruction.Connector,
+            LineStyle: InkCanvas.Core.Shapes.ShapeLineStyle.Dashed or InkCanvas.Core.Shapes.ShapeLineStyle.Dotted })
+        {
+            Span<Vector2> points = stackalloc Vector2[26];
+            foreach (var path in InkCanvas.Core.Shapes.ShapeDefinition.RenderContours(stroke))
+                for (int segment = 0; segment < Math.Max(1, path.Count - 1); segment++)
+                {
+                    int count = StrokeGeometry.WriteInkSegment(path, segment, widthScale, points);
+                    if (count < 3) continue;
+                    builder.BeginFigure(points[0]);
+                    for (int i = 1; i < count; i++) builder.AddLine(points[i]);
+                    builder.EndFigure(CanvasFigureLoop.Closed);
+                }
+            return CanvasGeometry.CreatePath(builder);
+        }
         Span<Vector2> scratch = stackalloc Vector2[26];
         for (int segment = firstSegment; segment < lastSegment; segment++)
         {

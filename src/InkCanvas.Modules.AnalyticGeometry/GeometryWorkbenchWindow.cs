@@ -33,6 +33,8 @@ public sealed partial class GeometryWorkbenchWindow : Window
     private readonly StackPanel _properties = new() { Spacing = 8, Padding = new Thickness(12) };
     private readonly StackPanel _casHistory = new() { Spacing = 12, Padding = new Thickness(12) };
     private readonly TextBox _input = FormulaBox("输入表达式或指令，例如 A=(1,2)、f(x)=a*x^2、Solve(x^2=2,x)");
+    private readonly MathFormulaView _inputMath = new() { Visibility = Visibility.Collapsed };
+    private readonly DispatcherQueueTimer _mathDebounce;
     private TextBox _focused;
     private readonly TextBlock _status = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 0, 12, 8) };
     private readonly Button _insert = new() { Content = "插入画布", MinHeight = 44 };
@@ -56,11 +58,18 @@ public sealed partial class GeometryWorkbenchWindow : Window
     public FormulaKeyboard Keyboard { get; } = new();
     public HandwritingInput Handwriting { get; } = new();
     public string StatusText => _status.Text;
+    public TextBox FormulaInput => _input;
+    public string FormulaMathML => _inputMath.MathML;
+    public bool FormulaUsesRichEdit => _inputMath.UsesRichEdit;
 
     public GeometryWorkbenchWindow(ICanvasToolsHost host)
     {
         _host = host;
         Title = "数学工作区 — Ink Canvas";
+        _mathDebounce = DispatcherQueue.CreateTimer();
+        _mathDebounce.IsRepeating = false;
+        _mathDebounce.Interval = TimeSpan.FromMilliseconds(100);
+        _mathDebounce.Tick += (_, _) => UpdateMathPreview();
         _debounce = DispatcherQueue.CreateTimer();
         _debounce.IsRepeating = false;
         _debounce.Interval = TimeSpan.FromMilliseconds(28);
@@ -202,6 +211,7 @@ public sealed partial class GeometryWorkbenchWindow : Window
         entry.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         entry.RowDefinitions.Add(new() { Height = GridLength.Auto });
         entry.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        entry.RowDefinitions.Add(new() { Height = GridLength.Auto });
         entry.Children.Add(_input); _focused = _input;
         var execute = new Button { Content = "创建 / 更新", MinHeight = 48 };
         execute.Click += (_, _) => ExecuteInput(); Grid.SetColumn(execute, 1); entry.Children.Add(execute);
@@ -210,16 +220,36 @@ public sealed partial class GeometryWorkbenchWindow : Window
         Grid.SetColumn(cas, 2); entry.Children.Add(cas);
         _input.KeyDown += (_, args) => { if (args.Key == VirtualKey.Enter) { ExecuteInput(); args.Handled = true; } };
         _input.GotFocus += (_, _) => _focused = _input;
-        var inputPanel = new Grid { ColumnSpacing = 16 };
-        inputPanel.ColumnDefinitions.Add(new()); inputPanel.ColumnDefinitions.Add(new());
-        inputPanel.Children.Add(Keyboard); Grid.SetColumn(Handwriting, 1); inputPanel.Children.Add(Handwriting);
-        var keyboard = new Expander { Header = "数学键盘与手写输入", Content = inputPanel, HorizontalAlignment = HorizontalAlignment.Stretch };
-        Grid.SetRow(keyboard, 1); Grid.SetColumnSpan(keyboard, 3); entry.Children.Add(keyboard);
+        _input.TextChanged += (_, _) => { _mathDebounce.Stop(); _mathDebounce.Start(); };
+        Grid.SetRow(_inputMath, 1); Grid.SetColumnSpan(_inputMath, 3); entry.Children.Add(_inputMath);
+        var inputPanel = new Grid();
+        var inputMethod = new SegmentedSelector(new[] { "数学键盘", "手写输入" }) { Width = 240, Height = 44, HorizontalAlignment = HorizontalAlignment.Left };
+        inputMethod.SetOptionContent(0, new TextBlock { Text = "数学键盘", VerticalAlignment = VerticalAlignment.Center }, 44);
+        inputMethod.SetOptionContent(1, new TextBlock { Text = "手写输入", VerticalAlignment = VerticalAlignment.Center }, 44);
+        inputPanel.Children.Add(Keyboard);
+        inputPanel.Children.Add(Handwriting);
+        inputMethod.SelectionChanged += () =>
+        {
+            Keyboard.Visibility = inputMethod.SelectedIndex == 0 ? Visibility.Visible : Visibility.Collapsed;
+            Handwriting.Visibility = inputMethod.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
+        };
+        inputMethod.SelectedIndex = 0;
+        var inputScroll = new ScrollViewer { Content = inputPanel, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        var keyboard = new Expander { Header = inputMethod, Content = inputScroll, HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch };
+        AutomationProperties.SetName(keyboard, "数学键盘与手写输入");
+        inputMethod.SelectionChanged += () => keyboard.IsExpanded = true;
+        Grid.SetRow(keyboard, 2); Grid.SetColumnSpan(keyboard, 3); entry.Children.Add(keyboard);
         Keyboard.KeyPressed += EnterKey;
         Handwriting.CandidateChosen += value => { var box = _focused ?? _input; box.Text = value; box.SelectionStart = value.Length; };
         Grid.SetRow(entry, 2); _root.Children.Add(entry);
         Grid.SetRow(_status, 3); _root.Children.Add(_status);
-        _root.SizeChanged += (_, _) => body.ColumnDefinitions[0].Width = new GridLength(Math.Clamp(_root.ActualWidth * .3, 270, 390));
+        _root.SizeChanged += (_, _) =>
+        {
+            body.ColumnDefinitions[0].Width = new GridLength(Math.Clamp(_root.ActualWidth * .3, 270, 390));
+            inputScroll.MaxHeight = Math.Clamp(_root.ActualHeight * .38, 160, 360);
+        };
     }
 
     private static TextBox FormulaBox(string placeholder)
@@ -363,6 +393,7 @@ public sealed partial class GeometryWorkbenchWindow : Window
     private void SelectObject(string label)
     {
         _view.SelectedLabel = label; _view.InvalidateGeometry();
+        _focused = _input;
         _properties.Children.Clear();
         var item = Document.State.Objects.FirstOrDefault(item => item.Label == label);
         if (item is null) return;
@@ -370,6 +401,10 @@ public sealed partial class GeometryWorkbenchWindow : Window
         var definition = FormulaBox("对象定义"); definition.Text = item.Definition;
         definition.GotFocus += (_, _) => _focused = definition;
         _properties.Children.Add(definition);
+        var formula = new MathFormulaView();
+        formula.Visibility = formula.SetExpression(item.Definition) ? Visibility.Visible : Visibility.Collapsed;
+        _properties.Children.Add(formula);
+        definition.TextChanged += (_, _) => { formula.Visibility = formula.SetExpression(definition.Text) ? Visibility.Visible : Visibility.Collapsed; };
         var apply = new Button { Content = "应用定义", MinHeight = 44 };
         apply.Click += (_, _) => Guard(() => Document.Update(label, current => current with { Definition = definition.Text }));
         _properties.Children.Add(apply);
@@ -474,6 +509,8 @@ public sealed partial class GeometryWorkbenchWindow : Window
             var panel = new StackPanel { Spacing = 6, Children = {
                 new TextBlock { Text = input, TextWrapping = TextWrapping.Wrap }, exact,
                 new TextBlock { Text = result.Numeric, TextWrapping = TextWrapping.Wrap }, actions } };
+            var formatted = new MathFormulaView();
+            if (formatted.SetExpression(result.Exact)) panel.Children.Insert(1, formatted);
             _casHistory.Children.Add(new Border { Child = panel, Padding = new Thickness(10), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.LightGray), CornerRadius = new CornerRadius(6) });
             while (_casHistory.Children.Count > 41) _casHistory.Children.RemoveAt(1);
             SetStatus(result.Evaluated ? "计算完成" : "结果保留未求出的符号运算。");
@@ -541,24 +578,34 @@ public sealed partial class GeometryWorkbenchWindow : Window
     private void EnterKey(string key)
     {
         var box = _focused ?? _input;
-        int start = box.SelectionStart, length = box.SelectionLength;
-        if (key is "←" or "→") { box.SelectionStart = Math.Clamp(start + (key == "←" ? -1 : 1), 0, box.Text.Length); box.SelectionLength = 0; return; }
-        if (key == "⌫")
+        if (key == "⇥")
         {
-            if (length == 0 && start > 0) { start--; length = 1; }
-            box.Text = box.Text.Remove(start, length); box.SelectionStart = start; return;
+            int from = box.SelectionStart + box.SelectionLength;
+            int next = box.Text.IndexOf('□', from);
+            if (next < 0) next = box.Text.IndexOf('□');
+            if (next >= 0) { box.SelectionStart = next; box.SelectionLength = 1; }
+            return;
         }
-        string text = key switch { "x²" => "^2", "x³" => "^3", "√" => "sqrt()", "×" => "*", "÷" => "/", "−" => "-", "π" => "pi",
-            "sin" or "cos" or "tan" or "abs" or "ln" or "log" => key + "()", _ => key };
-        if (box.Text.Length - length + text.Length > 4096) return;
-        box.Text = box.Text.Remove(start, length).Insert(start, text);
-        box.SelectionStart = start + text.Length - (text.EndsWith("()") ? 1 : 0); box.SelectionLength = 0;
+        Guard(() =>
+        {
+            var edit = FormulaEditing.Apply(box.Text, box.SelectionStart, box.SelectionLength, key);
+            box.Text = edit.Text;
+            box.SelectionStart = edit.SelectionStart;
+            box.SelectionLength = edit.SelectionLength;
+        });
+    }
+
+    private void UpdateMathPreview()
+    {
+        if (_closed) return;
+        _inputMath.Visibility = !string.IsNullOrWhiteSpace(_input.Text) && _inputMath.SetExpression(_input.Text)
+            ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void DisposeWorkbench()
     {
         if (_closed) return;
-        _closed = true; StopAnimation(); _lifetime.Cancel(); _calculation?.Cancel(); _debounce.Stop();
+        _closed = true; StopAnimation(); _lifetime.Cancel(); _calculation?.Cancel(); _debounce.Stop(); _mathDebounce.Stop();
         Document.Changed -= QueueCalculation; _host.TargetChanged -= TargetChanged;
         _target?.Controller.ClearExtensionPreview(_previewOwner);
         _view.Dispose(); Handwriting.Dispose();

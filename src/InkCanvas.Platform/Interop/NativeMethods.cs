@@ -195,9 +195,9 @@ public static class NativeMethods
     [DllImport("gdi32.dll")] public static extern IntPtr SelectObject(IntPtr dc, IntPtr obj);
     [DllImport("gdi32.dll")] public static extern bool DeleteObject(IntPtr obj);
     [DllImport("gdi32.dll")] public static extern bool DeleteDC(IntPtr dc);
-    [DllImport("gdi32.dll")] public static extern bool BitBlt(IntPtr dst, int xd, int yd, int w, int h,
+    [DllImport("gdi32.dll", SetLastError = true)] public static extern bool BitBlt(IntPtr dst, int xd, int yd, int w, int h,
         IntPtr src, int xs, int ys, int rop);
-    [DllImport("gdi32.dll")] public static extern int GetDIBits(IntPtr dc, IntPtr bmp, uint start, uint lines,
+    [DllImport("gdi32.dll", SetLastError = true)] public static extern int GetDIBits(IntPtr dc, IntPtr bmp, uint start, uint lines,
         byte[] bits, ref BITMAPINFO bi, uint usage);
     [DllImport("gdi32.dll")] public static extern IntPtr CreateCompatibleBitmap(IntPtr dc, int w, int h);
 

@@ -70,6 +70,9 @@ public sealed class BoardWindow : Window
     private readonly Grid _contentRoot;
     private readonly Grid _windowedContent;
     private readonly Border _selectionPanel;
+    private readonly Border _pagePane;
+    internal BoardPageNavigator PageNavigator { get; }
+    internal bool PagePaneOpen => _pagePane.Visibility == Visibility.Visible;
 
     private readonly StackPanel _leftHost;
     private readonly StackPanel _centerHost;
@@ -105,6 +108,7 @@ public sealed class BoardWindow : Window
     private int _boardTheme = 2;
 
     private InkController _boundController;
+    private BoardPenPalette _boardPenPalette;
     private bool _isFullscreen;
     private bool _entrancePlayed;
     private bool _closed;
@@ -205,6 +209,7 @@ public sealed class BoardWindow : Window
             _selectionPanel.MaxWidth = Math.Max(1, _contentRoot.ActualWidth - 16);
             _selectionMeasureDirty = true;
             ApplyBoardScale(); PlaceSelectionPanel();
+            PageNavigator?.InvalidateAll();
         };
 
         WindowChrome.MakeBorderless(this, topmost: true, resizable: true);
@@ -212,15 +217,32 @@ public sealed class BoardWindow : Window
         {
             _surface.SuspendRendering();
             _drawingLayers.SuspendRendering();
+            PageNavigator?.SetSuspended(true);
         }, () =>
         {
             _surface.ResumeRendering();
             _drawingLayers.ResumeRendering();
             _paper.Invalidate();
+            PageNavigator?.SetSuspended(false);
         });
         // No contact rings / press-and-hold dots while touch-writing on the board (same set as the overlay).
         WindowChrome.SuppressTouchFeedback(this);
         _windowedContent = WindowChrome.AddTitleBar(this, Title, _contentRoot, closeButton: true, minMax: true);
+
+        PageNavigator = new BoardPageNavigator(_board,
+            () => new Vector2(Math.Max(1, (float)_surfaceHost.ActualWidth), Math.Max(1, (float)_surfaceHost.ActualHeight)),
+            NavigateToPage, InsertPage, DuplicatePage, DeleteCurrentPage);
+        _pagePane = new Border { Child = PageNavigator, Width = 244, HorizontalAlignment = HorizontalAlignment.Left,
+            BorderThickness = new Thickness(0, 0, 1, 0), Visibility = Visibility.Collapsed };
+        PageNavigator.CloseRequested += () => SetPagePaneOpen(false);
+        PageNavigator.ViewModeChanged += overview =>
+        {
+            _pagePane.Width = double.NaN;
+            _pagePane.HorizontalAlignment = overview ? HorizontalAlignment.Stretch : HorizontalAlignment.Left;
+            UpdatePagePaneLayout();
+        };
+        _contentRoot.SizeChanged += (_, _) => UpdatePagePaneLayout();
+        _contentRoot.Children.Add(_pagePane);
 
         _board.PageChanged += OnPageChanged;
         _board.BackgroundChanged += RefreshBackground;
@@ -328,15 +350,22 @@ public sealed class BoardWindow : Window
         indexText.Margin = new Thickness(0, 4, 0, 2);
         var caption = new TextBlock
         {
-            Text = "页码",
+            Text = "页面",
             FontSize = 12,
             Margin = new Thickness(0, 3, 0, 0),
             HorizontalAlignment = HorizontalAlignment.Center,
         };
         var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        stack.Children.Add(indexText);
+        stack.Children.Add(new Viewbox { Width = 52, Height = 23, Stretch = Stretch.Uniform,
+            StretchDirection = StretchDirection.DownOnly, Child = indexText });
         stack.Children.Add(caption);
-        var indicator = new Border { Width = 58, Height = 55, BorderThickness = border, Child = stack };
+        var openPages = new Button { Content = stack, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0),
+            BorderThickness = new Thickness(0), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
+        openPages.Click += (_, _) => SetPagePaneOpen(!PagePaneOpen);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(openPages, "页面管理与总览");
+        var indicator = new Border { Width = 58, Height = 55, BorderThickness = border, Child = openPages };
+        ToolTipService.SetToolTip(indicator, "页面管理与总览");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(indicator, "页面管理与总览");
         _indicatorBorders.Add(indicator);
         _indicatorTexts.Add(indexText);
         _indicatorTexts.Add(caption);
@@ -537,7 +566,7 @@ public sealed class BoardWindow : Window
     {
         if (ShowDetachedPanel(_inkOptionsFlyout)) return;
         if (_inkOptionsFlyout is not null && ReferenceEquals(_activeBoardFlyout, _inkOptionsFlyout)) { DismissBoardFlyout(); return; }
-        var palette = new BoardPenPalette(CurrentController, _services.Settings, _boardTheme);
+        var palette = _boardPenPalette = new BoardPenPalette(CurrentController, _services.Settings, _boardTheme);
         var flyout = new Flyout { Content = palette, Placement = FlyoutPlacementMode.Top };
         palette.SettingsChanged += () => { _services.ApplySettings(); _services.SaveSettings(); };
         palette.ColorPicked += () => { _services.RememberToolOptions(CurrentController); HideBoardFlyout(flyout); };
@@ -706,14 +735,34 @@ public sealed class BoardWindow : Window
 
     private void OnBoardKeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (e.OriginalSource is TextBox or ComboBox or Slider) return;
+        if (e.Handled) return;
+        if (InkCanvas.Platform.Interop.NativeMethods.GetKeyState(0x5B) < 0 || InkCanvas.Platform.Interop.NativeMethods.GetKeyState(0x5C) < 0) return;
         bool control = InkCanvas.Platform.Interop.NativeMethods.GetKeyState(0x11) < 0;
-        if (control && e.Key == Windows.System.VirtualKey.A) { CurrentController.SelectAll(); e.Handled = true; }
-        else if (e.Key == Windows.System.VirtualKey.Delete && CurrentController.HasSelection) { DeleteSelection(); e.Handled = true; }
-        else if (e.Key == Windows.System.VirtualKey.Escape)
+        bool shift = InkCanvas.Platform.Interop.NativeMethods.GetKeyState(0x10) < 0;
+        bool alt = InkCanvas.Platform.Interop.NativeMethods.GetKeyState(0x12) < 0;
+        e.Handled = TryHandleBoardShortcut(e.Key, control, shift, alt, e.OriginalSource as DependencyObject);
+    }
+
+    internal bool TryHandleBoardShortcut(Windows.System.VirtualKey key, bool control, bool shift, bool alt, DependencyObject source)
+    {
+        if (_closed || CurrentController.Tool == InkTool.Pan || KeyboardShortcutScope.IsTextInput(source)
+            || KeyboardShortcutScope.HasTextInputFocus(_contentRoot) || alt || shift) return false;
+        if (control && key == Windows.System.VirtualKey.Z) CurrentController.Undo();
+        else if (control && key == Windows.System.VirtualKey.Y) CurrentController.Redo();
+        else if (control && key == Windows.System.VirtualKey.E)
         {
-            DismissBoardFlyout(); CurrentController.EndPlayback(); CurrentController.CancelLassoErase(); CurrentController.ClearSelection(); e.Handled = true;
+            if (CurrentController.HasSelection) DeleteSelection();
+            else if (_shell is not null) _shell.ClearCanvas();
+            else _board.ClearCurrentPage();
         }
+        else if (control && key == Windows.System.VirtualKey.A) CurrentController.SelectAll();
+        else if (!control && key == Windows.System.VirtualKey.Delete && CurrentController.HasSelection) DeleteSelection();
+        else if (!control && key == Windows.System.VirtualKey.Escape)
+        {
+            DismissBoardFlyout(); CurrentController.EndPlayback(); CurrentController.CancelLassoErase(); CurrentController.ClearSelection();
+        }
+        else return false;
+        return true;
     }
 
     private void OnToolChanged()
@@ -957,6 +1006,7 @@ public sealed class BoardWindow : Window
             HideBoardFlyout(flyout); CurrentController.ViewTransform = Matrix3x2.Identity; CurrentController.Document.Touch();
         }));
         panel.Children.Add(navigation);
+        panel.Children.Add(MakeExtraButton("\uE8A5", "页面管理", () => { HideBoardFlyout(flyout); SetPagePaneOpen(true); }));
         if (_shell is not null)
         foreach (var commands in _shell.ExtensionCommands.Chunk(3))
         {
@@ -1127,7 +1177,8 @@ public sealed class BoardWindow : Window
             }
             float width = (float)Math.Min(_selectionDesiredSize.Width + 10, _contentRoot.ActualWidth - 16);
             float height = (float)Math.Min(_selectionDesiredSize.Height + 10, _contentRoot.ActualHeight - 16);
-            var work = new Rect(8, 8, (float)_contentRoot.ActualWidth - 8, (float)_contentRoot.ActualHeight - 8);
+            float left = PagePaneOpen && !PageNavigator.IsOverview ? (float)_pagePane.ActualWidth + 8 : 8;
+            var work = new Rect(left, 8, (float)_contentRoot.ActualWidth - 8, (float)_contentRoot.ActualHeight - 8);
             var dock = new Rect(0, (float)(_contentRoot.ActualHeight - _dock.ActualHeight), (float)_contentRoot.ActualWidth, (float)_contentRoot.ActualHeight);
             var place = FloatingToolbarLayout.Place(work, CurrentController.SelectionVisualBounds, dock, new Vector2(width, height));
             var margin = new Thickness(Math.Round(place.Left), Math.Round(place.Top), 0, 0);
@@ -1139,9 +1190,9 @@ public sealed class BoardWindow : Window
     private void CloneSelectionToNewPage()
     {
         if (!CurrentController.HasSelection) return;
-        if (_board.PageCount >= BoardService.MaximumPages)
+        if (!_board.CanAddPages())
         {
-            _ = ShowMessageAsync("已达到 99 页上限，无法衍至新页。");
+            _ = ShowMessageAsync("当前画板无法继续增加页面。");
             return;
         }
         AutoSaveCurrentPage("board-clone");
@@ -1293,10 +1344,13 @@ public sealed class BoardWindow : Window
         foreach (var panel in _toolPanels.Values) panel.Fit();
     }
 
+    internal void RefreshToolSettings() => _boardPenPalette?.RefreshNibMode();
+
     private void RefreshBackground()
     {
         DismissBoardFlyout();
         bool dark = _board.Background == BoardBackground.Black;
+        PageNavigator.ApplyTheme(dark ? 2 : 1);
         // WPF board cover: neutral #1F1F1F / #F2F2F2, independent of the application theme.
         _background.Background = new SolidColorBrush(dark
             ? Windows.UI.Color.FromArgb(255, 31, 31, 31)
@@ -1372,9 +1426,15 @@ public sealed class BoardWindow : Window
 
     private async Task ConfirmDeleteCurrentPageAsync()
     {
+        var target = CurrentController;
         if (!await ConfirmAsync("删除当前页", "删除当前页及其墨迹、图片和视频？此操作无法从其他页恢复。")) return;
-        AutoSaveCurrentPage("board-delete");
-        _board.RemoveCurrentPage();
+        if (_closed) return;
+        int index = _board.Pages.ToList().IndexOf(target);
+        if (index < 0) return;
+        var automation = _services.Settings.Automation;
+        if (automation.IsAutoSaveStrokesAtClear && target.Document.Count > automation.MinimumAutomationStrokeNumber)
+            _services.AutoSave.SaveSnapshot(target.Document.Strokes, "board-delete");
+        _board.RemovePage(index);
         UpdatePageNavigation();
     }
 
@@ -1412,12 +1472,46 @@ public sealed class BoardWindow : Window
         _nextR.Label.Text = nextLabel;
         ToolTipService.SetToolTip(_nextL.Button, nextLabel);
         ToolTipService.SetToolTip(_nextR.Button, nextLabel);
-        bool canNext = !atLast || _board.PageCount < BoardService.MaximumPages;
+        bool canNext = !atLast || _board.CanAddPages();
         SetCellEnabled(_prevL, _board.CurrentIndex > 0);
         SetCellEnabled(_prevR, _board.CurrentIndex > 0);
         SetCellEnabled(_nextL, canNext);
         SetCellEnabled(_nextR, canNext);
-        SetCellEnabled(_addR, _board.PageCount < BoardService.MaximumPages);
+        SetCellEnabled(_addR, _board.CanAddPages());
+    }
+
+    internal void SetPagePaneOpen(bool open)
+    {
+        if (_closed) return;
+        DismissBoardFlyout();
+        _pagePane.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+        if (!open) PageNavigator.SetOverview(false);
+        PageNavigator.SetOpen(open);
+        UpdatePagePaneLayout();
+        PlaceSelectionPanel();
+    }
+
+    private void UpdatePagePaneLayout()
+    {
+        if (_pagePane is null) return;
+        _pagePane.Width = PageNavigator.IsOverview ? double.NaN : Math.Min(244, Math.Max(120, _contentRoot.ActualWidth));
+        _pagePane.MaxHeight = Math.Max(120, _contentRoot.ActualHeight - Math.Max(60, _dock.ActualHeight) - 8);
+        _pagePane.VerticalAlignment = VerticalAlignment.Top;
+        _pagePane.BorderBrush = _barBorder;
+    }
+
+    private void NavigateToPage(int index)
+    {
+        if (index < 0 || index >= _board.PageCount || index == _board.CurrentIndex || CurrentController.HasActiveInteraction) return;
+        AutoSaveCurrentPage("board-page-navigate");
+        _board.GoTo(index);
+    }
+
+    private void DuplicatePage()
+    {
+        if (CurrentController.HasActiveInteraction) return;
+        AutoSaveCurrentPage("board-page-duplicate");
+        _board.DuplicateCurrentPage();
     }
 
     private void UpdateUndoRedo()
@@ -1434,6 +1528,8 @@ public sealed class BoardWindow : Window
     private void BindPage()
     {
         _imageImportCancellation?.Cancel();
+        _mediaImportCancellation?.Cancel();
+        _boardPenPalette = null;
         foreach (var window in _toolPanels.Values.ToArray()) window.Close();
         DismissBoardFlyout();
         _boundController?.CancelLassoErase();
@@ -1493,6 +1589,7 @@ public sealed class BoardWindow : Window
             if (_paper.RenderTransform is not MatrixTransform matrix) _paper.RenderTransform = matrix = new MatrixTransform();
             matrix.Matrix = ToUiMatrix(t);
             _viewScale = ExtractScale(t);
+            PageNavigator.InvalidateCurrent();
         }
         if (_board.Current.Playback is not null || _board.Current.IsMarqueeSelecting || _board.Current.IsRotatingSelection)
             _selectionPanel.Visibility = Visibility.Collapsed;
@@ -1699,7 +1796,9 @@ public sealed class BoardWindow : Window
         foreach (var window in _toolPanels.Values.ToArray()) window.Close();
         CurrentController.EndPlayback();
         _closed = true;
+        PageNavigator.Dispose();
         _imageImportCancellation?.Cancel();
+        _mediaImportCancellation?.Cancel();
         DismissBoardFlyout(); _surface.InputBegan -= OnCanvasInputBegan;
         _boundController?.CancelLassoErase();
         FinishSelectionPointers();
@@ -1771,25 +1870,24 @@ public sealed class BoardWindow : Window
     }
 
     private bool _mediaPicking;
+    private CancellationTokenSource _mediaImportCancellation;
 
-    private async Task InsertMediaAsync()
+    internal async Task InsertMediaAsync()
     {
         if (_mediaPicking) return;
         _mediaPicking = true;
+        using var cancellation = new CancellationTokenSource();
+        _mediaImportCancellation = cancellation;
         var page = CurrentController;
         try
         {
-            var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.VideosLibrary };
-            foreach (string extension in MediaImport.Extensions) picker.FileTypeFilter.Add(extension);
-            InitializeWithWindow.Initialize(picker, WindowChrome.GetHwnd(this));
-            var file = await picker.PickSingleFileAsync();
-            if (file is null) return;
             var viewport = new Vector2((float)_surface.ActualWidth, (float)_surface.ActualHeight);
-            var asset = await MediaImport.LoadAsync(file, viewport, page.ViewTransform);
-            if (!_closed && ReferenceEquals(page, CurrentController)) InsertMedia(asset);
+            var asset = await MediaImport.PickAsync(this, viewport, page.ViewTransform, cancellation.Token);
+            if (asset is not null && await ImageImport.WaitForCanvasAsync(page, () => !_closed && ReferenceEquals(page, CurrentController), cancellation.Token)) InsertMedia(asset);
         }
+        catch (OperationCanceledException) { }
         catch (Exception ex) { if (!_closed) await ShowMessageAsync($"视频插入失败：{ex.Message}"); }
-        finally { _mediaPicking = false; }
+        finally { _mediaPicking = false; if (ReferenceEquals(_mediaImportCancellation, cancellation)) _mediaImportCancellation = null; }
     }
 
     internal void InsertMedia(BoardMediaAsset asset)
@@ -1803,7 +1901,7 @@ public sealed class BoardWindow : Window
         var picker = CreateSavePicker("画板页面", ".icink", $"Page-{_board.CurrentIndex + 1}.icink");
         var file = await picker.PickSaveFileAsync();
         if (file is null) return;
-        try { _board.SavePage(file.Path); }
+        try { await _board.SavePageAsync(file.Path); }
         catch (Exception ex) { await ShowMessageAsync($"页面保存失败：{ex.Message}"); }
     }
 
@@ -1812,7 +1910,7 @@ public sealed class BoardWindow : Window
         var picker = CreateSavePicker("画板文件", ".icink", "InkCanvas-Board.icink");
         var file = await picker.PickSaveFileAsync();
         if (file is null) return;
-        try { _board.SaveBoard(file.Path); }
+        try { await _board.SaveBoardAsync(file.Path); }
         catch (Exception ex) { await ShowMessageAsync($"画板保存失败：{ex.Message}"); }
     }
 

@@ -30,6 +30,7 @@ public sealed class InkSurface : UserControl, IDisposable
     /// <summary>Lets a continuous document bind the touched page before its first sample.</summary>
     public event Action<OverlayPointer> InputStarting;
     public event Action InputEnded;
+    public event Action InputCanceled;
     public bool DrawCommitted { get; set; } = true;
     /// <summary>Optional page extent in document coordinates. Null keeps an infinite canvas.</summary>
     public InkCanvas.Core.Ink.Rect? ContentBounds { get; set; }
@@ -208,6 +209,7 @@ public sealed class InkSurface : UserControl, IDisposable
         // Capture-lost may no longer carry a current point, and follows normal up too.
         if (_activePointers.Remove(e.Pointer.PointerId, out var last))
         {
+            InputCanceled?.Invoke();
             _controller.OnPointerCanceled(last);
             if (_activePointers.Count == 0) InputEnded?.Invoke();
         }

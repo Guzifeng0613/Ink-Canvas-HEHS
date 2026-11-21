@@ -559,8 +559,9 @@ public sealed partial class SettingsWindow : Window
                 _content.Children.Add(ToggleRow("进入“希沃白板”时自动收纳", () => S.Automation.IsAutoFoldInEasiNote,
                     v => S.Automation.IsAutoFoldInEasiNote = v));
                 _content.Children.Add(Require(ToggleRow("自动收纳忽略桌面EN批注窗口", () => S.Automation.IsAutoFoldInEasiNoteIgnoreDesktopAnno,
-                    value => S.Automation.IsAutoFoldInEasiNoteIgnoreDesktopAnno = value), () =>
-                        S.Automation.IsAutoFoldInEasiNote || S.Automation.IsAutoFoldInEasiNote3C ? null : "请先启用希沃白板或希沃轻白板自动收纳。"));
+                    value => S.Automation.IsAutoFoldInEasiNoteIgnoreDesktopAnno = value,
+                    note: "应用于希沃白板的空标题小型桌面批注窗口。"), () =>
+                        S.Automation.IsAutoFoldInEasiNote ? null : "请先启用希沃白板自动收纳。"));
                 _content.Children.Add(ToggleRow("进入“希沃视频展台”时自动收纳", () => S.Automation.IsAutoFoldInEasiCamera,
                     v => S.Automation.IsAutoFoldInEasiCamera = v));
                 _content.Children.Add(ToggleRow("进入“希沃轻白板”时自动收纳", () => S.Automation.IsAutoFoldInEasiNote3C,

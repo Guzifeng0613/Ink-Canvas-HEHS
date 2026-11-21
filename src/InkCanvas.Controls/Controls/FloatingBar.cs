@@ -28,6 +28,7 @@ public interface IShellActions
     void OpenPenPalette(bool highlighter);
     void OpenShapePicker();
     void InsertImage();
+    void InsertVideo() { }
     Task ScreenshotAsync();
     bool ClearCanvas() => false;
     void ToggleFold();
@@ -480,6 +481,7 @@ public sealed class FloatingBar : UserControl
         AddMore(row2, Glyphs.OpenStrokes, "打开墨迹", () => Shell?.OpenStrokes());
         AddMore(row2, Glyphs.ReplayWpf, "播放墨迹", () => Shell?.OpenReplay());
         AddMore(row2, Glyphs.InsertMedia, "插入图片", () => Shell?.InsertImage());
+        AddMore(row2, Glyphs.Video, "插入视频", () => Shell?.InsertVideo());
         var row3 = MoreRow();
         AddMore(row3, Glyphs.Camera, "截屏", async () => { if (Shell is not null) await Shell.ScreenshotAsync(); });
         AddMore(row3, Glyphs.GuideWpf, "指南", () => Shell?.OpenGuide());

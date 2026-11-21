@@ -17,6 +17,9 @@ public sealed class BoardPenPalette : UserControl
     private readonly SolidColorBrush _border;
     private readonly List<(Button Button, OriginalMenuCatalog.Swatch Swatch, bool Highlighter, FontIcon Check)> _swatches = new();
     private bool _lightColors;
+    private readonly FrameworkElement _nibModeRow;
+    private readonly ToggleSwitch _nibMode;
+    private bool _refreshingNibMode;
     private readonly PenStrokePreview _penPreview = new() { PreviewHeight = 60 };
     private readonly PenStrokePreview _highlighterPreview = new() { PreviewHeight = 96 };
     private readonly PenStylePicker _styles = new();
@@ -49,6 +52,8 @@ public sealed class BoardPenPalette : UserControl
         };
         Add(options, Text("书写笔迹", 12), 0, 0);
         var nibMode = Toggle("笔尖模式", settings.Startup.IsEnableNibMode, value => settings.Startup.IsEnableNibMode = value);
+        _nibModeRow = nibMode;
+        _nibMode = ((StackPanel)nibMode).Children.OfType<ToggleSwitch>().Single();
         nibMode.Visibility = settings.Appearance.IsEnableDisPlayNibModeToggler ? Visibility.Visible : Visibility.Collapsed;
         Add(options, nibMode, 0, 1);
         var width = new Slider { Minimum = 1, Maximum = 30, StepFrequency = 1,
@@ -136,8 +141,19 @@ public sealed class BoardPenPalette : UserControl
         var toggle = new ToggleSwitch { IsOn = value, OnContent = "", OffContent = "", MinWidth = 0, Width = 44,
             RenderTransform = new ScaleTransform { ScaleX = 0.8, ScaleY = 0.8 }, RenderTransformOrigin = new(0, 0.5) };
         AutomationProperties.SetName(toggle, name);
-        toggle.Toggled += (_, _) => { update(toggle.IsOn); NotifySettingsChanged(); };
+        toggle.Toggled += (_, _) => { if (!_refreshingNibMode) { update(toggle.IsOn); NotifySettingsChanged(); } };
         return Row(name, toggle);
+    }
+
+    public void RefreshNibMode()
+    {
+        _refreshingNibMode = true;
+        try
+        {
+            _nibMode.IsOn = _settings.Startup.IsEnableNibMode;
+            _nibModeRow.Visibility = _settings.Appearance.IsEnableDisPlayNibModeToggler ? Visibility.Visible : Visibility.Collapsed;
+        }
+        finally { _refreshingNibMode = false; }
     }
     private StackPanel Row(string label, UIElement control)
     {

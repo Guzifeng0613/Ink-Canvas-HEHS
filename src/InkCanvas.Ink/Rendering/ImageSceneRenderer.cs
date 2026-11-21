@@ -32,14 +32,17 @@ public sealed class ImageSceneRenderer : IDisposable
     public int CachedBitmapCount => _images.Values.Count(entry => entry.Bitmap is not null || entry.Vector is not null);
     public int CachedVectorCount => _images.Values.Count(entry => entry.Vector is not null);
     public event Action Changed;
+    public uint MaximumDecodeDimension { get; init; }
 
     public static IEnumerable<IImageSelectionElement> Images(InkController controller) =>
         controller.GetSelectableElements?.Invoke().OfType<IImageSelectionElement>()
             .Where(image => image.IsPresent && image.ImageData is { Length: > 0 }) ?? Enumerable.Empty<IImageSelectionElement>();
 
-    public async Task PrepareAsync(CanvasDevice device, InkController controller)
+    public Task PrepareAsync(CanvasDevice device, InkController controller) => PrepareAsync(device, Images(controller));
+
+    public async Task PrepareAsync(CanvasDevice device, IEnumerable<IImageSelectionElement> images)
     {
-        var loads = Images(controller).Select(image => Get(device, image).Loading).Distinct().ToArray();
+        var loads = images.Select(image => Get(device, image).Loading).Distinct().ToArray();
         await Task.WhenAll(loads);
     }
 
@@ -145,8 +148,16 @@ public sealed class ImageSceneRenderer : IDisposable
                 using var managed = new MemoryStream(entry.Data, writable: false);
                 using var stream = managed.AsRandomAccessStream();
                 var decoder = await BitmapDecoder.CreateAsync(stream);
+                var transform = new BitmapTransform();
+                uint extent = Math.Max(decoder.PixelWidth, decoder.PixelHeight);
+                if (MaximumDecodeDimension > 0 && extent > MaximumDecodeDimension)
+                {
+                    double scale = (double)MaximumDecodeDimension / extent;
+                    transform.ScaledWidth = Math.Max(1, (uint)Math.Round(decoder.PixelWidth * scale));
+                    transform.ScaledHeight = Math.Max(1, (uint)Math.Round(decoder.PixelHeight * scale));
+                }
                 using var software = await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied,
-                    new BitmapTransform(), ExifOrientationMode.RespectExifOrientation, ColorManagementMode.ColorManageToSRgb);
+                    transform, ExifOrientationMode.RespectExifOrientation, ColorManagementMode.ColorManageToSRgb);
                 return (Bitmap: CanvasBitmap.CreateFromSoftwareBitmap(device, software), Vector: (CanvasSvgDocument)null, Size: Vector2.Zero);
             });
             if (!IsCurrent(entry))

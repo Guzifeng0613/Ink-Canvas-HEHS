@@ -1,4 +1,5 @@
 using InkCanvas.Core.Ink;
+using InkCanvas.Core.Shapes;
 
 namespace InkCanvas.Core.Replay;
 
@@ -23,7 +24,7 @@ public sealed class InkReplaySession
 
     public InkReplaySession(IEnumerable<InkStroke> strokes, float msPerPoint = 12f)
     {
-        _source = strokes.ToList();
+        _source = strokes.SelectMany(ShapeDefinition.RenderContours).ToList();
         _cumulative = new List<float>();
         _shapeDistances = new float[_source.Count][];
         float acc = 0;
@@ -71,7 +72,7 @@ public sealed class InkReplaySession
             int take = Math.Clamp((int)(source.Count * (elapsedMs - start) / Math.Max(1, end - start)), Math.Min(1, source.Count), source.Count);
             if (_partialIndex != i)
             {
-                _partial = new InkStroke(source.Attributes.Clone()) { IsRecognizedShape = source.IsRecognizedShape };
+                _partial = new InkStroke(source.Attributes.Clone()) { IsRecognizedShape = source.IsRecognizedShape, ShapeSource = source.ShapeSource };
                 // Interpolation can revise the final segment without adding a point.
                 // Keep it out of the renderer's append-only live geometry cache.
                 if (_shapeDistances[i] is not null) _partial.Complete();
@@ -108,7 +109,7 @@ public sealed class InkReplaySession
 
             float fraction = (elapsedMs - start) / Math.Max(1f, end - start);
             int take = Math.Max(1, (int)(src.Count * fraction));
-            var partial = new InkStroke(src.Attributes.Clone()) { IsRecognizedShape = src.IsRecognizedShape };
+            var partial = new InkStroke(src.Attributes.Clone()) { IsRecognizedShape = src.IsRecognizedShape, ShapeSource = src.ShapeSource };
             if (_shapeDistances[i] is not null)
             {
                 if (elapsedMs <= start) break;

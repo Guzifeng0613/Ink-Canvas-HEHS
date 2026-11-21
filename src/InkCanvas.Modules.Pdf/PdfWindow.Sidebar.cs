@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Numerics;
 using InkCanvas.Core.Ink;
+using InkCanvas.Controls.Controls;
 using InkCanvas.Ink.Rendering;
 using InkCanvas.Pdf;
 using Microsoft.Graphics.Canvas;
@@ -22,6 +23,7 @@ public sealed partial class PdfWindow
         TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 2, TextWrapping = TextWrapping.Wrap };
     private readonly Dictionary<int, ThumbnailItem> _realizedThumbnails = new();
     private bool _sidebarUserSet;
+    private TouchIconButton _sidebarToggle;
     private int _searchIndex = -1;
     public bool SidebarOpen => _split.IsPaneOpen;
     internal SplitViewDisplayMode SidebarMode => _split.DisplayMode;
@@ -40,6 +42,20 @@ public sealed partial class PdfWindow
             set { _preview = value; PropertyChanged?.Invoke(this, new(nameof(Preview))); }
         }
         public event PropertyChangedEventHandler PropertyChanged;
+    }
+
+    private StackPanel CreateSidebarHeader()
+    {
+        var header = new Grid { Margin = new Thickness(12, 4, 4, 0) };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.Children.Add(new TextBlock { Text = "文档导航", FontSize = 16, VerticalAlignment = VerticalAlignment.Center });
+        var collapse = Command("收起", "\uE76B", () => SetSidebarOpen(false));
+        AutomationProperties.SetName(collapse, "收起 PDF 侧栏");
+        Grid.SetColumn(collapse, 1); header.Children.Add(collapse);
+        var panel = new StackPanel();
+        panel.Children.Add(header); panel.Children.Add(_search);
+        return panel;
     }
 
     private void ConfigureSidebar()
@@ -86,14 +102,15 @@ public sealed partial class PdfWindow
             </DataTemplate>
             """);
         _root.SizeChanged += (_, _) => UpdateSidebarLayout();
-        _split.PaneClosed += (_, _) => SuspendThumbnails();
-        _split.PaneOpened += (_, _) => RefreshThumbnails();
+        _split.PaneClosed += (_, _) => { _sidebarToggle.IsSelected = false; SuspendThumbnails(); };
+        _split.PaneOpened += (_, _) => { _sidebarToggle.IsSelected = true; RefreshThumbnails(); };
     }
 
     public void SetSidebarOpen(bool open)
     {
         _sidebarUserSet = true;
         _split.IsPaneOpen = open;
+        _sidebarToggle.IsSelected = open;
     }
 
     private void UpdateSidebarLayout()
@@ -108,6 +125,7 @@ public sealed partial class PdfWindow
             _split.IsPaneOpen = false;
         }
         if (!_sidebarUserSet && _root.ActualWidth > 0) _split.IsPaneOpen = _root.ActualWidth >= 760;
+        _sidebarToggle.IsSelected = _split.IsPaneOpen;
     }
 
     private void SuspendThumbnails()

@@ -181,6 +181,8 @@ public sealed class InkDocument
                 hit = SegmentIntersectsRect(previous, current, rect);
                 previous = current;
             }
+            if (!hit && s.ShapeSource?.Geometry?.IsFill == true && Matrix3x2.Invert(worldToView, out var inverse))
+                hit = s.DistanceTo(Vector2.Transform(rect.Center, inverse)) == 0;
             if (hit) hits.Add(s);
         }
         return hits;

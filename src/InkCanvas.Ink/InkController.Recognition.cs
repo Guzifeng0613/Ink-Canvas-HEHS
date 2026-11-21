@@ -213,7 +213,17 @@ public sealed partial class InkController
             }
             shapes = new() { ShapeGenerator.Stroke(attrs, corners.Append(corners[0]).ToArray()) };
         }
-        var group = shapes.Count > 1 ? new ShapeSource(Guid.NewGuid(), "ink-to-shape", result.Shape.ToString()) : null;
+        ShapeSource group;
+        if (result.Shape is RecognizedShape.Triangle or RecognizedShape.Rectangle or RecognizedShape.Parallelogram)
+        {
+            var kind = result.Shape == RecognizedShape.Triangle ? ShapeKind.Triangle
+                : result.Shape == RecognizedShape.Parallelogram ? ShapeKind.Parallelogram : ShapeKind.Rectangle;
+            group = ShapeSource.FromGeometry(Guid.NewGuid(), new ShapeDefinition { Kind = kind,
+                Parameters = new[] { corners[0].X, corners[0].Y, corners[2].X, corners[2].Y },
+                Vertices = corners.SelectMany(point => new[] { point.X, point.Y }).ToArray() });
+        }
+        else group = shapes.FirstOrDefault()?.ShapeSource?.Geometry is not null && shapes.Select(s => s.ShapeSource?.GroupId).Distinct().Count() == 1
+            ? shapes[0].ShapeSource : new ShapeSource(Guid.NewGuid(), "ink-to-shape", result.Shape.ToString());
         foreach (var shape in shapes)
         {
             shape.IsRecognizedShape = true; shape.ShapeSource = group; shape.Complete();

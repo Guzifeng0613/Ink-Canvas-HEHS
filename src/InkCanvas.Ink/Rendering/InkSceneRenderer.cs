@@ -20,7 +20,10 @@ public sealed class InkSceneRenderer : IDisposable
 {
     public StrokeRenderer Strokes { get; } = new();
     private readonly StrokeRenderer _extensionStrokes = new();
-    public ImageSceneRenderer Images { get; } = new();
+    public ImageSceneRenderer Images { get; }
+
+    public InkSceneRenderer() : this(0) { }
+    public InkSceneRenderer(uint maximumImageDimension) => Images = new() { MaximumDecodeDimension = maximumImageDimension };
 
     public bool ShowSelectionOutline { get; set; } = true;
 
@@ -157,6 +160,16 @@ public sealed class InkSceneRenderer : IDisposable
             session.DrawRectangle(topLeft.X, topLeft.Y, bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y, accent, scale, dash);
         }
         if (!controller.HasSelection) return;
+        if (controller.ShapeControlPoints.Count > 0)
+        {
+            foreach (var control in controller.ShapeControlPoints)
+            {
+                var point = Surface(Vector2.Transform(control, controller.ViewTransform));
+                session.FillRectangle(point.X - 5 * scale, point.Y - 5 * scale, 10 * scale, 10 * scale, fill);
+                session.DrawRectangle(point.X - 5 * scale, point.Y - 5 * scale, 10 * scale, 10 * scale, accent, 1.5f * scale);
+            }
+            return;
+        }
         var frame = controller.SelectionFrame;
         var corners = frame.Corners(controller.ViewTransform).Select(Surface).ToArray();
         for (int i = 0; i < 4; i++)

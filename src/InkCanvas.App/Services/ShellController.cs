@@ -64,8 +64,10 @@ public sealed partial class ShellController : IShellActions, IDisposable
         services.SettingsApplied += ApplyDocumentSettings;
         _dispatcher = DispatcherQueue.GetForCurrentThread();
         Overlay = new OverlayHost(services.OverlayInk);
+        Overlay.InteractionChanged += RefreshShortcutRegistration;
         Overlay.ConfigureDisplays(services.Settings.Display);
         services.SettingsApplied += ApplyDisplaySettings;
+        services.SettingsApplied += RefreshPaletteNibModes;
         Overlay.Window.DisplaySettingsChanged += QueueDisplayRefresh;
         _screens = ScreenService.All();
         services.StartModules(new ScreenTrackingHost(services, Overlay, () => _board is not null || DocumentActive), new DocumentHost(this), new CanvasToolsHost(this));
@@ -127,6 +129,9 @@ public sealed partial class ShellController : IShellActions, IDisposable
 
     private void NotifyWindowOpened(Window w)
     {
+        w.Activated += (_, _) => RefreshShortcutRegistration();
+        if (w.Content is FrameworkElement root)
+            root.GotFocus += (_, _) => RefreshShortcutRegistration();
         if (w is SettingsWindow or CountdownWindow or LotteryWindow or InfoWindow)
         {
             var owner = _documentWorkspace?.Window ?? (Window)_board ?? _bar;
@@ -146,15 +151,16 @@ public sealed partial class ShellController : IShellActions, IDisposable
         });
     }
 
-    private void RefreshDisplays()
+    private void RefreshDisplays() => RefreshDisplays(ScreenService.All());
+
+    internal void RefreshDisplays(IReadOnlyList<ScreenInfo> screens)
     {
         _lastDisplayCheck = Environment.TickCount64;
-        var screens = ScreenService.All();
+        if (screens.Count == 0) return;
         if (_screens.SequenceEqual(screens)) return;
         try
         {
-            Overlay.RefreshDisplayBounds();
-            Overlay.ConfigureDisplays(Services.Settings.Display);
+            Overlay.RefreshDisplayBounds(screens);
             _bar?.RefreshDisplayPlacement();
             _palette?.RefreshDisplayPlacement();
             foreach (var palette in _detachedPalettes) palette.RefreshDisplayPlacement();
@@ -167,7 +173,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
                     WindowChrome.KeepVisible(window);
             QueueDesktopSelection();
             Services.Modules.Invoke<IScreenTrackingService>(tracking => tracking.Refresh());
-            _screens = screens;
+            _screens = screens.ToArray();
         }
         catch (Exception ex)
         {
@@ -238,6 +244,10 @@ public sealed partial class ShellController : IShellActions, IDisposable
         WindowChrome.ShowWithoutActivation(_bar);
 
         Services.OverlayInk.Invalidated += QueueDesktopSelection;
+        Services.OverlayInk.Invalidated += QueueDesktopMedia;
+        Services.ScreenImages.ImagesChanged += QueueDesktopMedia;
+        Services.ScreenImages.PageChanged += QueueDesktopMedia;
+        Services.ScreenImages.MediaPlacementChanged += OnDesktopMediaPlacement;
         Services.OverlayInk.SelectionChanged += QueueDesktopSelection;
         _bar.AppWindow.Changed += OnBarWindowChanged;
 
@@ -281,8 +291,12 @@ public sealed partial class ShellController : IShellActions, IDisposable
                 if (!DocumentActive && _board is null && Overlay.ClickThrough) ToggleClickThrough();
                 ActiveController.Tool = InkTool.Pen;
                 if (active) OpenPenPalette(false);
-            });
+            },
+            editingEnabled: () => CanvasShortcutsEnabled,
+            overlayEditingEnabled: () => OverlayShortcutsEnabled,
+            presentationEnabled: () => PresentationShortcutsEnabled);
 
+        StartShortcutTracking();
         _pollTimer.Start();
 
         // Delete-selection changes the button count; FloatingBar raises LayoutChanged for this.
@@ -354,6 +368,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
     /// <summary>Auto-revert to pen changes Tool outside bar clicks; keep the bar selection in sync.</summary>
     private void OnControllerToolChanged()
     {
+        RefreshShortcutRegistration();
         if (_bar is not null) _bar.Bar.ClickThroughActive = DocumentActive ? ActiveController.Tool == InkTool.Pan : Overlay.ClickThrough;
         _bar?.Bar.RefreshSelection();
         QueueDesktopSelection();
@@ -435,7 +450,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
         // Capture screen pixels synchronously before the COM navigation mutates the slideshow.
         try
         {
-            var area = ScreenService.FromWindow(request.Snapshot.WindowHandle).Bounds;
+            var area = request.Snapshot.WindowHandle != IntPtr.Zero
+                ? ScreenService.FromWindow(request.Snapshot.WindowHandle).Bounds : GetScreenshotBounds();
             var (pixels, width, height) = ScreenshotService.Capture(area.X, area.Y, area.Width, area.Height);
             if (width <= 0 || height <= 0) return;
             string path = request.SuggestedPath;
@@ -475,6 +491,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         // previously folded automatically.
         if (_documentWorkspace is null) ApplyAutoFold();
         RaiseChromeAboveOverlay();
+        RefreshShortcutRegistration();
     }
 
     private bool _presentationRefreshQueued, _refreshingPresentation;
@@ -582,6 +599,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
             foreach (var panel in _board.ToolPanels) WindowChrome.EnsureAbove(panel, Overlay.Window.Handle);
         foreach (var window in _documentWindows) if (!ReferenceEquals(window, _documentWorkspace?.Window) && window.AppWindow.IsVisible) WindowChrome.EnsureAbove(window, Overlay.Window.Handle);
         UpdateSettingsDrawingOrder();
+        RefreshDesktopMedia();
     }
 
     private void UpdatePptNavigation(PptSnapshot snapshot)
@@ -633,6 +651,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
         var foreground = ForegroundWindowService.DescribeForeground();
         var a = Services.Settings.Automation;
         bool fold = Core.Settings.AutomationPolicy.ShouldFold(a, foreground.Process, foreground.Title, foreground.Height, _lastSlideShowState);
+        if (!fold && a.IsAutoFoldInOldZyBoard)
+            fold = WindowEnumerator.WindowExists("WhiteBoard - DrawingWindow") || WindowEnumerator.WindowExists("InstantAnnotationWindow");
 
         if (fold != _lastAutoFoldRequested)
         {
@@ -662,6 +682,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
     {
         CloseDetachedPalettes();
         _imageImportCancellation?.Cancel();
+        _videoImportCancellation?.Cancel();
         _selectionToolbar?.Hide();
         _replay?.Close();
         if (_board is null)
@@ -850,6 +871,17 @@ public sealed partial class ShellController : IShellActions, IDisposable
 
     private void ApplyDisplaySettings() => Overlay.ConfigureDisplays(Services.Settings.Display);
 
+    private void RefreshPaletteNibModes()
+    {
+        _board?.RefreshToolSettings();
+        if (_palette is not null) ConfigurePaletteNibMode(_palette);
+        foreach (var palette in _detachedPalettes) ConfigurePaletteNibMode(palette);
+    }
+
+    private void ConfigurePaletteNibMode(PenPaletteWindow palette) => palette.ConfigureNibMode(
+        Services.Settings.Appearance.IsEnableDisPlayNibModeToggler, Services.Settings.Startup.IsEnableNibMode,
+        value => { Services.Settings.Startup.IsEnableNibMode = value; Services.ApplySettings(); Services.SaveSettings(); });
+
     public void OpenTimer()
     {
         if (_countdown is not null) { _countdown.Activate(); return; }
@@ -1015,7 +1047,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
             WinRT.Interop.InitializeWithWindow.Initialize(picker, WindowChrome.GetHwnd((Window)_board ?? _bar));
             var file = await picker.PickSaveFileAsync();
             if (file is null) return;
-            (_board is not null ? Services.Board : Services.ScreenImages).SavePage(file.Path);
+            await (_board is not null ? Services.Board : Services.ScreenImages).SavePageAsync(file.Path);
         }
         catch (Exception ex)
         {
@@ -1137,8 +1169,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
             AttributesChanged = () => { Services.RememberToolOptions(controller); _bar?.Bar.RefreshSelection(); },
         };
         NotifyWindowOpened(_palette);
-        _palette.ConfigureNibMode(Services.Settings.Appearance.IsEnableDisPlayNibModeToggler, Services.Settings.Startup.IsEnableNibMode,
-            value => { Services.Settings.Startup.IsEnableNibMode = value; Services.ApplySettings(); Services.SaveSettings(); });
+        ConfigurePaletteNibMode(_palette);
         var openedPalette = _palette;
         _palette.Closed += (_, _) =>
         {
@@ -1186,11 +1217,17 @@ public sealed partial class ShellController : IShellActions, IDisposable
         WindowChrome.EnsureAbove(_shapePicker);
     }
 
+    internal ScreenRect GetScreenshotBounds()
+    {
+        var workspace = _documentWorkspace?.Window ?? (Window)_board;
+        return workspace is not null ? ScreenService.FromWindow(WindowChrome.GetHwnd(workspace)).Bounds : ScreenService.Virtual;
+    }
+
     public async Task ScreenshotAsync()
     {
         try
         {
-            var screen = ScreenService.FromWindow(WindowChrome.GetHwnd(_documentWorkspace?.Window ?? (Window)_board ?? _bar)).Bounds;
+            var screen = GetScreenshotBounds();
             string dir = Path.Combine(Services.Settings.Automation.AutoSavedStrokesLocation, "Screenshots");
             await ScreenshotService.CaptureToFileAsync(dir, screen.X, screen.Y, screen.Width, screen.Height,
                 Services.Settings.Automation.IsSaveScreenshotsInDateFolders);
@@ -1198,9 +1235,9 @@ public sealed partial class ShellController : IShellActions, IDisposable
             if (Services.Settings.Automation.IsAutoSaveStrokesAtScreenshot)
                 Services.AutoSave.SaveSnapshot(ActiveController.Document.Strokes, "screenshot");
         }
-        catch
+        catch (Exception ex)
         {
-            // Capture can fail on a locked-down desktop; never take the app down for it.
+            Core.Diagnostics.FileLog.WriteLogToFile($"Screenshot: {ex.Message}", Core.Diagnostics.LogType.Error);
         }
     }
 
@@ -1351,18 +1388,28 @@ public sealed partial class ShellController : IShellActions, IDisposable
     public void Dispose()
     {
         if (_disposed) return; _disposed = true;
+        StopShortcutTracking();
+        Overlay.InteractionChanged -= RefreshShortcutRegistration;
         StopDocumentForegroundTracking();
         foreach (var notice in _notices.ToArray()) notice.Close();
         _updateWindow?.Close();
         foreach (var palette in _detachedPalettes.ToArray()) palette.Close();
         _imageImportCancellation?.Cancel();
+        _videoImportCancellation?.Cancel();
         Services.Plugins.Changed -= OnExtensionCommandsChanged;
         Services.Modules.Changed -= OnExtensionCommandsChanged;
         Services.SettingsApplied -= ApplyDocumentSettings;
         Services.SettingsApplied -= ApplyDisplaySettings;
+        Services.SettingsApplied -= RefreshPaletteNibModes;
         Services.Plugins.Dispose();
         Services.Modules.Dispose();
         Services.OverlayInk.Invalidated -= QueueDesktopSelection;
+        Services.OverlayInk.Invalidated -= QueueDesktopMedia;
+        Services.ScreenImages.ImagesChanged -= QueueDesktopMedia;
+        Services.ScreenImages.PageChanged -= QueueDesktopMedia;
+        Services.ScreenImages.MediaPlacementChanged -= OnDesktopMediaPlacement;
+        foreach (var video in _desktopVideos.Values) video.Close();
+        _desktopVideos.Clear();
         Services.OverlayInk.SelectionChanged -= QueueDesktopSelection;
         if (_bar is not null) _bar.AppWindow.Changed -= OnBarWindowChanged;
         if (_bar is not null) _bar.Bar.LayoutChanged -= OnBarLayoutChanged;

@@ -249,11 +249,14 @@ public sealed class InkStroke
         _boundsDirty = true;
         GeometryVersion++;
         _objectFrame = frame with { Transform = frame.Transform * m };
+        if (ShapeSource?.Geometry is { } geometry)
+            ShapeSource = ShapeSource.FromGeometry(ShapeSource.GroupId, geometry.Transformed(m));
     }
 
     /// <summary>Shortest distance from a point to this stroke's centreline.</summary>
     public float DistanceTo(Vector2 p)
     {
+        if (ShapeSource?.Geometry?.IsFill == true && ContainsPolygon(p)) return 0;
         if (_points.Count == 0) return float.MaxValue;
         if (_points.Count == 1) return Vector2.Distance(p, _points[0].Position);
         float best = float.MaxValue;
@@ -286,17 +289,36 @@ public sealed class InkStroke
 
     public static List<InkStroke> CloneObjects(IEnumerable<InkStroke> strokes)
     {
-        var groups = new Dictionary<Guid, Guid>();
-        return strokes.Select(stroke =>
+        var originals = strokes.ToArray();
+        var groups = originals.Where(stroke => stroke.ShapeSource is not null).Select(stroke => stroke.ShapeSource.GroupId)
+            .Distinct().ToDictionary(id => id, _ => Guid.NewGuid());
+        return originals.Select(stroke =>
         {
             var copy = stroke.Clone(preserveId: false);
             if (stroke.ShapeSource is { } source)
             {
                 if (!groups.TryGetValue(source.GroupId, out var id)) groups[source.GroupId] = id = Guid.NewGuid();
                 copy.ShapeSource = source with { GroupId = id };
+                if (source.Geometry is { } geometry)
+                    copy.ShapeSource = ShapeSource.FromGeometry(id, geometry with
+                    {
+                        StartNode = geometry.StartNode is { } start && groups.TryGetValue(start, out var startCopy) ? startCopy : geometry.StartNode,
+                        EndNode = geometry.EndNode is { } end && groups.TryGetValue(end, out var endCopy) ? endCopy : geometry.EndNode,
+                    });
             }
             return copy;
         }).ToList();
+    }
+
+    private bool ContainsPolygon(Vector2 point)
+    {
+        bool inside = false;
+        for (int i = 0, j = _points.Count - 1; i < _points.Count; j = i++)
+        {
+            var a = _points[i]; var b = _points[j];
+            if ((a.Y > point.Y) != (b.Y > point.Y) && point.X < (b.X - a.X) * (point.Y - a.Y) / (b.Y - a.Y) + a.X) inside = !inside;
+        }
+        return inside;
     }
 
     /// <summary>Replace all points, preserving already-computed widths (used by persistence).</summary>

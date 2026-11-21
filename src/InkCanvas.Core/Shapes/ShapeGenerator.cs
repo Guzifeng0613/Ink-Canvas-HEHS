@@ -68,8 +68,8 @@ public enum ShapeKind
 }
 
 /// <summary>
-/// Builds preset geometry as ordinary <see cref="InkStroke"/>s, so shapes share the same
-/// rendering, hit-testing, transform and persistence paths as freehand ink.
+/// Builds renderable contours with a shared editable construction definition. Shapes retain
+/// their type, parameters and control points through the existing ink persistence paths.
 /// <para>
 /// Rectangle, circle and ellipse use two-point bounds. Explicit center variants retain the
 /// center-and-radius workflow. Cuboid and hyperbola use a second drag to set depth or curvature.
@@ -100,6 +100,12 @@ public static partial class ShapeGenerator
     public const float SolidEllipseRatio = 2.646f;
 
     public static List<InkStroke> Generate(ShapeKind kind, Vector2 start, Vector2 end, StrokeAttributes attrs)
+    {
+        var contours = GenerateContours(kind, start, end, attrs);
+        return ShapeDefinition.Attach(contours, ShapeDefinition.FromBounds(kind, start, end, contours));
+    }
+
+    internal static List<InkStroke> GenerateContours(ShapeKind kind, Vector2 start, Vector2 end, StrokeAttributes attrs)
     {
         var result = new List<InkStroke>();
         var a = attrs ?? new StrokeAttributes();
@@ -367,9 +373,7 @@ public static partial class ShapeGenerator
                 }
 
             case ShapeKind.Cuboid:
-                // Two-step shape, step 1: front face as 4 SEPARATE edges so a single edge can
-                // be erased later (分开画线条方便后期单独擦除某一条棱). Depth edges come from
-                // GenerateCuboidDepth. Upstream:1197-1213.
+                // First pass records the front face; the second drag supplies signed depth.
                 result.Add(Stroke(a, start, new Vector2(start.X, end.Y)));
                 result.Add(Stroke(a, new Vector2(start.X, end.Y), end));
                 result.Add(Stroke(a, end, new Vector2(end.X, start.Y)));
@@ -642,6 +646,7 @@ public static partial class ShapeGenerator
 
     public static List<InkStroke> Dashed(StrokeAttributes attrs, Vector2 start, Vector2 end, float dash, float gap)
     {
+        if (attrs.GeneratorSolidLines) return new() { Stroke(attrs, start, end) };
         var result = new List<InkStroke>();
         var delta = end - start;
         float len = delta.Length();
@@ -660,6 +665,7 @@ public static partial class ShapeGenerator
     /// <summary>Single-point dots every 8.28px at pressure 0.8 (GenerateDotLineStrokeCollection, upstream:1445-1467).</summary>
     public static List<InkStroke> Dots(StrokeAttributes attrs, Vector2 start, Vector2 end)
     {
+        if (attrs.GeneratorSolidLines) return new() { Stroke(attrs, start, end) };
         var result = new List<InkStroke>();
         var delta = end - start;
         float len = delta.Length();
@@ -709,6 +715,12 @@ public static partial class ShapeGenerator
     {
         var result = new List<InkStroke>();
         rx = MathF.Max(rx, 0.5f); ry = MathF.Max(ry, 0.5f);
+        if (attrs.GeneratorSolidLines)
+        {
+            if (frontHalf) result.Add(Stroke(attrs, EllipsePoints(center, rx, ry, 0, MathF.PI, 36)));
+            if (backHalf) result.Add(Stroke(attrs, EllipsePoints(center, rx, ry, MathF.PI, MathF.Tau, 36)));
+            return result;
+        }
         if (frontHalf) AddHalf(0f, 1f);
         if (backHalf) AddHalf(1f, 2f);
 

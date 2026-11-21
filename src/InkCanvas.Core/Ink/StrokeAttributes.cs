@@ -21,6 +21,9 @@ public sealed class StrokeAttributes
     public float NibRotation { get; set; }
     public InkWashBrushOptions InkWash { get; set; } = InkWashBrushOptions.Default;
     public int InkWashSeed { get; set; }
+    /// <summary>Construction-only override for the preset generator's hidden/dashed edges.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool GeneratorSolidLines { get; set; }
     /// <summary>Width specifies the major diameter. The oval has a 2:1 aspect ratio and rises to the right.</summary>
     public Matrix3x2 NibTransform => Nib == PenNib.Ellipse45
         ? Matrix3x2.CreateScale(1, .5f) * Matrix3x2.CreateRotation(-MathF.PI / 4 + NibRotation)
@@ -42,5 +45,6 @@ public sealed class StrokeAttributes
         NibRotation = NibRotation,
         InkWash = InkWash,
         InkWashSeed = InkWashSeed,
+        GeneratorSolidLines = GeneratorSolidLines,
     };
 }

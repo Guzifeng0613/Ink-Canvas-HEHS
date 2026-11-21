@@ -4,6 +4,7 @@ using InkCanvas.App.Services;
 using InkCanvas.App.Views;
 using InkCanvas.Core.Ink;
 using InkCanvas.Ink;
+using InkCanvas.Features.Tools;
 using InkCanvas.Platform.System;
 using InkCanvas.Platform.Interop;
 using InkCanvas.Platform.Windows;
@@ -24,6 +25,7 @@ internal static class DisplayRegression
         var services = new AppServices(Path.Combine(directory, "settings"));
         services.Settings.Startup.IsAutoUpdate = false;
         services.Settings.PowerPoint.PowerPointSupport = false;
+        services.Settings.Automation.AutoSavedStrokesLocation = Path.Combine(directory, "captures");
         using var shell = new ShellController(services);
         shell.Start();
         shell.StartInClickThrough();
@@ -35,6 +37,7 @@ internal static class DisplayRegression
             var overlay = shell.Overlay;
             Check("annotation viewport covers virtual desktop", ScreenService.Virtual ==
                 new ScreenRect(overlay.Window.X, overlay.Window.Y, overlay.Window.Width, overlay.Window.Height));
+            Check("desktop screenshots include all physical monitors", shell.GetScreenshotBounds() == ScreenService.Virtual);
             var bar = shell.OpenWindows.OfType<FloatingBarWindow>().Single();
             await Task.Delay(250);
             int cornerResult = DwmGetWindowAttribute(WindowChrome.GetHwnd(bar), 33, out int corner, sizeof(int));
@@ -43,6 +46,7 @@ internal static class DisplayRegression
             foreach (var screen in screens)
             {
                 WindowChrome.MoveToMonitor(bar, screen);
+                Check("desktop capture extent is independent of toolbar monitor", shell.GetScreenshotBounds() == ScreenService.Virtual);
                 foreach (double scale in new[] { 50d, 100, 200 })
                 {
                     bar.Reposition(100, scale);
@@ -114,6 +118,12 @@ internal static class DisplayRegression
             overlay.RefreshDisplayBounds();
             overlay.Show();
             Check("resized hidden viewport restores", overlay.Window.IsVisible && Vector2.Distance(initial, DesktopPoint(world)) < .01);
+            await CheckTopologyChanges();
+            try { await CheckScreenshots(); }
+            catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode is 5 or 6)
+            {
+                checks.Add(new { check = "desktop pixel capture availability", skipped = true, error = ex.NativeErrorCode, detail = ex.Message });
+            }
             await CheckReplayLayout(bar);
             CheckIndependentTouch();
             await CheckNativeTouch();
@@ -130,6 +140,97 @@ internal static class DisplayRegression
             Application.Current.Exit();
         }
         void Check(string name, bool passed) => checks.Add(new { check = name, passed });
+
+        async Task CheckTopologyChanges()
+        {
+            var window = shell.Overlay.Window;
+            var ink = services.OverlayInk;
+            var settings = services.Settings.Display;
+            bool all = settings.AllDisplays;
+            var enabled = settings.EnabledDevices.ToArray();
+            ScreenInfo[] layout =
+            {
+                new(new(111), new(-800, -200, 800, 1000), default, 1.5) { DeviceName = "test-left" },
+                new(new(222), new(0, -200, 1200, 1000), default, 1) { DeviceName = "test-right" },
+            };
+            try
+            {
+                settings.AllDisplays = false;
+                settings.EnabledDevices.Clear(); settings.EnabledDevices.Add("test-left");
+                shell.Overlay.ConfigureDisplays(settings);
+                shell.RefreshDisplays(layout);
+                var desktop = new ScreenRect(window.X, window.Y, window.Width, window.Height);
+                Check("monitor snapshot resizes the overlay to the full physical union", desktop == new ScreenRect(-800, -200, 2000, 1000));
+                Check("custom writing displays refresh with the monitor snapshot", window.AllowsInput(-400, 100) && !window.AllowsInput(100, 100));
+                window.ProcessTouch(new() { Source = new(77), Id = 1, X = -40000, Y = 10000, Flags = 2, Time = 1 });
+                Check("touch is active before the monitor layout changes", ink.HasActiveInteraction);
+                layout = new[]
+                {
+                    layout[0] with { Bounds = new(-800, -200, 1000, 1000), DpiScale = 2 },
+                    layout[1] with { Bounds = new(200, -200, 1000, 1000), DpiScale = 1.25 },
+                };
+                shell.RefreshDisplays(layout);
+                Check("same outer bounds still refresh monitor input areas", desktop == new ScreenRect(window.X, window.Y, window.Width, window.Height)
+                    && window.AllowsInput(100, 100) && !window.AllowsInput(300, 100));
+                Check("monitor changes cancel contacts without leaving stuck ink", !ink.HasActiveInteraction);
+                OverlayPointer updatedContact = default;
+                void CaptureUpdatedContact(OverlayPointer pointer) => updatedContact = pointer;
+                window.PointerDown += CaptureUpdatedContact;
+                try
+                {
+                    window.ProcessTouch(new() { Source = new(77), Id = 1, X = 10000, Y = 10000, Flags = 2, Mask = 4, Width = 800, Height = 800, Time = 2 });
+                    window.ProcessTouch(new() { Source = new(77), Id = 1, X = 10000, Y = 10000, Flags = 4, Mask = 4, Width = 800, Height = 800, Time = 3 });
+                    Check("unchanged viewport uses the updated monitor DPI for touch", updatedContact.InputSurface == 111
+                        && Math.Abs(updatedContact.ContactWidth - 4) < .01 && !ink.HasActiveInteraction);
+                }
+                finally { window.PointerDown -= CaptureUpdatedContact; }
+                shell.RefreshDisplays(Array.Empty<ScreenInfo>());
+                Check("transient empty enumeration retains the last working viewport", desktop == new ScreenRect(window.X, window.Y, window.Width, window.Height)
+                    && window.AllowsInput(100, 100));
+                shell.RefreshDisplays(new[] { layout[1] });
+                Check("disconnecting an enabled monitor releases the remaining desktop for input", !window.AllowsInput(500, 100));
+                NativeMethods.SendMessageW(window.Handle, 0x0219, new(0x0007), IntPtr.Zero);
+                await Task.Delay(150);
+                Check("native hotplug notification restores the connected monitor topology", ScreenService.Virtual == new ScreenRect(window.X, window.Y, window.Width, window.Height));
+                shell.RefreshDisplays(layout);
+                NativeMethods.SendMessageW(window.Handle, NativeMethods.WM_DISPLAYCHANGE, IntPtr.Zero, IntPtr.Zero);
+                await Task.Delay(150);
+                Check("native resolution notification restores the connected monitor topology", ScreenService.Virtual == new ScreenRect(window.X, window.Y, window.Width, window.Height));
+            }
+            finally
+            {
+                window.CancelInput();
+                settings.AllDisplays = all;
+                settings.EnabledDevices.Clear(); settings.EnabledDevices.AddRange(enabled);
+                shell.RefreshDisplays(ScreenService.All());
+                shell.Overlay.ConfigureDisplays(settings);
+            }
+        }
+
+        async Task CheckScreenshots()
+        {
+            foreach (var screen in ScreenService.All())
+            {
+                int x = screen.Bounds.X + screen.Bounds.Width / 2, y = screen.Bounds.Y + screen.Bounds.Height / 2;
+                using var marker = new LayeredInkWindow(x, y, 32, 32) { ClickThrough = true };
+                var color = new byte[32 * 32 * 4];
+                for (int index = 0; index < color.Length; index += 4) { color[index + 2] = 255; color[index + 3] = 255; }
+                System.Runtime.InteropServices.Marshal.Copy(color, 0, marker.PixelBuffer, color.Length);
+                marker.Present();
+                await Task.Delay(120);
+                var image = ScreenshotService.Capture(x, y, 32, 32);
+                int center = (16 * 32 + 16) * 4;
+                Check("screenshot includes layered content on monitor " + screen.DeviceName,
+                    image.bgra[center + 2] > 240 && image.bgra[center] < 16 && image.bgra[center + 1] < 16);
+                Check("GDI screenshots encode an opaque alpha channel", Enumerable.Range(0, 32 * 32).All(index => image.bgra[index * 4 + 3] == 255));
+            }
+            await shell.ScreenshotAsync();
+            string screenshot = Directory.GetFiles(Path.Combine(services.Settings.Automation.AutoSavedStrokesLocation, "Screenshots"), "*.png", SearchOption.AllDirectories)
+                .OrderByDescending(File.GetLastWriteTimeUtc).First();
+            using var bitmap = await Microsoft.Graphics.Canvas.CanvasBitmap.LoadAsync(Microsoft.Graphics.Canvas.CanvasDevice.GetSharedDevice(), screenshot);
+            var bounds = ScreenService.Virtual;
+            Check("normal screenshot command saves a full virtual desktop PNG", bitmap.SizeInPixels.Width == bounds.Width && bitmap.SizeInPixels.Height == bounds.Height);
+        }
 
         async Task CheckReplayLayout(FloatingBarWindow owner)
         {

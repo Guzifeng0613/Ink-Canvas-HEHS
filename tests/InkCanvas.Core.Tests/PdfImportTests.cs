@@ -18,12 +18,13 @@ public sealed class PdfImportTests
         Assert.Single(board.GetSelectionElements()); original.Dispose();
     }
     [Fact]
-    public void ImportCapacityFailurePreservesCurrentPageAndExistingContent()
+    public void ImportRejectsDuplicateControllersBeforeMutatingPages()
     {
         var board = new BoardService(); var original = board.Current;
         using var extra = new InkController();
         var batch = Enumerable.Range(0, 99).Select(_ => (extra, (IReadOnlyList<BoardImageAsset>)Array.Empty<BoardImageAsset>())).ToArray();
-        Assert.False(board.InsertPagesAfterCurrent(batch)); Assert.Single(board.Pages); Assert.Same(original, board.Current); original.Dispose();
+        Assert.Throws<ArgumentException>(() => board.InsertPagesAfterCurrent(batch));
+        Assert.Single(board.Pages); Assert.Same(original, board.Current); original.Dispose();
     }
     [Fact]
     public void ImportRejectsReusingALiveControllerBeforeMutatingPages()

@@ -54,6 +54,8 @@ public sealed class LassoGeometry
     public bool IntersectsStroke(InkStroke stroke, Matrix3x2 worldToView)
     {
         if (!IsValid || stroke.Count == 0 || !Bounds.Intersects(TransformBounds(stroke.Bounds, worldToView))) return false;
+        if (stroke.ShapeSource?.Geometry?.IsFill == true && Matrix3x2.Invert(worldToView, out var inverse)
+            && stroke.DistanceTo(Vector2.Transform(_points[0], inverse)) == 0) return true;
         var previous = Vector2.Transform(stroke.Points[0].Position, worldToView);
         if (Contains(previous)) return true;
         for (int i = 1; i < stroke.Count; i++)

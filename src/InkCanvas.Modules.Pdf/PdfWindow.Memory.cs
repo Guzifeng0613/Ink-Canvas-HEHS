@@ -6,6 +6,7 @@ public sealed partial class PdfWindow
 
     private void ReleaseInactiveRendering()
     {
+        StopScrollMotion();
         _renderCancellation?.Cancel();
         _detailCancellation?.Cancel();
         _detailTimer.Stop();

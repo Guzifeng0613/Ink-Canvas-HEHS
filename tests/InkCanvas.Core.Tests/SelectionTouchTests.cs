@@ -25,6 +25,36 @@ public sealed class SelectionTouchTests
     private static void Near(Vector2 expected, Vector2 actual) =>
         Assert.True(Vector2.Distance(expected, actual) < .015f, $"Expected {expected}, actual {actual}");
 
+    [Fact]
+    public void PresentationGatePreventsMultiFingerSelectionScaleAndRotation()
+    {
+        using var controller = new InkController { MultiTouchEnabled = true, GesturesTargetSelection = true, TouchGesturesEnabled = false };
+        var source = Rectangle(); controller.Document.Add(source); controller.SelectAll();
+        var before = source.ObjectFrame;
+        var first = Touch(1, new(180, 210)); var second = Touch(2, new(320, 210));
+        controller.OnPointerDown(first); controller.OnPointerDown(second);
+        controller.OnPointerMove(second with { X = 370, Y = 270 });
+        Assert.Equal(Matrix3x2.Identity, controller.SelectionPreviewTransform);
+        controller.OnPointerUp(second with { X = 370, Y = 270 }); controller.OnPointerUp(first);
+        Assert.Equal(before, source.ObjectFrame); Assert.False(controller.HasActiveInteraction);
+    }
+
+    [Fact]
+    public void PresentationGestureGateRetainsTouchStrokeSamples()
+    {
+        using var controller = new InkController { MultiTouchEnabled = false, TouchGesturesEnabled = false, PalmErases = false, RecognizeShapes = false };
+        var first = Touch(1, new(100, 100)); var second = Touch(2, new(300, 100));
+        controller.OnPointerDown(first); controller.OnPointerDown(second);
+        controller.OnPointerMove(first with { X = 180, Y = 130, TimeMs = 30 });
+        controller.OnPointerMove(second with { X = 380, Y = 130, TimeMs = 30 });
+        Assert.False(controller.IsViewManipulating);
+        controller.OnPointerUp(first with { X = 180, Y = 130, TimeMs = 40 });
+        controller.OnPointerUp(second with { X = 380, Y = 130, TimeMs = 40 });
+        Assert.Equal(2, controller.Document.Count);
+        Assert.All(controller.Document.Strokes, stroke => Assert.True(stroke.Points.Count > 1 && stroke.Bounds.Width > 60));
+        Assert.Equal(Matrix3x2.Identity, controller.ViewTransform); Assert.False(controller.HasActiveInteraction);
+    }
+
     [Theory]
     [InlineData(.5f)]
     [InlineData(1)]

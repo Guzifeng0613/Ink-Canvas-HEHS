@@ -25,6 +25,7 @@ public sealed partial class InkController
     {
         first = default;
         second = default;
+        if (!TouchGesturesEnabled) return false;
         bool found = false;
         var frame = SelectionFrame;
         foreach (var touch in _touches.Values)

@@ -25,13 +25,17 @@ public sealed class AutomationPolicyTests
     }
 
     [Fact]
-    public void DesktopAnnotationExceptionAppliesToSeewoVariants()
+    public void DesktopAnnotationExceptionAndLightWhiteboardFollowIndependentWpfOptions()
     {
-        var settings = new AutomationSettings { IsAutoFoldInEasiNote3C = true, IsAutoFoldInEasiNoteIgnoreDesktopAnno = true };
+        var settings = new AutomationSettings { IsAutoFoldInEasiNote = true, IsAutoFoldInEasiNoteIgnoreDesktopAnno = true };
         Assert.False(AutomationPolicy.ShouldFold(settings, "EasiNote", "", 200, false));
         Assert.True(AutomationPolicy.ShouldFold(settings, "EasiNote", "Document", 200, false));
         Assert.True(AutomationPolicy.ShouldFold(settings, "EasiNote", "", 800, false));
         settings.IsAutoFoldInEasiNoteIgnoreDesktopAnno = false;
+        Assert.True(AutomationPolicy.ShouldFold(settings, "EasiNote", "", 200, false));
+        settings.IsAutoFoldInEasiNote = false;
+        Assert.False(AutomationPolicy.ShouldFold(settings, "EasiNote", "", 200, false));
+        settings.IsAutoFoldInEasiNote3C = true; settings.IsAutoFoldInEasiNoteIgnoreDesktopAnno = true;
         Assert.True(AutomationPolicy.ShouldFold(settings, "EasiNote", "", 200, false));
     }
 

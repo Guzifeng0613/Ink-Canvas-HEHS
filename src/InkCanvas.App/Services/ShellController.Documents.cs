@@ -25,6 +25,7 @@ public sealed partial class ShellController
         _bar.Bar.Controller = controller;
         _bar.Bar.RefreshSettingsVisuals();
         CanvasToolTargetChanged?.Invoke();
+        QueueDesktopMedia();
     }
 
     public async Task OpenPdfAsync(string path = null)
@@ -38,6 +39,7 @@ public sealed partial class ShellController
     private void AttachDocument(IDocumentWorkspace workspace)
     {
         _imageImportCancellation?.Cancel();
+        _videoImportCancellation?.Cancel();
         if (_board is not null) _board.Close();
         _replay?.Close(); _palette?.Close(); _shapePicker?.Close(); _bar?.ClosePanels();
         _selectionToolbar?.Hide();

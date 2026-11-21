@@ -137,17 +137,15 @@ internal sealed class PdfWorkspaceService(IDocumentWorkspaceHost host) : IPdfWor
                 && _window.IsDirty && !await _window.SaveAsync()) return;
             await ShowOperationWindowAsync("正在准备 PDF 导入…");
             file = await OpenFileAsync(path); if (file is null) return;
-            int available = Features.Board.BoardService.MaximumPages - host.Board.PageCount;
-            if (available <= 0) { await NoticeAsync("PDF 导入画板", "画板已达到 99 页上限。"); return; }
-            var range = new TextBox { Text = "1-" + Math.Min(file.Pages.Count, available), PlaceholderText = "例如 1-5,8,10", MinWidth = 280, MinHeight = 44 };
+            var range = new TextBox { Text = "1-" + file.Pages.Count, PlaceholderText = "例如 1-5,8,10", MinWidth = 280, MinHeight = 44 };
             var quality = new ComboBox { ItemsSource = new[] { "标准 · 适合课堂书写", "高清 · 适合放大查看" }, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch, MinHeight = 44 };
             var error = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.IndianRed) };
-            var panel = new StackPanel { Spacing = 12, Children = { new TextBlock { Text = "PDF 共 " + file.Pages.Count + " 页，可再导入 " + available + " 页" }, range, quality, error } };
+            var panel = new StackPanel { Spacing = 12, Children = { new TextBlock { Text = "PDF 共 " + file.Pages.Count + " 页，请选择导入范围" }, range, quality, error } };
             IReadOnlyList<int> indices = null;
             var dialog = new ContentDialog { Title = "导入 PDF 到新画板页", Content = panel, PrimaryButtonText = "导入", CloseButtonText = "取消", XamlRoot = Root() };
             dialog.PrimaryButtonClick += (_, args) =>
             {
-                try { indices = PdfPageRange.Parse(range.Text, file.Pages.Count, available); }
+                try { indices = PdfPageRange.Parse(range.Text, file.Pages.Count, file.Pages.Count); }
                 catch (FormatException ex) { args.Cancel = true; error.Text = ex.Message; }
             };
             if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary || indices is null) return;
@@ -175,7 +173,7 @@ internal sealed class PdfWorkspaceService(IDocumentWorkspaceHost host) : IPdfWor
                     prepared.Add((index, output)); progress.Value = prepared.Count; label.Text = "已准备 " + prepared.Count + " / " + indices.Count + " 页";
                 }
                 cancel.Token.ThrowIfCancellationRequested();
-                if (host.Board.PageCount + prepared.Count > Features.Board.BoardService.MaximumPages) throw new IOException("画板页数已变化，请重新选择导入范围。");
+                if (!host.Board.CanAddPages(prepared.Count)) throw new IOException("当前画板无法继续增加页面。");
                 // Stage all fallible I/O before changing the live board. Commit does not await input.
                 var images = new List<Features.Board.BoardImageAsset>();
                 foreach (var item in prepared)
@@ -203,7 +201,7 @@ internal sealed class PdfWorkspaceService(IDocumentWorkspaceHost host) : IPdfWor
                         float scale = Math.Min((width - 32) / images[i].Width, (height - 32) / images[i].Height);
                         controller.ViewTransform = System.Numerics.Matrix3x2.CreateScale(scale) * System.Numerics.Matrix3x2.CreateTranslation((width - images[i].Width * scale) / 2, 16);
                     }
-                    if (!host.Board.InsertPagesAfterCurrent(imported)) throw new IOException("画板剩余页数不足，请重新选择导入范围。");
+                    if (!host.Board.InsertPagesAfterCurrent(imported)) throw new IOException("当前画板无法继续增加页面。");
                 }
                 finally { foreach (var page in imported) if (!host.Board.Pages.Contains(page.Ink)) page.Ink.Dispose(); }
                 complete = true; progressDialog.Hide(); await shown;

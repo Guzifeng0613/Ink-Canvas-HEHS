@@ -21,8 +21,10 @@ foreach ($module in $modules) {
     & (Join-Path $PSScriptRoot 'pack-extension.ps1') -Project (Join-Path $repoRoot ('src\' + $module + '\' + $module + '.csproj')) -Kind Module -OutputDirectory $outputRoot
     if ($LASTEXITCODE -ne 0) { throw ('Module publish failed ' + $module) }
 }
-& (Join-Path $PSScriptRoot 'pack-extension.ps1') -Project (Join-Path $repoRoot 'samples\InkCanvas.SamplePlugin\InkCanvas.SamplePlugin.csproj') -Kind Plugin -OutputDirectory $outputRoot
-if ($LASTEXITCODE -ne 0) { throw 'Sample plugin publish failed.' }
+foreach ($plugin in @('src\InkCanvas.Plugins.LegacyImport\InkCanvas.Plugins.LegacyImport.csproj', 'samples\InkCanvas.SamplePlugin\InkCanvas.SamplePlugin.csproj')) {
+    & (Join-Path $PSScriptRoot 'pack-extension.ps1') -Project (Join-Path $repoRoot $plugin) -Kind Plugin -OutputDirectory $outputRoot
+    if ($LASTEXITCODE -ne 0) { throw ('Plugin publish failed ' + $plugin) }
+}
 $docs = Join-Path $app 'Docs'
 New-Item -ItemType Directory -Path $docs -Force | Out-Null
 foreach ($name in @('ANALYTIC-GEOMETRY.md', 'PDF.md', 'EXTENSIONS.md', 'SCREEN-TRACKING.md', 'UPDATES.md')) { Copy-Item -LiteralPath (Join-Path $repoRoot ('docs\' + $name)) -Destination $docs }

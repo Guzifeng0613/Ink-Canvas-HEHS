@@ -78,8 +78,11 @@ public sealed class ImageSelectionTests
             store.SavePage(path);
             var loaded = new BoardService(); loaded.LoadPage(path);
             Assert.Equal(.5f, Assert.Single(loaded.CurrentImages).Opacity);
-            var text = File.ReadAllText(path).Replace("\"Opacity\": 0.5,", "");
-            File.WriteAllText(path, text);
+            File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(new
+            {
+                Format = "inkcanvas-board", Version = 1,
+                Pages = new[] { new { Images = new[] { new { image.Data, image.Left, image.Top, image.Width, image.Height } } } },
+            }));
             loaded.LoadPage(path);
             Assert.Equal(1f, Assert.Single(loaded.CurrentImages).Opacity);
         }

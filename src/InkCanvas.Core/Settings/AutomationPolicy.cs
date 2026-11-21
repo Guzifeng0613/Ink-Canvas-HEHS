@@ -7,8 +7,8 @@ public static class AutomationPolicy
         if (slideShow && settings.IsAutoFoldInPPTSlideShow) return true;
         bool Is(string name) => string.Equals(process, name, StringComparison.OrdinalIgnoreCase);
         if (Is("EasiNote"))
-            return (settings.IsAutoFoldInEasiNote || settings.IsAutoFoldInEasiNote3C)
-                && !(settings.IsAutoFoldInEasiNoteIgnoreDesktopAnno && string.IsNullOrEmpty(title) && height is > 0 and < 500);
+            return settings.IsAutoFoldInEasiNote3C || settings.IsAutoFoldInEasiNote
+                && !(settings.IsAutoFoldInEasiNoteIgnoreDesktopAnno && string.IsNullOrEmpty(title) && height is >= 0 and < 500);
         if (Is("EasiCamera")) return settings.IsAutoFoldInEasiCamera;
         if (Is("BoardService") || Is("seewoPincoTeacher")) return settings.IsAutoFoldInSeewoPincoTeacher;
         if (Is("HiteTouchPro")) return settings.IsAutoFoldInHiteTouchPro;

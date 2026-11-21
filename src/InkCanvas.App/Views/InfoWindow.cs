@@ -40,7 +40,7 @@ public sealed class InfoWindow : Window
         // The exact 12 WPF rows: key, second key, global badge, description.
         AddRow(rows, "Ctrl", "Z", false, " ——  撤销");
         AddRow(rows, "Ctrl", "Y", false, " ——  重做");
-        AddRow(rows, "Ctrl", "E", true, " ——  清屏");
+        AddRow(rows, "Ctrl", "E", false, " ——  清屏");
         AddRow(rows, "Alt", "C", true, " ——  截屏（Capture）", extraTop: true);
         AddRow(rows, "Alt", "V", true, " ——  显示/隐藏 笑脸右侧工具栏（Visibility）");
         AddRow(rows, "Alt", "D", true, " ——  切换至批注模式 / 显示或关闭调色板（Draw）");
@@ -50,6 +50,7 @@ public sealed class InfoWindow : Window
         AddRow(rows, "Alt", "E", false, " ——  切换至面积擦/墨迹擦功能（Eraser）");
         AddRow(rows, "Alt", "L", false, " ——  切换至单次直线绘制功能（Line）");
         AddRow(rows, "Shift", "Esc", true, " ——  退出 PPT 放映");
+        rows.Children.Add(Paragraph("撤销、重做、清屏与工具快捷键仅在书写或选择状态下生效。鼠标模式和输入框中的按键由当前应用或输入框处理。"));
 
         var workspace = new WindowWorkspace { IsTitleBarAutoPaddingEnabled = false };
         workspace.AddPage("快捷键", "", () => rows);

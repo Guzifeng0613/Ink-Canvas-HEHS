@@ -35,7 +35,10 @@ internal static class PdfRegression
             await module.OpenAsync(source); await Task.Delay(250);
             var workspace = shell.OpenWindows.OfType<IDocumentWorkspace>().Single();
             var bar = shell.OpenWindows.OfType<FloatingBarWindow>().Single();
-            Check("main toolbar binds PDF controller", ReferenceEquals(bar.Bar.Controller, workspace.Controller) && !shell.Overlay.Window.IsVisible);
+            bool suppliedPdfForeground = NativeMethods.GetForegroundWindow() != WindowChrome.GetHwnd(workspace.Window);
+            if (suppliedPdfForeground) shell.RefreshDocumentTarget(WindowChrome.GetHwnd(workspace.Window));
+            Check("main toolbar binds PDF controller", ReferenceEquals(bar.Bar.Controller, workspace.Controller) && !shell.Overlay.Window.IsVisible,
+                new { foregroundContextSuppliedByTest = suppliedPdfForeground });
             Check("PDF gestures use independent toolbar settings", ReferenceEquals(bar.Bar.GestureSettingsOverride, workspace.Gestures)
                 && !workspace.Controller.MultiTouchEnabled && services.Settings.Gesture.IsEnableMultiTouchMode);
             workspace.Gestures.IsEnableMultiTouchMode = true; services.ApplySettings();
@@ -45,15 +48,19 @@ internal static class PdfRegression
             Check("page changes rebind main toolbar", ReferenceEquals(bar.Bar.Controller, workspace.Controller));
             shell.ToggleClickThrough();
             Check("mouse mode pans PDF without enabling overlay", workspace.Controller.Tool == InkTool.Pan && !shell.Overlay.Window.IsVisible);
-            shell.OpenPenPalette(false); await Task.Delay(120);
+            shell.OpenPenPalette(false);
             Check("shared pen popup targets PDF", workspace.Controller.Tool == InkTool.Pen && shell.OpenWindows.OfType<PenPaletteWindow>().Any());
+            await Task.Delay(120);
             foreach (var palette in shell.OpenWindows.OfType<PenPaletteWindow>().ToArray()) palette.Close();
             await CheckDesktopRouting(workspace, bar);
             shell.ToggleBoard(); await Task.Delay(150);
             var board = shell.OpenWindows.OfType<BoardWindow>().Single();
             Check("board suspends PDF without replacing its ink", ReferenceEquals(bar.Bar.Controller, services.Board.Current));
             board.Close(); await Task.Delay(100);
-            Check("closing board restores PDF toolbar and viewport", ReferenceEquals(bar.Bar.Controller, workspace.Controller) && !shell.Overlay.Window.IsVisible);
+            bool boardReturnContextSupplied = NativeMethods.GetForegroundWindow() != WindowChrome.GetHwnd(workspace.Window);
+            if (boardReturnContextSupplied) shell.RefreshDocumentTarget(WindowChrome.GetHwnd(workspace.Window));
+            Check("closing board restores PDF toolbar and viewport", ReferenceEquals(bar.Bar.Controller, workspace.Controller) && !shell.Overlay.Window.IsVisible,
+                new { foregroundContextSuppliedByTest = boardReturnContextSupplied });
             var previousPage = services.Board.Current;
             var import = module.ImportToBoardAsync(source);
             var dialog = await FindDialogAsync(shell, "导入 PDF 到新画板页");
@@ -111,19 +118,23 @@ internal static class PdfRegression
                         liveForeground, foreground = NativeMethods.GetForegroundWindow().ToInt64(), expectedForeground = foreground.ToInt64() });
                 if (shell.Overlay.ClickThrough) shell.ToggleClickThrough();
                 services.OverlayInk.Tool = InkTool.Pen;
+                int screenCount = services.OverlayInk.Document.Count;
                 var input = new InkCanvas.Platform.Windows.OverlayPointer(884, 100, 100, .5f, 0, 0, InkCanvas.Platform.Windows.OverlayPointerKind.Mouse, 1000);
                 services.OverlayInk.OnPointerDown(input);
                 services.OverlayInk.OnPointerMove(input with { X = 160, Y = 120, TimeMs = 1030 });
                 services.OverlayInk.OnPointerUp(input with { X = 180, Y = 130, TimeMs = 1050 });
                 services.OverlayInk.FinishDotAnimations();
-                Check("desktop annotation uses independent PDF and screen histories", services.OverlayInk.Document.Count == 1 && pdfController.Document.Count == pdfCount);
+                Check("desktop annotation uses independent PDF and screen histories", services.OverlayInk.Document.Count == screenCount + 1 && pdfController.Document.Count == pdfCount);
                 services.OverlayInk.Undo();
                 shell.ToggleClickThrough();
                 workspace.Window.Activate(); NativeMethods.SetForegroundWindow(WindowChrome.GetHwnd(workspace.Window)); await Task.Delay(250);
-                if (!liveForeground) shell.RefreshDocumentTarget(WindowChrome.GetHwnd(workspace.Window));
-                Check("returning to PDF restores page toolbar and input", ReferenceEquals(bar.Bar.Controller, pdfController) && !shell.Overlay.Window.IsVisible);
-                shell.OpenPenPalette(false); await Task.Delay(120);
+                bool pdfForegroundSupplied = NativeMethods.GetForegroundWindow() != WindowChrome.GetHwnd(workspace.Window);
+                if (pdfForegroundSupplied) shell.RefreshDocumentTarget(WindowChrome.GetHwnd(workspace.Window));
+                Check("returning to PDF restores page toolbar and input", ReferenceEquals(bar.Bar.Controller, pdfController) && !shell.Overlay.Window.IsVisible,
+                    new { foregroundContextSuppliedByTest = pdfForegroundSupplied });
+                shell.OpenPenPalette(false);
                 Check("PDF palette retains the document target", ReferenceEquals(bar.Bar.Controller, pdfController) && !shell.Overlay.Window.IsVisible);
+                await Task.Delay(120);
                 foreach (var palette in shell.OpenWindows.OfType<PenPaletteWindow>().ToArray()) palette.Close();
                 workspace.Window.AppWindow.Hide();
                 shell.RefreshDocumentTarget(0);

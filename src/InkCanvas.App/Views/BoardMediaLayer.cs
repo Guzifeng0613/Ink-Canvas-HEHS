@@ -36,6 +36,7 @@ internal sealed class BoardMediaLayer : Canvas, IDisposable
     private readonly Dictionary<Guid, Entry> _entries = new();
     private readonly Dictionary<byte[], Task<BitmapImage>> _posters = new();
     private BoardService _board;
+    private Guid? _onlyAsset;
     private BoardMediaAsset _selected;
     private Matrix3x2 _viewTransform = Matrix3x2.Identity;
     private bool _disposed;
@@ -59,11 +60,12 @@ internal sealed class BoardMediaLayer : Canvas, IDisposable
         SelectionChanged?.Invoke();
     }
 
-    public void SetPage(BoardService board)
+    public void SetPage(BoardService board, Guid? onlyAsset = null)
     {
         ClearEntries();
         _posters.Clear();
         _board = board;
+        _onlyAsset = onlyAsset;
         _selected = null;
         Refresh();
     }
@@ -87,6 +89,7 @@ internal sealed class BoardMediaLayer : Canvas, IDisposable
     {
         if (_disposed) return;
         var assets = _board?.CurrentMedia ?? Array.Empty<BoardMediaAsset>();
+        if (_onlyAsset is Guid onlyId) assets = assets.Where(asset => asset.Id == onlyId).ToArray();
         var present = assets.Select(asset => asset.Id).ToHashSet();
         foreach (var id in _entries.Keys.Where(id => !present.Contains(id)).ToArray())
         {

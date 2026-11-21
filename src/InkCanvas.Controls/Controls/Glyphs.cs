@@ -22,6 +22,7 @@ public static class Glyphs
 
     public const string Settings = "";
     public const string Camera = "";
+    public const string Video = "\uE714";
     public const string Stopwatch = "";
     public const string People = "";
     public const string Board = "";

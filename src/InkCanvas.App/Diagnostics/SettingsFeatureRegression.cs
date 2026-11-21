@@ -32,6 +32,25 @@ internal static class SettingsFeatureRegression
         shell.Start();
         try
         {
+            shell.OpenSettings(); await Task.Delay(200);
+            var settingsWindow = shell.OpenWindows.OfType<SettingsWindow>().Single();
+            var formerlyDeferred = new[]
+            {
+                ("画板选项", "显示画笔光标"), ("手势选项", "自动开关两指缩放功能"), ("PPT 选项", "允许幻灯片模式下的双指手势"),
+                ("高级选项", "触摸大小倍数校准"), ("高级选项", "在调色盘窗口中显示 启用笔尖模式 切换按钮"), ("高级选项", "关闭软件时二次弹窗确认"),
+                ("自动选项", "自动收纳忽略桌面EN批注窗口"), ("自动选项", "进入“希沃轻白板”时自动收纳"), ("自动选项", "进入“鸿合视频展台”时自动收纳"),
+                ("自动选项", "进入“文香白板”时自动收纳"), ("自动选项", "进入“中原旧白板”时自动收纳"), ("自动选项", "自动查杀希沃“PPT 小工具”"),
+                ("自动选项", "自动查杀 希沃白板5"), ("自动选项", "切换到鼠标模式后自动清屏"), ("自动选项", "定期自动删除超过保存时间的墨迹、截图文件"),
+                ("自动选项", "保存时间设置（Days）"), ("高级选项", "特殊屏幕触摸大小倍数"),
+            };
+            foreach (var (category, title) in formerlyDeferred)
+            {
+                settingsWindow.SelectCategory(category); ((FrameworkElement)settingsWindow.Content).UpdateLayout();
+                var editor = Descendants(settingsWindow.Content).OfType<Control>().FirstOrDefault(control => AutomationProperties.GetName(control) == title);
+                Check("classroom setting has an editor or a dependency reason " + title, editor is not null
+                    && (editor.IsEnabled || !string.IsNullOrWhiteSpace(AutomationProperties.GetHelpText(editor))));
+            }
+            settingsWindow.Close(); await Task.Delay(100);
             services.Settings.Canvas.IsShowCursor = true;
             services.ApplySettings();
             var ink = services.OverlayInk;
@@ -53,6 +72,14 @@ internal static class SettingsFeatureRegression
                     toggle.IsOn = true;
                     Check("palette nib mode applies and persists", services.Settings.Startup.IsEnableNibMode && ink.Palm.NibMode
                         && services.Store.Load().Startup.IsEnableNibMode);
+                    palette.Detach();
+                    services.Settings.Appearance.IsEnableDisPlayNibModeToggler = false; services.ApplySettings();
+                    Check("detached palette immediately follows nib switch visibility", toggle.Visibility == Visibility.Collapsed);
+                    services.Settings.Appearance.IsEnableDisPlayNibModeToggler = true;
+                    services.Settings.Startup.IsEnableNibMode = false; services.ApplySettings();
+                    Check("live nib synchronization keeps the existing control without recursive edits", toggle.Visibility == Visibility.Visible
+                        && !toggle.IsOn && ReferenceEquals(toggle, Descendants(palette.Content).OfType<ToggleSwitch>()
+                            .Single(item => AutomationProperties.GetName(item) == "启用笔尖模式")) && !ink.Palm.NibMode);
                 }
                 palette.Close();
             }
@@ -109,6 +136,16 @@ internal static class SettingsFeatureRegression
             var side = Descendants(bar.Bar).OfType<TouchIconButton>().Single(button => button.Label == "左右切换");
             Invoke(side); await Task.Delay(50);
             Check("toolbar side switch moves in current monitor", bar.AppWindow.Position.X != position.X);
+
+            var oldBoard = new Window { Title = "InstantAnnotationWindow", Content = new TextBlock { Text = "旧白板收纳检测" } };
+            WindowChrome.MakeStandard(oldBoard, 420, 240, topmost: false);
+            oldBoard.Activate();
+            services.Settings.Automation.IsAutoFoldInOldZyBoard = true;
+            for (int index = 0; index < 25 && !bar.IsFolded; index++) await Task.Delay(100);
+            Check("old whiteboard visible window triggers normal automatic folding", bar.IsFolded);
+            oldBoard.Close(); services.Settings.Automation.IsAutoFoldInOldZyBoard = false;
+            for (int index = 0; index < 25 && bar.IsFolded; index++) await Task.Delay(100);
+            Check("leaving old whiteboard restores automatically folded toolbar", !bar.IsFolded);
 
             string old = Path.Combine(services.Settings.Automation.AutoSavedStrokesLocation, "old.icink");
             File.WriteAllText(old, "fixture"); File.SetLastWriteTime(old, DateTime.Now.AddDays(-30));

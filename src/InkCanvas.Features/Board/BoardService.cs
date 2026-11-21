@@ -1,6 +1,5 @@
 using InkCanvas.Core.History;
 using InkCanvas.Core.Ink;
-using InkCanvas.Features.Persistence;
 using InkCanvas.Ink;
 using System.Numerics;
 using System.Text.Json;
@@ -8,6 +7,9 @@ using System.Text.Json;
 namespace InkCanvas.Features.Board;
 
 public enum BoardBackground { Black, White, Grid, Lined }
+
+public sealed record BoardPageInfo(InkController Controller, BoardBackground Background, float GridSpacing,
+    IReadOnlyList<BoardImageAsset> Images, IReadOnlyList<BoardMediaAsset> Media);
 
 /// <summary>A bitmap or SVG image placed on a board page; position and size are device-independent pixels.</summary>
 public sealed class BoardImageAsset
@@ -149,11 +151,10 @@ public static class BoardElementMath
 /// collection. Coordinates and sizes in both collections are stored in WinUI device-independent
 /// pixels, not physical screen pixels.
 /// </summary>
-public sealed class BoardService
+public sealed partial class BoardService
 {
-    public const int MaximumPages = 99;
     private const string BoardFormat = "inkcanvas-board";
-    private const int BoardFormatVersion = 1;
+    private const int BoardFormatVersion = 3;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -161,6 +162,8 @@ public sealed class BoardService
     };
 
     private readonly List<InkController> _pages = new();
+    private sealed record BoardPaper(BoardBackground Background = BoardBackground.Black, float GridSpacing = 40f);
+    private readonly Dictionary<InkController, BoardPaper> _papers = new();
     private readonly Dictionary<Guid, BoardSelectionElement> _selectionElements = new();
     private readonly List<List<BoardImageAsset>> _images = new() { new List<BoardImageAsset>() };
     private readonly List<List<BoardMediaAsset>> _media = new() { new List<BoardMediaAsset>() };
@@ -169,6 +172,7 @@ public sealed class BoardService
     {
         var page = initialController ?? new InkController();
         _pages.Add(page);
+        _papers.Add(page, new());
         page.GetSelectableElements = () => GetSelectionElements(page);
         ImagesChanged += () => Current.NotifyElementsChanged();
     }
@@ -198,14 +202,46 @@ public sealed class BoardService
         }
     }
 
-    public BoardBackground Background { get; set; } = BoardBackground.Black;
+    /// <summary>The current page's paper. Changing it does not modify other pages.</summary>
+    public BoardBackground Background
+    {
+        get => _papers[Current].Background;
+        set
+        {
+            if (!Enum.IsDefined(value)) throw new ArgumentOutOfRangeException(nameof(value));
+            if (Background == value) return;
+            _papers[Current] = _papers[Current] with { Background = value };
+            BackgroundChanged?.Invoke();
+        }
+    }
 
     /// <summary>Grid/lined spacing in device-independent pixels.</summary>
-    public float GridSpacing { get; set; } = 40f;
+    public float GridSpacing
+    {
+        get => _papers[Current].GridSpacing;
+        set
+        {
+            if (!float.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
+            value = Math.Clamp(value, 12f, 160f);
+            if (GridSpacing == value) return;
+            _papers[Current] = _papers[Current] with { GridSpacing = value };
+            BackgroundChanged?.Invoke();
+        }
+    }
 
     public int CurrentIndex { get; private set; }
 
     public int PageCount => _pages.Count;
+    public long PageStructureVersion { get; private set; }
+
+    public BoardPageInfo GetPageInfo(int index)
+    {
+        var page = _pages[index]; var paper = _papers[page];
+        return new(page, paper.Background, paper.GridSpacing, _images[index], _media[index]);
+    }
+
+    /// <summary>Only the runtime collection capacity limits page creation.</summary>
+    public bool CanAddPages(int count = 1) => count > 0 && count <= Array.MaxLength - PageCount;
 
     public bool HasContent => _pages.Any(page => page.Document.Count > 0)
         || _images.Any(images => images.Count > 0)
@@ -279,9 +315,7 @@ public sealed class BoardService
 
     public void SetBackground(BoardBackground background)
     {
-        if (Background == background) return;
         Background = background;
-        BackgroundChanged?.Invoke();
     }
 
     public void NextPage()
@@ -291,7 +325,7 @@ public sealed class BoardService
             GoTo(CurrentIndex + 1);
             return;
         }
-        if (_pages.Count >= MaximumPages) return;
+        if (!CanAddPages()) return;
         var source = Current;
         AddPageAt(_pages.Count);
         CurrentIndex = _pages.Count - 1;
@@ -316,7 +350,7 @@ public sealed class BoardService
 
     public bool InsertPageAfterCurrent()
     {
-        if (_pages.Count >= MaximumPages) return false;
+        if (!CanAddPages()) return false;
         var source = Current;
         AddPageAt(CurrentIndex + 1);
         CurrentIndex++;
@@ -328,16 +362,19 @@ public sealed class BoardService
     /// <summary>Transfer prepared pages in one UI update. A rejected batch leaves all pages intact.</summary>
     public bool InsertPagesAfterCurrent(IReadOnlyList<(InkController Ink, IReadOnlyList<BoardImageAsset> Images)> pages)
     {
-        if (pages is null || pages.Count == 0 || _pages.Count + pages.Count > MaximumPages) return false;
+        if (pages is null || !CanAddPages(pages.Count)) return false;
         if (pages.Any(page => page.Ink is null || _pages.Contains(page.Ink) || page.Images is null || page.Images.Any(image => !IsValidImage(image)))
             || pages.Select(page => page.Ink).Distinct().Count() != pages.Count) throw new ArgumentException("Imported pages must have independent controllers and valid images.", nameof(pages));
         int insertion = CurrentIndex + 1;
+        var paper = _papers[Current];
         _pages.InsertRange(insertion, pages.Select(page => page.Ink));
         _images.InsertRange(insertion, pages.Select(page => page.Images.ToList()));
         _media.InsertRange(insertion, pages.Select(_ => new List<BoardMediaAsset>()));
+        PageStructureVersion++;
         foreach (var page in pages)
         {
             var controller = page.Ink;
+            _papers.Add(controller, paper);
             controller.GetSelectableElements = () => GetSelectionElements(controller);
         }
         CurrentIndex = insertion;
@@ -367,13 +404,13 @@ public sealed class BoardService
     /// <summary>WPF 衍至新页: duplicate every selected object, with one history entry on the new page.</summary>
     public bool CloneSelectionToNewPage()
     {
-        if (PageCount >= MaximumPages || !Current.HasSelection) return false;
+        if (!CanAddPages() || !Current.HasSelection) return false;
         var strokes = InkStroke.CloneObjects(Current.Selection);
         var ids = Current.SelectedElements.Select(e => e.Id).ToHashSet();
         var images = CurrentImages.Where(image => ids.Contains(image.Id)).Select(image => image.Copy(preserveId: false, copyData: false)).ToList();
         var media = CurrentMedia.Where(item => ids.Contains(item.Id)).Select(item => item.Copy(preserveId: false, copyData: false)).ToList();
         if (strokes.Count + images.Count + media.Count == 0) return false;
-        InsertPageAfterCurrent();
+        if (!InsertPageAfterCurrent()) return false;
         var page = Current;
         var pageImages = _images[CurrentIndex]; var pageMedia = _media[CurrentIndex];
         Apply();
@@ -406,8 +443,41 @@ public sealed class BoardService
         void Revert() { page.Document.AddRange(strokes); pageImages.AddRange(images); pageMedia.AddRange(media); ImagesChanged?.Invoke(); }
     }
 
-    public void RemoveCurrentPage()
+    public bool MovePage(int sourceIndex, int targetIndex)
     {
+        if (sourceIndex < 0 || sourceIndex >= PageCount || targetIndex < 0 || targetIndex >= PageCount || sourceIndex == targetIndex) return false;
+        var current = Current;
+        var page = _pages[sourceIndex]; var images = _images[sourceIndex]; var media = _media[sourceIndex];
+        _pages.RemoveAt(sourceIndex); _images.RemoveAt(sourceIndex); _media.RemoveAt(sourceIndex);
+        _pages.Insert(targetIndex, page); _images.Insert(targetIndex, images); _media.Insert(targetIndex, media);
+        CurrentIndex = _pages.IndexOf(current);
+        PageStructureVersion++;
+        PageChanged?.Invoke();
+        return true;
+    }
+
+    public bool DuplicateCurrentPage()
+    {
+        if (!CanAddPages()) return false;
+        var source = Current;
+        var strokes = InkStroke.CloneObjects(source.Document.Strokes);
+        var images = CurrentImages.Select(image => image.Copy(preserveId: false, copyData: false)).ToList();
+        var media = CurrentMedia.Select(item => item.Copy(preserveId: false, copyData: false)).ToList();
+        AddPageAt(CurrentIndex + 1);
+        CurrentIndex++;
+        _images[CurrentIndex].AddRange(images); _media[CurrentIndex].AddRange(media);
+        Current.Document.AddRange(strokes);
+        CarryDrawingState(source, Current);
+        Current.ViewTransform = source.ViewTransform;
+        PageChanged?.Invoke(); ImagesChanged?.Invoke();
+        return true;
+    }
+
+    public void RemoveCurrentPage() => RemovePage(CurrentIndex);
+
+    public bool RemovePage(int index)
+    {
+        if (index < 0 || index >= PageCount) return false;
         if (_pages.Count == 1)
         {
             Current.Clear();
@@ -417,18 +487,21 @@ public sealed class BoardService
             _media[0].Clear();
             ImagesChanged?.Invoke();
             PageChanged?.Invoke();
-            return;
+            return true;
         }
 
         var source = Current;
-        _pages[CurrentIndex].Dispose();
-        _pages.RemoveAt(CurrentIndex);
-        _images.RemoveAt(CurrentIndex);
-        _media.RemoveAt(CurrentIndex);
-        CurrentIndex = Math.Clamp(CurrentIndex, 0, _pages.Count - 1);
-        CarryDrawingState(source, Current);
+        var removed = _pages[index];
+        foreach (var id in _images[index].Select(image => image.Id).Concat(_media[index].Select(item => item.Id))) _selectionElements.Remove(id);
+        _papers.Remove(removed);
+        removed.Dispose();
+        _pages.RemoveAt(index); _images.RemoveAt(index); _media.RemoveAt(index);
+        CurrentIndex = ReferenceEquals(source, removed) ? Math.Min(index, _pages.Count - 1) : _pages.IndexOf(source);
+        if (ReferenceEquals(source, removed)) CarryDrawingState(source, Current);
+        PageStructureVersion++;
         PageChanged?.Invoke();
         ImagesChanged?.Invoke();
+        return true;
     }
 
     public bool AddImage(BoardImageAsset image)
@@ -564,154 +637,43 @@ public sealed class BoardService
         media.Transform = snapshot.Transform?.ToArray();
     }
 
-    public void SavePage(string path)
-    {
-        if (_images[CurrentIndex].Count == 0 && _media[CurrentIndex].Count == 0)
-        {
-            InkFileStore.Save(path, Current.Document.Strokes);
-            return;
-        }
-        SaveBoardFile(path, new[] { CurrentIndex });
-    }
-
-    public void SaveBoard(string path) => SaveBoardFile(path, Enumerable.Range(0, _pages.Count));
-
-    /// <summary>Load a legacy single-page .icink or a board/page package saved by this service.</summary>
-    public void LoadPage(string path)
-    {
-        if (TryReadBoardFile(path, out var model))
-        {
-            var page = model.Pages?.FirstOrDefault() ?? new BoardPageFile();
-            ReplacePage(CurrentIndex, page);
-        }
-        else
-        {
-            ReplacePage(CurrentIndex, new BoardPageFile
-            {
-                Strokes = InkFileStore.Load(path).Select(ToStrokeFile).ToList(),
-            });
-        }
-        PageChanged?.Invoke();
-        ImagesChanged?.Invoke();
-    }
-
-    /// <summary>Open a board package, or treat a legacy .icink as a one-page board.</summary>
-    public void LoadBoard(string path)
-    {
-        List<BoardPageFile> loadedPages;
-        BoardBackground background = Background;
-        float gridSpacing = GridSpacing;
-        if (TryReadBoardFile(path, out var model))
-        {
-            loadedPages = model.Pages ?? new List<BoardPageFile>();
-            if (loadedPages.Count == 0) loadedPages.Add(new BoardPageFile());
-            if (loadedPages.Count > MaximumPages)
-                throw new InvalidDataException($"A board can contain at most {MaximumPages} pages.");
-            if (Enum.TryParse(model.Background, ignoreCase: true, out BoardBackground parsed)) background = parsed;
-            if (model.GridSpacing > 0) gridSpacing = model.GridSpacing;
-        }
-        else
-        {
-            loadedPages = new List<BoardPageFile>
-            {
-                new() { Strokes = InkFileStore.Load(path).Select(ToStrokeFile).ToList() },
-            };
-        }
-
-        ApplyBoard(loadedPages.Select(PreparePage).ToList(), background, gridSpacing);
-    }
-
-    // Parse and materialize the entire plugin result before the user confirms replacing live content.
-    public Action PrepareImportedPage(string path, bool entireBoard)
-    {
-        if (!TryReadBoardFile(path, out var model) || model.Pages is not { Count: 1 } || model.Pages[0] is null)
-            throw new InvalidDataException("文件导入插件未返回有效的单页画板。");
-        var file = model.Pages[0];
-        if (file.Images?.Any(image => !IsValidImage(image)) == true || file.Media?.Any(media => !IsValidMedia(media)) == true)
-            throw new InvalidDataException("文件导入插件返回了无效媒体。");
-        var page = PreparePage(file);
-        return () =>
-        {
-            if (entireBoard) ApplyBoard(new[] { page }, Background, GridSpacing);
-            else
-            {
-                ReplacePage(CurrentIndex, page);
-                PageChanged?.Invoke();
-                ImagesChanged?.Invoke();
-            }
-        };
-    }
-
-    private void ApplyBoard(IReadOnlyList<PreparedPage> loadedPages, BoardBackground background, float gridSpacing)
+    private void ApplyBoard(IReadOnlyList<PreparedPage> loadedPages)
     {
         foreach (var page in _pages) page.Dispose();
         _pages.Clear();
+        _papers.Clear();
         _images.Clear();
         _media.Clear();
+        _selectionElements.Clear();
         foreach (var page in loadedPages)
         {
             var controller = new InkController();
             controller.GetSelectableElements = () => GetSelectionElements(controller);
             controller.Document.AddRange(page.Strokes);
             _pages.Add(controller);
+            _papers.Add(controller, page.Paper);
             _images.Add(page.Images);
             _media.Add(page.Media);
         }
         CurrentIndex = 0;
-        GridSpacing = Math.Clamp(gridSpacing, 12f, 160f);
-        if (Background != background)
-        {
-            Background = background;
-            BackgroundChanged?.Invoke();
-        }
+        PageStructureVersion++;
         PageChanged?.Invoke();
         ImagesChanged?.Invoke();
     }
 
-    private void SaveBoardFile(string path, IEnumerable<int> pageIndices)
+    private sealed record PreparedPage(List<InkStroke> Strokes, List<BoardImageAsset> Images, List<BoardMediaAsset> Media, BoardPaper Paper);
+
+    private static PreparedPage PreparePage(BoardPageFile page, BoardPaper fallback)
     {
-        var file = new BoardFile
-        {
-            Format = BoardFormat,
-            Version = BoardFormatVersion,
-            Background = Background.ToString(),
-            GridSpacing = GridSpacing,
-            Pages = pageIndices.Select(index => new BoardPageFile
-            {
-                Strokes = _pages[index].Document.Strokes.Select(ToStrokeFile).ToList(),
-                Images = _images[index].ToList(),
-                Media = _media[index].ToList(),
-            }).ToList(),
-        };
-        var directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
-        string temporary = path + ".tmp";
-        File.WriteAllText(temporary, JsonSerializer.Serialize(file, JsonOptions));
-        File.Move(temporary, path, overwrite: true);
+        var strokes = (page.Strokes ?? new()).Select(FromStrokeFile).ToList();
+        ShapeSource.ShareDefinitions(strokes);
+        return new(strokes, (page.Images ?? new()).Where(IsValidImage).ToList(),
+            (page.Media ?? new()).Where(IsValidMedia).ToList(), ReadPaper(page.Background, page.GridSpacing, fallback));
     }
 
-    private static bool TryReadBoardFile(string path, out BoardFile model)
-    {
-        model = null;
-        if (!File.Exists(path)) return false;
-        using var document = JsonDocument.Parse(File.ReadAllText(path));
-        if (!document.RootElement.TryGetProperty("Format", out var format) || format.GetString() != BoardFormat)
-            return false;
-        model = JsonSerializer.Deserialize<BoardFile>(document.RootElement.GetRawText(), JsonOptions)
-            ?? throw new InvalidDataException("The board file is empty or invalid.");
-        if (model.Version != BoardFormatVersion)
-            throw new InvalidDataException($"Unsupported board file version {model.Version}.");
-        return true;
-    }
-
-    private sealed record PreparedPage(List<InkStroke> Strokes, List<BoardImageAsset> Images, List<BoardMediaAsset> Media);
-
-    private static PreparedPage PreparePage(BoardPageFile page) => new(
-        (page.Strokes ?? new()).Select(FromStrokeFile).ToList(),
-        (page.Images ?? new()).Where(IsValidImage).ToList(),
-        (page.Media ?? new()).Where(IsValidMedia).ToList());
-
-    private void ReplacePage(int index, BoardPageFile page) => ReplacePage(index, PreparePage(page));
+    private static BoardPaper ReadPaper(string background, float? spacing, BoardPaper fallback) => new(
+        Enum.TryParse(background, true, out BoardBackground parsed) && Enum.IsDefined(parsed) ? parsed : fallback.Background,
+        spacing is float value && float.IsFinite(value) && value > 0 ? Math.Clamp(value, 12f, 160f) : fallback.GridSpacing);
 
     private void ReplacePage(int index, PreparedPage page)
     {
@@ -723,15 +685,19 @@ public sealed class BoardService
         controller.Document.AddRange(page.Strokes);
         _images[index] = page.Images;
         _media[index] = page.Media;
+        _papers[controller] = page.Paper;
     }
 
     private void AddPageAt(int index)
     {
+        var paper = _papers[Current];
         var page = new InkController();
         page.GetSelectableElements = () => GetSelectionElements(page);
         _pages.Insert(index, page);
+        _papers.Add(page, paper);
         _images.Insert(index, new List<BoardImageAsset>());
         _media.Insert(index, new List<BoardMediaAsset>());
+        PageStructureVersion++;
     }
 
     private static bool IsValidImage(BoardImageAsset image)
@@ -761,6 +727,9 @@ public sealed class BoardService
 
     private static StrokeFile ToStrokeFile(InkStroke stroke) => new()
     {
+        Id = stroke.Id,
+        InkWash = stroke.Attributes.InkWash,
+        InkWashSeed = stroke.Attributes.InkWashSeed,
         LayerOrder = stroke.LayerOrder,
         Color = stroke.Attributes.Color.PackedArgb,
         Width = stroke.Attributes.BaseWidth,
@@ -789,8 +758,10 @@ public sealed class BoardService
             HighlighterAlpha = strokeFile.HighlighterAlpha,
             TaperKind = Enum.IsDefined(typeof(TaperKind), strokeFile.Taper)
                 ? (TaperKind)strokeFile.Taper : TaperKind.None,
+            InkWash = strokeFile.InkWash.Normalize(),
+            InkWashSeed = strokeFile.InkWashSeed,
         };
-        var stroke = new InkStroke(attributes) { IsRecognizedShape = strokeFile.Shape, LayerOrder = strokeFile.LayerOrder, ShapeSource = strokeFile.ShapeSource };
+        var stroke = new InkStroke(attributes) { Id = strokeFile.Id ?? Guid.NewGuid(), IsRecognizedShape = strokeFile.Shape, LayerOrder = strokeFile.LayerOrder, ShapeSource = strokeFile.ShapeSource };
         stroke.RestorePoints((strokeFile.Points ?? new List<float[]>())
             .Where(row => row.Length >= 4)
             .Select(row => new InkPoint(row[0], row[1], row[2], row[3], row.Length > 4 ? row[4] : 0f,
@@ -807,10 +778,14 @@ public sealed class BoardService
         public string Background { get; set; }
         public float GridSpacing { get; set; }
         public List<BoardPageFile> Pages { get; set; } = new();
+        public List<BoardBlobReference> Blobs { get; set; } = new();
+        public List<StrokeFile> Strokes { get; set; }
     }
 
     private sealed class BoardPageFile
     {
+        public string Background { get; set; }
+        public float? GridSpacing { get; set; }
         public List<StrokeFile> Strokes { get; set; } = new();
         public List<BoardImageAsset> Images { get; set; } = new();
         public List<BoardMediaAsset> Media { get; set; } = new();
@@ -818,6 +793,9 @@ public sealed class BoardService
 
     private sealed class StrokeFile
     {
+        public Guid? Id { get; set; }
+        public InkWashBrushOptions InkWash { get; set; } = InkWashBrushOptions.Default;
+        public int InkWashSeed { get; set; }
         public long? LayerOrder { get; set; }
         public uint Color { get; set; }
         public float Width { get; set; }

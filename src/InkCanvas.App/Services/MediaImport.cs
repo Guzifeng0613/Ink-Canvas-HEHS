@@ -2,6 +2,7 @@ using System.Numerics;
 using InkCanvas.Features.Board;
 using Windows.Storage;
 using Windows.Storage.FileProperties;
+using Microsoft.UI.Xaml;
 
 namespace InkCanvas.App.Services;
 
@@ -9,19 +10,32 @@ internal static class MediaImport
 {
     public static readonly string[] Extensions = { ".mp4", ".m4v", ".mov", ".avi", ".wmv", ".mkv", ".webm", ".mpg", ".mpeg", ".3gp", ".3g2", ".ts", ".m2ts" };
 
-    public static async Task<BoardMediaAsset> LoadAsync(StorageFile file, Vector2 viewport, Matrix3x2 view)
+    public static async Task<BoardMediaAsset> PickAsync(Window owner, Vector2 viewport, Matrix3x2 view, CancellationToken token)
     {
-        var basic = await file.GetBasicPropertiesAsync();
+        var work = WindowChrome.GetWorkArea(owner);
+        string path = await ImageFilePicker.PickAsync(new(work.X, work.Y, work.Width, work.Height), Extensions, "插入视频", "视频文件", token);
+        if (path is null) return null;
+        var file = await StorageFile.GetFileFromPathAsync(path).AsTask(token);
+        return await LoadAsync(file, viewport, view, token);
+    }
+
+    public static Task<BoardMediaAsset> LoadAsync(StorageFile file, Vector2 viewport, Matrix3x2 view, CancellationToken token = default)
+        => Task.Run(() => LoadCoreAsync(file, viewport, view, token), token);
+
+    private static async Task<BoardMediaAsset> LoadCoreAsync(StorageFile file, Vector2 viewport, Matrix3x2 view, CancellationToken token)
+    {
+        var basic = await file.GetBasicPropertiesAsync().AsTask(token);
         if (basic.Size > 512 * 1024 * 1024) throw new InvalidOperationException("视频文件超过 512 MiB。");
         if (basic.Size == 0) throw new InvalidOperationException("视频文件为空。");
-        var properties = await file.Properties.GetVideoPropertiesAsync();
+        var properties = await file.Properties.GetVideoPropertiesAsync().AsTask(token);
         uint naturalWidth = properties.Width, naturalHeight = properties.Height;
         if (properties.Orientation is VideoOrientation.Rotate90 or VideoOrientation.Rotate270)
             (naturalWidth, naturalHeight) = (naturalHeight, naturalWidth);
         if (naturalWidth == 0 || naturalHeight == 0) { naturalWidth = 16; naturalHeight = 9; }
         byte[] bytes = new byte[checked((int)basic.Size)];
-        using (var input = await file.OpenStreamForReadAsync()) await input.ReadExactlyAsync(bytes);
+        using (var input = await file.OpenStreamForReadAsync()) await input.ReadExactlyAsync(bytes, token);
         byte[] poster = await PosterAsync(file);
+        token.ThrowIfCancellationRequested();
         float factor = Math.Min(viewport.X / 2 / naturalWidth, viewport.Y / 2 / naturalHeight);
         float width = Math.Max(1, naturalWidth * factor), height = Math.Max(1, naturalHeight * factor);
         return new BoardMediaAsset

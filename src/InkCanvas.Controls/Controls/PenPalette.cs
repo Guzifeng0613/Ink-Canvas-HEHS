@@ -55,6 +55,8 @@ public sealed class PenPalette : UserControl
     private readonly Border _card;
     private readonly StackPanel _options;
     private ToggleSwitch _nibMode;
+    private Action<bool> _nibModeChanged;
+    private bool _configuringNibMode;
     public PopupHeader Header { get; }
     private FontIcon _themeGlyph;
     private TextBlock _themeText;
@@ -175,11 +177,21 @@ public sealed class PenPalette : UserControl
 
     public void ConfigureNibMode(bool visible, bool enabled, Action<bool> changed)
     {
-        if (_nibMode is not null) _options.Children.Remove(_nibMode);
-        _nibMode = new ToggleSwitch { Header = "启用笔尖模式", IsOn = enabled, Visibility = visible ? Visibility.Visible : Visibility.Collapsed };
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_nibMode, "启用笔尖模式");
-        _nibMode.Toggled += (_, _) => changed(_nibMode.IsOn);
-        _options.Children.Insert(0, _nibMode);
+        _nibModeChanged = changed;
+        if (_nibMode is null)
+        {
+            _nibMode = new ToggleSwitch { Header = "启用笔尖模式" };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_nibMode, "启用笔尖模式");
+            _nibMode.Toggled += (_, _) => { if (!_configuringNibMode) _nibModeChanged?.Invoke(_nibMode.IsOn); };
+            _options.Children.Insert(0, _nibMode);
+        }
+        _configuringNibMode = true;
+        try
+        {
+            _nibMode.IsOn = enabled;
+            _nibMode.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        }
+        finally { _configuringNibMode = false; }
     }
 
     /// <summary>Fixed design size (DIP) so the host window can size itself without a rooted measure.</summary>

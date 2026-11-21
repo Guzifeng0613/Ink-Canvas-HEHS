@@ -54,6 +54,13 @@ public static partial class ShapeGenerator
 
     /// <summary>Extrude a face or place a pyramid apex. Each shared edge is emitted once.</summary>
     public static List<InkStroke> GenerateSolid(ShapeKind kind, Vector2 start, Vector2 end, Vector2 offset, StrokeAttributes attrs)
+        => ShapeDefinition.Attach(GenerateSolidContours(kind, start, end, offset, attrs), new ShapeDefinition
+        {
+            Kind = kind, Construction = ShapeConstruction.Solid,
+            Parameters = new[] { start.X, start.Y, end.X, end.Y, offset.X, offset.Y },
+        });
+
+    internal static List<InkStroke> GenerateSolidContours(ShapeKind kind, Vector2 start, Vector2 end, Vector2 offset, StrokeAttributes attrs)
     {
         attrs ??= new StrokeAttributes();
         if (kind == ShapeKind.Cuboid) return GenerateCuboid(start, end, offset, attrs);

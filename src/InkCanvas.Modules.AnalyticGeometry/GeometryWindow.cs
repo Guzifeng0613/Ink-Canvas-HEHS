@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Text.Json;
 using InkCanvas.AnalyticGeometry;
+using InkCanvas.AnalyticGeometry.Algebra;
 using InkCanvas.Controls.Controls;
 using InkCanvas.Core.Ink;
 using InkCanvas.Core.Selection;
@@ -11,6 +12,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Text;
 
 namespace InkCanvas.Modules.AnalyticGeometry;
 
@@ -23,6 +25,9 @@ public sealed class GeometryWindow : Window
     private readonly Grid _root = new();
     private readonly ComboBox _kind = new() { MinHeight = 44, HorizontalAlignment = HorizontalAlignment.Stretch, ItemsSource = new[] { "直角坐标 · 函数或隐式方程", "参数方程 · x(t)、y(t)", "极坐标 · r(t)" } };
     private readonly TextBox _formula = FormulaBox("公式"), _second = FormulaBox("y(t)");
+    private readonly RichEditBox _formulaMath = MathBox("公式排版"), _secondMath = MathBox("y(t) 排版");
+    private readonly MathFormulaPreview _formulaFallback = new(), _secondFallback = new();
+    private readonly TextBlock _mathStatus = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = .76 };
     private TextBox _focused;
     private readonly Dictionary<string, NumberBox> _numbers = new();
     private readonly CheckBox _axes = new() { Content = "插入坐标轴", IsChecked = true, MinHeight = 40 };
@@ -40,9 +45,16 @@ public sealed class GeometryWindow : Window
     private PlotDefinition _definition;
     private int _generation;
     private bool _settingInputs, _closed, _previewUpdating;
+    private bool _mathModeAvailable;
+    private string _formulaMathMl, _secondMathMl;
+    private SegmentedSelector _formulaMode;
     private Matrix3x2 _lastView;
     private SelectionFrame? _lastFrame;
     public FormulaKeyboard Keyboard { get; } = new();
+    public bool MathModeAvailable => _mathModeAvailable;
+    public SegmentedSelector FormulaMode => _formulaMode;
+    public RichEditBox MathFormulaEditor => _formulaMath;
+    public PlotDefinition CurrentDefinition => _definition ?? ReadDefinition();
     public PlotMesh CurrentMesh => _mesh;
     public HandwritingInput Handwriting => _handwriting;
     public int CompletedGeneration { get; private set; }
@@ -52,6 +64,7 @@ public sealed class GeometryWindow : Window
     public GeometryWindow(ICanvasToolsHost host)
     {
         _host = host; Title = "解析几何 — Ink Canvas";
+        _mathModeAvailable = EnableMathMode(_formulaMath) & EnableMathMode(_secondMath);
         _root.Background = new SolidColorBrush(Microsoft.UI.Colors.WhiteSmoke);
         void ApplyTheme() => _root.Background = new SolidColorBrush(_root.ActualTheme == ElementTheme.Dark
             ? Windows.UI.Color.FromArgb(255, 32, 32, 32) : Microsoft.UI.Colors.WhiteSmoke);
@@ -77,12 +90,24 @@ public sealed class GeometryWindow : Window
         var body = new Grid(); body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(396) }); body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         Grid.SetRow(body, 1); _root.Children.Add(body);
         var panel = new StackPanel { Spacing = 12, Padding = new Thickness(16, 0, 16, 16) };
-        _kind.SelectedIndex = 0; panel.Children.Add(_kind); panel.Children.Add(_formula); panel.Children.Add(_second);
+        _kind.SelectedIndex = 0; panel.Children.Add(_kind);
+        _formulaMode = new SegmentedSelector(new[] { "线性公式", "公式预览" }) { Height = 40 };
+        AutomationProperties.SetName(_formulaMode, "公式输入模式");
+        panel.Children.Add(_formulaMode);
+        panel.Children.Add(_formula); panel.Children.Add(_second);
+        panel.Children.Add(_formulaMath); panel.Children.Add(_secondMath);
+        panel.Children.Add(_formulaFallback); panel.Children.Add(_secondFallback); panel.Children.Add(_mathStatus);
+        _formulaMath.Visibility = _secondMath.Visibility = Visibility.Collapsed;
+        _formulaFallback.Visibility = _secondFallback.Visibility = Visibility.Collapsed;
+        _formulaMode.SelectedIndex = 1;
+        _formulaMode.SelectionChanged += UpdateFormulaInputMode;
+        UpdateFormulaInputMode();
         var inputMode = new SegmentedSelector(new[] { "公式键盘", "手写输入" }) { Height = 44 }; inputMode.SelectedIndex = 0;
+        AutomationProperties.SetName(inputMode, "公式输入方式");
         panel.Children.Add(inputMode); panel.Children.Add(Keyboard); panel.Children.Add(_handwriting); _handwriting.Visibility = Visibility.Collapsed;
         inputMode.SelectionChanged += () => { Keyboard.Visibility = inputMode.SelectedIndex == 0 ? Visibility.Visible : Visibility.Collapsed; _handwriting.Visibility = inputMode.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed; };
-        Keyboard.KeyPressed += EnterKey;
-        _handwriting.CandidateChosen += value => { var box = _focused ?? _formula; box.Text = value; box.SelectionStart = value.Length; };
+        Keyboard.KeyPressed += HandleKeyboardKey;
+        _handwriting.CandidateChosen += value => SetFocusedFormula(value);
         panel.Children.Add(BuildExamples());
         var ranges = new Grid { ColumnSpacing = 8, RowSpacing = 6 };
         ranges.ColumnDefinitions.Add(new ColumnDefinition()); ranges.ColumnDefinitions.Add(new ColumnDefinition());
@@ -118,12 +143,15 @@ public sealed class GeometryWindow : Window
         {
             if (_settingInputs) return;
             SetDefinition(_kind.SelectedIndex switch {
-                1 => ReadDefinition() with { Kind = PlotKind.Parametric, Formula = "4*cos(t)", SecondFormula = "3*sin(t)" },
-                2 => ReadDefinition() with { Kind = PlotKind.Polar, Formula = "4*cos(3*t)" },
-                _ => ReadDefinition() with { Kind = PlotKind.Cartesian, Formula = "y=a*x^2+b*x+c" } });
+                1 => ReadDefinition() with { Kind = PlotKind.Parametric, Formula = "4*cos(t)", SecondFormula = "3*sin(t)", FormulaMathML = null, SecondFormulaMathML = null },
+                2 => ReadDefinition() with { Kind = PlotKind.Polar, Formula = "4*cos(3*t)", FormulaMathML = null, SecondFormulaMathML = null },
+                _ => ReadDefinition() with { Kind = PlotKind.Cartesian, Formula = "y=a*x^2+b*x+c", FormulaMathML = null, SecondFormulaMathML = null } });
+            UpdateFormulaInputMode();
         };
-        _formula.TextChanged += (_, _) => QueueCalculation(); _second.TextChanged += (_, _) => QueueCalculation();
+        _formula.TextChanged += (_, _) => OnLinearFormulaChanged(_formula, false);
+        _second.TextChanged += (_, _) => OnLinearFormulaChanged(_second, true);
         _formula.GotFocus += (_, _) => _focused = _formula; _second.GotFocus += (_, _) => _focused = _second;
+        if (!_mathModeAvailable) _formulaMode.SelectedIndex = 0;
         _axes.Checked += (_, _) => QueueCalculation(); _axes.Unchecked += (_, _) => QueueCalculation();
         _live.Checked += (_, _) => UpdateCanvasPreview(); _live.Unchecked += (_, _) => _target?.Controller.ClearExtensionPreview(_previewOwner);
         _insert.Click += (_, _) => InsertShape();
@@ -144,6 +172,106 @@ public sealed class GeometryWindow : Window
             IsSpellCheckEnabled = false, IsTextPredictionEnabled = false, PreventKeyboardDisplayOnProgrammaticFocus = true, MaxLength = 2048 };
         AutomationProperties.SetName(box, header); return box;
     }
+    private static RichEditBox MathBox(string header)
+    {
+        var box = new RichEditBox
+        {
+            Header = header,
+            MinHeight = 88,
+            MaxHeight = 180,
+            FontSize = 22,
+            IsSpellCheckEnabled = false,
+            IsTextPredictionEnabled = false,
+            PreventKeyboardDisplayOnProgrammaticFocus = true,
+            AcceptsReturn = false,
+            IsReadOnly = true,
+        };
+        AutomationProperties.SetName(box, header);
+        return box;
+    }
+
+    private static bool EnableMathMode(RichEditBox editor)
+    {
+        try
+        {
+            editor.IsReadOnly = false;
+            editor.TextDocument.SetMathMode(RichEditMathMode.MathOnly);
+            editor.TextDocument.SetMathML("<math xmlns=\"http://www.w3.org/1998/Math/MathML\"><msup><mi>x</mi><mn>2</mn></msup></math>");
+            editor.TextDocument.GetMathML(out _);
+            editor.IsReadOnly = true;
+            return true;
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException
+            or System.Runtime.InteropServices.COMException or InvalidOperationException or ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private void UpdateFormulaInputMode()
+    {
+        bool math = _formulaMode?.SelectedIndex == 1;
+        _formula.Visibility = Visibility.Visible;
+        _second.Visibility = (PlotKind)_kind.SelectedIndex == PlotKind.Parametric ? Visibility.Visible : Visibility.Collapsed;
+        _formulaMath.Visibility = math && _mathModeAvailable && _formulaMathMl is not null ? Visibility.Visible : Visibility.Collapsed;
+        _secondMath.Visibility = math && _mathModeAvailable && _secondMathMl is not null && (PlotKind)_kind.SelectedIndex == PlotKind.Parametric ? Visibility.Visible : Visibility.Collapsed;
+        _formulaFallback.Visibility = math && !_mathModeAvailable && _formulaMathMl is not null ? Visibility.Visible : Visibility.Collapsed;
+        _secondFallback.Visibility = math && !_mathModeAvailable && _secondMathMl is not null && (PlotKind)_kind.SelectedIndex == PlotKind.Parametric ? Visibility.Visible : Visibility.Collapsed;
+        _mathStatus.Text = math ? "在输入栏编辑公式，或使用下方公式键盘。" : "线性表达式输入";
+    }
+
+    private void SetMathEditor(RichEditBox editor, string expression, bool second)
+    {
+        try
+        {
+            // The editable expression is authoritative, including when opening older saved plots.
+            string mathMl = MathMarkup.ToMathML(expression);
+            if (_mathModeAvailable)
+            {
+                try
+                {
+                    editor.IsReadOnly = false;
+                    editor.TextDocument.SetMathML(mathMl);
+                    editor.IsReadOnly = true;
+                }
+                catch (Exception exception) when (exception is UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
+                {
+                    _mathModeAvailable = false;
+                    UpdateFormulaInputMode();
+                }
+            }
+            if (!_mathModeAvailable) (second ? _secondFallback : _formulaFallback).SetMathML(mathMl);
+            if (second) _secondMathMl = mathMl;
+            else _formulaMathMl = mathMl;
+            UpdateFormulaInputMode();
+        }
+        catch (Exception exception) when (exception is System.Runtime.InteropServices.COMException or FormatException or ArgumentException)
+        {
+            if (second) _secondMathMl = null;
+            else _formulaMathMl = null;
+            UpdateFormulaInputMode();
+            _mathStatus.Text = "公式无法排版：" + exception.GetBaseException().Message;
+        }
+    }
+
+    private void OnLinearFormulaChanged(TextBox box, bool second)
+    {
+        if (_settingInputs) return;
+        SetMathEditor(second ? _secondMath : _formulaMath, box.Text, second);
+        QueueCalculation();
+    }
+
+    private void SetFocusedFormula(string value)
+    {
+        var box = _formulaMode.SelectedIndex == 1
+            ? ReferenceEquals(_focused, _second) ? _second : _formula
+            : _focused ?? _formula;
+        box.Text = value;
+        box.SelectionStart = value.Length;
+    }
+
+    private void HandleKeyboardKey(string key) => EnterKey(key);
+    public void SendFormulaKey(string key) => HandleKeyboardKey(key);
     private NumberBox Number(string name, string header)
     {
         var box = new NumberBox { Header = header, Minimum = -1e8, Maximum = 1e8, SmallChange = .5, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Hidden, MinHeight = 42 };
@@ -194,8 +322,9 @@ public sealed class GeometryWindow : Window
         try
         {
             _kind.SelectedIndex = (int)definition.Kind; _formula.Text = definition.Formula ?? ""; _second.Text = definition.SecondFormula ?? "";
+            SetMathEditor(_formulaMath, _formula.Text, false);
+            SetMathEditor(_secondMath, _second.Text, true);
             _focused = _formula;
-            _second.Visibility = definition.Kind == PlotKind.Parametric ? Visibility.Visible : Visibility.Collapsed;
             _formula.Header = definition.Kind == PlotKind.Parametric ? "x(t)" : definition.Kind == PlotKind.Polar ? "r(t) · 弧度" : "公式";
             _numbers["xMin"].Value = definition.XMin; _numbers["xMax"].Value = definition.XMax; _numbers["yMin"].Value = definition.YMin; _numbers["yMax"].Value = definition.YMax;
             _numbers["tMin"].Value = definition.TMin; _numbers["tMax"].Value = definition.TMax; _numbers["a"].Value = definition.A; _numbers["b"].Value = definition.B; _numbers["c"].Value = definition.C;
@@ -203,11 +332,14 @@ public sealed class GeometryWindow : Window
             _axes.IsChecked = definition.IncludeAxes;
         }
         finally { _settingInputs = false; }
+        UpdateFormulaInputMode();
         QueueCalculation();
     }
+
     private PlotDefinition ReadDefinition() => new()
     {
         Kind = (PlotKind)Math.Max(0, _kind.SelectedIndex), Formula = _formula.Text, SecondFormula = _second.Text,
+        FormulaMathML = _formulaMathMl, SecondFormulaMathML = _secondMathMl,
         XMin = Value("xMin"), XMax = Value("xMax"), YMin = Value("yMin"), YMax = Value("yMax"),
         TMin = Value("tMin"), TMax = Value("tMax"), A = Value("a"), B = Value("b"), C = Value("c"), IncludeAxes = _axes.IsChecked == true,
     };
@@ -326,16 +458,21 @@ public sealed class GeometryWindow : Window
     private void SetStatus(string text) { if (!_closed) _status.Text = text; }
     private void EnterKey(string key)
     {
-        var box = _focused ?? _formula; int start = box.SelectionStart, length = box.SelectionLength;
-        if (key is "←" or "→") { box.SelectionStart = Math.Clamp(start + (key == "←" ? -1 : 1), 0, box.Text.Length); box.SelectionLength = 0; return; }
-        if (key == "⌫")
+        var box = _focused ?? _formula;
+        if (key == "⇥")
         {
-            if (length == 0 && start > 0) { start--; length = 1; }
-            box.Text = box.Text.Remove(start, length); box.SelectionStart = start; return;
+            int next = box.Text.IndexOf('□', box.SelectionStart + box.SelectionLength);
+            if (next < 0) next = box.Text.IndexOf('□');
+            if (next >= 0) { box.SelectionStart = next; box.SelectionLength = 1; }
+            return;
         }
-        string text = key switch { "x²" => "^2", "x³" => "^3", "√" => "sqrt()", "×" => "*", "÷" => "/", "−" => "-", "π" => "pi", "sin" or "cos" or "tan" or "abs" or "ln" or "log" => key + "()", _ => key };
-        if (box.Text.Length - length + text.Length > 2048) { SetStatus("公式最多 2048 个字符。"); return; }
-        box.Text = box.Text.Remove(start, length).Insert(start, text);
-        box.SelectionStart = start + text.Length - (text.EndsWith("()") ? 1 : 0); box.SelectionLength = 0;
+        try
+        {
+            var edit = FormulaEditing.Apply(box.Text, box.SelectionStart, box.SelectionLength, key, 2048);
+            box.Text = edit.Text;
+            SetMathEditor(ReferenceEquals(box, _second) ? _secondMath : _formulaMath, box.Text, ReferenceEquals(box, _second));
+            box.SelectionStart = edit.SelectionStart; box.SelectionLength = edit.SelectionLength;
+        }
+        catch (FormatException ex) { SetStatus(ex.Message); }
     }
 }

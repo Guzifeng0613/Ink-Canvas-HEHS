@@ -51,7 +51,7 @@ public sealed class AppServices : IDisposable
     internal async Task<Action> PrepareInkOpenAsync(string path, BoardService target, bool entireBoard = false)
     {
         if (Path.GetExtension(path).Equals(".icink", StringComparison.OrdinalIgnoreCase))
-            return entireBoard ? () => target.LoadBoard(path) : () => target.LoadPage(path);
+            return await target.PrepareOpenAsync(path, entireBoard);
 
         string directory = Directory.CreateTempSubdirectory("InkCanvas-import-").FullName;
         string output = Path.Combine(directory, "page.icink");
@@ -60,7 +60,7 @@ public sealed class AppServices : IDisposable
             await Plugins.ConvertFileAsync(path, output);
             if (new FileInfo(output).Length > 192L * 1024 * 1024)
                 throw new InvalidDataException("插件返回的画板超过 192 MiB。");
-            return await Task.Run(() => target.PrepareImportedPage(output, entireBoard));
+            return await target.PrepareImportedPageAsync(output, entireBoard);
         }
         finally { Directory.Delete(directory, recursive: true); }
     }
@@ -166,7 +166,9 @@ public sealed class AppServices : IDisposable
             controller.MultiTouchEnabled = false;
             controller.ConfigureGestures(Settings.Gesture.IsEnableTwoFingerZoom, true, Settings.Gesture.IsEnableTwoFingerRotation);
         }
-        if (ReferenceEquals(controller, OverlayInk) && PresentationActive && !Settings.PowerPoint.IsEnableTwoFingerGestureInPresentationMode)
+        controller.TouchGesturesEnabled = !ReferenceEquals(controller, OverlayInk) || !PresentationActive
+            || Settings.PowerPoint.IsEnableTwoFingerGestureInPresentationMode;
+        if (!controller.TouchGesturesEnabled)
             controller.ConfigureGestures(false, false, false);
         controller.Palm.PalmContactThreshold = Math.Max(8, Settings.Advanced.FingerModeBoundsWidth);
         controller.GesturesTargetSelection = Settings.Gesture.IsEnableTwoFingerRotationOnSelection;

@@ -5,6 +5,10 @@ $ErrorActionPreference = 'Stop'
 $artifactsRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\artifacts'))
 if (-not (Test-Path -LiteralPath $artifactsRoot)) { return }
 $rootPrefix = $artifactsRoot.TrimEnd('\') + '\'
+# A running build can retain locked DLLs while other resources are already deleted.
+# Check before deleting any part of a build and retry it on the next cleanup.
+$runningExecutables = @(Get-CimInstance Win32_Process -Filter "Name = 'InkCanvas.exe'" -ErrorAction Stop |
+    Where-Object ExecutablePath | ForEach-Object { [IO.Path]::GetFullPath($_.ExecutablePath) })
 $builds = @(Get-ChildItem -LiteralPath $artifactsRoot -Directory | Where-Object {
     -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint)
 } | ForEach-Object {
@@ -25,6 +29,10 @@ foreach ($build in $builds) {
     $resolved = [IO.Path]::GetFullPath($build.Path)
     if (-not $resolved.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
         throw "Build path is outside artifacts: $resolved"
+    }
+    if (@($runningExecutables | Where-Object { $_.StartsWith($resolved + '\', [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
+        Write-Output ('Deferred running build ' + $resolved)
+        continue
     }
     if ($PSCmdlet.ShouldProcess($resolved, 'Remove historical build')) {
         Remove-Item -LiteralPath $resolved -Recurse -Force

@@ -225,7 +225,7 @@ public sealed class PdfAnnotationFile : IDisposable
                 states.Elements["/GS" + alpha] = gs;
             }
             Span<Vector2> contour = stackalloc Vector2[26];
-            foreach (var stroke in strokes.OrderBy(stroke => stroke.LayerOrder ?? long.MaxValue))
+            foreach (var stroke in strokes.OrderBy(stroke => stroke.LayerOrder ?? long.MaxValue).SelectMany(InkCanvas.Core.Shapes.ShapeDefinition.RenderContours))
             {
                 var waterInk = InkBrush.UsesInkWash(stroke) ? WaterInkPaths(stroke, token) : null;
                 var layers = InkBrush.Layers(stroke);
@@ -237,6 +237,12 @@ public sealed class PdfAnnotationFile : IDisposable
                     content.Append('/').Append("GS").Append(color.A).Append(" gs\n").Append(Number(color.R / 255d)).Append(' ').Append(Number(color.G / 255d)).Append(' ').Append(Number(color.B / 255d)).Append(" rg\n");
                     var points = stroke.Points;
                     if (points.Count == 0) continue;
+                    if (stroke.ShapeSource?.Geometry?.IsFill == true)
+                    {
+                        var path = new Path64(points.Count);
+                        foreach (var point in points) path.Add(new Point64(Math.Round(point.X * 10000d), Math.Round(point.Y * 10000d)));
+                        AppendPaths(new Paths64 { path }); content.Append("f\n"); continue;
+                    }
                     if (waterInk is not null)
                     {
                         AppendPaths(Clipper.Union(waterInk[layerIndex], FillRule.NonZero));

@@ -46,6 +46,8 @@ public partial class App : Application
         if (selectionTouchCheck is not null) { _ = Diagnostics.SelectionTouchRegression.Run(selectionTouchCheck["--selectiontouchcheck=".Length..]); return; }
         var themeCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--themecheck=", StringComparison.OrdinalIgnoreCase));
         if (themeCheck is not null) { _ = Diagnostics.ChromeThemeRegression.Run(themeCheck["--themecheck=".Length..]); return; }
+        var desktopVideoCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--desktopvideocheck=", StringComparison.OrdinalIgnoreCase));
+        if (desktopVideoCheck is not null) { _ = Diagnostics.DesktopVideoRegression.Run(desktopVideoCheck["--desktopvideocheck=".Length..]); return; }
         var settingsFeatureCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--settingsfeaturescheck=", StringComparison.OrdinalIgnoreCase));
         if (settingsFeatureCheck is not null) { _ = Diagnostics.SettingsFeatureRegression.Run(settingsFeatureCheck["--settingsfeaturescheck=".Length..]); return; }
         var memoryCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--memorycheck=", StringComparison.OrdinalIgnoreCase));
@@ -66,6 +68,16 @@ public partial class App : Application
         if (imageImportCheck is not null) { _ = Diagnostics.ImageImportRegression.Run(imageImportCheck[19..]); return; }
         var displayCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--displaycheck=", StringComparison.OrdinalIgnoreCase));
         if (displayCheck is not null) { _ = Diagnostics.DisplayRegression.Run(displayCheck[15..]); return; }
+        var boardStorageCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--boardstoragecheck=", StringComparison.OrdinalIgnoreCase));
+        if (boardStorageCheck is not null) { _ = Diagnostics.BoardStorageRegression.Run(boardStorageCheck.Substring("--boardstoragecheck=".Length)); return; }
+        var boardPageCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--boardpagecheck=", StringComparison.OrdinalIgnoreCase));
+        if (boardPageCheck is not null) { _ = Diagnostics.BoardPageRegression.Run(boardPageCheck["--boardpagecheck=".Length..]); return; }
+        var pageManagementCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--pagemanagementcheck=", StringComparison.OrdinalIgnoreCase));
+        if (pageManagementCheck is not null) { _ = Diagnostics.BoardManagementRegression.Run(pageManagementCheck["--pagemanagementcheck=".Length..]); return; }
+        var editableShapeCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--editableshapecheck=", StringComparison.OrdinalIgnoreCase));
+        if (editableShapeCheck is not null) { _ = Diagnostics.EditableShapeRegression.Run(editableShapeCheck["--editableshapecheck=".Length..]); return; }
+        var shortcutCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--shortcutcheck=", StringComparison.OrdinalIgnoreCase));
+        if (shortcutCheck is not null) { _ = Diagnostics.ShortcutRegression.Run(shortcutCheck["--shortcutcheck=".Length..]); return; }
         var geometryCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--geometrycheck=", StringComparison.OrdinalIgnoreCase));
         if (geometryCheck is not null) { _ = Diagnostics.GeometryRegression.Run(geometryCheck[16..]); return; }
         var pdfCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--pdfcheck=", StringComparison.OrdinalIgnoreCase));

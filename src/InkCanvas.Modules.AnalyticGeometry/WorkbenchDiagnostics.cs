@@ -7,6 +7,7 @@ using InkCanvas.Host.Contracts;
 using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.Svg;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
@@ -43,6 +44,41 @@ public static class WorkbenchDiagnostics
             target.Controller.ClearSelection();
             window = new(host); window.Activate(); await Task.Delay(400);
             Check("native workbench uses shared WinUI title bar", window.ExtendsContentIntoTitleBar && window.Content is Controls.Controls.WindowFrame);
+            window.FormulaInput.Text = "h(x)=";
+            window.FormulaInput.Focus(FocusState.Programmatic);
+            window.FormulaInput.SelectionStart = window.FormulaInput.Text.Length;
+            window.Keyboard.SendKey("分数");
+            Check("workbench fraction template selects its numerator", window.FormulaInput.Text == "h(x)=(□)/(□)" && window.FormulaInput.SelectedText == "□");
+            window.Keyboard.SendKey("x"); window.Keyboard.SendKey("x²"); window.Keyboard.SendKey("⇥"); window.Keyboard.SendKey("2");
+            await Task.Delay(200);
+            Check("workbench keyboard fills and navigates structural placeholders", window.FormulaInput.Text == "h(x)=(x^2)/(2)");
+            Check("main plugin entry displays MathML before creating a shape", window.FormulaMathML?.Contains("mfrac", StringComparison.Ordinal) == true,
+                new { nativeRichEdit = window.FormulaUsesRichEdit });
+            window.Execute(window.FormulaInput.Text); await window.CalculateAsync();
+            Check("template expression uses the normal construction and algebra pipeline", window.Evaluation.Values["h"].Defined);
+            var keyboardPanel = Descendants(window.Content).OfType<Expander>().Single(item => AutomationProperties.GetName(item) == "数学键盘与手写输入");
+            keyboardPanel.IsExpanded = true;
+            (window.Content as FrameworkElement)?.UpdateLayout();
+            await Task.Delay(150);
+            var keys = Descendants(window.Keyboard).OfType<Button>().Where(button => AutomationProperties.GetName(button).StartsWith("公式键 ")).ToArray();
+            Check("formula keyboard uses touch-sized keys across its input width", keys.Length > 20 && keys.All(button => button.ActualHeight >= 44 && button.ActualWidth >= 40));
+            await ScreenshotAsync(window, Path.Combine(directory, "math-keyboard.png"));
+            window.FormulaInput.Text = "[[1,2],[3/2,-1/2]]";
+            await Task.Delay(150);
+            Check("workbench displays matrix and fraction structure", window.FormulaMathML?.Contains("mtable", StringComparison.Ordinal) == true);
+            var surface = (FrameworkElement)window.Content;
+            surface.RequestedTheme = ElementTheme.Dark;
+            await Task.Delay(150);
+            await ScreenshotAsync(window, Path.Combine(directory, "math-dark.png"));
+            surface.RequestedTheme = ElementTheme.Light;
+            await Task.Delay(100);
+            await ScreenshotAsync(window, Path.Combine(directory, "math-matrix.png"));
+            window.FormulaInput.Text = "f(x)=";
+            await Task.Delay(150);
+            Check("incomplete input hides the previous mathematical preview", Descendants(window.Content).OfType<MathFormulaView>()
+                .All(view => view.Visibility == Visibility.Collapsed));
+            window.FormulaInput.Text = "";
+            keyboardPanel.IsExpanded = false;
             foreach (var example in GeometryWorkbenchWindow.ExampleCommands)
             {
                 try

@@ -192,6 +192,7 @@ public static class InkFileStore
             stroke.ImportObjectFrame(sm.ObjectFrame);
             result.Add(stroke);
         }
+        ShapeSource.ShareDefinitions(result);
         return result;
     }
 }

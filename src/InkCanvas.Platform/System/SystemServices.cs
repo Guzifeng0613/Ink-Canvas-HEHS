@@ -62,7 +62,19 @@ public static class ScreenService
         EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero,
             (IntPtr monitor, IntPtr dc, ref NativeMethods.RECT rect, IntPtr data) =>
             { screens.Add(ReadMonitor(monitor)); return true; }, IntPtr.Zero);
-        return screens;
+        return screens.OrderBy(screen => screen.DeviceName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(screen => screen.Bounds.X).ThenBy(screen => screen.Bounds.Y).ToArray();
+    }
+
+    /// <summary>Physical desktop bounds from one monitor snapshot, including negative origins.</summary>
+    public static ScreenRect GetVirtualBounds(IReadOnlyList<ScreenInfo> screens)
+    {
+        if (screens.Count == 0) return default;
+        int left = screens.Min(screen => screen.Bounds.X);
+        int top = screens.Min(screen => screen.Bounds.Y);
+        int right = screens.Max(screen => checked(screen.Bounds.X + screen.Bounds.Width));
+        int bottom = screens.Max(screen => checked(screen.Bounds.Y + screen.Bounds.Height));
+        return new(left, top, checked(right - left), checked(bottom - top));
     }
 
     private static ScreenInfo ReadMonitor(IntPtr monitor)

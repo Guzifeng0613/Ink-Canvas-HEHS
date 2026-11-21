@@ -113,6 +113,7 @@ public static class PdfInkCodec
             stroke.RestorePoints(points); stroke.ImportObjectFrame(frame); stroke.Complete(); result.Add(stroke);
         }
         if (zlib.ReadByte() != -1) throw new InvalidDataException("Unexpected PDF ink data.");
+        ShapeSource.ShareDefinitions(result);
         return result;
     }
     private static void WriteText(BinaryWriter writer, string value, int limit, ref int total)

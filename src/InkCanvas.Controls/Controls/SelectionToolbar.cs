@@ -1,5 +1,6 @@
 using System.Numerics;
 using InkCanvas.Core.Ink;
+using InkCanvas.Core.Shapes;
 using InkCanvas.Controls.Theming;
 using InkCanvas.Ink;
 using Microsoft.UI.Xaml;
@@ -17,7 +18,7 @@ public sealed class SelectionToolbar : UserControl
     private readonly StackPanel _primary = new() { Orientation = Orientation.Horizontal };
     private readonly StackPanel _actions = new() { Orientation = Orientation.Horizontal };
     private readonly Border _secondary = new() { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 4, 0, 0) };
-    private readonly TouchIconButton _fold, _clone, _style;
+    private readonly TouchIconButton _fold, _clone, _style, _geometry;
     private string _section;
     private bool _collapsed;
     private int _theme = 1;
@@ -31,8 +32,10 @@ public sealed class SelectionToolbar : UserControl
         _fold = Button("收起", "\uE76B", ToggleCollapsed);
         _clone = Button("克隆", "\uE8C8", () => { Controller.CloneMode = !Controller.CloneMode; Refresh(); });
         _style = Button("样式", "\uE790", () => ToggleSection("样式", BuildStyle));
+        _geometry = Button("图形", Glyphs.ShapesWpf, () => ToggleSection("图形", BuildGeometry));
         _actions.Children.Add(_clone);
         _actions.Children.Add(_style);
+        _actions.Children.Add(_geometry);
         _actions.Children.Add(Button("变换", "\uE7AD", () => ToggleSection("变换", BuildTransform)));
         _actions.Children.Add(Button("层级", "\uE81E", () => ToggleSection("层级", BuildLayers)));
         _actions.Children.Add(Button("更多", "\uE712", () => ToggleSection("更多", () => new StackPanel
@@ -81,6 +84,12 @@ public sealed class SelectionToolbar : UserControl
         button.SelectionBackground = PopupBrushes.FloatBarSelected();
         button.ApplyHoverResources(button.ContentForeground);
         button.RefreshVisual();
+        if (button.Label is "线型" or "原图线型" or "实线" or "虚线" or "点线")
+        {
+            var kind = button.Label == "点线" ? ShapeKind.DotLine : button.Label == "实线" ? ShapeKind.Line : ShapeKind.DashedLine;
+            button.SetContent(new Viewbox { Width = 28, Height = 18, Stretch = Stretch.Uniform,
+                Child = ShapeIcons.Create(kind, PopupBrushes.FloatBarForeground(_theme)) });
+        }
     }
 
     public void ToggleCollapsed()
@@ -110,6 +119,7 @@ public sealed class SelectionToolbar : UserControl
         _clone.IsSelected = Controller.CloneMode;
         var images = SelectedImages();
         _style.IsEnabled = Controller.Selection.Count > 0 || images.Length > 0;
+        _geometry.IsEnabled = Controller.HasEditableShapes;
         if (Controller.PreviewStrokes is not null) return;
         _style.Label = images.Length > 0 ? "属性" : "样式";
         string selection = string.Join(",", images.Select(image => image.Id)) + (Controller.Selection.Count > 0 ? "|ink" : "");
@@ -202,6 +212,61 @@ public sealed class SelectionToolbar : UserControl
             foreach (var (button, action) in buttons) button.IsEnabled = Controller.CanArrangeSelection(action);
         };
         _refreshLayers();
+        return panel;
+    }
+
+    private UIElement BuildGeometry()
+    {
+        var edit = Button("控制点", "\uE70F", () => { Controller.ToggleShapeEditing(); ClosePanels(); });
+        var fill = Button("填充", "\uE790", () => ToggleSection("图形填充", BuildShapeFill));
+        var line = Button("线型", "\uE9D9", () => ToggleSection("图形线型", BuildShapeLines));
+        var connect = Button("连接线", "\uE71B", () => { Controller.ConnectSelectedShapes(); Refresh(); });
+        var detach = Button("解除连接", "\uE785", () => { Controller.DetachShapeConnections(); Refresh(); });
+        _refreshProperties = () =>
+        {
+            edit.IsEnabled = Controller.CanEditShape; edit.IsSelected = Controller.ShapeEditEnabled;
+            fill.IsEnabled = Controller.CanFillShapes;
+            connect.IsEnabled = Controller.CanConnectShapes;
+            detach.IsEnabled = Controller.HasConnectedShapes;
+        };
+        _refreshProperties();
+        return new StackPanel { Spacing = 4, Children =
+        {
+            new StackPanel { Orientation = Orientation.Horizontal, Children = { edit, fill, line } },
+            new StackPanel { Orientation = Orientation.Horizontal, Children = { connect, detach } },
+        } };
+    }
+
+    private UIElement BuildShapeLines()
+    {
+        var panel = new StackPanel();
+        var choices = new[] { ("原图线型", ShapeLineStyle.Original), ("实线", ShapeLineStyle.Solid),
+            ("虚线", ShapeLineStyle.Dashed), ("点线", ShapeLineStyle.Dotted) };
+        for (int rowIndex = 0; rowIndex < 2; rowIndex++)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            foreach (var (label, style) in choices.Skip(rowIndex * 2).Take(2))
+                row.Children.Add(Button(label, "\uE9D9", () => Controller.SetShapeLineStyle(style)));
+            panel.Children.Add(row);
+        }
+        return panel;
+    }
+
+    private UIElement BuildShapeFill()
+    {
+        var panel = new StackPanel();
+        panel.Children.Add(Button("无填充", "\uE711", () => Controller.SetShapeFill(null)));
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var (label, color) in new[] { ("红色", InkColor.Opaque(220, 38, 38)), ("黄色", InkColor.Opaque(250, 204, 21)),
+            ("绿色", InkColor.Opaque(22, 163, 74)), ("蓝色", InkColor.Opaque(37, 99, 235)), ("白色", InkColor.Opaque(255, 255, 255)) })
+        {
+            var button = Button(label, "", () => Controller.SetShapeFill(color));
+            button.SetContent(new Border { Width = 24, Height = 24, CornerRadius = new CornerRadius(4),
+                Background = new SolidColorBrush(Color.FromArgb(color.A, color.R, color.G, color.B)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(100, 128, 128, 128)), BorderThickness = new Thickness(1) });
+            row.Children.Add(button);
+        }
+        panel.Children.Add(row);
         return panel;
     }
 

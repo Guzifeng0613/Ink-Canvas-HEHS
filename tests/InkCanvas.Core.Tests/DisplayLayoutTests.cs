@@ -35,4 +35,19 @@ public sealed class DisplayLayoutTests
     {
         Assert.Equal(new ScreenRect(-50, 40, 1, 1), new ScreenRect(0, 0, 0, 0).FitInside(new(-50, 40, 0, 0)));
     }
+
+    [Fact]
+    public void VirtualBoundsKeepPhysicalPixelsAcrossMixedDpiAndNegativeOrigins()
+    {
+        ScreenInfo[] screens =
+        {
+            new(new(1), new(-2560, -400, 2560, 1440), default, 1.5),
+            new(new(2), new(0, 0, 1920, 1080), default, 1),
+            new(new(3), new(1920, -1200, 1200, 1920), default, 1.25),
+        };
+        Assert.Equal(new(-2560, -1200, 5680, 2280), ScreenService.GetVirtualBounds(screens));
+        Assert.Equal(ScreenService.GetVirtualBounds(screens), ScreenService.GetVirtualBounds(screens.Reverse().ToArray()));
+        Assert.Equal(new(0, 0, 1920, 1080), ScreenService.GetVirtualBounds(new[] { screens[1] }));
+        Assert.Equal(default, ScreenService.GetVirtualBounds(Array.Empty<ScreenInfo>()));
+    }
 }

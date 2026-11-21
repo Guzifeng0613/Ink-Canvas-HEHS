@@ -12,9 +12,9 @@ public sealed partial class ShellController
     private bool CanInstallUpdateSilently()
     {
         if (_exiting || _disposed || _board is not null || _documentWorkspace is not null || _settings is not null
-            || _countdown is not null || _lottery is not null || _replay is not null || _imagePicking || _lastSlideShowState || _updateWindow is not null) return false;
+            || _countdown is not null || _lottery is not null || _replay is not null || _imagePicking || _videoPicking || _lastSlideShowState || _updateWindow is not null) return false;
         if (Services.OverlayInk.HasActiveInteraction || Services.OverlayInk.Playback is not null
-            || Services.OverlayInk.Document.Count > 0 || Services.ScreenImages.CurrentImages.Count > 0) return false;
+            || Services.OverlayInk.Document.Count > 0 || Services.ScreenImages.CurrentImages.Count > 0 || Services.ScreenImages.CurrentMedia.Count > 0) return false;
         var input = new LastInput { Size = (uint)Marshal.SizeOf<LastInput>() };
         return GetLastInputInfo(ref input) && unchecked((uint)Environment.TickCount - input.Time) >= 60000;
     }
@@ -24,13 +24,42 @@ public sealed partial class ShellController
         if (silent) return CanInstallUpdateSilently();
         if (ActiveController.HasActiveInteraction) { await ShowUpdateNoticeAsync("更新", "请先完成当前笔画或拖动，再安装更新。"); return false; }
         if (_documentWorkspace is not null && !await _documentWorkspace.CloseAsync()) return false;
-        string directory = Path.Combine(Services.Store.Directory, "BeforeUpdate", DateTime.Now.ToString("yyyyMMdd-HHmmss"));
-        if (Services.OverlayInk.Document.Count > 0 || Services.ScreenImages.CurrentImages.Count > 0)
-        { Directory.CreateDirectory(directory); Services.ScreenImages.SavePage(Path.Combine(directory, "桌面批注.icink")); }
-        if (_board is not null)
-        { Directory.CreateDirectory(directory); Services.Board.SaveBoard(Path.Combine(directory, "画板.icink")); _board.Close(); }
-        Services.SaveSettings();
-        return true;
+        var boardWindow = _board;
+        var stores = new[] { Services.ScreenImages, Services.Board };
+        var pages = stores.SelectMany(store => store.Pages).ToArray();
+        var spacing = stores.Select(store => store.GridSpacing).ToArray();
+        bool changed = false;
+        void MarkChanged() => changed = true;
+        foreach (var page in pages) { page.Document.Changed += MarkChanged; page.History.Changed += MarkChanged; }
+        foreach (var store in stores) { store.PageChanged += MarkChanged; store.ImagesChanged += MarkChanged; store.BackgroundChanged += MarkChanged; }
+        try
+        {
+            string directory = Path.Combine(Services.Store.Directory, "BeforeUpdate", DateTime.Now.ToString("yyyyMMdd-HHmmss"));
+            if (Services.OverlayInk.Document.Count > 0 || Services.ScreenImages.CurrentImages.Count > 0 || Services.ScreenImages.CurrentMedia.Count > 0)
+            {
+                Directory.CreateDirectory(directory);
+                await Services.ScreenImages.SavePageAsync(Path.Combine(directory, "桌面批注.icink"));
+            }
+            if (boardWindow is not null)
+            {
+                Directory.CreateDirectory(directory);
+                await Services.Board.SaveBoardAsync(Path.Combine(directory, "画板.icink"));
+            }
+            if (changed || ActiveController.HasActiveInteraction || !ReferenceEquals(boardWindow, _board)
+                || !spacing.SequenceEqual(stores.Select(store => store.GridSpacing)))
+            {
+                await ShowUpdateNoticeAsync("更新", "备份期间画板内容发生了变化。请完成编辑后重新安装更新。");
+                return false;
+            }
+            boardWindow?.Close();
+            Services.SaveSettings();
+            return true;
+        }
+        finally
+        {
+            foreach (var page in pages) { page.Document.Changed -= MarkChanged; page.History.Changed -= MarkChanged; }
+            foreach (var store in stores) { store.PageChanged -= MarkChanged; store.ImagesChanged -= MarkChanged; store.BackgroundChanged -= MarkChanged; }
+        }
     }
 
     private Task<ReleaseInfo> ChooseUpdateReleaseAsync(IReadOnlyList<ReleaseInfo> releases)

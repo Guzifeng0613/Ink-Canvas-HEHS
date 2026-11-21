@@ -11,6 +11,12 @@ using InkCanvas.Pdf;
 using InkCanvas.Platform.Windows;
 using Microsoft.Graphics.Canvas;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
+using Microsoft.UI.Xaml.Automation.Provider;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using PdfSharp.Drawing;
 using PdfSharp.Pdf;
@@ -81,7 +87,7 @@ public static class PdfDiagnostics
             var rasterizer = await PdfRasterizer.OpenAsync(workspaceFile, CancellationToken.None);
             window = new PdfWindow(host, workspaceFile, rasterizer, () => Task.CompletedTask, () => Task.CompletedTask);
             host.Attach(window); window.Activate(); await Task.Delay(900);
-            Check("native document workspace attaches", ReferenceEquals(host.Owner, window));
+            Check("native document workspace exposes its active controller and window", window.Controller is not null && ReferenceEquals(window.Window, window) && window.AppWindow.IsVisible);
             Check("PDF uses shared WinUI title bar and current file title", window.ExtendsContentIntoTitleBar
                 && window.Content is Controls.Controls.WindowFrame frame && frame.Header.Title == window.Title);
             Check("PDF is a normal non-topmost window", window.AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter { IsAlwaysOnTop: false }
@@ -106,6 +112,77 @@ public static class PdfDiagnostics
             window.SetSidebarOpen(false); await Task.Delay(80);
             Check("sidebar remains folded on narrow window resize", !window.SidebarOpen);
             window.AppWindow.ResizeClient(windowSize); await Task.Delay(150); window.SetSidebarOpen(true); await Task.Delay(150);
+
+            var collapse = FindVisual<Controls.Controls.TouchIconButton>(window.Content, "收起 PDF 侧栏");
+            ((IInvokeProvider)new ButtonAutomationPeer(collapse).GetPattern(PatternInterface.Invoke)).Invoke();
+            await Task.Delay(180);
+            Check("sidebar collapse button is operable through native UI automation", !window.SidebarOpen);
+            var toggle = FindVisual<Controls.Controls.TouchIconButton>(window.Content, "显示或隐藏 PDF 侧栏");
+            ((IInvokeProvider)new ButtonAutomationPeer(toggle).GetPattern(PatternInterface.Invoke)).Invoke();
+            await Task.Delay(180);
+            Check("persistent page button reopens sidebar", window.SidebarOpen && toggle.IsSelected);
+
+            var vertical = FindVisual<ScrollBar>(window.Content, "PDF 垂直滚动条");
+            var horizontal = FindVisual<ScrollBar>(window.Content, "PDF 水平滚动条");
+            Check("document has visible native scroll bars on both axes", vertical.ActualWidth >= 20 && horizontal.ActualHeight >= 20
+                && vertical.Maximum > 0 && horizontal.IsEnabled == (horizontal.Maximum > .01),
+                new { verticalWidth = vertical.ActualWidth, horizontalHeight = horizontal.ActualHeight, verticalRange = vertical.Maximum, horizontalRange = horizontal.Maximum });
+            var body = ((Controls.Controls.WindowFrame)window.Content).Children.OfType<Grid>().Single();
+            var viewport = (Grid)window.AnnotationSurface.Parent;
+            var originalTheme = body.RequestedTheme;
+            body.RequestedTheme = ElementTheme.Dark; await Task.Delay(180);
+            var darkBackground = (SolidColorBrush)viewport.Background;
+            Check("dark PDF workspace has a black themed outer background", darkBackground.Color.R == 0 && darkBackground.Color.G == 0 && darkBackground.Color.B == 0
+                && window.AnnotationSurface.ActualTheme == ElementTheme.Dark);
+            Check("dark PDF commands retain readable foreground", ((SolidColorBrush)toggle.ContentForeground).Color == Microsoft.UI.Colors.White);
+            await ScreenshotAsync(window, Path.Combine(directory, "pdf-dark-navigation.png"));
+            var backdrop = window.SystemBackdrop;
+            window.SystemBackdrop = null;
+            body.RequestedTheme = ElementTheme.Light; await Task.Delay(180);
+            var lightBackground = (SolidColorBrush)viewport.Background;
+            Check("light PDF workspace falls back to solid white without transparency", lightBackground.Color == Microsoft.UI.Colors.White);
+            await ScreenshotAsync(window, Path.Combine(directory, "pdf-light-navigation.png"));
+            window.SystemBackdrop = backdrop;
+            body.RequestedTheme = originalTheme;
+            window.ApplySettings(); await Task.Delay(150);
+
+            var navigationLayout = new PdfContinuousLayout(workspaceFile.Pages);
+            Vector2 DocumentPosition() => navigationLayout.DocumentView(window.PageIndex, window.Controller.ViewTransform).Translation;
+            window.GoToPage(0);
+            var scrollStart = DocumentPosition();
+            window.SmoothScrollBy(new(0, -240));
+            Check("wheel scrolling queues a transition without an immediate jump", DocumentPosition() == scrollStart);
+            await Task.Delay(80);
+            float intermediateScroll = scrollStart.Y - DocumentPosition().Y;
+            Check("wheel scrolling renders intermediate positions", intermediateScroll > 1 && intermediateScroll < 240);
+            await Task.Delay(650);
+            Check("wheel scrolling settles at target and synchronizes thumb", Math.Abs(scrollStart.Y - DocumentPosition().Y - 240) < 1
+                && Math.Abs(vertical.Value - (16 - DocumentPosition().Y)) < 1);
+            vertical.Value = vertical.Maximum; await Task.Delay(150);
+            Check("vertical scrollbar reaches the final page", window.PageIndex == workspaceFile.Pages.Count - 1
+                && Math.Abs(vertical.Value - vertical.Maximum) < 1);
+            window.GoToPage(0);
+            window.Controller.ViewTransform *= Matrix3x2.CreateScale(3, window.ViewportSize / 2);
+            window.Controller.NotifyElementsChanged(); await Task.Delay(100);
+            horizontal.Value = horizontal.Maximum; await Task.Delay(100);
+            Check("horizontal scrollbar pans a zoomed document without leaving page bounds", horizontal.Maximum > 0
+                && Math.Abs(DocumentPosition().X - (window.ViewportSize.X - navigationLayout.Width * MathF.Sqrt(window.Controller.ViewTransform.GetDeterminant()) - 16)) < 1);
+
+            await TouchNavigationAsync(InkTool.Pen, pinch: false);
+            var release = DocumentPosition(); await Task.Delay(180);
+            Check("single-finger ink mode permits two-finger inertial page scrolling without stray ink", DocumentPosition().Y < release.Y - 8
+                && window.Controller.Document.Count == 0 && window.Controller.LiveStrokes.Count() == 0);
+            var interrupted = new OverlayPointer(952, 160, 180, .5f, 4, 4, OverlayPointerKind.Touch, 3000);
+            window.NavigationInputStarting(interrupted);
+            var interruptedAt = DocumentPosition(); await Task.Delay(150);
+            Check("new contact stops the previous scroll immediately", Vector2.Distance(DocumentPosition(), interruptedAt) < .01f);
+            await TouchNavigationAsync(InkTool.Pen, pinch: true);
+            var pinchRelease = DocumentPosition(); await Task.Delay(180);
+            Check("pinch zoom stops without accidental translation momentum", Vector2.Distance(DocumentPosition(), pinchRelease) < .01f);
+            await TouchNavigationAsync(InkTool.Pan, pinch: false);
+            var handRelease = DocumentPosition(); await Task.Delay(180);
+            Check("hand mode retains direct drag with no release inertia", Vector2.Distance(DocumentPosition(), handRelease) < .01f);
+            window.GoToPage(0); window.Controller.Tool = InkTool.Pen;
 
             var continuous = new PdfContinuousLayout(workspaceFile.Pages);
             window.GoToPage(0);
@@ -147,10 +224,14 @@ public static class PdfDiagnostics
             {
                 SetCursorPos(origin.X + (int)(screen.X * dpi), origin.Y + (int)(screen.Y * dpi));
                 var hit = WindowFromPoint(new Platform.Interop.NativeMethods.POINT { X = origin.X + (int)(screen.X * dpi), Y = origin.Y + (int)(screen.Y * dpi) });
-                MouseEvent(2, 0, 0, 0, UIntPtr.Zero); await Task.Delay(40);
-                SetCursorPos(origin.X + (int)(screen.X * dpi), origin.Y + (int)((screen.Y + 30) * dpi)); await Task.Delay(40);
-                MouseEvent(4, 0, 0, 0, UIntPtr.Zero); await Task.Delay(180);
-                window.Controller.FinishDotAnimations();
+                nativeInput &= GetAncestor(hit, 2) == WinRT.Interop.WindowNative.GetWindowHandle(window);
+                if (nativeInput)
+                {
+                    MouseEvent(2, 0, 0, 0, UIntPtr.Zero); await Task.Delay(40);
+                    SetCursorPos(origin.X + (int)(screen.X * dpi), origin.Y + (int)((screen.Y + 30) * dpi)); await Task.Delay(40);
+                    MouseEvent(4, 0, 0, 0, UIntPtr.Zero); await Task.Delay(180);
+                    window.Controller.FinishDotAnimations();
+                }
                 if (nativeInput)
                 {
                     Check("native pointer can annotate page margin", inputBegan && window.Controller.Document.Count == 1
@@ -161,7 +242,7 @@ public static class PdfDiagnostics
                 }
                 else
                 {
-                    checks.Add(new { check = "native pointer margin input unavailable", available = false, detail = "GetCursorPos returned false. Interactive input requires an unlocked input desktop." });
+                    checks.Add(new { check = "native pointer margin input unavailable", available = false, detail = "The PDF window is not reachable on the current input desktop. Margin ink is verified through programmatic pointer samples." });
                     var sample = new OverlayPointer(441, local.X, local.Y, .5f, 0, 0, OverlayPointerKind.Pen, 1000);
                     window.ActivateTouchedPage(sample);
                     window.Controller.OnPointerDown(sample);
@@ -173,7 +254,7 @@ public static class PdfDiagnostics
                     window.Controller.Undo();
                 }
             }
-            finally { MouseEvent(4, 0, 0, 0, UIntPtr.Zero); SetCursorPos(oldCursor.X, oldCursor.Y); }
+            finally { if (nativeInput) MouseEvent(4, 0, 0, 0, UIntPtr.Zero); SetCursorPos(oldCursor.X, oldCursor.Y); }
             window.GoToPage(0); await Task.Delay(100);
             var pen = window.Controller; pen.RecognizeShapes = false;
             var first = Vector2.Transform(new(140, 200), pen.ViewTransform);
@@ -256,6 +337,29 @@ public static class PdfDiagnostics
         }
         void Check(string check, bool pass, object detail = null) => checks.Add(new { check, pass, detail });
 
+        async Task TouchNavigationAsync(InkTool tool, bool pinch)
+        {
+            window.GoToPage(0);
+            var controller = window.Controller;
+            controller.Tool = tool;
+            controller.MultiTouchEnabled = false;
+            controller.TouchGesturesEnabled = true;
+            controller.ConfigureGestures(true, true, false);
+            var first = new OverlayPointer(950, 160, 300, .5f, 4, 4, OverlayPointerKind.Touch, 2000);
+            var second = first with { Id = 951, X = 310 };
+            window.NavigationInputStarting(first); controller.OnPointerDown(first);
+            window.NavigationInputStarting(second); controller.OnPointerDown(second);
+            for (int sample = 1; sample <= 10; sample++)
+            {
+                await Task.Delay(12);
+                first = first with { Y = pinch ? 300 : 300 - sample * 9, TimeMs = (uint)(2000 + sample * 12) };
+                second = second with { X = pinch ? 310 + sample * 15 : 310, Y = first.Y, TimeMs = first.TimeMs };
+                controller.OnPointerMove(first); controller.OnPointerMove(second);
+            }
+            controller.OnPointerUp(second); controller.OnPointerUp(first);
+            window.NavigationInputEnded();
+        }
+
         async Task CheckMarginRenderingAsync()
         {
             string marginSource = Path.Combine(directory, "margin-source.pdf"), marginSaved = Path.Combine(directory, "margin-saved.pdf");
@@ -333,6 +437,7 @@ public static class PdfDiagnostics
 
     [DllImport("user32.dll")] private static extern bool ClientToScreen(nint window, ref Platform.Interop.NativeMethods.POINT point);
     [DllImport("user32.dll")] private static extern nint WindowFromPoint(Platform.Interop.NativeMethods.POINT point);
+    [DllImport("user32.dll")] private static extern nint GetAncestor(nint window, uint flags);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out Platform.Interop.NativeMethods.POINT point);
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll", EntryPoint = "mouse_event")] private static extern void MouseEvent(uint flags, uint x, uint y, uint data, UIntPtr extra);
@@ -401,5 +506,13 @@ public static class PdfDiagnostics
         using var memory = new InMemoryRandomAccessStream(); var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, memory);
         encoder.SetPixelData(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied, (uint)bitmap.PixelWidth, (uint)bitmap.PixelHeight, 96, 96, bytes); await encoder.FlushAsync();
         memory.Seek(0); using var output = File.Create(path); await memory.AsStreamForRead().CopyToAsync(output);
+    }
+
+    private static T FindVisual<T>(DependencyObject root, string name) where T : DependencyObject
+    {
+        if (root is T element && AutomationProperties.GetName(element) == name) return element;
+        for (int index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+            if (FindVisual<T>(VisualTreeHelper.GetChild(root, index), name) is { } found) return found;
+        return null;
     }
 }

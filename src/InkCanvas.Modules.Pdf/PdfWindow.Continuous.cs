@@ -19,7 +19,8 @@ public sealed partial class PdfWindow
     private readonly Dictionary<int, PagePreview> _pagePreviews = new();
     private readonly Dictionary<int, InkSceneRenderer> _pageScenes = new();
     private readonly Dictionary<int, Core.Ink.Rect> _pageInkBounds = new();
-    private readonly ScrollBar _scrollbar = new() { Orientation = Orientation.Vertical, Width = 18, Minimum = 0 };
+    private readonly ScrollBar _scrollbar = new() { Orientation = Orientation.Vertical, Width = 20, Minimum = 0, IndicatorMode = ScrollingIndicatorMode.MouseIndicator };
+    private readonly ScrollBar _horizontalScrollbar = new() { Orientation = Orientation.Horizontal, Height = 20, Minimum = 0, IndicatorMode = ScrollingIndicatorMode.MouseIndicator };
     private bool _scrollUpdating, _previewQueued, _activePageQueued;
     private int[] _requestedPages = Array.Empty<int>();
     private double _requestedScale;
@@ -82,7 +83,7 @@ public sealed partial class PdfWindow
     {
         if (_closed || _pageChanging || Controller is null || Controller.HasActiveInteraction) return;
         var before = Controller.ViewTransform;
-        ClampVerticalView();
+        ClampDocumentView();
         if (Controller.ViewTransform != before) Controller.NotifyElementsChanged();
         if (!Matrix3x2.Invert(DocumentView, out var inverse)) return;
         float y = Vector2.Transform(new(0, (float)_viewport.ActualHeight / 2), inverse).Y;
@@ -92,25 +93,25 @@ public sealed partial class PdfWindow
     public void ScrollBy(float delta)
     {
         if (Controller is null || Controller.HasActiveInteraction) return;
+        StopScrollMotion();
         _fitMode = FitMode.Free;
         var view = Controller.ViewTransform;
         view.Translation += new Vector2(0, delta);
         Controller.ViewTransform = view;
-        ClampVerticalView();
+        ClampDocumentView();
         Controller.NotifyElementsChanged();
         UpdateActivePage();
     }
 
-    private void ClampVerticalView()
+    private void ClampDocumentView()
     {
+        if (!_viewHasLayout) return;
         var document = DocumentView;
-        float scale = MathF.Sqrt(MathF.Abs(document.GetDeterminant()));
-        float bottom = Math.Min(16, (float)_viewport.ActualHeight - 16 - _layout.Height * scale);
-        float offset = Math.Clamp(document.M32, bottom, 16) - document.M32;
-        if (Math.Abs(offset) > .001f)
+        var offset = ScrollBounds.Clamp(document.Translation) - document.Translation;
+        if (offset.LengthSquared() > .000001f)
         {
             var view = Controller.ViewTransform;
-            view.M32 += offset;
+            view.Translation += offset;
             Controller.ViewTransform = view;
         }
     }
@@ -122,12 +123,20 @@ public sealed partial class PdfWindow
         try
         {
             var document = DocumentView;
-            double height = _layout.Height * Math.Sqrt(Math.Abs(document.GetDeterminant())) + 32;
+            var bounds = ScrollBounds;
+            var offset = bounds.Offset(document.Translation);
             _scrollbar.ViewportSize = _viewport.ActualHeight;
-            _scrollbar.Maximum = Math.Max(0, height - _viewport.ActualHeight);
+            _scrollbar.Maximum = bounds.Extent.Y;
             _scrollbar.LargeChange = Math.Max(32, _viewport.ActualHeight * .85);
             _scrollbar.SmallChange = 70;
-            _scrollbar.Value = Math.Clamp(16 - document.M32, 0, _scrollbar.Maximum);
+            _scrollbar.IsEnabled = bounds.Extent.Y > .01f;
+            _scrollbar.Value = offset.Y;
+            _horizontalScrollbar.ViewportSize = _viewport.ActualWidth;
+            _horizontalScrollbar.Maximum = bounds.Extent.X;
+            _horizontalScrollbar.LargeChange = Math.Max(32, _viewport.ActualWidth * .85);
+            _horizontalScrollbar.SmallChange = 70;
+            _horizontalScrollbar.IsEnabled = bounds.Extent.X > .01f;
+            _horizontalScrollbar.Value = offset.X;
         }
         finally { _scrollUpdating = false; }
     }
@@ -135,7 +144,14 @@ public sealed partial class PdfWindow
     private void ScrollbarChanged()
     {
         if (_scrollUpdating || Controller is null) return;
-        ScrollBy((float)(16 - _scrollbar.Value - DocumentView.M32));
+        if (Controller.HasActiveInteraction) { UpdateScrollbar(); return; }
+        StopScrollMotion();
+        _fitMode = FitMode.Free;
+        var view = Controller.ViewTransform;
+        view.Translation += ScrollBounds.Translation(new((float)_horizontalScrollbar.Value, (float)_scrollbar.Value)) - DocumentView.Translation;
+        Controller.ViewTransform = view;
+        Controller.NotifyElementsChanged();
+        UpdateActivePage();
     }
 
     private void QueuePageRendering()
@@ -229,6 +245,8 @@ public sealed partial class PdfWindow
             var view = _layout.PageView(index, document);
             var bounds = new Rect(0, 0, page.DipWidth, page.DipHeight);
             draw.Transform = view;
+            float border = 1 / MathF.Sqrt(MathF.Abs(view.GetDeterminant()));
+            draw.DrawRectangle(new Rect(-border, -border, bounds.Width + 2 * border, bounds.Height + 2 * border), _pageEdgeColor, border);
             draw.FillRectangle(bounds, Microsoft.UI.Colors.White);
             if (_pagePreviews.TryGetValue(index, out var preview)) draw.DrawImage(preview.Bitmap, bounds, preview.Bitmap.Bounds);
             if (index == _pageIndex && _detail is not null) draw.DrawImage(_detail, _detailRect, _detail.Bounds);
