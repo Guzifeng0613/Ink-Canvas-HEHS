@@ -22,6 +22,18 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        if (Environment.GetCommandLineArgs().Contains("--register-file-associations", StringComparer.OrdinalIgnoreCase))
+        {
+            try { Platform.System.FileAssociationService.Register(Environment.ProcessPath); }
+            catch (Exception error) { Core.Diagnostics.FileLog.WriteLogToFile("文件关联注册失败 " + error.Message, Core.Diagnostics.LogType.Error); }
+            Exit(); return;
+        }
+        var msiCheck = Environment.GetCommandLineArgs().FirstOrDefault(argument => argument.StartsWith("--msicheck=", StringComparison.Ordinal));
+        if (msiCheck is not null)
+        {
+            string package = Environment.GetCommandLineArgs().Single(argument => argument.StartsWith("--msipackage=", StringComparison.Ordinal))["--msipackage=".Length..];
+            _ = Diagnostics.MsiRegression.Run(msiCheck["--msicheck=".Length..], package); return;
+        }
         var previewWorker = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--pptpreviewworker=", StringComparison.Ordinal));
         if (previewWorker is not null)
         {
@@ -221,6 +233,8 @@ public partial class App : Application
         {
             string pdfPath = pdfArgument.StartsWith("--pdf=", StringComparison.OrdinalIgnoreCase) ? pdfArgument[6..] : pdfArgument;
             _ = _shell.OpenPdfAsync(pdfPath);
+            var activationReport = Environment.GetCommandLineArgs().FirstOrDefault(argument => argument.StartsWith("--pdfactivationreport=", StringComparison.Ordinal));
+            if (activationReport is not null) _ = Diagnostics.PdfActivationRegression.ObserveAsync(_shell, pdfPath, activationReport["--pdfactivationreport=".Length..]);
         }
 
         // "--board" opens straight into the blackboard, mirroring the original launcher switches.

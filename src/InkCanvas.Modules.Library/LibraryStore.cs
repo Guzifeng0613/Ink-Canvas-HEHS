@@ -15,8 +15,17 @@ internal sealed class LibraryEntry : INotifyPropertyChanged
     public bool IsFolder { get; init; }
     public long Length { get; init; }
     public DateTime Modified { get; init; }
+    public DateTime Created { get; init; }
     public string Details => IsFolder ? "文件夹" : $"{Modified:g} · {Length / 1024d:N0} KB";
-    public string Icon => IsFolder ? "\uE8B7" : "\uE8A5";
+    public string Icon => IsFolder ? "\uF41D" : "\uF379";
+    public Microsoft.UI.Xaml.Visibility FileVisibility => IsFolder ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
+    private int _pages;
+    public int Pages { get => _pages; set { _pages = value; Changed(nameof(PageLabel)); } }
+    public string PageLabel => Pages > 0 ? $"{Pages} 页" : "白板文稿";
+    private bool _favorite;
+    public bool Favorite { get => _favorite; set { _favorite = value; Changed(nameof(FavoriteGlyph)); Changed(nameof(FavoriteHint)); } }
+    public string FavoriteGlyph => "\uF719";
+    public string FavoriteHint => Favorite ? "取消收藏" : "收藏文稿";
     private ImageSource _preview;
     public ImageSource Preview { get => _preview; set { _preview = value; Changed(); } }
     public event PropertyChangedEventHandler PropertyChanged;
@@ -29,9 +38,21 @@ internal sealed class LibraryState
     public List<string> Favorites { get; set; } = new();
     public List<string> Recent { get; set; } = new();
     public string LastFolder { get; set; }
+    public bool ListView { get; set; }
+    public int Sort { get; set; }
 }
 
-internal sealed record LibraryLocation(string Title, string Path, string Icon);
+internal sealed record LibraryLocation(string Title, string Path, string Icon) : INotifyPropertyChanged
+{
+    private bool _selected;
+    public bool Selected
+    {
+        get => _selected;
+        set { _selected = value; PropertyChanged?.Invoke(this, new(nameof(Indicator))); }
+    }
+    public Microsoft.UI.Xaml.Visibility Indicator => Selected ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
+    public event PropertyChangedEventHandler PropertyChanged;
+}
 
 internal sealed class LibraryStore
 {
@@ -60,7 +81,8 @@ internal sealed class LibraryStore
         try
         {
             Directory.CreateDirectory(_directory);
-            var snapshot = new LibraryState { Locations = State.Locations.ToList(), Favorites = State.Favorites.ToList(), Recent = State.Recent.ToList(), LastFolder = State.LastFolder };
+            var snapshot = new LibraryState { Locations = State.Locations.ToList(), Favorites = State.Favorites.ToList(), Recent = State.Recent.ToList(), LastFolder = State.LastFolder,
+                ListView = State.ListView, Sort = State.Sort };
             string temporary = System.IO.Path.Combine(_directory, "library.json.tmp");
             await using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None, 4096, FileOptions.Asynchronous))
                 await JsonSerializer.SerializeAsync(stream, snapshot);
@@ -88,7 +110,7 @@ internal sealed class LibraryStore
                 if (!isFolder && !System.IO.Path.GetExtension(path).Equals(".icink", StringComparison.OrdinalIgnoreCase)) continue;
                 if (!string.IsNullOrWhiteSpace(query) && !info.Name.Contains(query, StringComparison.CurrentCultureIgnoreCase)) continue;
                 result.Add(new() { Path = info.FullName, Name = isFolder ? info.Name : System.IO.Path.GetFileNameWithoutExtension(info.Name),
-                    IsFolder = isFolder, Length = isFolder ? 0 : info.Length, Modified = info.LastWriteTime });
+                    IsFolder = isFolder, Length = isFolder ? 0 : info.Length, Modified = info.LastWriteTime, Created = info.CreationTime });
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }

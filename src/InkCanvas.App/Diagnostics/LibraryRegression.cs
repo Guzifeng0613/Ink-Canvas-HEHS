@@ -75,36 +75,86 @@ internal static class LibraryRegression
             var preview = (Image)window.GetType().GetField("_preview", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(window);
             await Until(() => preview.Source is not null);
             Check("selecting a real document displays its preview", preview.Source is not null);
+            var selectedEntry = files.SelectedItem;
+            Check("default document grid virtualizes thumbnail cards", files.ItemsPanelRoot is ItemsWrapGrid);
+            Check("folder breadcrumb exposes clickable ancestry", Descendants(window.Content).OfType<BreadcrumbBar>().Single().ItemsSource is System.Collections.IEnumerable crumbs
+                && crumbs.Cast<object>().Count() >= 2);
+            Invoke(FindButton(window, "列表视图")); await Task.Delay(150);
+            Check("list view retains selection and preview", files.ItemsPanelRoot is ItemsStackPanel && ReferenceEquals(files.SelectedItem, selectedEntry) && preview.Source is not null);
+            Invoke(FindButton(window, "缩略图视图")); await Task.Delay(150);
             foreach (int theme in new[] { 1, 2 })
             {
                 WindowChrome.ApplyTheme(window, theme); await Task.Delay(150);
-                Check("library renders in theme " + theme, await BoardWindowRegression.SaveVisual((FrameworkElement)window.Content, Path.Combine(directory, "library-" + theme + ".png")));
+                foreach (int width in new[] { 400, 620, 840, 1000, 1420 })
+                {
+                    double dpi = WindowChrome.GetDpiScale(window);
+                    window.AppWindow.Resize(new((int)(width * dpi), (int)(680 * dpi))); await Task.Delay(100);
+                    var root = (FrameworkElement)window.Content;
+                    var inspector = Field<Border>(window, "_inspectorCard");
+                    var content = Field<Grid>(window, "_root");
+                    Check($"inspector adapts at {width} theme {theme}", inspector.Visibility == (content.ActualWidth >= 880 ? Visibility.Visible : Visibility.Collapsed));
+                    if (width >= 880)
+                    {
+                        var color = ((SolidColorBrush)inspector.Background).Color;
+                        Check($"inspector surface follows theme {theme} at {width}", theme == 1 ? color.R > 200 : color.R < 100);
+                    }
+                    Check($"search and view controls fit at {width} theme {theme}", new FrameworkElement[]
+                        { Field<AutoSuggestBox>(window, "_search"), Field<ComboBox>(window, "_sort"), FindButton(window, "列表视图") }.All(control => Fits(control, root)));
+                    Check($"library renders at {width} theme {theme}", await BoardWindowRegression.SaveVisual(root, Path.Combine(directory, $"library-{theme}-{width}.png")));
+                    if (width == 620)
+                    {
+                        Invoke(FindButton(window, "文稿详情"));
+                        await Until(() => Field<bool>(window, "_inspectorInFlyout") && Field<Grid>(window, "_inspector").IsLoaded);
+                        var floatingInspector = Field<Grid>(window, "_inspector");
+                        Check($"compact inspector keeps the selected document theme {theme}", VisualTreeHelper.GetParent(floatingInspector) is not null && preview.Source is not null);
+                        await BoardWindowRegression.SaveVisual(floatingInspector, Path.Combine(directory, $"library-inspector-{theme}.png"));
+                        window.AppWindow.Resize(new((int)(1000 * dpi), (int)(680 * dpi)));
+                        await Until(() => !Field<bool>(window, "_inspectorInFlyout"));
+                        Check($"resizing restores the inspector from its flyout theme {theme}", Field<Border>(window, "_inspectorCard").Child == Field<Grid>(window, "_inspector"));
+                    }
+                }
             }
-            Invoke(Descendants(window.Content).OfType<Button>().Single(button => button.Content?.ToString() == "›"));
+            for (int iteration = 0; iteration < 3; iteration++)
+            {
+                window.AppWindow.Resize(new(400, 360)); await Task.Delay(60);
+                window.AppWindow.Resize(new(1240, 850)); await Task.Delay(60);
+            }
+            Check("repeated small-to-large resize keeps preview interactive", preview.Source is not null && FindButton(window, "预览下一页").IsEnabled);
+            Invoke(FindButton(window, "预览下一页"));
             await Until(() => Descendants(window.Content).OfType<TextBlock>().Any(text => text.Text == "2 / 2"));
             Check("preview page navigation works", true);
-            Invoke(Descendants(window.Content).OfType<Button>().Single(button => button.Content?.ToString() == "收藏 / 取消收藏"));
+            Invoke(FindButton(window, "收藏"));
             await Task.Delay(150);
-            var locations = Descendants(window.Content).OfType<ListView>().Single(); locations.SelectedItem = locations.Items.Cast<object>().Single(item => Value(item, "Title") == "收藏");
+            var locations = Descendants(window.Content).OfType<ListView>().Single(list => AutomationProperties.GetName(list) == "常用文稿位置"); locations.SelectedItem = locations.Items.Cast<object>().Single(item => Value(item, "Title") == "收藏");
             await Until(() => files.Items.Count == 1);
             Check("favorites filter uses persisted file paths", Value(files.Items[0], "Path") == fixture);
-            locations.SelectedItem = locations.Items.Cast<object>().Single(item => Value(item, "Path") == services.Settings.Archive.DefaultDirectory);
+            var folders = Descendants(window.Content).OfType<ListView>().Single(list => AutomationProperties.GetName(list) == "文稿文件夹");
+            folders.SelectedItem = folders.Items.Cast<object>().Single(item => Value(item, "Path") == services.Settings.Archive.DefaultDirectory);
             await Until(() => files.Items.Count == 2);
             var search = Descendants(window.Content).OfType<AutoSuggestBox>().Single(); search.Text = "二次";
             // Programmatic text changes are refreshed via the same user-facing refresh command.
-            Invoke(Descendants(window.Content).OfType<Button>().Single(button => button.Content?.ToString() == "刷新"));
+            Invoke(FindButton(window, "刷新文稿"));
             await Until(() => files.Items.Count == 1);
             Check("recursive folder search finds matching whiteboards", Value(files.Items[0], "Path") == Path.Combine(sub, "二次函数.icink"));
+            search.Text = "没有此文稿"; Invoke(FindButton(window, "刷新文稿")); await Until(() => files.Items.Count == 0);
+            var empty = Field<StackPanel>(window, "_empty");
+            Check("empty state is centered inside document canvas", empty.Visibility == Visibility.Visible && empty.ActualWidth > 0
+                && Math.Abs(empty.TransformToVisual((UIElement)empty.Parent).TransformPoint(new(0, 0)).X * 2 + empty.ActualWidth - ((FrameworkElement)empty.Parent).ActualWidth) < 3);
+            Check("empty selection hides invalid inspector actions", Field<Grid>(window, "_selectedDetails").Visibility == Visibility.Collapsed
+                && FindButton(window, "打开文稿").Visibility == Visibility.Collapsed);
+            Invoke(Descendants(window.Content).OfType<Button>().Single(button => button.Content?.ToString() == "清除筛选")); await Until(() => files.Items.Count == 2);
+            await BoardWindowRegression.SaveVisual((FrameworkElement)window.Content, Path.Combine(directory, "library-cleared-selection.png"));
             window.Close();
             var open = library.PickOpenAsync(new[] { ".icink" }); window = await LibraryWindowAsync();
             files = Descendants(window.Content).OfType<GridView>().Single(); await Until(() => files.Items.Count == 2);
             files.SelectedItem = files.Items.Cast<object>().Single(item => Value(item, "Path") == fixture);
-            Invoke(Descendants(window.Content).OfType<Button>().Single(button => button.Content?.ToString() == "打开"));
+            await Until(() => FindButton(window, "打开文稿").IsEnabled);
+            Invoke(FindButton(window, "打开文稿"));
             Check("open picker returns selected path", await open.WaitAsync(TimeSpan.FromSeconds(5)) == fixture);
             var cancelled = library.PickOpenAsync(new[] { ".icink" }); window = await LibraryWindowAsync(); window.Close();
             Check("cancel resolves picker without altering the board", await cancelled is null && services.Board.PageCount == 2);
             shell.SaveStrokes(); window = await LibraryWindowAsync();
-            var saveButton = Descendants(window.Content).OfType<Button>().Single(button => button.Content?.ToString() == "保存");
+            var saveButton = FindButton(window, "保存文稿");
             await Until(() => saveButton.IsEnabled);
             var name = Descendants(window.Content).OfType<TextBox>().Single(input => input.Header?.ToString() == "文稿名称"); name.Text = "课堂另存";
             Invoke(saveButton);
@@ -114,8 +164,8 @@ internal static class LibraryRegression
             try { await reopened.LoadBoardAsync(saved); Check("normal SaveStrokes flow preserves editable pages", reopened.PageCount == 2 && reopened.Pages[0].Document.Count == 1000 && reopened.Pages[1].Document.Count == 1); }
             finally { foreach (var page in reopened.Pages) page.Dispose(); }
             library.Open(); window = await LibraryWindowAsync();
-            locations = Descendants(window.Content).OfType<ListView>().Single();
-            await Until(() => locations.Items.Count >= 3); locations.SelectedItem = locations.Items.Cast<object>().Single(item => Value(item, "Title") == "最近使用");
+            locations = Descendants(window.Content).OfType<ListView>().Single(list => AutomationProperties.GetName(list) == "常用文稿位置");
+            await Until(() => locations.Items.Count == 2); locations.SelectedItem = locations.Items.Cast<object>().Single(item => Value(item, "Title") == "最近使用");
             files = Descendants(window.Content).OfType<GridView>().Single();
             await Until(() => files.Items.Count > 0);
             Check("saved documents appear in recent files", files.Items.Cast<object>().Any(item => Value(item, "Path") == saved));
@@ -140,6 +190,13 @@ internal static class LibraryRegression
         }
     }
     private static string Value(object item, string property) => item.GetType().GetProperty(property)?.GetValue(item)?.ToString();
+    private static Button FindButton(Window window, string name) => Descendants(window.Content).OfType<Button>().Single(button => AutomationProperties.GetName(button) == name);
+    private static T Field<T>(Window window, string name) => (T)window.GetType().GetField(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(window);
+    private static bool Fits(FrameworkElement element, FrameworkElement root)
+    {
+        var bounds = element.TransformToVisual(root).TransformBounds(new(0, 0, element.ActualWidth, element.ActualHeight));
+        return element.ActualWidth > 0 && bounds.Left >= -1 && bounds.Right <= root.ActualWidth + 1 && bounds.Bottom <= root.ActualHeight + 1;
+    }
     private static void Invoke(Button button) => ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke();
     private static async Task Until(Func<bool> condition)
     {

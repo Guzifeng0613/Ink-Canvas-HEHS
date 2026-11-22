@@ -28,10 +28,11 @@ foreach ($plugin in @('src\InkCanvas.Plugins.LegacyImport\InkCanvas.Plugins.Lega
 }
 $docs = Join-Path $app 'Docs'
 New-Item -ItemType Directory -Path $docs -Force | Out-Null
-foreach ($name in @('BOARD-LIBRARY.md', 'AI-ASSISTANT.md', 'MCP.md', 'ANALYTIC-GEOMETRY.md', 'PDF.md', 'EXTENSIONS.md', 'SCREEN-TRACKING.md', 'UPDATES.md', 'CLOUD-SYNC.md', 'teaching-loop-user-guide.md', 'timemachine-user-guide.md', 'ai-magic-lasso.md')) { Copy-Item -LiteralPath (Join-Path $repoRoot ('docs\' + $name)) -Destination $docs }
+foreach ($name in @('BOARD-LIBRARY.md', 'AI-ASSISTANT.md', 'ANALYTIC-GEOMETRY.md', 'PDF.md', 'EXTENSIONS.md', 'SCREEN-TRACKING.md', 'UPDATES.md', 'CLOUD-SYNC.md', 'INSTALLATION.md', 'MCP.md', 'teaching-loop-user-guide.md', 'timemachine-user-guide.md', 'ai-magic-lasso.md')) { Copy-Item -LiteralPath (Join-Path $repoRoot ('docs\' + $name)) -Destination $docs }
 $archive = Join-Path $outputRoot ('InkCanvas-WinUI3-' + $Version + '-win-x64.zip')
 Compress-Archive -LiteralPath $app -DestinationPath $archive
-$lines = Get-ChildItem -LiteralPath $outputRoot -Filter '*.zip' -File | Sort-Object Name | ForEach-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $_.Name }
+& (Join-Path $PSScriptRoot 'build-msi.ps1') -PayloadDirectory $app -Version $Version -OutputDirectory $outputRoot
+$lines = Get-ChildItem -LiteralPath $outputRoot -File | Where-Object { $_.Extension -in @('.zip', '.msi') } | Sort-Object Name | ForEach-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $_.Name }
 [IO.File]::WriteAllLines((Join-Path $outputRoot 'SHA256SUMS.txt'), $lines, [Text.UTF8Encoding]::new($false))
 Write-Output $archive
 & (Join-Path $PSScriptRoot 'prune-builds.ps1')
