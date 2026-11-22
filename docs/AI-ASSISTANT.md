@@ -4,7 +4,7 @@ WinUI 3 版的 AI 窗口、流式请求、两阶段识别、分步讲解和局�
 
 ## 安装与管理
 
-将 `inkcanvas.ai-assistant-1.2.0.zip` 解压到程序的 `Modules` 目录，得到以下文件。
+将 `inkcanvas.ai-assistant-1.3.0.zip` 解压到程序的 `Modules` 目录，得到以下文件。
 
 ```text
 Modules/
@@ -26,7 +26,37 @@ Modules/
 
 ## AI 服务
 
-保留现有的 Ink Canvas SSE 服务协议与环境变量配置。未配置端点时显示本地演示，并在窗口中提示。
+在“设置 → AI 助教”中选择供应商预设，点击“添加连接”，填写 API Key，再点击“获取模型列表”。选择模型后点击“保存并使用”，后续助教请求使用该连接。可保存多个连接，修改名称、端点、协议和模型，并用“测试连接”检查实际推理请求。测试会向所选模型发送简短文字。
+
+端点支持基础地址或完整推理地址，保留 API Gateway 的路径前缀。模型列表地址可以独立填写，适配网关聚合的模型目录。获取失败时显示错误，也可手动输入模型 ID。预设不固定模型名称，实际可用模型以接口返回和账户权限为准。
+
+| 预设 | 默认基础地址 | 默认格式 |
+| --- | --- | --- |
+| OpenAI Chat / Responses | `https://api.openai.com/v1` | Chat / Responses |
+| Anthropic | `https://api.anthropic.com/v1` | Messages |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta` | Google |
+| DeepSeek | `https://api.deepseek.com/v1` | Chat |
+| GLM | `https://open.bigmodel.cn/api/paas/v4` | Chat |
+| Tencent Token Hub | `https://tokenhub.tencentmaas.com/v1` | Chat |
+| 阿里云百炼 / Qwen | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Chat |
+| 火山引擎 | `https://ark.cn-beijing.volces.com/api/v3` | Chat |
+| StepFun | `https://api.stepfun.com/v1` | Chat |
+| MiMo | `https://api.xiaomimimo.com/v1` | Chat |
+| MiniMax | `https://api.minimax.cn/v1` | Chat |
+| Kimi 开放平台 | `https://api.moonshot.cn/v1` | Chat |
+| Kimi.com / Kimi Code | `https://api.kimi.com/coding/v1` | Chat |
+| OpenCode | `https://opencode.ai/inference/openai/v1` | Chat |
+| PackyCode | `https://codex-api.packycode.com/v1` | Responses |
+
+供应商接口和密钥需匹配其服务区域及产品。OpenCode 使用独立的 `/inference/v1/models` 模型列表，按所选协议切换推理路径。Kimi.com 订阅与 Kimi 开放平台分别列出，可根据所持密钥选择对应入口。各服务是否允许使用订阅额度、特定模型或多模态输入，由服务端决定。
+
+“发送截图给模型”可按连接开关，文字模型可关闭截图输入。“联网搜索”已为 DeepSeek、Qwen、OpenAI Responses 和 Google 配置原生参数，其他组合显示禁用原因。DeepSeek 使用服务端 `deepseek_web_search` 工具，Qwen Chat 使用 `enable_search`，Qwen Responses 使用 `web_search`。联网能力及搜索费用取决于供应商和模型。响应中的可用来源链接会附在回答中。[DeepSeek 文档](https://api-docs.deepseek.com/guides/web_tools/) · [Qwen 文档](https://help.aliyun.com/zh/model-studio/web-search) · [OpenCode 接口](https://opencode.ai/docs/console/api/inference/)
+
+连接参数存放在用户配置目录 `PluginData/inkcanvas.ai-assistant/Documents/Connections/connections.json`。API Key 单独保存在当前 Windows 用户的凭据管理器 `InkCanvas.AiConnections` 中。删除连接会清除对应凭据，复制配置到另一台电脑后需要重新输入 API Key。
+
+标准 API 连接使用一次包含当前文字、采样墨迹和截图的请求，并将模型输出转换为原有的文本、步骤及公式事件。分步模式保留“展开下一步”的交互，停止生成、关闭窗口或切换页面后会取消旧请求。
+
+保留现有 Ink Canvas SSE 服务协议与环境变量配置。点击“使用环境变量 / 本地演示”可切回该方式，未配置端点时显示本地演示。两阶段识别继续用于原有 SSE 服务。
 
 | 环境变量 | 默认值 | 用途 |
 | --- | --- | --- |
@@ -57,7 +87,7 @@ dotnet publish src/InkCanvas.App/InkCanvas.App.csproj -c Release -p:Platform=x64
 
 在“设置 → 保存与备份 → AI 存档命名与描述”中填写支持多图输入的模型接口完整地址和模型名称，保存配置后打开“保存后自动分析并命名”。默认关闭。文稿库中也可对选中的文件点击“AI 命名与描述”执行一次处理。
 
-OpenAI 兼容模式使用 Chat Completions 多图格式，地址应包含 `/v1/chat/completions`。密钥保存在 Windows 凭据管理器中，可使用 `AI_API_KEY` 或 `OPENAI_API_KEY` 环境变量。选择现有 Ink Canvas 助教协议时，服务收到 `purpose=archive-caption`、多张 `images` 和 JSON 输出要求。接口留空时沿用 `AI_ENDPOINT`、`AI_MODEL` 和助教协议。存档命名要求真实配置的模型服务。相关多图协议见 [官方文档](https://developers.openai.com/api/docs/guides/images-vision?api-mode=chat)。
+OpenAI 兼容模式使用 Chat Completions 多图格式，地址应包含 `/v1/chat/completions`。密钥保存在 Windows 凭据管理器中，可使用 `AI_API_KEY` 或 `OPENAI_API_KEY` 环境变量。选择现有 Ink Canvas 助教协议时，服务收到 `purpose=archive-caption`、多张 `images` 和 JSON 输出要求。接口留空时优先沿用“AI 助教”中当前连接、模型和凭据，未选择连接时沿用 `AI_ENDPOINT`、`AI_MODEL` 和助教协议。存档命名要求真实配置的模型服务。相关多图协议见 [官方文档](https://developers.openai.com/api/docs/guides/images-vision?api-mode=chat)。
 
 保存完成后，插件在后台从磁盘快照渲染，逐页读取图片和视频封面，跳过视频主体数据。单张 PNG 最长边限制为 3840 像素，总像素预算约 829 万。范围在预算内的屏幕截图与墨迹保持原像素尺寸。超过范围的批注生成等比缩小的总览，并附带最多两张墨迹密集位置的高清局部，缩小总览适当增强细线可见性。
 

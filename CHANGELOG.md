@@ -1,3 +1,12 @@
+## 3.8.2 · 2026-11-22
+
+- AI 端点配置整合在现有 AI 助教插件中，在“设置 → AI 助教”添加多个连接、编辑 API 格式、获取网关模型列表并选择模型，支持测试连接、切换和删除。API Key 存储于 Windows 凭据管理器，连接 JSON 仅保存非密钥配置。
+- 接入 OpenAI Chat Completions、Responses、Anthropic Messages 和 Google Gemini 的多轮、多图、流式请求，保留原有 Ink Canvas SSE 与本地演示入口。存档命名可沿用当前 AI 连接。
+- 预设 OpenAI、Anthropic、Google、DeepSeek、GLM、Tencent Token Hub、百炼 Qwen、火山引擎、StepFun、MiMo、MiniMax、Kimi 开放平台 / Kimi.com、OpenCode 和 PackyCode，提供随插件部署的供应商品牌图标。适配 DeepSeek 和 Qwen 原生联网搜索工具，支持回复来源链接。
+- AI 助手及讲题模式改用项目 Fluent System Icons，包含主工具栏、边缘展开入口、提示、分步、完整解析和 Agent 模式，随 Regular / Filled 偏好切换。
+- 修复白板加页与退出图标映射错误，验证各加页入口和两个退出入口及退出自动保存。桌面批注覆盖层明确设置标准箭头光标，修复继承等待或启动中光标的问题。
+- AI 助教更新至 1.3.0，主程序及插件包提供自动更新识别的版本号、附件命名与 SHA256 校验清单。
+
 ## 3.8.1 · 2026-11-22
 
 - 重构倒计时与秒表窗口，采用原生 WinUI 3 标题栏、触控预设、可编辑表盘、进度圆环、全屏演示和精简小窗。点名窗口提供宽屏、紧凑、迷你三档布局，支持多人结果网格及卡片内复制。

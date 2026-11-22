@@ -14,6 +14,7 @@ public static class SettingsCategoryCatalog
         new("外观与工具栏", "\uF2F6", "使用与书写", "外观选项 自动选项 主题 字体 图标 缩放 收纳"),
         new("演示与课件", "\uF6F3", "课堂与扩展", "PPT 选项 PowerPoint WPS 放映 翻页 批注"),
         new("抽奖与点名", "\uF5B3", "课堂与扩展", "名单 班级 抽选 随机 冷却"),
+        new("AI 助教", "\uEB3D", "课堂与扩展", "AI API 端点 供应商 模型 OpenAI Responses Anthropic Google DeepSeek GLM TokenHub Qwen 火山 StepFun MiMo MiniMax Kimi OpenCode PackyCode gateway"),
         new("模块与插件", "\uF4DD", "课堂与扩展", "插件 安装 下载 更新 AI PDF 解析几何 时光机"),
         new("实验功能", "\uF6B3", "课堂与扩展", "实验性设置 Word Edge 屏幕内容跟随 页面记忆"),
         new("保存与备份", "\uF68A", "应用与数据", "自动选项 默认目录 文件名 截图 墨迹 自动保存 历史文件清理 AI"),

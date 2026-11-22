@@ -16,7 +16,7 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>false</SelfContained>
     <ApplicationIcon>Assets\InkCanvas.ico</ApplicationIcon>
-    <Version>3.8.1</Version>
+    <Version>3.8.2</Version>
     <Product>Ink Canvas (WinUI 3)</Product>
     <IncludeScreenTrackingModule Condition="'$(IncludeScreenTrackingModule)' == ''">true</IncludeScreenTrackingModule>
     <IncludeAiAssistantModule Condition="'$(IncludeAiAssistantModule)' == ''">true</IncludeAiAssistantModule>
@@ -99,6 +99,7 @@
     </PropertyGroup>
     <ItemGroup>
       <_AssistantFiles Include="$(_AssistantOutput)InkCanvas.Modules.AiAssistant.dll;$(_AssistantOutput)InkCanvas.Modules.AiAssistant.deps.json;$(_AssistantOutput)module.json" Condition="'$(IncludeAiAssistantModule)' == 'true'" />
+      <_AssistantLicenses Include="$(_AssistantOutput)Licenses\ProviderIcons.txt;$(_AssistantOutput)Licenses\OpenCode.txt" Condition="'$(IncludeAiAssistantModule)' == 'true'" />
       <_LibraryFiles Include="$(_LibraryOutput)InkCanvas.Modules.Library.dll;$(_LibraryOutput)InkCanvas.Modules.Library.deps.json;$(_LibraryOutput)module.json" Condition="'$(IncludeLibraryModule)' == 'true'" />
       <_ModuleFiles Include="$(_ExtensionOutput)InkCanvas.Modules.ScreenTracking.dll;$(_ExtensionOutput)InkCanvas.Modules.ScreenTracking.deps.json;$(_ExtensionOutput)Interop.UIAutomationClient.dll;$(_ExtensionOutput)module.json;$(_ExtensionOutput)UIAutomation-Interop.txt" Condition="'$(IncludeScreenTrackingModule)' == 'true'" />
       <_WorkerFiles Include="$(_WorkerOutput)*.dll;$(_WorkerOutput)*.exe;$(_WorkerOutput)*.json" />
@@ -113,9 +114,11 @@
       <_TimeMachineFiles Include="$(_TimeMachineOutput)InkCanvas.Modules.TimeMachine.dll;$(_TimeMachineOutput)InkCanvas.Modules.TimeMachine.deps.json;$(_TimeMachineOutput)module.json" Condition="'$(IncludeTimeMachineModule)' == 'true'" />
     </ItemGroup>
     <Copy SourceFiles="@(_AssistantFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.ai-assistant\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_AssistantLicenses)" DestinationFolder="$(OutDir)Modules\inkcanvas.ai-assistant\Licenses\" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_LibraryFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.library\" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_LibraryFiles)" DestinationFolder="$(PublishDir)Modules\inkcanvas.library\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
     <Copy SourceFiles="@(_AssistantFiles)" DestinationFolder="$(PublishDir)Modules\inkcanvas.ai-assistant\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
+    <Copy SourceFiles="@(_AssistantLicenses)" DestinationFolder="$(PublishDir)Modules\inkcanvas.ai-assistant\Licenses\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
     <Copy SourceFiles="@(_ModuleFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.screen-tracking\" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_WorkerFiles)" DestinationFolder="$(OutDir)PluginHost\" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_UpdaterFiles)" DestinationFolder="$(OutDir)UpdateHost\" SkipUnchangedFiles="true" />

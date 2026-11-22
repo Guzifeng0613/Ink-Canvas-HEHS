@@ -18,13 +18,18 @@ public static class Glyphs
     public const string Shapes = "△";
     public const string ShapesFont = "Segoe UI Symbol";
 
-    /// <summary>Sentinel instead of an icon codepoint: hosts render the literal text "AI".</summary>
+    /// <summary>Stable assistant command ID. Hosts render <see cref="Assistant"/> through AiGlyph.</summary>
     public const string Ai = "AI";
+    public const string Assistant = "\uEB3D";
+    public const string Agent = "\uF1F9";
+    public const string Hint = "\uF4E1";
 
     public const string Undo = "\uF19A";
     public const string Redo = "\uF16F";
     public const string Delete = "\uF34D";
     public const string Add = "\uF10A";
+    public const string AddPage = "\uE4E8";
+    public const string ExitBoard = "\uF6E3";
 
     public const string Settings = "\uF6B3";
     public const string Camera = "\uF255";

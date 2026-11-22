@@ -1,9 +1,9 @@
 {
   "Id": "inkcanvas.ai-assistant",
   "Name": "AI 助教",
-  "Version": "1.2.0",
+  "Version": "1.3.0",
   "ApiVersion": 1,
   "EntryAssembly": "InkCanvas.Modules.AiAssistant.dll",
   "EntryType": "InkCanvas.Modules.AiAssistant.AssistantModule",
-  "PackageFiles": []
+  "PackageFiles": ["Licenses/ProviderIcons.txt", "Licenses/OpenCode.txt"]
 }

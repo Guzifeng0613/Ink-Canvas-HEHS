@@ -13,10 +13,12 @@ using Microsoft.UI.Xaml;
 using System.Numerics;
 using System.Text;
 using Windows.ApplicationModel.DataTransfer;
+using InkCanvas.Modules.AiAssistant.Providers;
 
 namespace InkCanvas.Modules.AiAssistant;
 
-internal sealed partial class AssistantService(IAiAssistantHost _host, ICanvasToolsHost _canvasHost) : IAiAssistantService, IAssistantAgentBridge, IDisposable
+internal sealed partial class AssistantService(IAiAssistantHost _host, ICanvasToolsHost _canvasHost, AiConnectionStore _connections = null)
+    : IAiAssistantService, IAssistantAgentBridge, IAiConnectionSettings, IDisposable
 {
     private readonly DispatcherQueue _dispatcher = DispatcherQueue.GetForCurrentThread();
     private bool _disposed;
@@ -30,6 +32,27 @@ internal sealed partial class AssistantService(IAiAssistantHost _host, ICanvasTo
     private AssistantSession _aiSession;
     private AssistantRect _aiAnchor;
     private AiClient _aiClient;
+    private string _connectionSignature;
+
+    public FrameworkElement CreateSettingsView() => _connections is null
+        ? new TextBlock { Text = "AI 连接配置读取失败，请检查用户配置目录中的 connections.json，修复后重启。", TextWrapping = TextWrapping.Wrap }
+        : new AiConnectionSettingsView(_connections);
+
+    private AiClient GetAiClient()
+    {
+        var connection = _connections?.Active;
+        string key = connection is null ? "" : _connections.Key(connection.Id);
+        string signature = connection is null ? "environment" : System.Text.Json.JsonSerializer.Serialize(connection)
+            + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(key)));
+        if (_aiClient is null || signature != _connectionSignature)
+        {
+            _aiClient?.Dispose();
+            _aiClient = connection is null ? new AiClient(AiConfig.ReadFromEnvironment()) : new AiClient(connection, key);
+            _connectionSignature = signature;
+        }
+        _aiAssistant?.SetConnectionStatus(connection is null && string.IsNullOrWhiteSpace(_aiClient.Config.Endpoint));
+        return _aiClient;
+    }
     private string _aiThumb = "";
     private ProblemContext _aiProblem;
     private List<AssistantStroke> _aiStrokes = new();
@@ -231,7 +254,7 @@ internal sealed partial class AssistantService(IAiAssistantHost _host, ICanvasTo
         }
 
         var window = new AssistantWindow(_host.Settings.Appearance.Theme, _host.Settings.Features,
-            demoMode: string.IsNullOrEmpty(AiConfig.ReadFromEnvironment().Endpoint));
+            demoMode: _connections?.Active is null && string.IsNullOrEmpty(AiConfig.ReadFromEnvironment().Endpoint));
         _aiAssistant = window;
         window.StopRequested += OnAiStopRequested;
         window.RetryRequested += OnAiRetryRequested;
@@ -294,7 +317,6 @@ internal sealed partial class AssistantService(IAiAssistantHost _host, ICanvasTo
     {
         if (_disposed || _aiAssistant is null) return;
         _renderTimer?.Stop();
-        _aiClient ??= new AiClient(AiConfig.ReadFromEnvironment());
         _aiStream?.Abort();
         _aiStream = null;
         _regionGeneration++;
@@ -328,7 +350,7 @@ internal sealed partial class AssistantService(IAiAssistantHost _host, ICanvasTo
             _host.BoardOpen ? _host.Board.CurrentIndex : -1);
 
         request.Question = followUp ? question ?? "" : "";
-        _aiTwoStage = !followUp && _host.Settings.Ai.EnableTwoStage
+        _aiTwoStage = _connections?.Active is null && !followUp && _host.Settings.Ai.EnableTwoStage
             && (_aiProblem is null || _aiProblem.Count <= 1);
         _aiStageFirstToken = null;
         _aiStageReset = false;
@@ -352,6 +374,7 @@ internal sealed partial class AssistantService(IAiAssistantHost _host, ICanvasTo
 
         try
         {
+            GetAiClient();
             if (_aiTwoStage)
             {
                 AiStreamHandle handle = _aiClient.StartTwoStage(
@@ -1072,7 +1095,7 @@ internal sealed partial class AssistantService(IAiAssistantHost _host, ICanvasTo
 
         try
         {
-            _aiClient ??= new AiClient(AiConfig.ReadFromEnvironment());
+            GetAiClient();
 
             var request = new AssistantRequest
             {

@@ -41,8 +41,8 @@ public sealed partial class BoardWindow : Window
     // WPF board glyph codes (Segoe Fluent Icons / MDL2), MainWindow.xaml board regions.
     private const string GlyphPrev = "";
     private const string GlyphNext = "";
-    private const string GlyphAddPage = "";
-    private const string GlyphExit = "";
+    private const string GlyphAddPage = Glyphs.AddPage;
+    private const string GlyphExit = Glyphs.ExitBoard;
     private const string GlyphGesture = "";
     private const string GlyphCanvas = "";
     private const string GlyphSelect = "";
@@ -437,6 +437,7 @@ public sealed partial class BoardWindow : Window
             VerticalContentAlignment = VerticalAlignment.Stretch,
         };
         ToolTipService.SetToolTip(button, label);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, label);
         if (onClick is not null) button.Click += (_, _) => onClick();
         var cell = new ToolCell { Button = button, Face = face, Icon = icon, BadgeIcon = badgeIcon, Label = labelText, Content = content };
         button.PointerEntered += (_, _) => { cell.Hovered = true; RefreshCellFace(cell); };
@@ -1532,6 +1533,8 @@ public sealed partial class BoardWindow : Window
         _nextR.Label.Text = nextLabel;
         ToolTipService.SetToolTip(_nextL.Button, nextLabel);
         ToolTipService.SetToolTip(_nextR.Button, nextLabel);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_nextL.Button, nextLabel);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_nextR.Button, nextLabel);
         bool canNext = !atLast || _board.CanAddPages();
         SetCellEnabled(_prevL, _board.CurrentIndex > 0);
         SetCellEnabled(_prevR, _board.CurrentIndex > 0);

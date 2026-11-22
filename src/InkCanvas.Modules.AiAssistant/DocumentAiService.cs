@@ -6,6 +6,7 @@ using InkCanvas.Host.Contracts;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using InkCanvas.Modules.AiAssistant.Providers;
 
 namespace InkCanvas.Modules.AiAssistant;
 
@@ -13,7 +14,8 @@ internal sealed class DocumentAiService : IAiDocumentService, IDisposable
 {
     private readonly IAiAssistantHost _assistant;
     private readonly IAiDocumentHost _host;
-    private readonly DocumentNamingClient _client = new();
+    private readonly DocumentNamingClient _client;
+    private readonly AiConnectionStore _connections;
     private readonly SemaphoreSlim _gate = new(1);
     private readonly CancellationTokenSource _lifetime = new();
     private CancellationTokenSource _automatic = new();
@@ -25,8 +27,10 @@ internal sealed class DocumentAiService : IAiDocumentService, IDisposable
     private AiDocumentSettings Settings => _assistant.Settings.Ai.Documents ??= new();
     public string Status { get; private set; } = "尚未进行 AI 存档命名。";
 
-    public DocumentAiService(IAiAssistantHost assistant, IAiDocumentHost host)
+    public DocumentAiService(IAiAssistantHost assistant, IAiDocumentHost host, AiConnectionStore connections = null)
     {
+        _connections = connections;
+        _client = new DocumentNamingClient(connections: connections);
         _assistant = assistant; _host = host; host.DocumentSaved += OnSaved;
         _ = ResumeAsync();
     }
@@ -94,7 +98,7 @@ internal sealed class DocumentAiService : IAiDocumentService, IDisposable
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             var settings = new AiDocumentSettings { Endpoint = Settings.Endpoint, Model = Settings.Model, AssistantProtocol = Settings.AssistantProtocol };
-            DocumentNamingClient.ValidateConfiguration(settings);
+            if (_connections?.Active is null || !string.IsNullOrWhiteSpace(settings.Endpoint)) DocumentNamingClient.ValidateConfiguration(settings);
             var result = await Task.Run(() => ProcessFileAsync(request, settings, token), token);
             try { _host.Completed(result); } catch (Exception ex) { Core.Diagnostics.FileLog.WriteLogToFile("同步 AI 文稿结果 " + ex.Message); }
             return result;
@@ -197,6 +201,7 @@ internal sealed class DocumentAiService : IAiDocumentService, IDisposable
         var enabled = new ToggleSwitch { Header = "保存后自动分析并命名", IsOn = Settings.Enabled };
         panel.Children.Add(enabled);
         panel.Children.Add(new TextBlock { Text = "开启后会把存档生成的 PNG 发送到配置的多模态模型。白板文件会更新名称和描述，长页会分段发送。关闭时仍可在文稿库中手动执行。", TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = "接口地址留空时沿用“AI 助教”设置中的当前连接、API Key 和模型，需启用截图输入并选择支持图片的模型。", TextWrapping = TextWrapping.Wrap });
         var endpoint = new TextBox { Header = "多模态接口完整地址", Text = Settings.Endpoint, PlaceholderText = "https://…/v1/chat/completions", MinHeight = 44 };
         var model = new TextBox { Header = "支持多图输入的模型名称", Text = Settings.Model, MinHeight = 44 };
         var protocol = new ComboBox { Header = "服务协议", ItemsSource = new[] { "OpenAI 兼容 Chat Completions", "现有 Ink Canvas 助教协议" }, SelectedIndex = Settings.AssistantProtocol ? 1 : 0, HorizontalAlignment = HorizontalAlignment.Stretch };

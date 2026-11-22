@@ -12,6 +12,7 @@ namespace InkCanvas.Modules.AiAssistant;
 public sealed partial class AssistantWindow
 {
     private Border _demoBadge;
+    public void SetConnectionStatus(bool demoMode) => _demoBadge.Visibility = demoMode ? Visibility.Visible : Visibility.Collapsed;
 
     private void BuildLayout(bool demoMode)
     {
@@ -19,14 +20,15 @@ public sealed partial class AssistantWindow
         var toolbar = new Grid { ColumnSpacing = 8 };
         toolbar.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         toolbar.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var modeContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { _modeText,
+        var modeContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { _modeIcon, _modeText,
             new FontIcon { Glyph = Glyphs.ChevronDown, FontFamily = IconFontStyle.Font, FontSize = 12 } } };
         var mode = CreateSecondaryButton(""); mode.Content = modeContent; mode.HorizontalAlignment = HorizontalAlignment.Left;
         AutomationProperties.SetName(mode, "讲解方式");
         var menu = new MenuFlyout();
         foreach (AssistantTeachingMode option in Enum.GetValues<AssistantTeachingMode>())
         {
-            var item = new MenuFlyoutItem { Text = AssistantTeachingPolicy.Label(option) };
+            var item = new MenuFlyoutItem { Text = AssistantTeachingPolicy.Label(option), Icon = new FontIcon
+                { Glyph = ModeGlyph(option), FontFamily = IconFontStyle.Font, FontSize = 18 } };
             item.Click += (_, _) => TeachingModeRequested?.Invoke(option); menu.Items.Add(item);
         }
         mode.Flyout = menu; toolbar.Children.Add(mode);
@@ -42,7 +44,7 @@ public sealed partial class AssistantWindow
         _pinButton = CreateIconButton("取消窗口置顶", Symbol.Pin);
         _pinButton.Click += (_, _) => TogglePin();
         _agentButton = CreateIconButton("Agent 能力", Symbol.Emoji2);
-        _agentButton.Content = AiGlyph.CreateFramed(20, 20);
+        _agentButton.Content = new FontIcon { Glyph = Glyphs.Agent, FontFamily = IconFontStyle.Font, FontSize = 20 };
         BuildAgentMenu(); _agentButton.Flyout = _agentFlyout;
         var dock = CreateIconButton("停靠与收起", Symbol.BackToWindow);
         dock.Content = new FontIcon { Glyph = Glyphs.ChevronRight, FontFamily = IconFontStyle.Font, FontSize = 18 };

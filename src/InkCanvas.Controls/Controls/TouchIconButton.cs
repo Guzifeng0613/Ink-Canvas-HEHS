@@ -32,7 +32,7 @@ public sealed class TouchIconButton : Button
 
     private readonly FontIcon _icon;
     private readonly Viewbox _glyphHost;
-    private readonly TextBlock _aiText;
+    private readonly FontIcon _aiText;
     private readonly Border _contentBorder;
     private readonly List<FontIcon> _icons = new();
     private TextBlock _label;
@@ -300,6 +300,7 @@ public sealed class TouchIconButton : Button
         if (button._glyphHost is null) return;
         double size = (double)e.NewValue;
         button._icon.FontSize = size;
+        if (button._aiText is not null) button._aiText.FontSize = size;
         // Keep the complete glyph line box inside the icon cell, including its descender.
         button._glyphHost.Width = Math.Ceiling(size + 4);
         button._glyphHost.Height = Math.Ceiling(size + 4);

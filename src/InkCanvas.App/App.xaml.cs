@@ -22,6 +22,10 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        var aiConnectionsCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--aiconnectionscheck=", StringComparison.OrdinalIgnoreCase));
+        if (aiConnectionsCheck is not null) { _ = Diagnostics.AiConnectionsRegression.Run(aiConnectionsCheck["--aiconnectionscheck=".Length..]); return; }
+        var boardChromeCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--boardchromecheck=", StringComparison.OrdinalIgnoreCase));
+        if (boardChromeCheck is not null) { _ = Diagnostics.BoardChromeRegression.Run(boardChromeCheck["--boardchromecheck=".Length..]); return; }
         var moduleResourcesCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--moduleresourcescheck=", StringComparison.OrdinalIgnoreCase));
         if (moduleResourcesCheck is not null) { _ = Diagnostics.ModuleResourcesRegression.Run(moduleResourcesCheck["--moduleresourcescheck=".Length..]); return; }
         var resizeCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--windowresizecheck="));

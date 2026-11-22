@@ -42,6 +42,8 @@ public readonly record struct OverlayPointer(
 public sealed class LayeredInkWindow : IDisposable
 {
     private const string ClassName = "InkCanvasOverlayWindow";
+    // Shared system cursor follows the user's cursor scheme and is owned by Windows.
+    private static readonly IntPtr ArrowCursor = NativeMethods.LoadCursorW(IntPtr.Zero, new IntPtr(NativeMethods.IDC_ARROW));
     private static bool _classRegistered;
     private static bool _mouseInPointerEnabled;
     private static bool _mouseAsPointer;
@@ -135,7 +137,7 @@ public sealed class LayeredInkWindow : IDisposable
                     lpfnWndProc = Marshal.GetFunctionPointerForDelegate(_wndProc),
                     hInstance = Marshal.GetHINSTANCE(typeof(LayeredInkWindow).Module),
                     lpszClassName = ClassName,
-                    hCursor = IntPtr.Zero,
+                    hCursor = ArrowCursor,
                     hbrBackground = IntPtr.Zero,
                 };
                 if (NativeMethods.RegisterClassW(ref wc) == 0)
@@ -416,6 +418,11 @@ public sealed class LayeredInkWindow : IDisposable
     {
         switch (msg)
         {
+            case NativeMethods.WM_SETCURSOR when (l.ToInt64() & 0xFFFF) == NativeMethods.HTCLIENT && !ClickThrough:
+                // A no-activate overlay must replace the cursor inherited from the window
+                // beneath it, which may still be displaying an application-starting spinner.
+                NativeMethods.SetCursor(ArrowCursor);
+                return new IntPtr(1);
             case NativeMethods.WM_DISPLAYCHANGE:
             case 0x02E0: // WM_DPICHANGED. The shared ink viewport deliberately keeps a stable scale.
             case 0x001A: // WM_SETTINGCHANGE, including taskbar / work-area changes.

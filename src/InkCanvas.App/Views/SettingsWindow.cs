@@ -318,6 +318,7 @@ public sealed partial class SettingsWindow : Window
             case "外观与工具栏": BuildAppearanceSettings(); break;
             case "演示与课件": BuildPresentationSettings(); break;
             case "抽奖与点名": BuildLotterySettings(); break;
+            case "AI 助教": BuildAiConnections(); break;
             case "模块与插件": BuildExtensionsCategory(); break;
             case "实验功能": BuildExperimentalSettings(); break;
             case "保存与备份": BuildArchiveSettings(); break;

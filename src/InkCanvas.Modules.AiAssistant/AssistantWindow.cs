@@ -18,6 +18,14 @@ public sealed partial class AssistantWindow : Window
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollMode = ScrollMode.Disabled, ZoomMode = ZoomMode.Disabled };
     private readonly TextBlock _contextTitle = new() { Text = "当前画布", FontSize = 13, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly TextBlock _modeText = new() { Text = "分步引导", FontSize = 13 };
+    private readonly FontIcon _modeIcon = new() { Glyph = Glyphs.SlideList, FontFamily = IconFontStyle.Font, FontSize = 16 };
+    private static string ModeGlyph(AssistantTeachingMode mode) => mode switch
+    {
+        AssistantTeachingMode.Hint => Glyphs.Hint,
+        AssistantTeachingMode.StepByStep => Glyphs.SlideList,
+        AssistantTeachingMode.Teacher => Glyphs.GuideWpf,
+        _ => Glyphs.Assistant,
+    };
     private readonly TextBlock _notice = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
     private readonly DispatcherTimer _noticeTimer = new() { Interval = TimeSpan.FromSeconds(3) };
     private readonly TextBox _followUp = new() { PlaceholderText = "继续追问…", FontSize = 14, MinHeight = 44,
@@ -125,6 +133,7 @@ public sealed partial class AssistantWindow : Window
         if (_collapsed) return;
         _currentCard.Refresh();
         _modeText.Text = AssistantTeachingPolicy.Label(session.TeachingMode);
+        _modeIcon.Glyph = ModeGlyph(session.TeachingMode);
         if (!string.IsNullOrEmpty(thumbnailBase64) && thumbnailBase64 != _thumbBase64) _ = LoadThumbnailAsync(thumbnailBase64);
         else if (string.IsNullOrEmpty(thumbnailBase64) && _thumbBase64.Length > 0)
         {

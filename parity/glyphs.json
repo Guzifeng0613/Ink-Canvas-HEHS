@@ -545,6 +545,20 @@
       "target": "sys.symbol.arrow_clockwise",
       "fluentName": "arrow_clockwise",
       "segoeCodepoint": "U+E7AD"
+    },
+    {
+      "name": "AddPage",
+      "codepoint": "U+E4E8",
+      "char": "",
+      "target": "sys.symbol.doc_badge_plus",
+      "fluentName": "document_add"
+    },
+    {
+      "name": "ExitBoard",
+      "codepoint": "U+F6E3",
+      "char": "",
+      "target": "sys.symbol.arrow_right_to_line",
+      "fluentName": "sign_out"
     }
   ]
 }

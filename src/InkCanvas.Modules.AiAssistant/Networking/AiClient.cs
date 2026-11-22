@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using InkCanvas.Core.AiAssistant;
+using InkCanvas.Modules.AiAssistant.Providers;
 
 namespace InkCanvas.Platform.Ai;
 
@@ -20,6 +21,8 @@ public sealed class AiClient : IDisposable
     };
 
     private readonly AiConfig _config;
+    private readonly AiConnection _connection;
+    private readonly string _key;
     private bool _disposed;
 
     public AiClient(AiConfig config)
@@ -28,6 +31,13 @@ public sealed class AiClient : IDisposable
     }
 
     public AiConfig Config => _config;
+
+    public AiClient(AiConnection connection, string key)
+    {
+        _connection = connection;
+        _key = key;
+        _config = new AiConfig { Endpoint = connection.BaseUrl, Model = connection.Model };
+    }
 
     /// <summary>
     /// 启动一次流式请求；<paramref name="onEvent"/> 逐事件回调，结束时恰好触发一次
@@ -43,6 +53,8 @@ public sealed class AiClient : IDisposable
         if (_disposed) throw new ObjectDisposedException(nameof(AiClient));
 
         request ??= new AssistantRequest();
+        if (_connection is not null)
+            return new AiAssistantProviderStream(_connection, _key, request, onEvent, onError, onDone).Handle;
         if (string.IsNullOrEmpty(_config.Endpoint))
         {
             var mock = new MockStream(
