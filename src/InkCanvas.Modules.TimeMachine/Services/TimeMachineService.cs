@@ -6,7 +6,7 @@ namespace InkCanvas.Modules.TimeMachine;
 /// 时光机插件服务：在进程内管理录制生命周期、新格式存储与录制管理窗口。
 /// 对宿主的依赖仅经 <see cref="ITimeMachineHost"/> 契约，不触碰宿主内部类型。
 /// </summary>
-public sealed class TimeMachineService : ITimeMachineService, IDisposable
+public sealed partial class TimeMachineService : ITimeMachineService, IDisposable
 {
     private readonly ITimeMachineHost _host;
     private readonly Func<Action, Action> _protect;
@@ -21,6 +21,7 @@ public sealed class TimeMachineService : ITimeMachineService, IDisposable
     }
 
     public bool IsRecording => _recorder is { IsRecording: true };
+    internal string LastRecordingSaveError { get; private set; }
 
     public event Action RecordingStateChanged;
 
@@ -39,6 +40,7 @@ public sealed class TimeMachineService : ITimeMachineService, IDisposable
         if (_disposed || _recorder is null) return;
 
         TimeMachineRecorder recorder = _recorder;
+        LastRecordingSaveError = null;
         _recorder = null;
         ClassroomSession session = recorder.Stop();
         recorder.Dispose();
@@ -49,9 +51,9 @@ public sealed class TimeMachineService : ITimeMachineService, IDisposable
             {
                 RecordingPackage.Save(session, RecordingsDirectory());
             }
-            catch
+            catch (Exception error)
             {
-                // 保存失败不阻断状态复位；错误由宿主通知 / 日志侧感知。
+                LastRecordingSaveError = error.Message;
             }
         }
 
@@ -109,8 +111,8 @@ public sealed class TimeMachineService : ITimeMachineService, IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        _disposed = true;
         try { StopRecording(); } catch { }
+        _disposed = true;
         _window?.Close();
         _window = null;
     }

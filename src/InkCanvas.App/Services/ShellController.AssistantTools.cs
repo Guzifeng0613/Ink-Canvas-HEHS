@@ -13,8 +13,25 @@ public sealed partial class ShellController
     {
         var registry = Services.AssistantTools;
         const string empty = """{"type":"object","properties":{},"additionalProperties":false}""";
+        registry.Register(new("tool_catalog", "查找已安装插件与 MCP 服务提供的工具，返回可调用的真实名称、用途和参数。query 使用简短的功能、插件或资源关键词，offset 用于分页。", """
+            {"type":"object","properties":{"query":{"type":"string"},"offset":{"type":"integer","minimum":0}},"additionalProperties":false}
+            """) { ReadOnly = true }, (args, token) =>
+        {
+            token.ThrowIfCancellationRequested();
+            string query = args.TryGetProperty("query", out var field) ? field.GetString() : "";
+            int offset = args.TryGetProperty("offset", out var start) ? start.GetInt32() : 0;
+            if (offset < 0) throw new ArgumentOutOfRangeException(nameof(offset));
+            var matches = registry.Definitions.Where(tool => string.IsNullOrWhiteSpace(query)
+                || (tool.Name + " " + tool.Description + " " + tool.Owner).Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+            return Task.FromResult(new AssistantToolResult(JsonSerializer.Serialize(new
+            {
+                total = matches.Length, nextOffset = offset + 16 < matches.Length ? (int?)(offset + 16) : null,
+                tools = matches.Skip(offset).Take(16).Select(tool => new { name = tool.Name, description = tool.Description, parameters = JsonSerializer.Deserialize<JsonElement>(tool.Parameters), owner = tool.Owner }),
+            })));
+        });
         void Add(string name, string description, string schema, Func<JsonElement, AssistantToolResult> run)
-            => registry.Register(new(name, description, schema), (args, token) => { token.ThrowIfCancellationRequested(); return Task.FromResult(run(args)); });
+            => registry.Register(new(name, description, schema) { ReadOnly = name == "read_workspace", ChangesTarget = name is "board_page" or "open_project_tool" },
+                (args, token) => { token.ThrowIfCancellationRequested(); return Task.FromResult(run(args)); });
         Add("read_workspace", "读取当前白板页、画布对象、选区、课件文本和可用插件工具。坐标为画布坐标。", empty, _ =>
         {
             var controller = ActiveController;
@@ -101,8 +118,8 @@ public sealed partial class ShellController
             if (success) host.EnsureVisible(target);
             return new(success ? "已创建图形，可在画布上编辑或撤销。" : "画布当前不可编辑。");
         });
-        Add("open_project_tool", "打开应用提供的课堂工具或已安装插件。timer 计时器，lottery 点名，roster 名单，spotlight 聚光灯，magnifier 放大镜，toolkit 工具箱，examples 例题库，resources 资源包，groups 小组积分，handout 讲义，geometry 解析几何。", """
-            {"type":"object","properties":{"tool":{"type":"string","enum":["timer","lottery","roster","spotlight","magnifier","toolkit","examples","resources","groups","handout","geometry"]}},"required":["tool"],"additionalProperties":false}
+        Add("open_project_tool", "打开应用提供的课堂工具或已安装插件。timer 计时器，lottery 点名，roster 名单，spotlight 聚光灯，magnifier 放大镜，toolkit 工具箱，examples 例题库，resources 资源包，groups 小组积分，handout 讲义。", """
+            {"type":"object","properties":{"tool":{"type":"string","enum":["timer","lottery","roster","spotlight","magnifier","toolkit","examples","resources","groups","handout"]}},"required":["tool"],"additionalProperties":false}
             """, args =>
         {
             switch (args.GetProperty("tool").GetString())
@@ -117,27 +134,15 @@ public sealed partial class ShellController
                 case "resources": OpenResourceBundle(); break;
                 case "groups": OpenGroupScore(); break;
                 case "handout": OpenHandout(); break;
-                case "geometry":
-                    var geometry = Services.Modules.GetExport<IAnalyticGeometryService>() ?? throw new InvalidOperationException("解析几何插件未运行。");
-                    geometry.Open(); break;
                 default: throw new ArgumentException("工具名称无效。");
             }
             return new("已调用工具入口。请在打开的工具中继续操作。");
         });
-        registry.Register(new("capture_canvas", "获取当前白板页面的图像，供识别板书或查看布局。", empty), async (_, token) =>
+        registry.Register(new("capture_canvas", "获取当前白板页面的图像，供识别板书或查看布局。", empty) { ReadOnly = true }, async (_, token) =>
             new AssistantToolResult("当前白板页面截图。", await BoardPreview.RenderAsync(Services.Board, token: token)));
-        registry.Register(new("open_pdf", "用 PDF 插件打开指定本地 PDF 文件，可省略 path 让老师选取文件。", """
-            {"type":"object","properties":{"path":{"type":"string"}},"additionalProperties":false}
-            """), async (args, token) =>
-        {
-            token.ThrowIfCancellationRequested();
-            var service = Services.Modules.GetExport<IPdfWorkspaceService>() ?? throw new InvalidOperationException("PDF 插件未运行。");
-            await service.OpenAsync(args.TryGetProperty("path", out var path) ? path.GetString() : null);
-            return new("PDF 打开流程已完成。");
-        });
         registry.Register(new("invoke_plugin_command", "调用 read_workspace 返回的可用插件命令。需使用实际的 plugin 和 command 标识。可打开文稿库、PDF、解析几何、时光机及其他已安装插件。", """
             {"type":"object","properties":{"plugin":{"type":"string"},"command":{"type":"string"}},"required":["plugin","command"],"additionalProperties":false}
-            """), async (args, token) =>
+            """) { ChangesTarget = true }, async (args, token) =>
         {
             token.ThrowIfCancellationRequested();
             string plugin = args.GetProperty("plugin").GetString(), commandId = args.GetProperty("command").GetString();

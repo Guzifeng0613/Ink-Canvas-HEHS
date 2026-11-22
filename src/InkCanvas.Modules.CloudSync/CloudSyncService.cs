@@ -100,23 +100,25 @@ internal sealed partial class CloudSyncService : ICloudSyncService, IDisposable
         Save();
     }
 
-    private async Task<T> SendAsync<T>(HttpMethod method, string path, object data = null, bool authenticated = true)
+    private async Task<T> SendAsync<T>(HttpMethod method, string path, object data = null, bool authenticated = true, CancellationToken token = default)
     {
-        if (authenticated) await EnsureAccessAsync();
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(token, _lifetime.Token);
+        token = operation.Token;
+        if (authenticated) await EnsureAccessAsync(token);
         using var request = new HttpRequestMessage(method, new Uri(new Uri(ValidateServiceUrl(_state.ServiceUrl)), path));
         if (authenticated) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
         if (data is not null) request.Content = JsonContent.Create(data, options: Json);
-        using var response = await _api.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, _lifetime.Token);
+        using var response = await _api.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
         if (response.StatusCode == HttpStatusCode.Conflict) throw new SyncConflictException();
         if (response.StatusCode == HttpStatusCode.Unauthorized) { _accessToken = null; throw new InvalidOperationException("账号或密码无效，或登录已过期，请重新登录。"); }
         if (!response.IsSuccessStatusCode) throw new IOException("云同步请求失败（" + (int)response.StatusCode + "），请检查账号、配额或稍后重试。");
-        return await response.Content.ReadFromJsonAsync<T>(Json, _lifetime.Token) ?? throw new IOException("云端响应为空。");
+        return await response.Content.ReadFromJsonAsync<T>(Json, token) ?? throw new IOException("云端响应为空。");
     }
-    private async Task EnsureAccessAsync()
+    private async Task EnsureAccessAsync(CancellationToken token = default)
     {
         if (_accessToken is not null && _accessUntil > DateTimeOffset.UtcNow.AddSeconds(30)) return;
         string refresh = RefreshToken() ?? throw new InvalidOperationException("请先登录云同步账号。");
-        var login = await SendAsync<LoginResult>(HttpMethod.Post, "v1/auth/refresh", new { refreshToken = refresh }, false);
+        var login = await SendAsync<LoginResult>(HttpMethod.Post, "v1/auth/refresh", new { refreshToken = refresh }, false, token);
         AcceptLogin(login);
     }
     private void AcceptLogin(LoginResult login)
@@ -129,23 +131,34 @@ internal sealed partial class CloudSyncService : ICloudSyncService, IDisposable
         Save();
     }
 
-    public async Task SyncAsync()
+    public Task SyncAsync() => SyncCoreAsync(CancellationToken.None, reportErrors: true);
+    internal Task SyncForAssistantAsync(CancellationToken token) => SyncCoreAsync(token, reportErrors: false);
+
+    private async Task SyncCoreAsync(CancellationToken token, bool reportErrors)
     {
-        if (_disposed || !(_state.Enabled || _state.SyncPreferences) || string.IsNullOrWhiteSpace(_state.UserId) || !await _gate.WaitAsync(0)) return;
+        if (_disposed && reportErrors) return;
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(token, _lifetime.Token);
+        token = operation.Token;
+        token.ThrowIfCancellationRequested();
+        if (_disposed || !(_state.Enabled || _state.SyncPreferences) || string.IsNullOrWhiteSpace(_state.UserId) || !await _gate.WaitAsync(0, token))
+        {
+            if (!reportErrors) throw new InvalidOperationException("云同步尚未就绪或已有同步正在运行。");
+            return;
+        }
         try
         {
-            await EnsureAccessAsync();
+            await EnsureAccessAsync(token);
             Status("正在准备云端备份…");
             if (_state.Enabled)
             {
-                string snapshot = await _host.SaveSnapshotAsync(_lifetime.Token);
+                string snapshot = await _host.SaveSnapshotAsync(token);
                 if (snapshot is not null && !_state.Pending.Contains(snapshot)) _state.Pending.Add(snapshot);
                 Save();
                 foreach (string path in _state.Pending.ToArray())
                 {
                     if (!File.Exists(path)) { _state.Pending.Remove(path); Save(); continue; }
                     Status("正在上传 " + Path.GetFileName(path));
-                    await UploadAsync(path);
+                    await UploadAsync(path, token);
                     _state.Pending.Remove(path);
                     Save();
                 }
@@ -155,7 +168,7 @@ internal sealed partial class CloudSyncService : ICloudSyncService, IDisposable
                 try
                 {
                     using var portable = JsonDocument.Parse(_host.ExportPreferences());
-                    var saved = await SendAsync<PreferenceResult>(HttpMethod.Put, "v1/preferences", new { version = _state.PreferenceVersion, values = portable.RootElement });
+                    var saved = await SendAsync<PreferenceResult>(HttpMethod.Put, "v1/preferences", new { version = _state.PreferenceVersion, values = portable.RootElement }, token: token);
                     _state.PreferenceVersion = saved.Version;
                     _state.PreferencesDirty = false;
                     Save();
@@ -163,6 +176,7 @@ internal sealed partial class CloudSyncService : ICloudSyncService, IDisposable
                 catch (SyncConflictException)
                 {
                     Status("白板已备份。配置与另一设备冲突，请先恢复云端配置，或确认以本机配置更新。");
+                    if (!reportErrors) throw;
                     return;
                 }
             }
@@ -170,18 +184,18 @@ internal sealed partial class CloudSyncService : ICloudSyncService, IDisposable
             Save();
             Status("同步完成 · " + _state.LastSyncUtc.Value.ToLocalTime().ToString("HH:mm:ss"));
         }
-        catch (OperationCanceledException) when (_disposed) { }
-        catch (Exception error) { Status(error is IOException or InvalidOperationException or ArgumentException ? error.Message : "同步暂未完成，将在下次自动重试。"); }
+        catch (OperationCanceledException) when (_disposed || reportErrors) { }
+        catch (Exception error) when (reportErrors) { Status(error is IOException or InvalidOperationException or ArgumentException ? error.Message : "同步暂未完成，将在下次自动重试。"); }
         finally { _gate.Release(); }
     }
 
-    private async Task UploadAsync(string path)
+    private async Task UploadAsync(string path, CancellationToken token)
     {
         await using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, true);
         if (input.Length > 536870912) throw new IOException("此白板超过 512 MiB，请减少视频等媒体后重试。");
-        string hash = Convert.ToHexStringLower(await SHA256.HashDataAsync(input, _lifetime.Token));
+        string hash = Convert.ToHexStringLower(await SHA256.HashDataAsync(input, token));
         input.Position = 0;
-        var ticket = await SendAsync<UploadTicket>(HttpMethod.Post, "v1/files/uploads", new { name = Path.GetFileName(path), sha256 = hash, size = input.Length });
+        var ticket = await SendAsync<UploadTicket>(HttpMethod.Post, "v1/files/uploads", new { name = Path.GetFileName(path), sha256 = hash, size = input.Length }, token: token);
         if (ticket.Complete) return;
         using var request = new HttpRequestMessage(HttpMethod.Put, ObjectUri(ticket.UploadUrl));
         request.Content = new StreamContent(input, 81920);
@@ -190,9 +204,9 @@ internal sealed partial class CloudSyncService : ICloudSyncService, IDisposable
         foreach (var header in ticket.Headers ?? new())
             if (!request.Headers.TryAddWithoutValidation(header.Key, header.Value))
             { request.Content.Headers.Remove(header.Key); request.Content.Headers.TryAddWithoutValidation(header.Key, header.Value); }
-        using var response = await _objects.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, _lifetime.Token);
+        using var response = await _objects.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
         if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.Conflict) throw new IOException("白板上传暂未完成，下次将重试。");
-        await SendAsync<CloudFile>(HttpMethod.Post, "v1/files/" + ticket.Id + "/commit");
+        await SendAsync<CloudFile>(HttpMethod.Post, "v1/files/" + ticket.Id + "/commit", token: token);
     }
     private static Uri ObjectUri(string value)
     {

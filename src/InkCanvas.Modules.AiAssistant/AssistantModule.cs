@@ -20,6 +20,7 @@ public sealed class AssistantModule : IApplicationModule
         context.RegisterCleanup(_service.Dispose);
         context.Export<IAiAssistantService>(_service);
         context.Export<IAiConnectionSettings>(_service);
+        _service.RegisterHistoryTool(context);
         _documents = new DocumentAiService(context.GetService<IAiAssistantHost>(), context.GetService<IAiDocumentHost>(), _connections);
         context.RegisterCleanup(_documents.Dispose);
         context.Export<IAiDocumentService>(_documents);

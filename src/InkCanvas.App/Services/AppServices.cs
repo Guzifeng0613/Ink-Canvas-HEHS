@@ -100,6 +100,7 @@ public sealed class AppServices : IDisposable
         if (_modulesStarted) return; _modulesStarted = true;
         Modules.AddService<IModuleSettingsRegistry>(ModuleSettings);
         Modules.AddService<IAssistantToolRegistry>(AssistantTools);
+        Modules.AddService<IMcpHost>(new McpHost(Path.Combine(Store.Directory, "PluginData", "inkcanvas.mcp")));
         Modules.AddService<ICloudSyncHost>(_cloudSync);
         Modules.AddService(host);
         if (documents is not null) Modules.AddService(documents);
@@ -114,6 +115,7 @@ public sealed class AppServices : IDisposable
         if (canvasTools is not null) Modules.RegisterPackage("inkcanvas.analytic-geometry", "解析几何", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.analytic-geometry"));
         if (assistant is not null) Modules.RegisterPackage("inkcanvas.ai-assistant", "AI 助手", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.ai-assistant"));
         Modules.RegisterPackage("inkcanvas.cloud-sync", "云同步", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.cloud-sync"));
+        Modules.RegisterPackage("inkcanvas.mcp", "MCP 工具连接", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.mcp"));
         if (timeMachine is not null) Modules.RegisterPackage("inkcanvas.time-machine", "板书时光机", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.time-machine"));
         Modules.Start(ExtensionPreferences.DisabledModules);
         Modules.Changed += UpdateModuleStatus;

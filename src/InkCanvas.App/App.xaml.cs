@@ -24,6 +24,8 @@ public partial class App : Application
     {
         var cloudSyncCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--cloudsynccheck=", StringComparison.OrdinalIgnoreCase));
         if (cloudSyncCheck is not null) { _ = Diagnostics.CloudSyncRegression.Run(cloudSyncCheck["--cloudsynccheck=".Length..]); return; }
+        var assistantCompatibility = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--assistantcompatcheck=", StringComparison.OrdinalIgnoreCase));
+        if (assistantCompatibility is not null) { _ = Diagnostics.AssistantCompatibilityRegression.Run(assistantCompatibility["--assistantcompatcheck=".Length..]); return; }
         var aiConnectionsCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--aiconnectionscheck=", StringComparison.OrdinalIgnoreCase));
         if (aiConnectionsCheck is not null) { _ = Diagnostics.AiConnectionsRegression.Run(aiConnectionsCheck["--aiconnectionscheck=".Length..]); return; }
         var boardChromeCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--boardchromecheck=", StringComparison.OrdinalIgnoreCase));

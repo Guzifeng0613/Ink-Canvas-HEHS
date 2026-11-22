@@ -29,7 +29,8 @@ public sealed class AssistantWorkspace
         {
             if (chat is null || chat.Turns is null || chat.DraftAttachments is null || chat.Title is null
                 || chat.Draft is null || chat.Summary is null || chat.SummarizedTurns < 0 || chat.SummarizedTurns > chat.Turns.Count
-                || chat.Turns.Any(turn => turn is null || turn.Attachments is null || turn.Tools is null || turn.Question is null || turn.Answer is null))
+                || chat.Turns.Any(turn => turn is null || turn.Attachments is null || turn.Tools is null || turn.Question is null || turn.Answer is null
+                    || turn.SummarizedTools < 0 || turn.SummarizedTools > turn.Tools.Count))
                 throw new InvalidDataException("对话记录不完整。");
             foreach (var turn in chat.Turns.Where(turn => turn.State == "running")) turn.State = "stopped";
         }
@@ -62,12 +63,14 @@ public sealed class AssistantChatTurn : INotifyPropertyChanged
     public string Fallback { get; set; } = "";
     public string State { get; set; } = "running";
     public string Activity { get; set; } = "";
+    public string ToolSummary { get; set; } = "";
+    public int SummarizedTools { get; set; }
     public List<AssistantToolActivity> Tools { get; set; } = new();
     public event PropertyChangedEventHandler PropertyChanged;
     public void Refresh() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(""));
 }
 
-public sealed record AssistantToolActivity(string Tool, string Result);
+public sealed record AssistantToolActivity(string Tool, string Result, string Arguments = "", bool IsError = false);
 
 public sealed class AssistantAttachment
 {
@@ -80,8 +83,23 @@ public sealed class AssistantAttachment
 
 public sealed class AssistantPreferences
 {
+    public const int DefaultContextTokens = 256 * 1024;
+    public int ContextVersion { get; set; } = 2;
     public bool ToolsEnabled { get; set; } = true;
-    public int ContextTokens { get; set; } = 32768;
+    public int ContextTokens { get; set; } = DefaultContextTokens;
+    public int CompactAtPercent { get; set; } = 80;
     public string Instructions { get; set; } = "";
 
+    public static AssistantPreferences Read(byte[] data)
+    {
+        using var document = JsonDocument.Parse(data);
+        var preferences = JsonSerializer.Deserialize<AssistantPreferences>(data) ?? new();
+        if (!document.RootElement.TryGetProperty(nameof(ContextVersion), out _) && preferences.ContextTokens == 32768)
+            preferences.ContextTokens = DefaultContextTokens;
+        preferences.ContextVersion = 2;
+        if (preferences.ContextTokens is < 8192 or > 1048576) preferences.ContextTokens = DefaultContextTokens;
+        preferences.CompactAtPercent = Math.Clamp(preferences.CompactAtPercent, 50, 95);
+        preferences.Instructions ??= "";
+        return preferences;
+    }
 }

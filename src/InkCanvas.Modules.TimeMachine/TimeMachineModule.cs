@@ -13,6 +13,7 @@ public sealed class TimeMachineModule : IApplicationModule
         _service = new TimeMachineService(context.GetService<ITimeMachineHost>(), context.Protect);
         context.RegisterCleanup(_service.Dispose);
         context.Export<ITimeMachineService>(_service);
+        _service.RegisterAssistant(context);
     }
 
     public void Stop()

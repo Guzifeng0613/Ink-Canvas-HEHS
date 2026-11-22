@@ -25,6 +25,7 @@
     <IncludeAnalyticGeometryModule Condition="'$(IncludeAnalyticGeometryModule)' == ''">true</IncludeAnalyticGeometryModule>
     <IncludeTimeMachineModule Condition="'$(IncludeTimeMachineModule)' == ''">true</IncludeTimeMachineModule>
     <IncludeCloudSyncModule Condition="'$(IncludeCloudSyncModule)' == ''">true</IncludeCloudSyncModule>
+    <IncludeMcpModule Condition="'$(IncludeMcpModule)' == ''">true</IncludeMcpModule>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\InkCanvas.UpdateHost\InkCanvas.UpdateHost.csproj" ReferenceOutputAssembly="false" Private="false" />
@@ -52,6 +53,8 @@
     <ProjectReference Include="..\InkCanvas.Modules.TimeMachine\InkCanvas.Modules.TimeMachine.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeTimeMachineModule)' == 'true'" />
     <ProjectReference Include="..\InkCanvas.Modules.CloudSync\InkCanvas.Modules.CloudSync.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeCloudSyncModule)' == 'true'" />
     <ProjectReference Include="..\InkCanvas.PluginHost\InkCanvas.PluginHost.csproj" ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\InkCanvas.Modules.Mcp\InkCanvas.Modules.Mcp.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeMcpModule)' == 'true'" />
+    <ProjectReference Include="..\InkCanvas.McpHost\InkCanvas.McpHost.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeMcpModule)' == 'true'" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Assets\**\*.*" Exclude="Assets\FluentSystemIcons*.ttf;Assets\SegoeMDL2Assets.ttf" CopyToOutputDirectory="PreserveNewest" />
@@ -89,6 +92,13 @@
              Condition="!Exists('$(OutDir)$(TargetName).pri')" />
   </Target>
   <Target Name="CopyExtensionPackages" AfterTargets="Build;Publish">
+    <ItemGroup Condition="'$(IncludeMcpModule)' == 'true'">
+      <_McpOutputFiles Include="..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\InkCanvas.Modules.Mcp.dll;..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\InkCanvas.Modules.Mcp.deps.json;..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\ModelContextProtocol.Core.dll;..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\Microsoft.Extensions.AI.Abstractions.dll;..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\Microsoft.Extensions.Logging.Abstractions.dll;..\InkCanvas.Modules.Mcp\module.json" />
+      <_McpOutputFiles Include="..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\Microsoft.Extensions.DependencyInjection.Abstractions.dll" />
+      <_McpOutputFiles Include="..\InkCanvas.McpHost\bin\$(Platform)\$(Configuration)\net10.0\$(RuntimeIdentifier)\InkCanvas.McpHost.*" Exclude="..\InkCanvas.McpHost\bin\$(Platform)\$(Configuration)\net10.0\$(RuntimeIdentifier)\*.pdb" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_McpOutputFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.mcp\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_McpOutputFiles)" DestinationFolder="$(PublishDir)Modules\inkcanvas.mcp\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
     <ItemGroup Condition="'$(IncludeCloudSyncModule)' == 'true'">
       <_CloudSyncFiles Include="..\InkCanvas.Modules.CloudSync\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\InkCanvas.Modules.CloudSync.dll;..\InkCanvas.Modules.CloudSync\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\InkCanvas.Modules.CloudSync.deps.json;..\InkCanvas.Modules.CloudSync\module.json" />
     </ItemGroup>
