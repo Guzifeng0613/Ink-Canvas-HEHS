@@ -44,6 +44,7 @@ public sealed class TouchIconButton : Button
     private string _labelText;
     private bool _showLabel = true;
     private double _labelFontSize = 11;
+    private double _labelMaxWidth = double.PositiveInfinity;
     private double _iconAreaHeight = double.NaN;
     private Thickness _labelMargin = new(0, -1, 0, 0);
 
@@ -138,6 +139,12 @@ public sealed class TouchIconButton : Button
         get => _labelFontSize;
         // Stored so a later RebuildContent (IconAreaHeight/LabelMargin change) keeps the size.
         set { _labelFontSize = value; if (_label is not null) _label.FontSize = value; }
+    }
+
+    public double LabelMaxWidth
+    {
+        get => _labelMaxWidth;
+        set { _labelMaxWidth = value; RebuildContent(); ApplyVisualState(); }
     }
 
     /// <summary>
@@ -258,6 +265,8 @@ public sealed class TouchIconButton : Button
         {
             Text = _labelText,
             FontSize = _labelFontSize,
+            MaxWidth = _labelMaxWidth,
+            TextTrimming = TextTrimming.CharacterEllipsis,
             TextAlignment = TextAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
             Visibility = _showLabel ? Visibility.Visible : Visibility.Collapsed,

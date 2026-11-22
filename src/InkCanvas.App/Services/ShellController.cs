@@ -94,7 +94,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private CountdownWindow _countdown;
     private LotteryWindow _lottery;
     private ReplayWindow _replay;
-    private InfoWindow _guide;
     private readonly List<NoticeWindow> _notices = new();
     private PenPaletteWindow _palette;
     private readonly List<PenPaletteWindow> _detachedPalettes = new();
@@ -273,7 +272,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
             if (_countdown is not null) yield return _countdown;
             if (_lottery is not null) yield return _lottery;
             if (_replay is not null) yield return _replay;
-            if (_guide is not null) yield return _guide;
             if (_updateWindow is not null) yield return _updateWindow;
             foreach (var notice in _notices) yield return notice;
             if (_palette is not null) yield return _palette;
@@ -794,7 +792,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
         if (_countdown is not null) WindowChrome.EnsureAbove(_countdown, Overlay.Window.Handle);
         if (_lottery is not null) WindowChrome.EnsureAbove(_lottery, Overlay.Window.Handle);
         if (_replay is not null) WindowChrome.EnsureAbove(_replay, Overlay.Window.Handle);
-        if (_guide is not null) WindowChrome.EnsureAbove(_guide, Overlay.Window.Handle);
         if (_updateWindow is not null) WindowChrome.EnsureAbove(_updateWindow, Overlay.Window.Handle);
         foreach (var notice in _notices) WindowChrome.EnsureAbove(notice, Overlay.Window.Handle);
         foreach (var navigation in _pptNavigations.Values)
@@ -2167,19 +2164,23 @@ public sealed partial class ShellController : IShellActions, IDisposable
         }
     }
 
-    /// <summary>WPF 打开墨迹: replace the active surface's strokes from a .icink file (confirmed).</summary>
+    /// <summary>Opens the available document browser or the archive file picker.</summary>
     public void OpenStrokes() => _ = OpenStrokesAsync();
 
     private async Task OpenStrokesAsync()
     {
         try
         {
+            if (Services.Modules.GetExport<IBoardLibraryService>() is { } library)
+            {
+                library.Open();
+                return;
+            }
             var owner = (Window)_board ?? _bar;
             var store = _board is not null ? Services.Board : Services.ScreenImages;
             var extensions = new[] { ".icink" }.Concat(Services.Plugins.ImportExtensions).ToList();
             if (Services.Modules.HasExport<IPdfWorkspaceService>()) extensions.Add(".pdf");
-            var library = Services.Modules.GetExport<IBoardLibraryService>();
-            string path = library is not null ? await library.PickOpenAsync(extensions.Distinct().ToArray()) : await ImageFilePicker.OpenArchiveAsync(WindowChrome.GetWorkArea(owner),
+            string path = await ImageFilePicker.OpenArchiveAsync(WindowChrome.GetWorkArea(owner),
                 Core.Settings.ArchivePolicy.ResolveDirectory(Services.Settings.Archive.DefaultDirectory), extensions.Distinct().ToArray());
             if (path is null || _disposed) return;
             if (Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase)) { await OpenPdfAsync(path); return; }
@@ -2218,15 +2219,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         WindowChrome.EnsureAbove(_replay);
     }
 
-    public void OpenGuide()
-    {
-        if (_guide is not null) { _guide.Activate(); return; }
-        _guide = InfoWindow.OpenGuide(EffectiveTheme);
-        NotifyWindowOpened(_guide);
-        _guide.Closed += (_, _) => _guide = null;
-        _guide.Activate();
-        WindowChrome.EnsureAbove(_guide);
-    }
+    public void OpenGuide() => OpenSettingsPage("操作指南");
 
     public void OpenPenPalette(bool highlighter)
     {

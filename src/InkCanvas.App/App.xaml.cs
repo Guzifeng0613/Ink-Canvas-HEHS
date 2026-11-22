@@ -30,6 +30,8 @@ public partial class App : Application
             _ = PptPreviewWorker.Run(previewWorker["--pptpreviewworker=".Length..], parent, directory);
             return;
         }
+        var moreMenuCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--moremenucheck=", StringComparison.OrdinalIgnoreCase));
+        if (moreMenuCheck is not null) { _ = Diagnostics.MoreMenuRegression.Run(moreMenuCheck["--moremenucheck=".Length..]); return; }
         var cloudSyncCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--cloudsynccheck=", StringComparison.OrdinalIgnoreCase));
         if (cloudSyncCheck is not null) { _ = Diagnostics.CloudSyncRegression.Run(cloudSyncCheck["--cloudsynccheck=".Length..]); return; }
         var assistantCompatibility = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--assistantcompatcheck=", StringComparison.OrdinalIgnoreCase));

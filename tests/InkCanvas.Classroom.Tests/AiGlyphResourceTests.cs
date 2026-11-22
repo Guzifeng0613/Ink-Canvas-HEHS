@@ -56,14 +56,15 @@ public sealed class AiGlyphResourceTests
     }
 
     [Fact]
-    public void HelpEntry_StaysSeparateFromAiEntry()
+    public void HelpEntry_UsesSettingsNavigation()
     {
         string root = RepoRoot();
         string bar = File.ReadAllText(Path.Combine(
             root, "src/InkCanvas.Controls/Controls/FloatingBar.cs"));
 
         Assert.Contains("Glyphs.Ai", bar);
-        Assert.Contains("Glyphs.GuideWpf", bar);
-        Assert.Contains("() => Shell?.OpenGuide()", bar);
+        string guide = File.ReadAllText(Path.Combine(root, "src/InkCanvas.App/Views/SettingsWindow.Guide.cs"));
+        Assert.Contains("Glyphs.Help", guide);
+        Assert.Contains("AddSubPage(\"关于与更新\", \"操作指南\"", guide);
     }
 }

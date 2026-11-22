@@ -92,9 +92,9 @@ public sealed class FloatingBar : UserControl
     private const double PartGap = 2 * S;         // 2.78 inter-rect gap (WPF Margin 2,0,0,0)
     private const double MainPadH = 4 * S;        // padding(2)+margin(2)
     private const double MainPadV = 1 * S;
-    private const double MoreBtn = 45 * S;        // 62.5
+    private const double MoreBtn = 52 * S;        // 72.2
     private const double MoreIcon = 22 * S;       // 30.6
-    private const double MoreLabel = 10 * S;      // 13.9
+    private const double MoreLabel = 9 * S;       // 12.5
     private const double PptExitW = 34 * S;       // 47.2
     private const double GestureRowH = 25 * S;
     private const double GestureRowSpacing = -2.5 * S;
@@ -103,6 +103,8 @@ public sealed class FloatingBar : UserControl
     private readonly StackPanel _canvasControls = new() { Orientation = Orientation.Horizontal, Spacing = 0 };
     private readonly StackPanel _barRow = new() { Orientation = Orientation.Horizontal, Spacing = 0 };
     private readonly StackPanel _moreRows = new() { Orientation = Orientation.Vertical, Spacing = 0 };
+    private readonly ScrollViewer _moreScroll = new() { MaxHeight = 520, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+    private InsertFlyout _insertFlyout;
     private readonly StackPanel _gestureRows = new() { Orientation = Orientation.Vertical, Spacing = GestureRowSpacing };
     private readonly Border _mainHost, _dragHandle, _gestureBorder, _pptExitBorder;
     private readonly FontIcon _dragIcon;
@@ -131,6 +133,7 @@ public sealed class FloatingBar : UserControl
 
     public FloatingBar()
     {
+        _moreScroll.Content = _moreRows;
         _fg = PopupBrushes.FloatBarForeground(1);
         _bg = PopupBrushes.FloatBarBackground(1);
         _border = PopupBrushes.FloatBarBorder(1);
@@ -242,7 +245,7 @@ public sealed class FloatingBar : UserControl
     /// <summary>Called by the host when a popup window closed on its own (outside click/Escape).</summary>
     public void NotifyPanelClosed(BarPanelKind kind)
     {
-        if (kind == BarPanelKind.More) _moreOpen = false;
+        if (kind == BarPanelKind.More) { _moreOpen = false; _insertFlyout?.Hide(); _insertFlyout = null; }
         else if (kind == BarPanelKind.Gesture) _gestureOpen = false;
         else _eraserOpen = false;
     }
@@ -252,7 +255,7 @@ public sealed class FloatingBar : UserControl
     public bool ColorfulBackground => Cfg.Appearance.IsColorfulViewboxFloatingBar;
 
     /// <summary>The 更多设置 rows, hosted by <see cref="BarPanelKind.More"/> popup window.</summary>
-    public UIElement CreateMorePanelContent() => _moreRows;
+    public UIElement CreateMorePanelContent() => _moreScroll;
 
     /// <summary>The 手势选项 rows, hosted by <see cref="BarPanelKind.Gesture"/> popup window.</summary>
     public UIElement CreateGesturePanelContent() => _gestureRows;
@@ -293,6 +296,8 @@ public sealed class FloatingBar : UserControl
 
     private void ClosePanels()
     {
+        _insertFlyout?.Hide();
+        _insertFlyout = null;
         _moreOpen = false;
         _gestureOpen = false;
         _eraserOpen = false;
@@ -491,27 +496,7 @@ public sealed class FloatingBar : UserControl
         _gestureBorder.Child = _gestureButton;
         _captioned.Add(_gestureButton);
 
-        // ---- 更多设置 rows (WPF BorderTools), hosted in a popup window ----
-        var row1 = MoreRow();
-        row1.Margin = new Thickness(0, 4 * S, 0, 0);
-        AddMore(row1, Glyphs.TimerWpf, "倒计时", () => Shell?.OpenTimer());
-        AddMore(row1, Glyphs.Rand, "随机抽选", () => Shell?.OpenLottery());
-        AddMore(row1, Glyphs.Rand, "单次抽选", () => Shell?.OpenLotteryQuick(), badge: true);
-        var row2 = MoreRow();
-        AddMore(row2, Glyphs.SaveStrokes, "保存墨迹", () => Shell?.SaveStrokes());
-        AddMore(row2, Glyphs.OpenStrokes, "打开墨迹", () => Shell?.OpenStrokes());
-        AddMore(row2, Glyphs.ReplayWpf, "播放墨迹", () => Shell?.OpenReplay());
-        AddMore(row2, Glyphs.InsertMedia, "插入图片", () => Shell?.InsertImage());
-        AddMore(row2, Glyphs.Video, "插入视频", () => Shell?.InsertVideo());
-        var row3 = MoreRow();
-        AddMore(row3, Glyphs.Camera, "截屏", async () => { if (Shell is not null) await Shell.ScreenshotAsync(); });
-        AddMore(row3, Glyphs.GuideWpf, "指南", () => Shell?.OpenGuide());
-        AddMore(row3, Glyphs.Settings, "设置", () => Shell?.OpenSettings());
-        _exitButton = AddMore(row3, Glyphs.ExitWpf, "退出", () => Shell?.Exit());
-        _moreRows.Children.Add(row1);
-        _moreRows.Children.Add(row2);
-        _moreRows.Children.Add(row3);
-        AppendExtensionCommands();
+        BuildMorePanel();
 
         // ---- 手势选项 rows (WPF TwoFingerGestureBorder), hosted in a popup window ----
         _multiTouchSwitch = AddGestureRow(Glyphs.People, "多指书写", v => Gesture.IsEnableMultiTouchMode = v);
@@ -618,39 +603,84 @@ public sealed class FloatingBar : UserControl
         var aiVisibility = Shell?.AiAssistantAvailable == true ? Visibility.Visible : Visibility.Collapsed;
         bool aiChanged = _aiButton.Visibility != aiVisibility;
         _aiButton.Visibility = aiVisibility;
-        while (_moreRows.Children.Count > 3) _moreRows.Children.RemoveAt(_moreRows.Children.Count - 1);
+        BuildMorePanel();
+        ApplyThemeBrushes();
+        RefreshSettingsVisuals();
+        if (aiChanged) LayoutChanged?.Invoke();
+    }
+
+    private void BuildMorePanel()
+    {
+        _insertFlyout?.Hide();
+        _insertFlyout = null;
+        _moreRows.Children.Clear();
+        _badgeBorders.Clear();
         var classroom = MoreRow();
+        classroom.Margin = new Thickness(0, 4 * S, 0, 0);
+        AddMore(classroom, Glyphs.TimerWpf, "倒计时", () => Shell?.OpenTimer());
+        AddMore(classroom, Glyphs.Rand, "随机抽选", () => Shell?.OpenLottery());
+        AddMore(classroom, Glyphs.Rand, "单次抽选", () => Shell?.OpenLotteryQuick(), badge: true);
         AddMore(classroom, Glyphs.Board, "课堂工具", () => Shell?.OpenToolkit());
+        _moreRows.Children.Add(classroom);
+
+        var drawing = MoreRow();
+        AddMore(drawing, Glyphs.ReplayWpf, "播放墨迹", () => Shell?.OpenReplay());
+        TouchIconButton insert = null;
+        insert = AddMore(drawing, Glyphs.InsertMedia, "插入", () => ShowInsertMenu(insert), closePanel: false);
+        AddMore(drawing, Glyphs.Camera, "截屏", async () => { if (Shell is not null) await Shell.ScreenshotAsync(); });
+        _moreRows.Children.Add(drawing);
+
         var presentation = MoreRow();
         AddMore(presentation, Glyphs.SlideList, "课件页导航", () => Shell?.ToggleSlideNavigator());
         AddMore(presentation, Glyphs.ChevronRight, "翻页悬浮窗", () => Shell?.TogglePptNavigationWindow());
         AddMore(presentation, Glyphs.Lock, "黑屏 / 恢复", () => Shell?.ToggleBlackScreen());
-        _moreRows.Children.Add(classroom);
         _moreRows.Children.Add(presentation);
-        AppendExtensionCommands();
-        if (aiChanged) LayoutChanged?.Invoke();
-    }
 
-    private void AppendExtensionCommands()
-    {
-        var commands = Shell?.ExtensionCommands ?? Array.Empty<ExtensionCommand>();
-        // Keep the floating panel bounded. The full command list is in module settings.
-        foreach (var batch in commands.Take(8).Chunk(4))
+        var commands = (Shell?.ExtensionCommands ?? Array.Empty<ExtensionCommand>())
+            .Where(command => command.PluginId is not ("inkcanvas.ai-assistant" or "inkcanvas.library")
+                && !(command.PluginId == "inkcanvas.pdf" && command.CommandId == "import"));
+        foreach (var batch in commands.Chunk(4))
         {
             var row = MoreRow();
             foreach (var command in batch)
                 AddMore(row, ExtensionCommandIcons.For(command), command.Title, async () => { if (Shell is not null) await Shell.ExecuteExtensionCommandAsync(command); });
             _moreRows.Children.Add(row);
         }
+
+        var files = MoreRow();
+        files.Margin = new Thickness(0, 8, 0, 4);
+        AddMore(files, Glyphs.SaveStrokes, "保存墨迹", () => Shell?.SaveStrokes());
+        AddMore(files, Glyphs.OpenStrokes, "打开文件", () => Shell?.OpenStrokes());
+        AddMore(files, Glyphs.Settings, "设置", () => Shell?.OpenSettings());
+        _exitButton = AddMore(files, Glyphs.ExitWpf, "退出", () => Shell?.Exit());
+        _moreRows.Children.Add(files);
+    }
+
+    private void ShowInsertMenu(FrameworkElement anchor)
+    {
+        var pdf = Shell?.ExtensionCommands.FirstOrDefault(command => command.PluginId == "inkcanvas.pdf" && command.CommandId == "import");
+        _insertFlyout = new InsertFlyout(_theme,
+            () => RunInsertion(() => Shell?.InsertImage()),
+            () => RunInsertion(() => Shell?.InsertVideo()),
+            pdf is null ? null : () => RunInsertion(async () => { if (Shell is not null) await Shell.ExecuteExtensionCommandAsync(pdf); }));
+        _insertFlyout.ShowAt(anchor);
+    }
+
+    private void RunInsertion(Action action)
+    {
+        _moreOpen = false;
+        PanelRequested?.Invoke(BarPanelKind.More, false);
+        action();
     }
 
     private StackPanel MoreRow() => new() { Orientation = Orientation.Horizontal, Spacing = 0, Height = MoreBtn, HorizontalAlignment = HorizontalAlignment.Center };
 
-    private TouchIconButton AddMore(StackPanel row, string glyph, string label, Action onClick, bool badge = false)
+    private TouchIconButton AddMore(StackPanel row, string glyph, string label, Action onClick, bool badge = false, bool closePanel = true)
     {
         var button = new TouchIconButton { Glyph = glyph, Label = label };
         ConfigureBarButton(button, more: true);
         button.ShowLabel = true; // more-panel captions always visible in WPF
+        button.LabelMaxWidth = MoreBtn - 6;
         if (badge)
         {
             var grid = new Grid { Width = MoreBtn, Height = MoreIcon };
@@ -692,8 +722,11 @@ public sealed class FloatingBar : UserControl
             button.Click += (_, _) =>
             {
                 // Dismiss the launching popup before an action opens another window.
-                _moreOpen = false;
-                PanelRequested?.Invoke(BarPanelKind.More, false);
+                if (closePanel)
+                {
+                    _moreOpen = false;
+                    PanelRequested?.Invoke(BarPanelKind.More, false);
+                }
                 onClick();
             };
         }

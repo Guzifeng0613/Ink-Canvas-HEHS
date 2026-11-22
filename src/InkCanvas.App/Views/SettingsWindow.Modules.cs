@@ -9,7 +9,7 @@ public sealed partial class SettingsWindow
 {
     private IReadOnlyList<ModuleSettingsPage> _moduleSettingsPages = Array.Empty<ModuleSettingsPage>();
     private IEnumerable<string> Categories => SettingsCategoryCatalog.Pages.Select(page => page.Name)
-        .Concat(_moduleSettingsPages.Select(page => page.Name));
+        .Concat(GuidePages).Concat(_moduleSettingsPages.Select(page => page.Name));
 
     private void RefreshModuleSettings() => DispatcherQueue.TryEnqueue(() =>
     {

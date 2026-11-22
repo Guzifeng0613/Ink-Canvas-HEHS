@@ -297,11 +297,7 @@ public sealed partial class SettingsWindow
         _content.Children.Add(ToggleRow("记录日志", () => S.Advanced.IsLogEnabled,
             v => S.Advanced.IsLogEnabled = v));
         AddSection("帮助");
-        _content.Children.Add(ButtonRow("操作指南", "模式、工具、手势与快捷键", () =>
-        {
-            var w = InfoWindow.OpenGuide(S.Appearance.Theme);
-            w.Activate();
-        }));
+        _content.Children.Add(ButtonRow("操作指南", "模式、工具、手势与快捷键", () => _workspace.SelectPage("操作指南")));
         _content.Children.Add(ButtonRow("更新日志", "查看版本变更记录", () =>
         {
             var w = InfoWindow.OpenChangeLog(S.Appearance.Theme);

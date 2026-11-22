@@ -920,7 +920,7 @@ public sealed partial class BoardWindow : Window
         _gestureFlyout = BuildGestureFlyout(); ShowBoardFlyout(_gestureFlyout, _gestureCell.Button);
     }
 
-    /// <summary>更多功能: WPF 3x3 icon grid + 视频展台|Desmos row, plus relocated port extras.</summary>
+    /// <summary>Classroom and canvas tools precede file and application actions.</summary>
     private Flyout BuildMoreFlyout()
     {
         var flyout = new Flyout { Placement = FlyoutPlacementMode.Top };
@@ -939,12 +939,9 @@ public sealed partial class BoardWindow : Window
             ("", "倒计时", () => { HideBoardFlyout(flyout); _shell?.OpenTimer(); }, false),
             ("", "随机抽选", () => { HideBoardFlyout(flyout); _shell?.OpenLottery(); }, false),
             ("", "单次抽选", () => { HideBoardFlyout(flyout); _shell?.OpenLotteryQuick(); }, true),
-            ("", "保存墨迹", async () => { HideBoardFlyout(flyout); await SavePageAsync(); }, false),
-            ("", "打开墨迹", async () => { HideBoardFlyout(flyout); await OpenPageAsync(); }, false),
             ("", "播放墨迹", () => { HideBoardFlyout(flyout); _shell?.OpenReplay(); }, false),
             ("", "截屏", async () => { HideBoardFlyout(flyout); if (_shell is not null) await _shell.ScreenshotAsync(); }, false),
-            ("", "指南", () => { HideBoardFlyout(flyout); _shell?.OpenGuide(); }, false),
-            ("", "设置", () => { HideBoardFlyout(flyout); _shell?.OpenSettings(); }, false),
+            (Glyphs.InsertMedia, "插入", ShowBoardInsertMenu, false),
         };
         for (int i = 0; i < items.Length; i++)
         {
@@ -1013,12 +1010,7 @@ public sealed partial class BoardWindow : Window
         }));
 
         // Port additions beyond WPF, relocated out of the center strip.
-        var extrasRow1 = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2 };
         var extrasRow2 = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2, Margin = new Thickness(0, 2, 0, 6) };
-        extrasRow1.Children.Add(MakeExtraButton("", "插入视频", async () => { HideBoardFlyout(flyout); await InsertMediaAsync(); }));
-        Button fileButton = null;
-        fileButton = MakeExtraButton("", "文件", () => ShowBoardFlyout(BuildFileFlyout(), _moreCell.Button));
-        extrasRow1.Children.Add(fileButton);
         extrasRow2.Children.Add(MakeExtraButton("", "删除本页", () => { HideBoardFlyout(flyout); DeleteCurrentPage(); }));
         extrasRow2.Children.Add(MakeExtraButton("", _isFullscreen ? "窗口模式" : "全屏", () => { HideBoardFlyout(flyout); SetFullscreen(!_isFullscreen); }));
         Button canvasButton = null;
@@ -1031,7 +1023,6 @@ public sealed partial class BoardWindow : Window
         panel.Children.Add(grid);
         panel.Children.Add(launcherRow);
         panel.Children.Add(new Border { Height = 1, Margin = new Thickness(8, 0, 8, 4), Background = _barBorder });
-        panel.Children.Add(extrasRow1);
         panel.Children.Add(extrasRow2);
         var navigation = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2 };
         navigation.Children.Add(MakeExtraButton(Glyphs.GestureTranslate, "单指拖动", () => { HideBoardFlyout(flyout); SetTool(InkTool.Pan); }));
@@ -1042,13 +1033,26 @@ public sealed partial class BoardWindow : Window
         panel.Children.Add(navigation);
         panel.Children.Add(MakeExtraButton("\uF379", "页面管理", () => { HideBoardFlyout(flyout); SetPagePaneOpen(true); }));
         if (_shell is not null)
-        foreach (var commands in _shell.ExtensionCommands.Chunk(3))
+        foreach (var commands in _shell.ExtensionCommands.Where(command => command.PluginId != "inkcanvas.library"
+            && !(command.PluginId == "inkcanvas.pdf" && command.CommandId == "import")).Chunk(3))
         {
             var extensionRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2 };
             foreach (var command in commands)
                 extensionRow.Children.Add(MakeExtraButton(ExtensionCommandIcons.For(command), command.Title, async () => { HideBoardFlyout(flyout); await _shell.ExecuteExtensionCommandAsync(command); }));
             panel.Children.Add(extensionRow);
         }
+
+        panel.Children.Add(new Border { Height = 1, Margin = new Thickness(8, 6, 8, 4), Background = _barBorder });
+        var files = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2 };
+        files.Children.Add(MakeExtraButton(Glyphs.SaveStrokes, "保存墨迹", async () => { HideBoardFlyout(flyout); await SavePageAsync(); }));
+        files.Children.Add(MakeExtraButton(Glyphs.OpenStrokes, "打开文件", async () => { HideBoardFlyout(flyout); await OpenFileAsync(); }));
+        files.Children.Add(MakeExtraButton(Glyphs.Pages, "文件选项", () => ShowBoardFlyout(BuildFileFlyout(), _moreCell.Button)));
+        panel.Children.Add(files);
+        var application = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Spacing = 2 };
+        application.Children.Add(MakeExtraButton(Glyphs.Settings, "设置", () => { HideBoardFlyout(flyout); _shell?.OpenSettings(); }));
+        if (_services.Settings.Appearance.IsShowExitButton)
+            application.Children.Add(MakeExtraButton(Glyphs.ExitWpf, "退出", () => { HideBoardFlyout(flyout); _shell?.Exit(); }));
+        panel.Children.Add(application);
 
         flyout.Content = new Border
         {
@@ -1099,6 +1103,17 @@ public sealed partial class BoardWindow : Window
         button.Resources["ButtonBackgroundPressed"] = _pressedBg;
         button.Click += (_, _) => onClick();
         return button;
+    }
+
+    private void ShowBoardInsertMenu()
+    {
+        var pdf = _shell?.ExtensionCommands.FirstOrDefault(command => command.PluginId == "inkcanvas.pdf" && command.CommandId == "import");
+        InsertFlyout insert = null;
+        insert = new InsertFlyout(_boardTheme,
+            async () => { HideBoardFlyout(insert); await InsertImageAsync(); },
+            async () => { HideBoardFlyout(insert); await InsertMediaAsync(); },
+            pdf is null ? null : async () => { HideBoardFlyout(insert); if (_shell is not null) await _shell.ExecuteExtensionCommandAsync(pdf); });
+        ShowBoardFlyout(insert, _moreCell.Button);
     }
 
     private Flyout BuildGestureFlyout()
@@ -2283,6 +2298,16 @@ public sealed partial class BoardWindow : Window
     private Task OpenPageAsync() => OpenInkAsync(false);
 
     private Task OpenBoardAsync() => OpenInkAsync(true);
+
+    private Task OpenFileAsync()
+    {
+        if (_services.Modules.GetExport<InkCanvas.Host.Contracts.IBoardLibraryService>() is { } library)
+        {
+            library.Open();
+            return Task.CompletedTask;
+        }
+        return OpenPageAsync();
+    }
 
     private async Task OpenInkAsync(bool entireBoard)
     {
