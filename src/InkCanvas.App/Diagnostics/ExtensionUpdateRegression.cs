@@ -100,14 +100,16 @@ internal static class ExtensionUpdateRegression
 
     private static async Task CheckBatch(AppServices services, string directory, List<object> checks)
     {
-        byte[] library = Package("inkcanvas.library", "1.0.2");
-        byte[] pdf = Package("inkcanvas.pdf", "1.1.1");
+        string libraryVersion = NextVersion("inkcanvas.library");
+        string pdfVersion = NextVersion("inkcanvas.pdf");
+        byte[] library = Package("inkcanvas.library", libraryVersion);
+        byte[] pdf = Package("inkcanvas.pdf", pdfVersion);
         string hash = Convert.ToHexStringLower(SHA256.HashData(library));
         const string repository = "QiXinia/Ink-Canvas-HEHS";
         object Asset(string id, string version, byte[] data, string digest) => new { name = id + "-" + version + ".zip", size = data.Length,
             browser_download_url = $"https://github.com/{repository}/releases/download/v3.8.0/{id}-{version}.zip", digest = "sha256:" + digest };
         string feed = JsonSerializer.Serialize(new[] { new { tag_name = "v3.8.0", draft = false, prerelease = false,
-            assets = new[] { Asset("inkcanvas.library", "1.0.2", library, hash), Asset("inkcanvas.pdf", "1.1.1", pdf, new string('0',64)) } } });
+            assets = new[] { Asset("inkcanvas.library", libraryVersion, library, hash), Asset("inkcanvas.pdf", pdfVersion, pdf, new string('0',64)) } } });
         using var coordinator = new ExtensionUpdateCoordinator(services, new UpdateService(transport: new UpdateTransport(new BatchHandler(feed, library, pdf), Array.Empty<string>()),
             cache: new UpdateCache(Path.Combine(directory, "batch-cache"))));
         await coordinator.CheckAsync();
@@ -116,6 +118,12 @@ internal static class ExtensionUpdateRegression
         Check("update all preserves successful packages when another package fails", coordinator.Pending.Any(item => item.Id == "inkcanvas.library")
             && !coordinator.Pending.Any(item => item.Id == "inkcanvas.pdf") && coordinator.Status.Contains("1 个未完成"));
         void Check(string name, bool passed) => checks.Add(new { check = name, passed });
+        static string NextVersion(string id)
+        {
+            var manifest = Extensions.ExtensionPackages.Read(Path.Combine(AppContext.BaseDirectory, "Modules", id, "module.json"));
+            if (!AppVersion.TryParse(manifest.Version, out var version)) throw new InvalidDataException("Invalid installed module version.");
+            return new AppVersion(version.Major, version.Minor, checked(version.Patch + 1), 0).ToString();
+        }
         static byte[] Package(string id, string version)
         {
             using var memory = new MemoryStream();
