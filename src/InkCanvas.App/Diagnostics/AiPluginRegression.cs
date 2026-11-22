@@ -1,19 +1,17 @@
+using System.Net;
+using System.Net.Sockets;
+using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using InkCanvas.App.Services;
-using InkCanvas.App.Views;
 using InkCanvas.Controls.Controls;
-using InkCanvas.Extensibility;
-using InkCanvas.Extensions;
 using InkCanvas.Host.Contracts;
-using InkCanvas.Core.AiAssistant;
-using InkCanvas.Core.Ink;
-using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
-using Windows.Graphics;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 
 namespace InkCanvas.App.Diagnostics;
 
@@ -23,249 +21,231 @@ internal static class AiPluginRegression
     {
         Directory.CreateDirectory(directory);
         var checks = new List<object>();
-        using var services = new AppServices(Path.Combine(directory, "settings"));
-        services.Settings.Startup.IsAutoUpdate = false;
-        services.Settings.PowerPoint.PowerPointSupport = false;
-        services.Settings.Automation.MinimumAutomationStrokeNumber = int.MaxValue;
+        using var server = new FixtureServer();
+        string settingsDirectory = Path.Combine(directory, "settings");
+        string connectionDirectory = Path.Combine(settingsDirectory, "PluginData", "inkcanvas.ai-assistant", "Documents", "Connections");
+        Directory.CreateDirectory(connectionDirectory);
+        string id = Guid.NewGuid().ToString("N");
+        await File.WriteAllTextAsync(Path.Combine(connectionDirectory, "connections.json"), JsonSerializer.Serialize(new
+        { ActiveId = id, Connections = new[] { new { Id = id, Name = "本机验收", BaseUrl = server.Address, Model = "fixture", Format = "ChatCompletions", Reasoning = "unsupported" } } }));
+        using var services = new AppServices(settingsDirectory);
+        services.Settings.Startup.IsAutoUpdate = false; services.Settings.PowerPoint.PowerPointSupport = false;
         bool disabled = Environment.GetCommandLineArgs().Contains("--without-ai");
         if (disabled) services.ExtensionPreferences.DisabledModules.Add("inkcanvas.ai-assistant");
-        using var shell = new ShellController(services);
-        shell.Start();
-        shell.StartInClickThrough();
+        using var shell = new ShellController(services); shell.Start(); shell.StartInClickThrough();
         try
         {
-            await Task.Delay(150);
-            var status = services.Modules.Status.Single(item => item.Id == "inkcanvas.ai-assistant");
-            bool available = status.State == ExtensionState.Running;
-            Check("AI availability matches native plugin state", shell.AiAssistantAvailable == available, status);
-            Check("host and platform have no AI engine or HTTP client", typeof(AppServices).Assembly.GetType("InkCanvas.App.Views.AssistantWindow") is null
-                && typeof(Core.Ink.InkStroke).Assembly.GetType("InkCanvas.Core.AiAssistant.AssistantMachine") is null
-                && typeof(Platform.System.ScreenService).Assembly.GetType("InkCanvas.Platform.Ai.AiClient") is null);
-            Check("application has no static AI plugin dependency", !typeof(AppServices).Assembly.GetReferencedAssemblies().Any(item => item.Name == "InkCanvas.Modules.AiAssistant"));
-            var bar = shell.OpenWindows.OfType<FloatingBarWindow>().Single();
-            var button = Descendants(bar.Content).OfType<TouchIconButton>().Single(item => item.Label == "AI 助教");
-            Check("primary toolbar hides unavailable AI", (button.Visibility == Visibility.Visible) == available);
-            Check("plugin menu matches AI availability", shell.ExtensionCommands.Any(item => item.PluginId == "inkcanvas.ai-assistant") == available);
-            if (!available)
+            var assistant = services.Modules.GetExport<IAiAssistantService>();
+            Check("optional plugin availability", (assistant is not null) == !disabled);
+            shell.OpenAiAssistant();
+            if (disabled)
             {
-                shell.OpenAiAssistant();
-                Check("missing or disabled plugin opens no window", !shell.OpenWindows.Any(item => item.GetType().Name == "AssistantWindow"));
-                Check("disabled AI assembly is never loaded", !AppDomain.CurrentDomain.GetAssemblies().Any(item => item.GetName().Name == "InkCanvas.Modules.AiAssistant"));
+                Check("disabled plugin opens no conversation window", !shell.OpenWindows.Any(window => window.GetType().Name == "AssistantWindow"));
+                Check("disabled plugin assembly stays unloaded", !AppDomain.CurrentDomain.GetAssemblies().Any(assembly => assembly.GetName().Name == "InkCanvas.Modules.AiAssistant"));
                 return;
             }
-
-            var assistant = services.Modules.GetExport<IAiAssistantService>();
-            assistant.Review(1, 1, 0, "# 二次方程\n已知 x² − 5x + 6 = 0。\n将左边因式分解为 (x − 2)(x − 3)，解得 x = 2 或 x = 3。");
-            await Task.Delay(300);
-            var window = shell.OpenWindows.Single(item => item.GetType().Name == "AssistantWindow");
-            Check("AI window belongs to the optional plugin", window.GetType().Assembly.GetName().Name == "InkCanvas.Modules.AiAssistant");
-            Check("native WinUI frame and Acrylic are installed", window.Content is WindowFrame && window.ExtendsContentIntoTitleBar && window.SystemBackdrop is DesktopAcrylicBackdrop);
-            Check("assistant starts at 380 DIP", Math.Abs(window.AppWindow.Size.Width / WindowChrome.GetDpiScale(window) - 380) < 3);
-            shell.OpenAiAssistant();
-            Check("reopening reuses the active workspace", shell.OpenWindows.Count(item => item.GetType().Name == "AssistantWindow") == 1);
-            for (int theme = 1; theme <= 2; theme++)
+            await Task.Delay(150);
+            var window = shell.OpenWindows.Single(window => window.GetType().Name == "AssistantWindow");
+            var frame = (WindowFrame)window.Content;
+            Check("native assistant frame", window.Title == "AI 助手" && window.SystemBackdrop is DesktopAcrylicBackdrop);
+            Check("empty chat makes no inference request", server.Posts == 0);
+            Check("virtual list is the scroll owner", Descendants(frame).OfType<ListView>().Count() == 1);
+            Check("removed solve controls and notices", !Descendants(frame).OfType<Button>().Any(button => new[] { "贴回白板", "讲解方式", "Agent 能力" }.Contains(AutomationProperties.GetName(button)))
+                && !Descendants(frame).OfType<InfoBar>().Any());
+            shell.ToggleBoard();
+            var input = Descendants(frame).OfType<TextBox>().Single(text => AutomationProperties.GetName(text) == "消息内容");
+            input.Text = "请增加一页并整理备课建议";
+            Invoke(FindButton(frame, "发送 (Enter)"));
+            await Wait(() => LastTurn(window)?.GetType().GetProperty("State")?.GetValue(LastTurn(window)) as string == "done");
+            Check("built-in agent executes native tool and continues", services.Board.PageCount == 2 && server.ToolResults > 0 && Answer(window).Contains("备课建议", StringComparison.Ordinal));
+            Check("model receives teacher prompt and history", server.TeacherPrompt);
+            Check("copy is available without paste", Descendants(frame).OfType<Button>().Any(button => AutomationProperties.GetName(button) == "复制回答"));
+            string textPath = Path.Combine(directory, "lesson.txt"); await File.WriteAllTextAsync(textPath, "七年级课堂材料——分组讨论与形成性评价");
+            var assembly = window.GetType().Assembly;
+            var attachmentType = assembly.GetType("InkCanvas.Modules.AiAssistant.AssistantAttachment");
+            var file = Activator.CreateInstance(attachmentType); attachmentType.GetProperty("Path").SetValue(file, textPath);
+            window.GetType().GetMethod("AddAttachment").Invoke(window, new[] { file });
+            var png = await Features.Board.BoardPreview.RenderAsync(services.Board);
+            var task = (Task)assembly.GetType("InkCanvas.Modules.AiAssistant.AssistantAttachments").GetMethod("FromImageAsync").Invoke(null, new object[] { png, "课堂图片" });
+            await task;
+            var image = task.GetType().GetProperty("Result").GetValue(task);
+            window.GetType().GetMethod("AddAttachment").Invoke(window, new[] { image });
+            input.Text = "参考附件生成活动安排"; Invoke(FindButton(frame, "发送 (Enter)"));
+            await Wait(() => State(window) == "done");
+            Check("image compressed and text file read", server.ImageReceived && server.FileTextReceived
+                && ((string)attachmentType.GetProperty("Image").GetValue(image)).StartsWith("data:image/jpeg;base64,", StringComparison.Ordinal));
+            Invoke(FindButton(frame, "新建对话")); await Task.Delay(70);
+            Check("new chat has independent empty history", Descendants(frame).OfType<ListView>().Single().Items.Count == 0);
+            input.Text = "请生成本周教学计划"; Invoke(FindButton(frame, "发送 (Enter)")); await Wait(() => State(window) == "done");
+            var chats = Descendants(frame).OfType<ComboBox>().Single(combo => AutomationProperties.GetName(combo) == "对话历史");
+            Check("history includes multiple chats", chats.Items.Count == 2);
+            chats.SelectedIndex = 1; await Task.Delay(60);
+            Check("switching restores earlier chat", Descendants(frame).OfType<ListView>().Single().Items.Count == 2);
+            foreach (int theme in new[] { 1, 2 })
             {
-                WindowChrome.ApplyTheme(window, theme);
-                await Task.Delay(100);
-                var frame = (WindowFrame)window.Content;
-                Check("theme and caption match " + theme, frame.ActualTheme == (theme == 1 ? ElementTheme.Light : ElementTheme.Dark) && frame.Header.ActualTheme == frame.ActualTheme);
-                var text = Descendants(frame).OfType<RichTextBlock>().First();
-                var color = ((SolidColorBrush)text.Foreground).Color;
-                Check("answer text is readable " + theme, color.A > 200 && (theme == 1 ? color.R < 80 : color.R > 200));
-                var background = frame.Background;
-                frame.Background = new SolidColorBrush(theme == 1 ? Windows.UI.Color.FromArgb(255, 243, 243, 243) : Windows.UI.Color.FromArgb(255, 32, 32, 32));
+                WindowChrome.ApplyTheme(window, theme); await Task.Delay(70);
+                window.AppWindow.Resize(new((int)(380 * WindowChrome.GetDpiScale(window)), (int)(760 * WindowChrome.GetDpiScale(window))));
+                await Task.Delay(70);
+                var background = frame.Background; frame.Background = new SolidColorBrush(theme == 1 ? Microsoft.UI.Colors.WhiteSmoke : Windows.UI.Color.FromArgb(255, 32, 32, 32));
                 try { await BoardWindowRegression.SaveVisual(frame, Path.Combine(directory, "assistant-" + theme + ".png")); }
                 finally { frame.Background = background; }
+                Check("touch composer fits theme " + theme, new[] { "添加图片或文件", "添加当前画布", "发送 (Enter)", "思考设置" }.All(name =>
+                {
+                    var button = FindButton(frame, name); var bounds = button.TransformToVisual(frame).TransformBounds(new(0, 0, button.ActualWidth, button.ActualHeight));
+                    return button.ActualWidth >= 39 && bounds.Left >= 0 && bounds.Right <= frame.ActualWidth + 1;
+                }));
             }
-            await CheckPanel(window, directory, checks);
-            window.Close();
-            Check("closing clears the plugin session window", !assistant.IsOpen);
-
-            // Empty endpoint exercises the complete capture, streaming and cancellation path locally.
-            Environment.SetEnvironmentVariable("AI_ENDPOINT", null);
-            var screen = Platform.System.ScreenService.WorkArea;
-            await assistant.OpenRegionAsync(new(screen.X, screen.Y, 240, 140));
-            await Task.Delay(1600);
-            Check("capture starts a plugin-owned session", assistant.IsOpen);
-            window = shell.OpenWindows.Single(item => item.GetType().Name == "AssistantWindow");
-            var previewButton = Descendants(window.Content).OfType<Button>().Single(item => AutomationProperties.GetName(item) == "预览和调整题目选区");
-            previewButton.Flyout.ShowAt(previewButton); await Task.Delay(100);
-            var previewPopup = VisualTreeHelper.GetOpenPopupsForXamlRoot(((FrameworkElement)window.Content).XamlRoot)
-                .Single(popup => Descendants(popup.Child).OfType<TextBlock>().Any(item => item.Text == "当前题目选区"));
-            Check("context thumbnail opens a separate source preview", Descendants(previewPopup.Child).OfType<Image>().Any()
-                && Descendants(previewPopup.Child).OfType<TextBlock>().Any(item => item.Text.Contains("局部纠错")));
-            previewButton.Flyout.Hide();
-            var originalSize = window.AppWindow.Size;
-            double dpi = WindowChrome.GetDpiScale(window);
-            window.AppWindow.Resize(new SizeInt32((int)(360 * dpi), (int)(600 * dpi)));
-            await Task.Delay(120);
-            Check("narrow assistant uses a single conversation column", !Descendants(window.Content).OfType<SplitView>().Any());
-            window.AppWindow.Resize(originalSize);
-            await Task.Delay(120);
-            var paste = Descendants(window.Content).OfType<Button>().Single(item => AutomationProperties.GetName(item) == "贴回白板");
-            Check("stream completes with paste available", paste.IsEnabled && paste.Visibility == Visibility.Visible);
-            var firstCard = Descendants(window.Content).OfType<FrameworkElement>().Single(item => item.GetType().Name == "AssistantAnswerCard");
-            var reveal = Descendants(firstCard).OfType<Button>().Single(item => AutomationProperties.GetName(item).StartsWith("展开下一步"));
-            Invoke(reveal); await Task.Delay(80);
-            Check("next step expands inside its response", AutomationProperties.GetName(reveal).Contains("剩余 1 步"));
-            var input = Descendants(window.Content).OfType<TextBox>().Single(item => AutomationProperties.GetName(item) == "追问内容");
-            input.Text = "再解释一次";
-            Invoke(Descendants(window.Content).OfType<Button>().Single(item => AutomationProperties.GetName(item) == "发送 (Enter)"));
-            await Task.Delay(1600);
-            Check("follow-up creates an independent response", Descendants(window.Content).OfType<FrameworkElement>().Count(item => item.GetType().Name == "AssistantAnswerCard") == 2);
-            Invoke(reveal); await Task.Delay(60);
-            Check("earlier response can reveal its own remaining step", reveal.Visibility == Visibility.Collapsed
-                && Descendants(firstCard).OfType<TextBlock>().Any(item => item.Text == "E = mc²"));
-            for (int theme = 1; theme <= 2; theme++)
+            string boardPath = Path.Combine(directory, "assistant.icink");
+            await services.Board.SaveBoardAsync(boardPath);
+            using (var json = JsonDocument.Parse(services.Board.ReadExtension("inkcanvas.ai-assistant")))
             {
-                WindowChrome.ApplyTheme(window, theme); await Task.Delay(80);
-                var frame = (WindowFrame)window.Content;
-                var background = frame.Background;
-                frame.Background = new SolidColorBrush(theme == 1 ? Microsoft.UI.Colors.WhiteSmoke : Windows.UI.Color.FromArgb(255, 32, 32, 32));
-                try { await BoardWindowRegression.SaveVisual(frame, Path.Combine(directory, $"assistant-conversation-{theme}.png")); }
-                finally { frame.Background = background; }
+                Check("one board contains every conversation", json.RootElement.GetProperty("Chats").GetArrayLength() == 2);
+                var attachment = json.RootElement.GetProperty("Chats")[0].GetProperty("Turns")[1].GetProperty("Attachments")[0];
+                Check("file attachment stores path only", attachment.GetProperty("Path").GetString() == textPath && attachment.GetProperty("Image").GetString() == "");
             }
-            ((IInvokeProvider)new ButtonAutomationPeer(paste).GetPattern(PatternInterface.Invoke)).Invoke();
-            await Task.Delay(350);
-            Check("plugin result pastes through the board host", services.Board.CurrentImages.Any(item => item.Name == "AI 助教"));
-            int count = services.Board.CurrentImages.Count;
-            services.Board.Current.Undo();
-            Check("pasted AI card remains undoable", services.Board.CurrentImages.Count == count - 1);
-            await CheckAgent(window, services, checks);
-            shell.OpenWindows.OfType<BoardWindow>().Single().Close();
-            await assistant.OpenRegionAsync(new(screen.X, screen.Y, 240, 140));
-            services.Modules.Invoke<IAiAssistantService>(_ => throw new InvalidOperationException("AI plugin regression failure"));
-            await Task.Delay(100);
-            Check("failed plugin closes its active request and window", !assistant.IsOpen && !shell.AiAssistantAvailable);
-            Check("failure removes AI toolbar and command entries", button.Visibility == Visibility.Collapsed
-                && !shell.ExtensionCommands.Any(item => item.PluginId == "inkcanvas.ai-assistant"));
-            services.OverlayInk.Tool = Ink.InkTool.Pen;
-            Check("core canvas remains available after AI stops", services.OverlayInk.Tool == Ink.InkTool.Pen);
+            window.Close();
+            await services.Board.LoadBoardAsync(boardPath); assistant.Open(); await Task.Delay(100);
+            window = shell.OpenWindows.Single(window => window.GetType().Name == "AssistantWindow"); frame = (WindowFrame)window.Content;
+            Check("reopening board restores history", Descendants(frame).OfType<ComboBox>().Single(combo => AutomationProperties.GetName(combo) == "对话历史").Items.Count == 2);
+            input = Descendants(frame).OfType<TextBox>().Single(text => AutomationProperties.GetName(text) == "消息内容");
+            server.RejectExtendedNext = true;
+            input.Text = "测试附件回退"; Invoke(FindButton(frame, "发送 (Enter)")); await Wait(() => State(window) == "done");
+            var fallbackTurn = LastTurn(window);
+            Check("unsupported multimodal request falls back visibly", server.Fallbacks == 1
+                && !string.IsNullOrEmpty((string)fallbackTurn.GetType().GetProperty("Fallback").GetValue(fallbackTurn)));
+            server.DelayNext = true; int posts = server.Posts;
+            input.Text = "生成长一点的课堂讨论"; Invoke(FindButton(frame, "发送 (Enter)")); await Wait(() => server.Posts > posts);
+            Invoke(FindButton(frame, "停止生成")); await Wait(() => State(window) == "stopped");
+            Check("stop cancels the active turn", State(window) == "stopped");
+            var behavior = (StackPanel)assistant.GetType().GetMethod("CreateBehaviorSettingsView").Invoke(assistant, null);
+            behavior.Children.OfType<ToggleSwitch>().Single().IsOn = false; await Task.Delay(30);
+            input.Text = "继续整理教学计划"; Invoke(FindButton(frame, "发送 (Enter)")); await Wait(() => State(window) == "done");
+            Check("plugin setting disables tool declarations", !server.LastHadTools);
+            var thinkingButton = FindButton(frame, "思考设置"); thinkingButton.Flyout.ShowAt(thinkingButton); await Task.Delay(60);
+            var popup = VisualTreeHelper.GetOpenPopupsForXamlRoot(frame.XamlRoot).Single(popup => Descendants(popup.Child).OfType<ToggleSwitch>().Any());
+            var effort = Descendants(popup.Child).OfType<ComboBox>().Single();
+            Check("thinking supports three strengths with high default", effort.Items.Count == 3 && effort.SelectedIndex == 1
+                && Descendants(popup.Child).OfType<ToggleSwitch>().Single().IsOn);
+            thinkingButton.Flyout.Hide();
+            // Populate through the public workspace model to exercise recycling with a long history.
+            var workspace = window.GetType().GetField("_workspace", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(window);
+            var chat = workspace.GetType().GetProperty("Active").GetValue(workspace);
+            var turns = (System.Collections.IList)chat.GetType().GetProperty("Turns").GetValue(chat);
+            var turnType = assembly.GetType("InkCanvas.Modules.AiAssistant.AssistantChatTurn");
+            for (int index = 0; index < 300; index++)
+            {
+                var turn = Activator.CreateInstance(turnType); turnType.GetProperty("Question").SetValue(turn, "课堂讨论 " + index);
+                turnType.GetProperty("Answer").SetValue(turn, string.Concat(Enumerable.Repeat("围绕目标设计活动，并记录课堂反馈。", 12))); turnType.GetProperty("State").SetValue(turn, "done"); turns.Add(turn);
+            }
+            window.GetType().GetMethod("SetWorkspace").Invoke(window, new[] { workspace }); await Task.Delay(250);
+            var list = Descendants(frame).OfType<ListView>().Single();
+            Check("long history realizes a bounded number of cards", list.Items.Count > 300 && Descendants(list).Count(item => item.GetType().Name == "AssistantChatCard") < 50);
+            list.ScrollIntoView(list.Items[0]); await Task.Delay(100); list.ScrollIntoView(list.Items[^1]); await Task.Delay(100);
+            Check("recycled cards display the latest record", Descendants(list).OfType<TextBlock>().Any(text => text.Text == "课堂讨论 299"));
+            int before = turns.Count;
+            input.Text = "依据历史安排下一节课"; Invoke(FindButton(frame, "发送 (Enter)")); await Wait(() => State(window) == "done");
+            Check("automatic compaction preserves full visible history", (int)chat.GetType().GetProperty("SummarizedTurns").GetValue(chat) > 0
+                && turns.Count == before + 1 && server.Compactions > 0);
+            window.Close();
+            services.Modules.Invoke<IAiAssistantService>(_ => throw new InvalidOperationException("diagnostic stop"));
+            var withoutPlugin = new Features.Board.BoardService();
+            try
+            {
+                await withoutPlugin.LoadBoardAsync(boardPath); await withoutPlugin.SaveBoardAsync(Path.Combine(directory, "without-plugin.icink"));
+                Check("board round-trips with AI plugin stopped", withoutPlugin.PageCount == 2 && withoutPlugin.ReadExtension("inkcanvas.ai-assistant") is { Length: > 0 });
+            }
+            finally { foreach (var page in withoutPlugin.Pages) page.Dispose(); }
         }
-        catch (Exception ex) { checks.Add(new { check = "AI plugin regression exception", passed = false, detail = ex.ToString() }); }
+        catch (Exception exception)
+        {
+            var failedWindow = shell.OpenWindows.FirstOrDefault(window => window.GetType().Name == "AssistantWindow");
+            var turn = failedWindow is null ? null : LastTurn(failedWindow);
+            checks.Add(new { check = "AI assistant integration", passed = false, detail = exception.ToString(), posts = server.Posts,
+                state = turn?.GetType().GetProperty("State").GetValue(turn), error = turn?.GetType().GetProperty("Error").GetValue(turn) });
+        }
         finally
         {
             await File.WriteAllTextAsync(Path.Combine(directory, "ai-plugin.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
-            var windows = shell.OpenWindows.ToArray();
-            shell.Dispose();
-            foreach (var window in windows) if (window.AppWindow.IsVisible) window.Close();
-            Application.Current.Exit();
+            shell.Dispose(); Application.Current.Exit();
         }
-        void Check(string name, bool passed, object detail = null) => checks.Add(new { check = name, passed, detail });
+        void Check(string name, bool passed) => checks.Add(new { check = name, passed });
     }
 
+    private static object LastTurn(Window window)
+    {
+        var workspace = window.GetType().GetField("_workspace", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(window);
+        var chat = workspace.GetType().GetProperty("Active").GetValue(workspace);
+        var turns = (System.Collections.IList)chat.GetType().GetProperty("Turns").GetValue(chat);
+        return turns.Count == 0 ? null : turns[turns.Count - 1];
+    }
+    private static string State(Window window) => (string)LastTurn(window)?.GetType().GetProperty("State").GetValue(LastTurn(window));
+    private static string Answer(Window window) => (string)LastTurn(window)?.GetType().GetProperty("Answer").GetValue(LastTurn(window)) ?? "";
+    private static async Task Wait(Func<bool> condition)
+    {
+        for (int index = 0; index < 500; index++) { if (condition()) return; await Task.Delay(20); }
+        throw new TimeoutException("Assistant integration timed out.");
+    }
+    private static Button FindButton(DependencyObject root, string name) => Descendants(root).OfType<Button>().Single(button => AutomationProperties.GetName(button) == name);
     private static void Invoke(Button button) => ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke();
-
-    private static async Task CheckPanel(Window window, string directory, List<object> checks)
-    {
-        var frame = (WindowFrame)window.Content;
-        foreach (int theme in new[] { 1, 2 })
-        {
-            WindowChrome.ApplyTheme(window, theme);
-            foreach (int width in new[] { 360, 380, 400 })
-            {
-                double dpi = WindowChrome.GetDpiScale(window);
-                window.AppWindow.Resize(new((int)(width * dpi), (int)(640 * dpi))); await Task.Delay(100);
-                string[] controls = { "讲解方式", "显示或隐藏题目标注", "取消窗口置顶", "Agent 能力", "停靠与收起", "发送 (Enter)", "预览和调整题目选区", "追加选区", "重新获取当前画布" };
-                var buttons = Descendants(frame).OfType<Button>().Where(button => controls.Contains(AutomationProperties.GetName(button))).ToArray();
-                Check($"touch controls fit {width} DIP theme {theme}", buttons.Length == controls.Length && buttons.All(button =>
-                {
-                    var bounds = button.TransformToVisual(frame).TransformBounds(new Windows.Foundation.Rect(0, 0, button.ActualWidth, button.ActualHeight));
-                    return button.ActualWidth >= 39 && button.ActualHeight >= 39 && bounds.Left >= -1 && bounds.Right <= frame.ActualWidth + 1
-                        && bounds.Top >= -1 && bounds.Bottom <= frame.ActualHeight + 1;
-                }));
-                var background = frame.Background;
-                frame.Background = new SolidColorBrush(theme == 1 ? Microsoft.UI.Colors.WhiteSmoke : Windows.UI.Color.FromArgb(255, 32, 32, 32));
-                try { await BoardWindowRegression.SaveVisual(frame, Path.Combine(directory, $"assistant-{theme}-{width}.png")); }
-                finally { frame.Background = background; }
-            }
-        }
-        var agentButton = Descendants(frame).OfType<Button>().Single(button => AutomationProperties.GetName(button) == "Agent 能力");
-        agentButton.Flyout.ShowAt(agentButton); await Task.Delay(80);
-        var popup = VisualTreeHelper.GetOpenPopupsForXamlRoot(frame.XamlRoot).Single(popup => Descendants(popup.Child).OfType<ToggleSwitch>().Any());
-        Check("Agent is disabled with a reason before provider connection", Descendants(popup.Child).OfType<ToggleSwitch>().Single().IsEnabled == false
-            && Descendants(popup.Child).OfType<TextBlock>().Any(text => text.Text == "尚未接入 Agent 服务"));
-        agentButton.Flyout.Hide();
-        var reading = new AssistantSession { State = AssistantState.Streaming, TeachingMode = AssistantTeachingMode.Full,
-            Text = "### 阅读定位\n\n" + string.Join("\n\n", Enumerable.Range(1, 40).Select(index => $"第 {index} 段推导，用于核对流式阅读位置。"))
-                + "\n\n$$" + string.Join(" + ", Enumerable.Repeat("x^{20}", 30)) + "$$\n\n```text\n" + new string('a', 300) + "\n```" };
-        window.GetType().GetMethod("BeginTurn").Invoke(window, new object[] { "阅读回归" });
-        window.GetType().GetMethod("Apply").Invoke(window, new object[] { reading, "", true });
-        await Task.Delay(100);
-        var conversation = Descendants(frame).OfType<ScrollViewer>().Single(scroll => AutomationProperties.GetName(scroll) == "助教对话");
-        var current = Descendants(frame).OfType<FrameworkElement>().Last(item => item.GetType().Name == "AssistantAnswerCard");
-        var heading = Descendants(current).OfType<RichTextBlock>().First();
-        var horizontal = Descendants(current).OfType<ScrollViewer>().Where(scroll => scroll.HorizontalScrollMode == ScrollMode.Enabled).ToArray();
-        Check("long formulas and code scroll within the narrow response", horizontal.Length >= 2 && horizontal.All(scroll => scroll.ScrollableWidth > 0 && scroll.ActualWidth < frame.ActualWidth));
-        conversation.ChangeView(null, 80, null, true); await Task.Delay(80);
-        double position = conversation.VerticalOffset;
-        reading.Text += "\n\n新生成的说明";
-        window.GetType().GetMethod("Apply").Invoke(window, new object[] { reading, "", true }); await Task.Delay(100);
-        Check("streaming preserves a teacher's earlier reading position", Math.Abs(position - conversation.VerticalOffset) < 2);
-        Check("streaming reuses completed content blocks", ReferenceEquals(heading, Descendants(current).OfType<RichTextBlock>().First()));
-        conversation.ChangeView(null, conversation.ScrollableHeight, null, true); await Task.Delay(80);
-        reading.Text += "\n\n继续追加内容";
-        window.GetType().GetMethod("Apply").Invoke(window, new object[] { reading, "", true }); await Task.Delay(100);
-        Check("streaming follows new content while already at the bottom", conversation.ScrollableHeight - conversation.VerticalOffset < 2);
-        window.GetType().GetMethod("CollapseToEdge").Invoke(window, null); await Task.Delay(80);
-        Check("collapse hides assistant while preserving its session", !window.AppWindow.IsVisible);
-        window.GetType().GetMethod("ShowPanel").Invoke(window, null); await Task.Delay(100);
-        Check("restore returns to the same response", window.AppWindow.IsVisible && Descendants(frame).OfType<RichTextBlock>().Any());
-        void Check(string name, bool passed) => checks.Add(new { check = name, passed });
-    }
-
-    private static async Task CheckAgent(Window window, AppServices services, List<object> checks)
-    {
-        var bridge = services.Modules.GetExport<IAssistantAgentBridge>();
-        var provider = new DiagnosticAgent();
-        using (bridge.Register(provider))
-        {
-            await Task.Delay(80);
-            var frame = (WindowFrame)window.Content;
-            var button = Descendants(frame).OfType<Button>().Single(button => AutomationProperties.GetName(button) == "Agent 能力");
-            button.Flyout.ShowAt(button); await Task.Delay(80);
-            var popup = VisualTreeHelper.GetOpenPopupsForXamlRoot(frame.XamlRoot).Single(popup => Descendants(popup.Child).OfType<ToggleSwitch>().Any());
-            var toggle = Descendants(popup.Child).OfType<ToggleSwitch>().Single();
-            Check("Agent registration enables its UI entry", toggle.IsEnabled); toggle.IsOn = true; button.Flyout.Hide();
-            var input = Descendants(frame).OfType<TextBox>().Single(); input.Text = "创建一个图形";
-            int count = services.Board.Current.Document.Strokes.Count;
-            Invoke(Descendants(frame).OfType<Button>().Single(button => AutomationProperties.GetName(button) == "发送 (Enter)"));
-            await Task.Delay(450);
-            Check("Agent reads a detached canvas snapshot and creates objects", provider.Read && provider.Created && services.Board.Current.Document.Strokes.Count == count + 1);
-            bool expired = false;
-            try { await provider.Canvas.ReadAsync(CancellationToken.None); }
-            catch (OperationCanceledException) { expired = true; }
-            Check("finished Agent runs cannot keep operating the canvas", expired);
-            services.Board.Current.Undo();
-            Check("Agent-created objects use canvas undo", services.Board.Current.Document.Strokes.Count == count);
-        }
-        await Task.Delay(80);
-        Check("Agent unregister resets the UI mode", !(bool)window.GetType().GetProperty("AgentMode").GetValue(window));
-        void Check(string name, bool passed) => checks.Add(new { check = name, passed });
-    }
-
-    private sealed class DiagnosticAgent : IAssistantAgentProvider
-    {
-        public string Name => "本机验收";
-        public bool Read { get; private set; }
-        public bool Created { get; private set; }
-        public IAssistantAgentCanvas Canvas { get; private set; }
-        public async Task<string> RunAsync(AssistantAgentRequest request, IAssistantAgentCanvas canvas,
-            IProgress<AssistantAgentProgress> progress, CancellationToken cancellationToken)
-        {
-            Canvas = canvas;
-            var snapshot = await canvas.ReadAsync(cancellationToken); Read = snapshot.Kind == "board";
-            var stroke = new InkStroke(new StrokeAttributes()); stroke.AddPoint(40, 40); stroke.AddPoint(140, 140, timeMs: 10); stroke.Complete();
-            progress.Report(new("正在创建对象", "图形"));
-            Created = await canvas.CreateShapesAsync(new[] { stroke }, cancellationToken);
-            return "已创建一个可撤销的画布对象。";
-        }
-    }
-
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     {
         yield return root;
-        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
-            foreach (var child in Descendants(VisualTreeHelper.GetChild(root, i))) yield return child;
+        for (int index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+            foreach (var child in Descendants(VisualTreeHelper.GetChild(root, index))) yield return child;
+    }
+
+    private sealed class FixtureServer : IDisposable
+    {
+        private readonly HttpListener _listener = new();
+        public string Address { get; }
+        public int Posts, ToolResults, Fallbacks, Compactions;
+        public bool TeacherPrompt, ImageReceived, FileTextReceived, RejectExtendedNext, DelayNext, LastHadTools;
+        public FixtureServer()
+        {
+            var socket = new TcpListener(IPAddress.Loopback, 0); socket.Start(); int port = ((IPEndPoint)socket.LocalEndpoint).Port; socket.Stop();
+            Address = "http://127.0.0.1:" + port + "/v1"; _listener.Prefixes.Add("http://127.0.0.1:" + port + "/"); _listener.Start(); _ = Run();
+        }
+        private async Task Run()
+        {
+            try
+            {
+                while (_listener.IsListening)
+                {
+                    var context = await _listener.GetContextAsync();
+                    using var reader = new StreamReader(context.Request.InputStream); string request = await reader.ReadToEndAsync(); Posts++;
+                    using var json = JsonDocument.Parse(request);
+                    LastHadTools = json.RootElement.TryGetProperty("tools", out _);
+                    if (RejectExtendedNext)
+                    {
+                        RejectExtendedNext = false; Fallbacks++;
+                        context.Response.StatusCode = 400; context.Response.Close(); continue;
+                    }
+                    bool delayed = DelayNext; DelayNext = false;
+                    if (delayed) await Task.Delay(250);
+                    if (json.RootElement.TryGetProperty("stream", out var streaming) && streaming.ValueKind == JsonValueKind.False)
+                    {
+                        Compactions++;
+                        byte[] summary = Encoding.UTF8.GetBytes("{\"choices\":[{\"message\":{\"content\":\"教师已确认课程目标，需安排活动、记录课堂反馈并继续下一节课。\"}}]}");
+                        context.Response.ContentType = "application/json"; context.Response.ContentLength64 = summary.Length;
+                        await context.Response.OutputStream.WriteAsync(summary); context.Response.Close(); continue;
+                    }
+                    var messages = json.RootElement.GetProperty("messages");
+                    TeacherPrompt |= messages[0].GetProperty("content").GetString().Contains("协助教师", StringComparison.Ordinal);
+                    ImageReceived |= request.Contains("image_url", StringComparison.Ordinal);
+                    FileTextReceived |= request.Contains("\\u4E03\\u5E74", StringComparison.OrdinalIgnoreCase) || request.Contains("七年级", StringComparison.Ordinal);
+                    bool result = messages.EnumerateArray().Any(message => message.GetProperty("role").GetString() == "tool");
+                    if (result) ToolResults++;
+                    bool tool = Posts == 1;
+                    string packet = tool ? """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"board_page","arguments":"{\"action\":\"add\"}"}}]}}]}"""
+                        : """{"choices":[{"delta":{"content":"## 备课建议\n结合课程目标安排小组讨论，并记录课堂反馈。"}}]}""";
+                    byte[] bytes = Encoding.UTF8.GetBytes("data: " + packet + "\n\ndata: [DONE]\n\n");
+                    context.Response.ContentType = "text/event-stream"; context.Response.ContentLength64 = bytes.Length;
+                    try { await context.Response.OutputStream.WriteAsync(bytes); context.Response.Close(); }
+                    catch (Exception exception) when (exception is HttpListenerException or IOException or ObjectDisposedException) { }
+                }
+            }
+            catch (Exception) when (!_listener.IsListening) { }
+        }
+        public void Dispose() => _listener.Close();
     }
 }

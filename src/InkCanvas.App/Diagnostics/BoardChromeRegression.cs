@@ -49,6 +49,8 @@ internal static class BoardChromeRegression
                 Check("all last-page add buttons use document-add icon", add.Length == 3
                     && add.All(button => Icons(button).Single().Glyph == Glyphs.AddPage));
                 var exit = Buttons(root, "退出");
+                Check("board selection uses a single selection-frame icon", Buttons(root, "选择") is { Length: 1 } select
+                    && Icons(select[0]).Single().Glyph == Glyphs.Select);
                 Check("both exit buttons use sign-out icon", exit.Length == 2
                     && exit.All(button => Icons(button).Single().Glyph == Glyphs.ExitBoard));
                 Check("both font preferences reach board buttons", add.Concat(exit).All(button =>

@@ -29,10 +29,7 @@ public sealed partial class SettingsWindow : Window
     private readonly IShellActions _shell;
     private StackPanel _content;
     private WindowWorkspace _workspace;
-    private static readonly string[] Categories = SettingsCategoryCatalog.Pages.Select(page => page.Name).ToArray();
-    private TextBlock _screenTrackingStatus;
     private TextBlock _updateStatus;
-    private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _trackingStatusTimer;
     private readonly List<Action> _refreshControls = new();
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _notificationTimer;
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _textCommitTimer;
@@ -50,10 +47,8 @@ public sealed partial class SettingsWindow : Window
         _rosterDirectory = rosterDirectory ?? LotteryWindow.DataDir;
         services.Plugins.Changed += RefreshExtensionsPage;
         services.Modules.Changed += RefreshExtensionsPage;
+        services.ModuleSettings.Changed += RefreshModuleSettings;
         services.ExtensionUpdates.Changed += RefreshRepositoryUpdates;
-        _trackingStatusTimer = DispatcherQueue.CreateTimer();
-        _trackingStatusTimer.Interval = TimeSpan.FromSeconds(1);
-        _trackingStatusTimer.Tick += (_, _) => { if (_screenTrackingStatus is not null) _screenTrackingStatus.Text = _services.ScreenTrackingStatus; };
         _updater = updater;
         if (_updater is not null) _updater.StatusChanged += RefreshUpdateStatus;
         _shell = shell;
@@ -81,10 +76,10 @@ public sealed partial class SettingsWindow : Window
             _rosterEditor?.Close();
             _services.Plugins.Changed -= RefreshExtensionsPage;
             _services.Modules.Changed -= RefreshExtensionsPage;
+            _services.ModuleSettings.Changed -= RefreshModuleSettings;
             _services.ExtensionUpdates.Changed -= RefreshRepositoryUpdates;
             if (_updater is not null) _updater.StatusChanged -= RefreshUpdateStatus;
             _notificationTimer.Stop();
-            _trackingStatusTimer.Stop();
             _textCommitTimer.Stop();
             _availabilityTimer.Stop();
             CloseSearch();
@@ -98,7 +93,7 @@ public sealed partial class SettingsWindow : Window
     private int BrushTheme => _theme == 0
         ? (Application.Current.RequestedTheme == ApplicationTheme.Dark ? 2 : 1) : _theme;
     public event Action SettingsChanged;
-    internal void SelectCategory(string category) => _workspace.SelectPage(SettingsCategoryCatalog.Resolve(category));
+    internal void SelectCategory(string category) => _workspace.SelectPage(ResolveCategory(category));
 
     private void Commit()
     {
@@ -139,6 +134,9 @@ public sealed partial class SettingsWindow : Window
         string selected = _workspace?.SelectedPage ?? "常规";
         string searchText = _search?.Text ?? "";
         _theme = S.Appearance.Theme;
+        _searchIndexed = false;
+        _searchEntries.Clear();
+        _moduleSettingsPages = _services.ModuleSettings.Pages;
         _workspace = new WindowWorkspace { IsTitleBarAutoPaddingEnabled = false };
         _workspace.Resources["NavigationViewHeaderMargin"] = new Thickness(24, 24, 24, 12);
         _workspace.Resources["NavigationViewContentBackground"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
@@ -153,6 +151,9 @@ public sealed partial class SettingsWindow : Window
             }
             _workspace.AddPage(page.Name, page.Glyph, () => BuildPage(page.Name));
         }
+        if (_moduleSettingsPages.Count > 0) _workspace.AddGroup("插件设置");
+        foreach (var page in _moduleSettingsPages)
+            _workspace.AddPage(page.Name, page.Glyph, () => BuildPage(page.Name));
         _workspace.SearchBox = CreateSearchBox(searchText);
         _notification = new InfoBar { IsOpen = false, IsClosable = true, Severity = InfoBarSeverity.Success, Margin = new Thickness(24) };
         var root = new Grid { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
@@ -170,7 +171,7 @@ public sealed partial class SettingsWindow : Window
         root.Children.Add(_notification);
         WindowFrame.Attach(this, root).UseMica();
         WindowChrome.ApplyTheme(this, _theme);
-        _workspace.SelectPage(selected);
+        _workspace.SelectPage(Categories.Contains(selected) ? selected : "模块与插件");
     }
 
     private UIElement BuildPage(string category)
@@ -318,12 +319,14 @@ public sealed partial class SettingsWindow : Window
             case "外观与工具栏": BuildAppearanceSettings(); break;
             case "演示与课件": BuildPresentationSettings(); break;
             case "抽奖与点名": BuildLotterySettings(); break;
-            case "AI 助教": BuildAiConnections(); break;
             case "模块与插件": BuildExtensionsCategory(); break;
-            case "实验功能": BuildExperimentalSettings(); break;
             case "保存与备份": BuildArchiveSettings(); break;
             case "存储与缓存": BuildStorageSettings(); break;
             case "关于与更新": BuildAboutSettings(); break;
+            default:
+                if (_moduleSettingsPages.FirstOrDefault(page => page.Name == category) is { } page)
+                    BuildModuleSettings(page);
+                break;
         }
     }
 

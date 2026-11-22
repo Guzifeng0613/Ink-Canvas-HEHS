@@ -205,7 +205,7 @@ internal static class PptRegression
                 .GetField("_pptNavigations", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(shell);
             var navigation = navigationMap.GetValueOrDefault(PptNavigationPlacement.BottomLeft);
             if (navigation is null) throw new InvalidOperationException("PPT navigation window was not created.");
-            var card = (Border)((Viewbox)navigation.Content).Child;
+            var card = navigation.NavigationCard;
             var buttons = Descendants(card).OfType<Button>().ToArray();
             var reference = Descendants(bar.Bar).OfType<TouchIconButton>().First(button => button.IsEnabled && button.Visibility == Visibility.Visible);
             foreach (int theme in new[] { 1, 2 })

@@ -37,6 +37,12 @@ internal static class LotteryRegression
         bool systemAnimations = Motion.AnimationsEnabled;
         try
         {
+            if (Environment.GetCommandLineArgs().Contains("--lottery-results-only"))
+            {
+                await SetAnimations(false);
+                await CheckResultIsolationAsync(services, shell, checks);
+                return;
+            }
             shell.OpenLottery();
             await Task.Delay(220);
             var lottery = shell.OpenWindows.OfType<LotteryWindow>().Single();
@@ -228,6 +234,53 @@ internal static class LotteryRegression
             Application.Current.Exit();
         }
         void Check(string name, bool passed) => checks.Add(new { check = name, passed });
+    }
+
+    private static async Task CheckResultIsolationAsync(AppServices services, ShellController shell, List<object> checks)
+    {
+        void Check(string name, bool passed) => checks.Add(new { check = name, passed });
+        shell.OpenLottery(); await Task.Delay(150);
+        var lottery = shell.OpenWindows.OfType<LotteryWindow>().Single();
+        var controller = services.Lottery;
+        controller.LoadNames(new[] { "同学甲", "同学乙", "同学丙" });
+        foreach (int count in new[] { 1, 3 })
+        {
+            lottery.ChangeCount(count); await lottery.RollAsync(); await Task.Delay(100);
+            Check("normal draw displays results " + count, lottery.LastResult.Count == count
+                && controller.History.Last().Names.SequenceEqual(lottery.LastResult));
+            Check("normal draw leaves both canvases empty " + count, !shell.OpenWindows.OfType<BoardWindow>().Any()
+                && services.Board.CurrentImages.Count == 0 && services.Board.Current.Document.Count == 0
+                && services.ScreenImages.CurrentImages.Count == 0 && services.OverlayInk.Document.Count == 0
+                && !services.Board.Current.History.CanUndo && !services.OverlayInk.History.CanUndo);
+        }
+        shell.ToggleBoard();
+        var board = shell.OpenWindows.OfType<BoardWindow>().Single();
+        var stroke = new InkStroke(new StrokeAttributes());
+        stroke.AddPoint(40, 40); stroke.AddPoint(120, 100); stroke.Complete();
+        services.Board.Current.Document.Add(stroke);
+        lottery.ChangeCount(2); await lottery.RollAsync(); await Task.Delay(100);
+        Check("normal draw displays multiple names with whiteboard open", lottery.LastResult.Count == 2);
+        Check("normal draw preserves existing whiteboard and undo", Unchanged());
+        Check("results keep the copy action available", Field<TouchIconButton>(lottery, "_copy").IsEnabled);
+        lottery.Close(); await Task.Delay(80);
+        int history = controller.History.Count;
+        shell.OpenLotteryQuick();
+        for (int attempt = 0; attempt < 200 && controller.History.Count == history; attempt++) await Task.Delay(20);
+        await Task.Delay(2200);
+        Check("quick draw records its result", controller.History.Count == history + 1 && controller.History.Last().Names.Count == 1);
+        Check("quick draw preserves existing whiteboard and undo", Unchanged());
+        board.Close(); await Task.Delay(80);
+        history = controller.History.Count;
+        shell.OpenLotteryQuick();
+        for (int attempt = 0; attempt < 200 && controller.History.Count == history; attempt++) await Task.Delay(20);
+        await Task.Delay(2200);
+        Check("quick draw completes while whiteboard is closed", controller.History.Count == history + 1);
+        Check("quick draw keeps whiteboard closed and annotation empty", !shell.OpenWindows.OfType<BoardWindow>().Any()
+            && services.ScreenImages.CurrentImages.Count == 0 && services.OverlayInk.Document.Count == 0);
+
+        bool Unchanged() => services.Board.Current.Document.Count == 1
+            && ReferenceEquals(services.Board.Current.Document.Strokes.Single(), stroke) && services.Board.CurrentImages.Count == 0
+            && services.ScreenImages.CurrentImages.Count == 0 && !services.Board.Current.History.CanUndo;
     }
 
     private static IEnumerable<FrameworkElement> ResultCards(ItemsRepeater repeater)

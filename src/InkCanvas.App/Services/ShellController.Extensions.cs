@@ -21,7 +21,7 @@ public sealed partial class ShellController
             new ExtensionCommand("inkcanvas.pdf", "open", "打开 PDF", "查看 PDF 并将墨迹批注保存到文件"),
             new ExtensionCommand("inkcanvas.pdf", "import", "PDF 导入画板", "选择 PDF 页码并导入新画板页") });
             if (Services.Modules.HasExport<Host.Contracts.IAnalyticGeometryService>()) commands.Add(new ExtensionCommand("inkcanvas.analytic-geometry", "open", "解析几何", "数学工作区、代数计算、二维与三维联动作图"));
-            if (AiAssistantAvailable) commands.Add(new ExtensionCommand("inkcanvas.ai-assistant", "open", "AI 助教", "选区识别、分步讲解、局部纠错与白板贴回"));
+            if (AiAssistantAvailable) commands.Add(new ExtensionCommand("inkcanvas.ai-assistant", "open", "AI 助手", "面向教师的通用 AI 助手与课堂工具调用"));
             var timeMachine = Services.Modules.GetExport<ITimeMachineService>();
             if (timeMachine is not null)
             {

@@ -1,9 +1,12 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using InkCanvas.App.Services;
 using InkCanvas.App.Views;
 using InkCanvas.Controls.Controls;
 using InkCanvas.Core.Settings;
 using InkCanvas.Features.Board;
+using InkCanvas.Extensibility;
+using InkCanvas.Extensions;
+using InkCanvas.Host.Contracts;
 using InkCanvas.Ink;
 using InkCanvas.Platform.Interop;
 using Microsoft.UI.Xaml;
@@ -48,6 +51,8 @@ internal static class SettingsRegression
             string original = JsonSerializer.Serialize(services.Settings);
             Open();
             await Task.Delay(600);
+            await CheckModuleSettingsAsync(window, services, checks);
+            if (Environment.GetCommandLineArgs().Contains("--module-settings-only")) return;
             if (Environment.GetCommandLineArgs().Contains("--settingslayout-only"))
             {
                 await CheckScrollViewportAsync(window, directory, checks);
@@ -139,7 +144,7 @@ internal static class SettingsRegression
                     && Descendants(window.Content).OfType<TextBlock>().Any(text => text.Text == page.Name)
                     && Descendants(window.Content).OfType<SettingsRow>().Any());
             }
-            foreach (string legacy in new[] { "启动选项", "画板选项", "手势选项", "显示器", "高级选项", "自动选项", "墨迹识别选项", "外观选项", "PPT 选项", "实验性设置", "关于 Ink Canvas Artistry" })
+            foreach (string legacy in new[] { "启动选项", "画板选项", "手势选项", "显示器", "高级选项", "自动选项", "墨迹识别选项", "外观选项", "PPT 选项", "关于 Ink Canvas Artistry" })
             {
                 window.SelectCategory(legacy);
                 Check("legacy navigation remains available " + legacy,
@@ -376,6 +381,76 @@ internal static class SettingsRegression
             File.WriteAllText(Path.Combine(directory, "settings.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
             Application.Current.Exit();
         }
+    }
+
+    private static async Task CheckModuleSettingsAsync(SettingsWindow window, AppServices services, List<object> checks)
+    {
+        string[] Navigation() => Descendants(window.Content).OfType<NavigationView>().Single().MenuItems
+            .OfType<NavigationViewItem>().Select(item => item.Content?.ToString()).ToArray();
+        void Check(string name, bool passed) => checks.Add(new { check = name, passed });
+        Check("uninstalled plugin settings have no sidebar placeholders", !Navigation().Contains("AI 助手")
+            && !Navigation().Contains("屏幕内容跟随") && !Navigation().Contains("实验功能"));
+        Check("uninstalled plugin controls are excluded from search", !window.SearchSettings("API 连接与模型").Any()
+            && !window.SearchSettings("批注跟随正文滚动").Any());
+
+        int views = 0;
+        bool original = services.Settings.Startup.IsFoldAtStartup;
+        var page = new ModuleSettingsPage("diagnostics.settings", "诊断插件", Glyphs.Tools, "插件检索词", builder =>
+        {
+            builder.AddToggle("诊断插件开关", () => services.Settings.Startup.IsFoldAtStartup,
+                value => services.Settings.Startup.IsFoldAtStartup = value);
+            builder.AddView("诊断插件视图", () => { views++; return new TextBlock { Text = "插件视图" }; });
+        }) { Aliases = new[] { "旧诊断入口" } };
+        using var runtime = new ModuleRuntime();
+        runtime.AddService<IModuleSettingsRegistry>(services.ModuleSettings);
+        runtime.Register(new() { Id = "diagnostics.settings", Name = "诊断插件", Version = "1.0.0", EntryType = "Diagnostic.Settings" },
+            () => new SettingsDiagnosticModule(page));
+        runtime.Register(new() { Id = "diagnostics.disabled", Name = "已停用插件", Version = "1.0.0", EntryType = "Diagnostic.Settings" },
+            () => new SettingsDiagnosticModule(page with { Id = "diagnostics.disabled", Name = "已停用插件" }));
+        runtime.Start(new HashSet<string> { "diagnostics.disabled" });
+        await Task.Delay(120);
+        Check("running plugin registers one sidebar page", Navigation().Count(name => name == page.Name) == 1);
+        Check("disabled plugin registers no sidebar page", !Navigation().Contains("已停用插件"));
+        var hit = window.SearchSettings("诊断插件开关").Single();
+        Check("plugin search metadata is indexed lazily", views == 0 && window.SearchSettings("插件检索词").Count == 2);
+        window.SelectCategory("旧诊断入口"); await Task.Delay(80);
+        Check("plugin aliases select their registered page", Descendants(window.Content).OfType<WindowWorkspace>().Single().SelectedPage == page.Name);
+        var toggle = Descendants(window.Content).OfType<ToggleSwitch>().Single();
+        toggle.IsOn = !original;
+        Check("plugin controls use shared settings persistence", services.Store.Load().Startup.IsFoldAtStartup == !original);
+        toggle.IsOn = original;
+        Check("search index preserves the active plugin view", window.SearchSettings("诊断插件开关").Count == 1
+            && ReferenceEquals(toggle, Descendants(window.Content).OfType<ToggleSwitch>().Single()) && views == 1);
+        Check("plugin result navigates to its control", window.NavigateToSetting(hit));
+        runtime.Invoke<ISettingsDiagnosticService>(_ => throw new InvalidOperationException("diagnostic failure"));
+        await Task.Delay(120);
+        Check("failed plugin removes its settings registration", services.ModuleSettings.Pages.Count == 0 && !Navigation().Contains(page.Name));
+        Check("removing the active plugin selects a populated core page", Descendants(window.Content).OfType<WindowWorkspace>().Single().SelectedPage == "模块与插件");
+        Check("removed plugin leaves no searchable or stale target", !window.SearchSettings("诊断插件开关").Any() && !window.NavigateToSetting(hit));
+        Check("empty plugin navigation group is removed", !Descendants(window.Content).OfType<NavigationView>().Single().MenuItems
+            .OfType<NavigationViewItemHeader>().Any(item => item.Content?.ToString() == "插件设置"));
+
+        using var failed = new ModuleRuntime();
+        failed.AddService<IModuleSettingsRegistry>(services.ModuleSettings);
+        failed.Register(new() { Id = "diagnostics.startup", Name = "启动失败插件", Version = "1.0.0", EntryType = "Diagnostic.Settings" },
+            () => new SettingsDiagnosticModule(page, failStartup: true));
+        failed.Start(new HashSet<string>());
+        await Task.Delay(100);
+        Check("startup rollback removes partially registered settings", services.ModuleSettings.Pages.Count == 0 && !Navigation().Contains(page.Name));
+        window.SelectCategory("常规");
+    }
+
+    private interface ISettingsDiagnosticService { }
+
+    private sealed class SettingsDiagnosticModule(ModuleSettingsPage page, bool failStartup = false) : IApplicationModule, ISettingsDiagnosticService
+    {
+        public void Start(IModuleContext context)
+        {
+            context.RegisterCleanup(context.GetService<IModuleSettingsRegistry>().Register(page).Dispose);
+            if (failStartup) throw new InvalidOperationException("diagnostic startup failure");
+            context.Export<ISettingsDiagnosticService>(this);
+        }
+        public void Stop() { }
     }
 
     private static async Task CheckScrollViewportAsync(SettingsWindow window, string directory, List<object> checks)

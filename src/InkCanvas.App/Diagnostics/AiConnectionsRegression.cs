@@ -34,10 +34,15 @@ internal static class AiConnectionsRegression
         try
         {
             Check("connection settings exported by existing assistant plugin", services.Modules.GetExport<IAiConnectionSettings>() is not null);
-            settings = new SettingsWindow(services, shell: shell); settings.Activate(); settings.SelectCategory("AI 助教");
+            Check("assistant plugin registers its settings page", services.ModuleSettings.Pages.Any(page => page.Id == "inkcanvas.ai-assistant.settings"));
+            Check("screen tracking plugin registers its settings page", services.ModuleSettings.Pages.Any(page => page.Id == "inkcanvas.screen-tracking.settings"));
+            settings = new SettingsWindow(services, shell: shell); settings.Activate(); settings.SelectCategory("AI 助手");
             await Task.Delay(200);
             var root = (FrameworkElement)settings.Content;
             Check("settings contains all supplier presets", Find<ComboBox>(root, "供应商预设").Items.Count == 17);
+            Check("plugin navigation has a dedicated group", Descendants(root).OfType<NavigationView>().Single().MenuItems
+                .OfType<NavigationViewItemHeader>().Any(item => item.Content?.ToString() == "插件设置"));
+            Check("AI archive settings live in the assistant page", settings.SearchSettings("AI 存档命名与描述").Single().Category == "AI 助手");
             var preset = Find<ComboBox>(root, "供应商预设");
             var plugin = services.Modules.GetExport<IAiConnectionSettings>().GetType().Assembly;
             foreach (string resource in plugin.GetManifestResourceNames().Where(name => name.StartsWith("InkCanvas.AiIcons.", StringComparison.Ordinal)))
@@ -72,18 +77,17 @@ internal static class AiConnectionsRegression
                 assistant.Review(0, 0, 0, "本地联调内容"); await Task.Delay(70);
                 var window = shell.OpenWindows.Single(item => item.GetType().Name == "AssistantWindow");
                 var assistantRoot = (FrameworkElement)window.Content;
-                var question = Find<TextBox>(assistantRoot, "追问内容"); question.Text = "验证接口 " + format;
+                var question = Find<TextBox>(assistantRoot, "消息内容"); question.Text = "验证接口 " + format;
                 Invoke(Find<Button>(assistantRoot, "发送 (Enter)"));
-                var sessionField = window.GetType().GetField("_lastSession", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                await Wait(() => sessionField.GetValue(window) is Core.AiAssistant.AssistantSession { State: Core.AiAssistant.AssistantState.Done, Text: "连接成功" });
+                var serviceField = assistant.GetType().GetField("_activeTurn", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                await Wait(() => serviceField.GetValue(assistant) is null);
                 Check("assistant normal entry uses configured streaming API " + format, server.Streamed >= format + 1);
-                Check("assistant uses bundled font icons", Descendants(assistantRoot).OfType<FontIcon>()
-                    .Any(icon => icon.Glyph == Glyphs.Assistant && icon.FontFamily.Source == IconFontStyle.Family));
+                Check("assistant uses touch components", Descendants(assistantRoot).OfType<TouchIconButton>().Any());
                 window.Close();
             }
             Check("protocols send correct authentication headers", server.AuthenticatedFormats.Count == 4);
             settings.Close();
-            settings = new SettingsWindow(services, shell: shell); settings.Activate(); settings.SelectCategory("AI 助教");
+            settings = new SettingsWindow(services, shell: shell); settings.Activate(); settings.SelectCategory("AI 助手");
             await Task.Delay(80); root = (FrameworkElement)settings.Content;
             Check("saved endpoint and model survive reopening settings", Find<TextBox>(root, "API 地址").Text == server.Address + "/gateway/v1"
                 && Find<ComboBox>(root, "模型").Text == "fixture-model");
@@ -103,6 +107,23 @@ internal static class AiConnectionsRegression
                     frame.Background = background;
                 }
             }
+            settings.SelectCategory("实验性设置"); await Task.Delay(80);
+            root = (FrameworkElement)settings.Content;
+            Check("legacy experimental entry opens plugin settings", Descendants(root).OfType<WindowWorkspace>().Single().SelectedPage == "屏幕内容跟随");
+            var follow = Find<ToggleSwitch>(root, "启用屏幕内容跟随（实验性）");
+            follow.IsOn = true;
+            Check("plugin follow controls persist and enable dependencies", services.Store.Load().Experimental.ScreenContentTracking
+                && Find<ToggleSwitch>(root, "批注跟随正文滚动").IsEnabled);
+            follow.IsOn = false;
+            settings.SelectCategory("AI 助手");
+            services.Modules.Invoke<IAiAssistantService>(_ => throw new InvalidOperationException("diagnostic plugin failure"));
+            await Task.Delay(120);
+            root = (FrameworkElement)settings.Content;
+            Check("assistant failure removes only its settings page", !services.ModuleSettings.Pages.Any(page => page.Name == "AI 助手")
+                && services.ModuleSettings.Pages.Any(page => page.Name == "屏幕内容跟随"));
+            Check("assistant failure clears sidebar and search", !Descendants(root).OfType<NavigationViewItem>().Any(item => item.Content?.ToString() == "AI 助手")
+                && !settings.SearchSettings("API 连接与模型").Any() && !settings.SearchSettings("AI 存档命名与描述").Any());
+            Check("assistant failure returns to module management", Descendants(root).OfType<WindowWorkspace>().Single().SelectedPage == "模块与插件");
         }
         catch (Exception error) { Check("AI connection regression exception", false, error.ToString()); }
         finally
@@ -173,7 +194,7 @@ internal static class AiConnectionsRegression
                         if (header == (format < 2 ? "Bearer " : "") + Key) AuthenticatedFormats.Add(format);
                         bool streaming = json.RootElement.TryGetProperty("stream", out var stream) && stream.ValueKind == JsonValueKind.True
                             || path.Contains("streamGenerateContent", StringComparison.Ordinal);
-                        string answer = "{\"text\":\"连接成功\",\"steps\":[],\"latex\":\"\"}";
+                        string answer = "连接成功";
                         object packet = format switch
                         {
                             1 => streaming ? new { type = "response.output_text.delta", delta = answer } : new { output_text = answer },
@@ -184,7 +205,14 @@ internal static class AiConnectionsRegression
                                 : new { choices = new[] { new { message = new { content = answer } } } },
                         };
                         reply = JsonSerializer.Serialize(packet);
-                        if (streaming) { Streamed++; reply = "data: " + reply + "\n\ndata: [DONE]\n\n"; context.Response.ContentType = "text/event-stream"; }
+                        if (streaming)
+                        {
+                            Streamed++;
+                            string start = format == 2 ? "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n" : "";
+                            if (format == 2) reply = reply.Insert(1, "\"index\":0,");
+                            reply = start + "data: " + reply + "\n\ndata: [DONE]\n\n";
+                            context.Response.ContentType = "text/event-stream";
+                        }
                     }
                     context.Response.ContentType ??= "application/json";
                     byte[] bytes = Encoding.UTF8.GetBytes(reply); context.Response.ContentLength64 = bytes.Length;

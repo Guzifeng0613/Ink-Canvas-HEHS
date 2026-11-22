@@ -27,7 +27,7 @@ public sealed partial class ShellController
         }
         public Task<AiDocumentResult> DescribeAsync(AiDocumentRequest request, CancellationToken token = default) =>
             _shell.Services.Modules.GetExport<IAiDocumentService>()?.DescribeAsync(request, token)
-            ?? Task.FromException<AiDocumentResult>(new InvalidOperationException("请安装并启用 AI 助教插件。"));
+            ?? Task.FromException<AiDocumentResult>(new InvalidOperationException("请安装并启用 AI 助手插件。"));
         public void Completed(AiDocumentResult result) => _ = CompleteAsync(result);
         public void Dispose()
         {

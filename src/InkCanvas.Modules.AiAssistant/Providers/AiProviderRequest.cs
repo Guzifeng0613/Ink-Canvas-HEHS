@@ -3,7 +3,16 @@ using InkCanvas.Core.AiAssistant;
 namespace InkCanvas.Modules.AiAssistant.Providers;
 
 public sealed record AiProviderRequest(string System, string Prompt, IReadOnlyList<AssistantMessage> Messages,
-    IReadOnlyList<string> Images);
+    IReadOnlyList<string> Images)
+{
+    public IReadOnlyList<AiFileInput> Files { get; init; } = Array.Empty<AiFileInput>();
+    public IReadOnlyList<Host.Contracts.AssistantToolDefinition> Tools { get; init; } = Array.Empty<Host.Contracts.AssistantToolDefinition>();
+    public System.Text.Json.Nodes.JsonArray ToolHistory { get; init; } = new();
+    public bool? Thinking { get; init; }
+    public string Effort { get; init; } = "high";
+}
+
+public sealed record AiFileInput(string Name, string Mime, string Base64, int EstimatedTokens = 1600);
 
 public static class AiEndpoint
 {

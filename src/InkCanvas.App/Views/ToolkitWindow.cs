@@ -101,10 +101,10 @@ public sealed class ToolkitWindow : Window
         AddTool(grid, 0, 0, Glyphs.People, "点名", () => _shell?.OpenRoster());
         AddTool(grid, 0, 1, Glyphs.Replay, "抽奖", () => _shell?.OpenLottery());
         AddTool(grid, 0, 2, Glyphs.Stopwatch, "倒计时", () => _shell?.OpenTimer());
-        AddTool(grid, 1, 0, Glyphs.Select, "聚光灯", () => _shell?.OpenSpotlight());
+        AddTool(grid, 1, 0, Glyphs.Spotlight, "聚光灯", () => _shell?.OpenSpotlight());
         AddTool(grid, 1, 1, Glyphs.Add, "放大镜", () => _shell?.OpenMagnifier());
         AddTool(grid, 1, 2, Glyphs.Board, "画板", () => _shell?.ToggleBoard());
-        _aiEntry = AddTool(grid, 2, 0, Glyphs.Ai, "AI 助教", () => _shell?.OpenAiAssistant());
+        _aiEntry = AddTool(grid, 2, 0, Glyphs.Ai, "AI 助手", () => _shell?.OpenAiAssistant());
         SetAiAvailable(_shell?.AiAssistantAvailable == true);
         AddTool(grid, 2, 1, Glyphs.People, "分组积分", () => _shell?.OpenGroupScore());
         AddTool(grid, 2, 2, Glyphs.Download, "讲义导出", () => _shell?.OpenHandout());

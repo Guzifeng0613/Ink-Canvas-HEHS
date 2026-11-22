@@ -101,6 +101,7 @@ public sealed partial class ShellController
             shell._pptSession?.Snapshot?.Slide?.SlideId ?? 0, shell._pptSession?.Snapshot?.Slide?.Index ?? 0,
             shell._pptSession?.Snapshot?.IsSlideShowRunning == true ? shell.Services.Ppt.GetAnimationStep() : 0);
         public bool IsClassroomPresentation => shell._pptSession?.Snapshot?.IsSlideShowRunning == true || shell._preset?.Id == "teach";
+        public IAssistantToolRegistry Tools => shell.Services.AssistantTools;
         public SlideContext GetSlideContext(int slideId, int slideIndex) => shell.BuildSlideContext(slideId, slideIndex);
         public void ConfigureWindow(Window window) => new CanvasToolsHost(shell).ConfigureWindow(window, 380, 760);
         public void SaveSettings() => shell.Services.SaveSettings();

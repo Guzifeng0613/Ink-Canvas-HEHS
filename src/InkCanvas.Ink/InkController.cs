@@ -55,6 +55,7 @@ public sealed partial class InkController : IDisposable
     {
         RefreshShapeConnections();
         _drawingOrderDirty = true;
+        _drawingObjects = Array.Empty<DrawingObject>();
         EndPlayback();
         if (_dotAnimations.RemoveAll(animation => !Document.Strokes.Contains(animation.Source)
             || animation.SourceVersion != animation.Source.GeometryVersion) == 0) return;
@@ -1391,7 +1392,7 @@ public sealed partial class InkController : IDisposable
         _lastEraserPoint = world;
         _erasedThisGesture.Clear();
         _eraseBeforeSnapshot = partialStroke
-            ? Document.Strokes.Select(s => s.Clone()).ToList()
+            ? Document.Strokes.ToList()
             : null;
         bool changed = EraseAlong(world, world);
         if (partialStroke && !changed) EraserPreviewChanged?.Invoke();
@@ -1404,7 +1405,8 @@ public sealed partial class InkController : IDisposable
         float dist = Vector2.Distance(from, to);
         int steps = Math.Max(1, (int)(dist / MathF.Max(4f, radius * 0.5f)));
         bool any = false;
-        for (int i = 0; i <= steps; i++)
+        using (Document.DeferNotifications())
+        for (int i = dist == 0 ? steps : 1; i <= steps; i++)
         {
             var p = Vector2.Lerp(from, to, steps == 0 ? 0 : (float)i / steps);
             var shapeGroups = Document.Strokes.Where(s => s.ShapeSource?.Geometry is not null && s.Bounds.Inflate(radius).Contains(p)
@@ -1417,7 +1419,7 @@ public sealed partial class InkController : IDisposable
             }
             if (_partialEraseGesture)
             {
-                var currentStrokes = Document.Strokes.ToArray();
+                var currentStrokes = Document.Strokes.Where(stroke => stroke.Bounds.Inflate(radius).Contains(p)).ToArray();
                 foreach (var stroke in currentStrokes)
                 {
                     if (!StrokeEraser.EraseDisc(stroke, p, radius, out var remaining)) continue;
@@ -1445,14 +1447,7 @@ public sealed partial class InkController : IDisposable
         _gestureEraserRadius = null;
         if (_partialEraseGesture)
         {
-            var before = _eraseBeforeSnapshot ?? new List<InkStroke>();
-            var after = Document.Strokes.Select(s => s.Clone()).ToList();
-            if (before.Count != after.Count || !SameStrokeSnapshot(before, after))
-            {
-                History.Push(new DelegateAction("area erase",
-                    () => RestoreDocument(after),
-                    () => RestoreDocument(before)));
-            }
+            RecordAreaErase();
             _eraseBeforeSnapshot = null;
             _partialEraseGesture = false;
         }
@@ -1468,27 +1463,32 @@ public sealed partial class InkController : IDisposable
         Invalidated?.Invoke();
     }
 
-    private void RestoreDocument(List<InkStroke> strokes)
+    private void RecordAreaErase()
     {
-        Document.Clear();
-        Document.AddRange(strokes.Select(s => s.Clone()));
-        Selection.Clear();
-        SelectedElements.Clear();
-        _frameStrokes.Clear(); _frameElements.Clear();
-        SelectionChanged?.Invoke();
-        Invalidated?.Invoke();
-    }
+        var before = _eraseBeforeSnapshot;
+        if (before is null) return;
+        var originals = before.ToHashSet();
+        var present = Document.Strokes.ToHashSet();
+        var removed = before.Select((stroke, index) => (Index: index, Stroke: stroke))
+            .Where(item => !present.Contains(item.Stroke)).ToArray();
+        if (removed.Length == 0) return;
+        var added = Document.Strokes.Select((stroke, index) => (Index: index, Stroke: stroke))
+            .Where(item => !originals.Contains(item.Stroke)).ToArray();
+        // Only changed ink belongs to this history entry. Untouched strokes keep their identity.
+        var active = added.Select(item => item.Stroke).ToArray();
+        History.Push(new DelegateAction("area erase", () => Restore(added), () => Restore(removed)));
 
-    private static bool SameStrokeSnapshot(IReadOnlyList<InkStroke> a, IReadOnlyList<InkStroke> b)
-    {
-        if (a.Count != b.Count) return false;
-        for (int i = 0; i < a.Count; i++)
+        void Restore((int Index, InkStroke Stroke)[] snapshot)
         {
-            if (a[i].Count != b[i].Count) return false;
-            for (int p = 0; p < a[i].Count; p++)
-                if (a[i].Points[p].Position != b[i].Points[p].Position) return false;
+            using (Document.DeferNotifications())
+            {
+                Document.RemoveAll(active);
+                Document.InsertRange(snapshot);
+            }
+            active = snapshot.Select(item => item.Stroke).ToArray();
+            _frameStrokes.Clear(); _frameElements.Clear();
+            ClearSelection();
         }
-        return true;
     }
 
     // ---- selection --------------------------------------------------------
@@ -2004,5 +2004,9 @@ public sealed partial class InkController : IDisposable
         _shapeDragStart.Clear();
         _stepPending.Clear();
         _shapePreview.Clear();
+        _eraseBeforeSnapshot = null;
+        _erasedThisGesture.Clear();
+        _drawingObjects = Array.Empty<DrawingObject>();
+        History.Clear();
     }
 }

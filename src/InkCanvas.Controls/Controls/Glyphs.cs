@@ -13,7 +13,8 @@ public static class Glyphs
     public const string Pen = "\uF3DD";
     public const string Highlight = "\uF481";
     public const string Eraser = "\uE5F2";
-    public const string Select = "\uF7A4";
+    public const string Select = "\uF6A1";
+    public const string Spotlight = "\uF7A4";
 
     public const string Shapes = "△";
     public const string ShapesFont = "Segoe UI Symbol";
@@ -36,7 +37,7 @@ public static class Glyphs
     public const string Video = "\uF865";
     public const string Stopwatch = "\uF840";
     public const string People = "\uF5B3";
-    public const string Board = "\uF1E3";
+    public const string Board = "\uF8C3";
 
     public const string ChevronUp = "\uF2B7";
     public const string ChevronDown = "\uF2A4";
@@ -74,11 +75,11 @@ public static class Glyphs
     public const string HighlightWpf = "\uF481";
     public const string EraserOverlayCircle = "\uF2BC";
     public const string EraserOverlayStroke = "\uEBCB";
-    public const string SelectWpf = "\uF7A4";
+    public const string SelectWpf = "\uF6A1";
     public const string SelectOverlay = "\uF2C0";
     public const string ShapesWpf = "\uF6B7";
     public const string InsertMedia = "\uF490";
-    public const string BoardWpf = "\uF1E3";
+    public const string BoardWpf = "\uF8C3";
     public const string Tools = "\uF467";
     public const string FoldWpf = "\uF166";
     public const string Emoji = "\uF3E0";

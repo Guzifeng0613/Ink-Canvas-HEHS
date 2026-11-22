@@ -40,6 +40,33 @@ public sealed class PptInkSessionTests
         Assert.NotSame(stroke, current[0]);
     }
 
+    [Fact]
+    public void PreviewReadsCurrentAndStoredSlidesWithoutChangingPageOrInk()
+    {
+        using var interop = new PptInteropService();
+        using var session = new PptInkSession(interop);
+        IReadOnlyList<InkStroke> current = Array.Empty<InkStroke>();
+        session.CaptureCurrentInk = () => current;
+        session.ApplyCurrentInk = ink => current = ink;
+        var first = Snapshot("preview", 1);
+        Process(session, first);
+        var original = new InkStroke(new StrokeAttributes());
+        original.AddPoint(12, 34); original.Complete();
+        current = new[] { original };
+        var preview = session.CaptureSlideInk(first.Slide.SlideId);
+        Assert.Equal(original.Id, Assert.Single(preview).Id);
+        Assert.NotSame(original, preview[0]);
+        preview[0].Transform(System.Numerics.Matrix3x2.CreateTranslation(500, 500));
+        Assert.Equal(12, original.Points[0].X);
+        Process(session, Snapshot("preview", 2));
+        Assert.Empty(current);
+        var stored = session.CaptureSlideInk(first.Slide.SlideId);
+        Assert.Equal(original.Id, Assert.Single(stored).Id);
+        Assert.Equal(12, stored[0].Points[0].X);
+        Assert.Equal(2, session.Snapshot.Slide.Index);
+        Assert.Empty(session.CaptureSlideInk(9999));
+    }
+
     private static PptSnapshot Snapshot(string identity, int index) => new()
     {
         State = PptConnectionState.SlideShow,

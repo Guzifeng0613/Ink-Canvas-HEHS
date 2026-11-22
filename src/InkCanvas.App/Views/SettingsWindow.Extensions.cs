@@ -14,7 +14,7 @@ public sealed partial class SettingsWindow
     private void BuildExtensionsCategory()
     {
         BuildRepositoryExtensions();
-        _content.Children.Add(InfoRow("原生功能插件提供 AI 助教、PDF 和解析几何等独立功能，安装于 Modules 目录，开关重启后生效。外部命令插件使用独立进程，可即时启用或停用。"));
+        _content.Children.Add(InfoRow("原生功能插件提供 AI 助手、PDF 和解析几何等独立功能，安装于 Modules 目录，开关重启后生效。外部命令插件使用独立进程，可即时启用或停用。"));
         AddSection("原生功能插件");
         if (_services.Modules.Status.Count == 0) _content.Children.Add(InfoRow("模块状态在主工具栏启动后显示。"));
         foreach (var module in _services.Modules.Status)

@@ -1,77 +1,42 @@
-# AI 助教插件
+# AI 助手插件
 
-WinUI 3 版的 AI 窗口、流式请求、两阶段识别、分步讲解和局部纠错由独立原生插件 `inkcanvas.ai-assistant` 提供。插件通过现有 `IApplicationModule` 生命周期运行，通过 `IAiAssistantHost` 访问画布与课堂能力，主程序通过 `IAiAssistantService` 调用插件。
+AI 助手是面向教师的通用对话侧栏，可协助备课、教学设计、课堂活动、评价反馈、学科讨论和日常事务。通过原生插件 `inkcanvas.ai-assistant` 提供，宿主使用 `IAiAssistantService` 打开侧栏。
 
-## 安装与管理
+## 对话与界面
 
-将 `inkcanvas.ai-assistant-1.3.0.zip` 解压到程序的 `Modules` 目录，得到以下文件。
+打开助手进入空白对话，输入任务后生成回复。可主动添加当前白板页面、选区截图、图片和本地文件。支持 Enter 发送、Shift+Enter 换行和中文输入法。每条回复可复制，生成期间可停止。
 
-```text
-Modules/
-  inkcanvas.ai-assistant/
-    module.json
-    InkCanvas.Modules.AiAssistant.dll
-    InkCanvas.Modules.AiAssistant.deps.json
-```
+顶部可以新建和切换对话，管理菜单支持重命名、删除、左右停靠和收起。窗口使用项目的 `WindowFrame`、`TouchIconButton`、`MarkdownView` 和主题资源，支持深浅色主题。
 
-在“设置 → 模块与插件 → 原生功能插件”查看状态或关闭 AI 助教，开关在重启后生效。卸载时退出程序并移除该目录。未安装、已停用或加载失败时，工具栏、课堂工具箱、聚光灯与放大镜会隐藏 AI 入口。
+消息采用 `ListView` 的容器回收，仅创建可见区域附近的消息控件。图片预览按需解码，关闭预览后释放图像。流式回复每 50 毫秒合并更新，复用已完成的 Markdown 块。向上阅读时保持位置，处于底部时跟随新内容。
 
-## 使用
+## API 连接与思考
 
-选择画布上的题目后打开 AI 助教。窗口默认宽 380 DIP，靠屏幕右侧显示单列对话。顶部选区条支持追加和重新获取，点击缩略图可打开预览、重排选区或局部纠错。每条回答分别提供分步展开、复制、收藏和贴回白板，切换题目或继续追问后仍可操作先前回答。复制和贴回遵循该条回答已展开的步骤。
+在“设置 → 插件设置 → AI 助手”中添加连接、选择模型并保存。支持 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 和 Google Gemini 协议，保留供应商预设、模型列表、密钥凭据管理和联网搜索设置。
 
-窗口使用共享 `WindowFrame`、WinUI 3 标题栏和桌面亚克力，随应用深浅色主题切换。顶部可切换置顶，点击右侧收起按钮可变为边缘悬浮条，长按或右键可选择停靠左侧或右侧。输入框支持 Enter 发送与 Shift+Enter 换行，并保留中文输入法选词操作。关闭窗口会取消请求并释放会话与缩略图。
+输入区的思考设置提供开关和低、高、最高三档。新对话默认开启思考并使用高档。连接设置可自动识别模型是否支持思考参数，也可手动指定支持或不支持。请求按协议映射到推理强度、思考预算或思考等级，实际可用等级由模型决定。接口拒绝扩展参数时会回退为文字请求，并在本轮显示回退说明。[OpenAI 推理](https://developers.openai.com/api/docs/guides/reasoning) · [Anthropic 思考](https://platform.claude.com/docs/en/build-with-claude/extended-thinking)
 
-流式显示合并为每 33 毫秒至多更新一次，并复用当前回答中已完成的内容块。教师向上回看时保持阅读位置，停留底部时跟随新内容。公式和代码块支持独立横向滚动。多选区大图在预览打开时解码，收起面板后延后正文渲染。
+## 附件
 
-## AI 服务
+图片最长边限制为 2048 像素，使用质量 80% 的 JPEG 保存到对话中，预览与请求复用压缩结果。普通文件仅保存本地绝对路径，每次需要时重新读取。文件移动或删除后会显示读取失败，可重新添加。
 
-在“设置 → AI 助教”中选择供应商预设，点击“添加连接”，填写 API Key，再点击“获取模型列表”。选择模型后点击“保存并使用”，后续助教请求使用该连接。可保存多个连接，修改名称、端点、协议和模型，并用“测试连接”检查实际推理请求。测试会向所选模型发送简短文字。
+文本、Markdown、CSV、JSON、XML、HTML、常见代码和 LaTeX 文件会提取文字。DOCX、PPTX、XLSX 和 ODT 提取正文或表格文字。PDF 根据模型协议发送原始文件，连接设置可关闭原生 PDF 输入。无法读取的格式会保留路径并说明需要转换。接口拒绝多模态请求时自动尝试文字回退，可提取的附件文字继续提供给模型。
 
-端点支持基础地址或完整推理地址，保留 API Gateway 的路径前缀。模型列表地址可以独立填写，适配网关聚合的模型目录。获取失败时显示错误，也可手动输入模型 ID。预设不固定模型名称，实际可用模型以接口返回和账户权限为准。
+## Agent 与工具
 
-| 预设 | 默认基础地址 | 默认格式 |
-| --- | --- | --- |
-| OpenAI Chat / Responses | `https://api.openai.com/v1` | Chat / Responses |
-| Anthropic | `https://api.anthropic.com/v1` | Messages |
-| Google Gemini | `https://generativelanguage.googleapis.com/v1beta` | Google |
-| DeepSeek | `https://api.deepseek.com/v1` | Chat |
-| GLM | `https://open.bigmodel.cn/api/paas/v4` | Chat |
-| Tencent Token Hub | `https://tokenhub.tencentmaas.com/v1` | Chat |
-| 阿里云百炼 / Qwen | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Chat |
-| 火山引擎 | `https://ark.cn-beijing.volces.com/api/v3` | Chat |
-| StepFun | `https://api.stepfun.com/v1` | Chat |
-| MiMo | `https://api.xiaomimimo.com/v1` | Chat |
-| MiniMax | `https://api.minimax.cn/v1` | Chat |
-| Kimi 开放平台 | `https://api.moonshot.cn/v1` | Chat |
-| Kimi.com / Kimi Code | `https://api.kimi.com/coding/v1` | Chat |
-| OpenCode | `https://opencode.ai/inference/openai/v1` | Chat |
-| PackyCode | `https://codex-api.packycode.com/v1` | Responses |
+Agent 循环内置在 AI 插件中，自动在模型请求、工具执行和结果继续推理之间运行。“助手与工具调用”设置中的“允许工具调用”默认开启，关闭后停止当前任务，后续请求只进行对话。
 
-供应商接口和密钥需匹配其服务区域及产品。OpenCode 使用独立的 `/inference/v1/models` 模型列表，按所选协议切换推理路径。Kimi.com 订阅与 Kimi 开放平台分别列出，可根据所持密钥选择对应入口。各服务是否允许使用订阅额度、特定模型或多模态输入，由服务端决定。
+宿主的 `IAssistantToolRegistry` 提供画布、页面、课件和课堂工具。内置工具支持读取工作区、查看页面截图、创建可编辑路径、调整或删除选区、撤销与重做、创建和管理白板页面、打开课堂工具，以及调用实际安装的插件命令。其他原生模块可以通过注册表增加自己的工具。每次执行都在 UI 线程检查取消状态，页面切换与停止生成会取消旧任务。
 
-“发送截图给模型”可按连接开关，文字模型可关闭截图输入。“联网搜索”已为 DeepSeek、Qwen、OpenAI Responses 和 Google 配置原生参数，其他组合显示禁用原因。DeepSeek 使用服务端 `deepseek_web_search` 工具，Qwen Chat 使用 `enable_search`，Qwen Responses 使用 `web_search`。联网能力及搜索费用取决于供应商和模型。响应中的可用来源链接会附在回答中。[DeepSeek 文档](https://api-docs.deepseek.com/guides/web_tools/) · [Qwen 文档](https://help.aliyun.com/zh/model-studio/web-search) · [OpenCode 接口](https://opencode.ai/docs/console/api/inference/)
+原生协议保留一轮工具调用所需的调用 ID、参数和结果。Responses 在工具循环中携带加密推理项，Anthropic 与 Gemini 保留签名和原始内容。工具记录随对话保存，含已执行工具的回合不提供自动重试，以防重复修改。
 
-连接参数存放在用户配置目录 `PluginData/inkcanvas.ai-assistant/Documents/Connections/connections.json`。API Key 单独保存在当前 Windows 用户的凭据管理器 `InkCanvas.AiConnections` 中。删除连接会清除对应凭据，复制配置到另一台电脑后需要重新输入 API Key。
+## 上下文与白板存储
 
-标准 API 连接使用一次包含当前文字、采样墨迹和截图的请求，并将模型输出转换为原有的文本、步骤及公式事件。分步模式保留“展开下一步”的交互，停止生成、关闭窗口或切换页面后会取消旧请求。
+插件设置可以填写模型的上下文窗口并补充教师偏好。请求按估计 Token 数预留输出空间，较早的完整回合压缩为包含目标、约束、事实、已完成操作和待办的摘要，保留最近的完整交流。压缩结果只替换模型输入中的历史部分，完整消息继续保留在白板文件。当前材料过大时提示缩小附件或调整窗口配置。
 
-保留现有 Ink Canvas SSE 服务协议与环境变量配置。点击“使用环境变量 / 本地演示”可切回该方式，未配置端点时显示本地演示。两阶段识别继续用于原有 SSE 服务。
+同一 `.icink` 文件保存全部对话、当前对话、草稿、思考设置、上下文摘要、工具结果和压缩图片。数据位于 ZIP 容器的 `extensions/inkcanvas.ai-assistant.bin`，由插件解释。普通白板读取器继续读取 `board.json`。宿主在未启用 AI 插件时保留扩展数据，界面不提供对话读取入口。
 
-| 环境变量 | 默认值 | 用途 |
-| --- | --- | --- |
-| `AI_ENDPOINT` | 空 | 接收 Ink Canvas 识别请求并返回 SSE 的服务地址 |
-| `AI_MODEL` | `inkcanvas-assistant` | 模型名称 |
-| `AI_TIMEOUT_MS` | `15000` | 纯墨迹阶段首内容超时，毫秒 |
-| `AI_IMAGE_TIMEOUT_MS` | `20000` | 截图阶段首内容超时，毫秒 |
-
-追问通过请求的 `question` 字段发送，`messages` 携带最近 24 条可见对话消息，按先后顺序包含 `role` 与 `content`。请求继续保留题目图片、笔画、讲题方式、局部纠错区域与课件上下文字段。
-
-## Agent 接入
-
-AI 插件导出 `IAssistantAgentBridge`。后续原生 Agent 模块在启动时调用 `Register(provider)`，并在停止时释放返回的注册对象。接口位于 `InkCanvas.Host.Contracts/AiAgent.cs`。注册后，面板顶部的 Agent 入口显示服务名称并启用模式切换。尚未注册时显示禁用原因。
-
-`IAssistantAgentProvider.RunAsync` 接收本轮指令、可见对话、画布工具、进度回调与取消令牌。`IAssistantAgentCanvas` 提供墨迹和图片/媒体对象描述的快照、可撤销的图形创建与选区变换，以及用于识别的画布截图。工具调用自动调度到画布线程，写入前检查目标仍为当前画布且允许编辑。切换页面后旧目标会拒绝操作。停止生成、关闭窗口或注销 Agent 会取消当前任务。该版本预留接入接口，实际规划与识别由注册的 Agent 服务提供。
+对话变更参与白板自动存档的脏状态，手动保存前刷新对话快照。关闭侧栏再打开恢复当前白板的对话，打开其他白板后切换到对应记录。文件附件正文与 API Key 不写入对话存储。
 
 ## 构建与分包
 
@@ -87,7 +52,7 @@ dotnet publish src/InkCanvas.App/InkCanvas.App.csproj -c Release -p:Platform=x64
 
 在“设置 → 保存与备份 → AI 存档命名与描述”中填写支持多图输入的模型接口完整地址和模型名称，保存配置后打开“保存后自动分析并命名”。默认关闭。文稿库中也可对选中的文件点击“AI 命名与描述”执行一次处理。
 
-OpenAI 兼容模式使用 Chat Completions 多图格式，地址应包含 `/v1/chat/completions`。密钥保存在 Windows 凭据管理器中，可使用 `AI_API_KEY` 或 `OPENAI_API_KEY` 环境变量。选择现有 Ink Canvas 助教协议时，服务收到 `purpose=archive-caption`、多张 `images` 和 JSON 输出要求。接口留空时优先沿用“AI 助教”中当前连接、模型和凭据，未选择连接时沿用 `AI_ENDPOINT`、`AI_MODEL` 和助教协议。存档命名要求真实配置的模型服务。相关多图协议见 [官方文档](https://developers.openai.com/api/docs/guides/images-vision?api-mode=chat)。
+OpenAI 兼容模式使用 Chat Completions 多图格式，地址应包含 `/v1/chat/completions`。密钥保存在 Windows 凭据管理器中，可使用 `AI_API_KEY` 或 `OPENAI_API_KEY` 环境变量。选择现有 Ink Canvas 助教协议时，服务收到 `purpose=archive-caption`、多张 `images` 和 JSON 输出要求。接口留空时优先沿用“AI 助手”中当前连接、模型和凭据，未选择连接时沿用 `AI_ENDPOINT`、`AI_MODEL` 和助教协议。存档命名要求真实配置的模型服务。相关多图协议见 [官方文档](https://developers.openai.com/api/docs/guides/images-vision?api-mode=chat)。
 
 保存完成后，插件在后台从磁盘快照渲染，逐页读取图片和视频封面，跳过视频主体数据。单张 PNG 最长边限制为 3840 像素，总像素预算约 829 万。范围在预算内的屏幕截图与墨迹保持原像素尺寸。超过范围的批注生成等比缩小的总览，并附带最多两张墨迹密集位置的高清局部，缩小总览适当增强细线可见性。
 
@@ -110,5 +75,7 @@ PNG 与分析结果存放在应用设置目录的 `PluginData/inkcanvas.ai-assis
 图像角色可以使用 `page`、`segment`、`overview`、`detail` 或来源插件自己的标记。结果包含原路径、新路径、标题、描述和图片数。适配层通过 Host.Contracts 共享契约，调用方无须引用 AI 插件 DLL。此版本接口需要随附的新宿主构建。
 
 ## 验证
+
+`AssistantAgentTests` 覆盖四种协议的原生工具调用、思考签名和附件参数，以及摘要边界与会话序列化。`BoardExtensionTests` 覆盖宿主保留插件数据和白板、单页保存恢复。`--aiplugincheck=<目录>` 验证实际侧栏、附件、工具循环、回退、取消、多会话、自动摘要、虚拟列表与插件停用。`--aiconnectionscheck=<目录>` 验证四种协议的配置和实际请求流程。
 
 `DocumentNamingTests` 覆盖原像素导出规划、大幅批注局部图、长页覆盖、文件名清理及多图 HTTP 请求。`ArchiveDescriptionTests` 覆盖无损写回、同名避让、过期结果拒绝、旧版迁移和跳过视频主体。`--documentaicheck=<目录>` 使用本地模拟视觉模型执行本机 WinUI、Win2D 与保存流程验收，结果写入 `document-ai.json`。

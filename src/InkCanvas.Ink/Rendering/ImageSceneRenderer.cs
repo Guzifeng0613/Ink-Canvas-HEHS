@@ -11,8 +11,9 @@ namespace InkCanvas.Ink.Rendering;
 /// <summary>Decodes each image once and shares its bitmap or SVG document between frames and clones.</summary>
 public sealed class ImageSceneRenderer : IDisposable
 {
-    private sealed class Entry
+    private sealed class Entry : IDisposable
     {
+        public readonly CancellationTokenSource Cancellation = new();
         public byte[] Data;
         public CanvasBitmap Bitmap;
         public CanvasSvgDocument Vector;
@@ -20,9 +21,17 @@ public sealed class ImageSceneRenderer : IDisposable
         public string ContentType;
         public Task Loading;
         public long LastUsed;
+        public void Dispose()
+        {
+            Cancellation.Cancel();
+            Cancellation.Dispose();
+            Bitmap?.Dispose();
+            Vector?.Dispose();
+        }
     }
 
     private readonly Dictionary<byte[], Entry> _images = new();
+    private static readonly SemaphoreSlim DecodeGate = new(2, 2);
     private bool _disposed;
     private long _clock;
     private const long WarmBitmapBytes = 64 * 1024 * 1024;
@@ -105,8 +114,7 @@ public sealed class ImageSceneRenderer : IDisposable
         {
             if (_images.Count <= WarmImageCount && bytes <= WarmBitmapBytes) break;
             if (entry.Bitmap is not null) bytes -= (long)entry.Bitmap.SizeInPixels.Width * entry.Bitmap.SizeInPixels.Height * 4;
-            entry.Bitmap?.Dispose();
-            entry.Vector?.Dispose();
+            entry.Dispose();
             _images.Remove(entry.Data);
         }
     }
@@ -129,8 +137,7 @@ public sealed class ImageSceneRenderer : IDisposable
         var present = images.Select(image => image.ImageData).ToHashSet();
         foreach (var data in _images.Keys.Where(data => !present.Contains(data)).ToArray())
         {
-            _images[data].Bitmap?.Dispose();
-            _images[data].Vector?.Dispose();
+            _images[data].Dispose();
             _images.Remove(data);
         }
     }
@@ -146,30 +153,38 @@ public sealed class ImageSceneRenderer : IDisposable
 
     private async Task LoadAsync(CanvasDevice device, Entry entry)
     {
+        var token = entry.Cancellation.Token;
         try
         {
             var decoded = await Task.Run(async () =>
             {
-                if (string.Equals(entry.ContentType, SvgImage.ContentType, StringComparison.OrdinalIgnoreCase))
+                await DecodeGate.WaitAsync(token);
+                try
                 {
-                    using var data = new MemoryStream(entry.Data, writable: false);
-                    var image = SvgImage.Read(data);
-                    return (Bitmap: (CanvasBitmap)null, Vector: CanvasSvgDocument.LoadFromXml(device, image.Xml), Size: image.Size);
+                    token.ThrowIfCancellationRequested();
+                    if (string.Equals(entry.ContentType, SvgImage.ContentType, StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var data = new MemoryStream(entry.Data, writable: false);
+                        var image = SvgImage.Read(data);
+                        return (Bitmap: (CanvasBitmap)null, Vector: CanvasSvgDocument.LoadFromXml(device, image.Xml), Size: image.Size);
+                    }
+                    using var managed = new MemoryStream(entry.Data, writable: false);
+                    using var stream = managed.AsRandomAccessStream();
+                    var decoder = await BitmapDecoder.CreateAsync(stream).AsTask(token);
+                    var transform = new BitmapTransform();
+                    uint extent = Math.Max(decoder.PixelWidth, decoder.PixelHeight);
+                    if (MaximumDecodeDimension > 0 && extent > MaximumDecodeDimension)
+                    {
+                        double scale = (double)MaximumDecodeDimension / extent;
+                        transform.ScaledWidth = Math.Max(1, (uint)Math.Round(decoder.PixelWidth * scale));
+                        transform.ScaledHeight = Math.Max(1, (uint)Math.Round(decoder.PixelHeight * scale));
+                    }
+                    using var software = await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied,
+                        transform, ExifOrientationMode.RespectExifOrientation, ColorManagementMode.ColorManageToSRgb).AsTask(token);
+                    token.ThrowIfCancellationRequested();
+                    return (Bitmap: CanvasBitmap.CreateFromSoftwareBitmap(device, software), Vector: (CanvasSvgDocument)null, Size: Vector2.Zero);
                 }
-                using var managed = new MemoryStream(entry.Data, writable: false);
-                using var stream = managed.AsRandomAccessStream();
-                var decoder = await BitmapDecoder.CreateAsync(stream);
-                var transform = new BitmapTransform();
-                uint extent = Math.Max(decoder.PixelWidth, decoder.PixelHeight);
-                if (MaximumDecodeDimension > 0 && extent > MaximumDecodeDimension)
-                {
-                    double scale = (double)MaximumDecodeDimension / extent;
-                    transform.ScaledWidth = Math.Max(1, (uint)Math.Round(decoder.PixelWidth * scale));
-                    transform.ScaledHeight = Math.Max(1, (uint)Math.Round(decoder.PixelHeight * scale));
-                }
-                using var software = await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied,
-                    transform, ExifOrientationMode.RespectExifOrientation, ColorManagementMode.ColorManageToSRgb);
-                return (Bitmap: CanvasBitmap.CreateFromSoftwareBitmap(device, software), Vector: (CanvasSvgDocument)null, Size: Vector2.Zero);
+                finally { DecodeGate.Release(); }
             });
             if (!IsCurrent(entry))
             {
@@ -200,8 +215,7 @@ public sealed class ImageSceneRenderer : IDisposable
     {
         foreach (var entry in _images.Values)
         {
-            entry.Bitmap?.Dispose();
-            entry.Vector?.Dispose();
+            entry.Dispose();
         }
         _images.Clear();
     }

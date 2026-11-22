@@ -36,7 +36,7 @@ internal static class DocumentAiRegression
             Check("new feature defaults to off", !services.Settings.Ai.Documents.Enabled);
             Check("AI implementation stays outside the host", !typeof(AppServices).Assembly.GetReferencedAssemblies().Any(assembly => assembly.Name == "InkCanvas.Modules.AiAssistant"));
             using var model = new LocalVisionModel();
-            settings = new SettingsWindow(services, shell: shell); settings.Activate(); settings.SelectCategory("保存与备份");
+            settings = new SettingsWindow(services, shell: shell); settings.Activate(); settings.SelectCategory("AI 助手");
             await Until(() => Descendants(settings.Content).OfType<TextBox>().Any(box => box.Header?.ToString() == "多模态接口完整地址"));
             var endpoint = Descendants(settings.Content).OfType<TextBox>().Single(box => box.Header?.ToString() == "多模态接口完整地址"); endpoint.Text = model.Endpoint;
             var modelName = Descendants(settings.Content).OfType<TextBox>().Single(box => box.Header?.ToString() == "支持多图输入的模型名称"); modelName.Text = "fixture-vision";
@@ -93,7 +93,7 @@ internal static class DocumentAiRegression
             model.FailNext = true;
             try { await ai.DescribeAsync(new(failure)); Check("model failure is reported", false); }
             catch (IOException) { Check("model failure preserves original file", File.Exists(failure) && (await BoardService.ReadArchiveMetadataAsync(failure))?.Description != "本地多图验收"); }
-            settings = new SettingsWindow(services, shell: shell); settings.Activate(); settings.SelectCategory("保存与备份");
+            settings = new SettingsWindow(services, shell: shell); settings.Activate(); settings.SelectCategory("AI 助手");
             await Until(() => Descendants(settings.Content).OfType<ToggleSwitch>().Any(toggle => toggle.Header?.ToString() == "保存后自动分析并命名"));
             var enabled = Descendants(settings.Content).OfType<ToggleSwitch>().Single(toggle => toggle.Header?.ToString() == "保存后自动分析并命名");
             enabled.IsOn = true;

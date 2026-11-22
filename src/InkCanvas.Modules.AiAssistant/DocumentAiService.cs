@@ -201,7 +201,7 @@ internal sealed class DocumentAiService : IAiDocumentService, IDisposable
         var enabled = new ToggleSwitch { Header = "保存后自动分析并命名", IsOn = Settings.Enabled };
         panel.Children.Add(enabled);
         panel.Children.Add(new TextBlock { Text = "开启后会把存档生成的 PNG 发送到配置的多模态模型。白板文件会更新名称和描述，长页会分段发送。关闭时仍可在文稿库中手动执行。", TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(new TextBlock { Text = "接口地址留空时沿用“AI 助教”设置中的当前连接、API Key 和模型，需启用截图输入并选择支持图片的模型。", TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = "接口地址留空时沿用“AI 助手”设置中的当前连接、API Key 和模型，需启用截图输入并选择支持图片的模型。", TextWrapping = TextWrapping.Wrap });
         var endpoint = new TextBox { Header = "多模态接口完整地址", Text = Settings.Endpoint, PlaceholderText = "https://…/v1/chat/completions", MinHeight = 44 };
         var model = new TextBox { Header = "支持多图输入的模型名称", Text = Settings.Model, MinHeight = 44 };
         var protocol = new ComboBox { Header = "服务协议", ItemsSource = new[] { "OpenAI 兼容 Chat Completions", "现有 Ink Canvas 助教协议" }, SelectedIndex = Settings.AssistantProtocol ? 1 : 0, HorizontalAlignment = HorizontalAlignment.Stretch };

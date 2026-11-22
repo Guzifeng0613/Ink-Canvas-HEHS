@@ -50,7 +50,7 @@ internal static class ArchiveRegression
             settings.Activate(); settings.SelectCategory("保存与备份"); await Task.Delay(200);
             var root = (FrameworkElement)settings.Content;
             Check("save settings expose real controls", Descendants(root).OfType<TextBox>().Count() >= 7
-                && Descendants(root).OfType<ToggleSwitch>().Count() == (services.Modules.HasExport<InkCanvas.Host.Contracts.IAiDocumentService>() ? 12 : 11) && Descendants(root).OfType<NumberBox>().Count() == 4);
+                && Descendants(root).OfType<ToggleSwitch>().Count() == 11 && Descendants(root).OfType<NumberBox>().Count() == 4);
             var title = Descendants(root).OfType<TextBox>().Single(item => AutomationProperties.GetName(item) == "课程或存档标题");
             title.Text = "函数与图像";
             await Task.Delay(400);

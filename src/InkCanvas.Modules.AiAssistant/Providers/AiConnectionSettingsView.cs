@@ -17,7 +17,9 @@ public sealed class AiConnectionSettingsView : StackPanel
     private readonly PasswordBox _key = new() { Header = "API Key", PasswordRevealMode = PasswordRevealMode.Peek };
     private readonly ComboBox _model = new() { Header = "模型", IsEditable = true, HorizontalAlignment = HorizontalAlignment.Stretch,
         PlaceholderText = "获取列表后选择，也可手动输入模型 ID" };
-    private readonly ToggleSwitch _images = new() { Header = "发送截图给模型", OnContent = "启用", OffContent = "仅发送文字和墨迹轨迹" };
+    private readonly ToggleSwitch _images = new() { Header = "模型支持图片输入", OnContent = "发送图片附件", OffContent = "回退为文字" };
+    private readonly ToggleSwitch _files = new() { Header = "模型支持 PDF 文件输入", OnContent = "发送 PDF 原文", OffContent = "仅提取可读文字" };
+    private readonly ComboBox _reasoning = new() { Header = "模型思考参数支持", HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly ToggleSwitch _search = new() { Header = "联网搜索", OnContent = "启用", OffContent = "关闭" };
     private readonly NumberBox _maxTokens = new() { Header = "最大输出 Token", Minimum = 256, Maximum = 131072,
         Value = 8192, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };
@@ -38,11 +40,12 @@ public sealed class AiConnectionSettingsView : StackPanel
         foreach (var provider in AiProviderCatalog.Presets)
             _preset.Items.Add(new ComboBoxItem { Tag = provider.Id, Content = ProviderIcon.Label(provider.Icon, provider.Name) });
         foreach (var format in Enum.GetValues<AiApiFormat>()) _format.Items.Add(AiProviderCatalog.FormatName(format));
+        foreach (string label in new[] { "自动识别", "支持", "不支持" }) _reasoning.Items.Add(label);
         var newConnection = new Button { Content = "添加连接", MinHeight = 44, HorizontalAlignment = HorizontalAlignment.Stretch };
         newConnection.Click += (_, _) => Load(Preset().Create());
         _preset.SelectedIndex = 0;
         Children.Add(_active); Children.Add(_connections); Children.Add(_preset); Children.Add(newConnection);
-        foreach (var control in new FrameworkElement[] { _name, _format, _address, _modelsAddress, _key, _model, _maxTokens, _images, _search })
+        foreach (var control in new FrameworkElement[] { _name, _format, _address, _modelsAddress, _key, _model, _maxTokens, _images, _files, _reasoning, _search })
         {
             control.MinHeight = 44;
             Children.Add(control);
@@ -55,9 +58,7 @@ public sealed class AiConnectionSettingsView : StackPanel
         _save.HorizontalAlignment = HorizontalAlignment.Stretch;
         _delete.HorizontalAlignment = HorizontalAlignment.Stretch;
         Children.Add(_save); Children.Add(_delete);
-        var legacy = new Button { Content = "使用环境变量 / 本地演示", MinHeight = 44, HorizontalAlignment = HorizontalAlignment.Stretch };
-        legacy.Click += (_, _) => Execute(() => { _store.Activate(""); Refresh(); Report("已切回环境变量配置，未配置端点时使用本地演示。", false); });
-        Children.Add(legacy); Children.Add(_status);
+        Children.Add(_status);
         _save.Click += (_, _) => Execute(() => { _store.Save(Read(), _key.Password); Refresh(); Load(_store.Active); Report("连接已保存，新请求将使用所选模型。", false); });
         _delete.Click += async (_, _) =>
         {
@@ -99,6 +100,8 @@ public sealed class AiConnectionSettingsView : StackPanel
             }
             _model.Text = connection.Model;
             _maxTokens.Value = connection.MaxOutputTokens; _images.IsOn = connection.SendImages;
+            _files.IsOn = connection.SendFiles;
+            _reasoning.SelectedIndex = connection.Reasoning switch { "supported" => 1, "unsupported" => 2, _ => 0 };
             _key.Password = _store.Key(connection.Id);
             _search.IsOn = connection.Search; UpdateSearch();
             _delete.IsEnabled = _store.State.Connections.Any(item => item.Id == connection.Id);
@@ -108,7 +111,8 @@ public sealed class AiConnectionSettingsView : StackPanel
     }
     private AiConnection Read() => _editing with { Name = _name.Text.Trim(), BaseUrl = _address.Text.Trim(),
         ModelsUrl = _modelsAddress.Text.Trim(), Format = (AiApiFormat)_format.SelectedIndex,
-        Model = _model.Text.Trim(), Search = _search.IsOn, SendImages = _images.IsOn,
+        Model = _model.Text.Trim(), Search = _search.IsOn, SendImages = _images.IsOn, SendFiles = _files.IsOn,
+        Reasoning = _reasoning.SelectedIndex switch { 1 => "supported", 2 => "unsupported", _ => "auto" },
         MaxOutputTokens = double.IsFinite(_maxTokens.Value) ? (int)_maxTokens.Value : 8192 };
 
     private void UpdateSearch()

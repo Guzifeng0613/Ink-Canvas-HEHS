@@ -15,6 +15,7 @@ using InkCanvas.Ink.Manipulation;
 using InkCanvas.Ink.Rendering;
 using InkCanvas.Platform.Windows;
 using Microsoft.Graphics.Canvas;
+using Microsoft.Graphics.Canvas.Geometry;
 using Microsoft.Graphics.Canvas.UI.Xaml;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
@@ -22,6 +23,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using System.Numerics;
 using WinRT.Interop;
@@ -45,8 +47,7 @@ public sealed partial class BoardWindow : Window
     private const string GlyphExit = Glyphs.ExitBoard;
     private const string GlyphGesture = "";
     private const string GlyphCanvas = "";
-    private const string GlyphSelect = "";
-    private const string GlyphSelectBadge = "";
+    private const string GlyphSelect = Glyphs.Select;
     private const string GlyphPen = "";
     private const string GlyphHighlighter = "";
     private const string GlyphEraser = "";
@@ -74,8 +75,15 @@ public sealed partial class BoardWindow : Window
     private readonly Grid _windowedContent;
     private readonly Border _selectionPanel;
     private readonly Border _pagePane;
+    private readonly Grid _pageOverlay;
+    private bool _pagePaneOpen, _pagePaneRight;
+    private int _pagePaneAnimation;
+    private Microsoft.UI.Composition.CompositionPathGeometry _pageClipGeometry;
+    private Microsoft.UI.Composition.CompositionGeometricClip _pageClip;
+    private CanvasGeometry _pageClipSource;
     internal BoardPageNavigator PageNavigator { get; }
-    internal bool PagePaneOpen => _pagePane.Visibility == Visibility.Visible;
+    internal bool PagePaneOpen => _pagePaneOpen;
+    internal FrameworkElement PagePaneSurface => _pagePane;
 
     private readonly StackPanel _leftHost;
     private readonly StackPanel _centerHost;
@@ -115,6 +123,10 @@ public sealed partial class BoardWindow : Window
     private bool _isFullscreen;
     private bool _entrancePlayed;
     private bool _closed;
+    internal bool IsClosed => _closed;
+    internal long CachedBoardRasterBytes => _drawingLayers.RasterBytes;
+    internal int DrawingSurfaceCount => _drawingLayers.SurfaceCount;
+    internal bool IdleResourcesReleased => _idleResources.IsReleased;
     private readonly WindowIdleResources _idleResources;
     private bool _imagePicking;
     private CancellationTokenSource _imageImportCancellation;
@@ -203,7 +215,7 @@ public sealed partial class BoardWindow : Window
         _rightDock = DockStrip(_rightHost, HorizontalAlignment.Right);
         _dock.Children.Add(_leftDock); _dock.Children.Add(_centerDock); _dock.Children.Add(_rightDock);
 
-        _contentRoot = new Grid { Background = new SolidColorBrush(Microsoft.UI.Colors.Black) };
+        _contentRoot = new Grid { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
         _contentRoot.KeyDown += OnBoardKeyDown;
         _contentRoot.Children.Add(_surfaceHost);
         _contentRoot.Children.Add(_dock);
@@ -221,11 +233,13 @@ public sealed partial class BoardWindow : Window
         {
             _surface.SuspendRendering();
             _drawingLayers.SuspendRendering();
+            _media.ReleasePlayers();
             PageNavigator?.SetSuspended(true);
         }, () =>
         {
             _surface.ResumeRendering();
             _drawingLayers.ResumeRendering();
+            _media.Refresh();
             _paper.Invalidate();
             PageNavigator?.SetSuspended(false);
         });
@@ -236,17 +250,26 @@ public sealed partial class BoardWindow : Window
         PageNavigator = new BoardPageNavigator(_board,
             () => new Vector2(Math.Max(1, (float)_surfaceHost.ActualWidth), Math.Max(1, (float)_surfaceHost.ActualHeight)),
             NavigateToPage, InsertPage, DuplicatePage, DeleteCurrentPage, () => _ = RenameCurrentPageAsync());
-        _pagePane = new Border { Child = PageNavigator, Width = 244, HorizontalAlignment = HorizontalAlignment.Left,
-            BorderThickness = new Thickness(0, 0, 1, 0), Visibility = Visibility.Collapsed };
-        PageNavigator.CloseRequested += () => SetPagePaneOpen(false);
-        PageNavigator.ViewModeChanged += overview =>
+        _pagePane = new Border { Child = PageNavigator, Width = BoardPageNavigator.SidebarWidth, HorizontalAlignment = HorizontalAlignment.Left,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12) };
+        _pageOverlay = new Grid { Visibility = Visibility.Collapsed };
+        var dismissPages = new Border { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
+        dismissPages.PointerPressed += (_, args) => { SetPagePaneOpen(false); args.Handled = true; };
+        _pageOverlay.Children.Add(dismissPages);
+        _pageOverlay.Children.Add(_pagePane);
+        _pageOverlay.KeyDown += (_, args) =>
         {
-            _pagePane.Width = double.NaN;
-            _pagePane.HorizontalAlignment = overview ? HorizontalAlignment.Stretch : HorizontalAlignment.Left;
+            if (args.Key != Windows.System.VirtualKey.Escape) return;
+            SetPagePaneOpen(false);
+            args.Handled = true;
+        };
+        PageNavigator.CloseRequested += () => SetPagePaneOpen(false);
+        PageNavigator.ViewModeChanged += _ =>
+        {
             UpdatePagePaneLayout();
         };
         _contentRoot.SizeChanged += (_, _) => UpdatePagePaneLayout();
-        _contentRoot.Children.Add(_pagePane);
+        _contentRoot.Children.Add(_pageOverlay);
 
         _board.PageChanged += OnPageChanged;
         _board.BackgroundChanged += RefreshBackground;
@@ -305,15 +328,14 @@ public sealed partial class BoardWindow : Window
         var canvas = MakeCell(GlyphCanvas, "画布", null, 60, 22, midBorder);
         AttachClickAndHold(canvas.Button, ToggleBoardColor, BuildCanvasFlyout);
         ToolTipService.SetToolTip(canvas.Button, "点击切换黑板/白板；长按选择纸型、缩放与网格间距");
-        _selectCell = MakeCell(GlyphSelect, "选择", SelectOrSelectAll, 60, 22, midBorder,
-            badge: GlyphSelectBadge, badgeSize: 14);
+        _selectCell = MakeCell(GlyphSelect, "选择", SelectOrSelectAll, 60, 22, midBorder);
         _penCell = MakeCell(GlyphPen, "墨迹", () => ActivateToolOptions(InkTool.Pen, ShowPenPalette), 60, 22, midBorder);
         _eraserCell = MakeCell(GlyphEraser, "橡皮", () => ActivateToolOptions(InkTool.Eraser, ShowEraserPalette), 60, 22, midBorder);
         ToolTipService.SetToolTip(_eraserCell.Button, "选择面积擦、墨迹擦、套索擦和橡皮大小");
-        var clear = MakeCell(GlyphClear, "清屏", async () =>
+        var clear = MakeCell(GlyphClear, "清屏", () =>
         {
             DismissBoardFlyout();
-            await ConfirmClearCurrentPageAsync();
+            ClearCurrentPage();
         }, 60, 22, midBorder);
         ToolTipService.SetToolTip(clear.Button, "清除当前页上的全部墨迹、图片和视频");
         _shapeCell = MakeCell(GlyphShape, "图形", () => ActivateToolOptions(InkTool.Shape, () => _shell?.OpenShapePicker()), 60, 22, midBorder);
@@ -366,7 +388,13 @@ public sealed partial class BoardWindow : Window
         stack.Children.Add(caption);
         var openPages = new Button { Content = stack, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0),
             BorderThickness = new Thickness(0), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
-        openPages.Click += (_, _) => SetPagePaneOpen(!PagePaneOpen);
+        openPages.Click += (_, _) =>
+        {
+            bool right = ReferenceEquals(indexText, _pageTextR);
+            bool open = !PagePaneOpen || _pagePaneRight != right;
+            _pagePaneRight = right;
+            SetPagePaneOpen(open);
+        };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(openPages, "页面管理与总览");
         var indicator = new Border { Width = 58, Height = 55, BorderThickness = border, Child = openPages };
         ToolTipService.SetToolTip(indicator, "页面管理与总览");
@@ -1184,7 +1212,7 @@ public sealed partial class BoardWindow : Window
             }
             float width = (float)Math.Min(_selectionDesiredSize.Width + 10, _contentRoot.ActualWidth - 16);
             float height = (float)Math.Min(_selectionDesiredSize.Height + 10, _contentRoot.ActualHeight - 16);
-            float left = PagePaneOpen && !PageNavigator.IsOverview ? (float)_pagePane.ActualWidth + 8 : 8;
+            float left = PagePaneOpen && !PageNavigator.IsOverview && !_pagePaneRight ? (float)_pagePane.ActualWidth + 16 : 8;
             var work = new Rect(left, 8, (float)_contentRoot.ActualWidth - 8, (float)_contentRoot.ActualHeight - 8);
             var dock = new Rect(0, (float)(_contentRoot.ActualHeight - _dock.ActualHeight), (float)_contentRoot.ActualWidth, (float)_contentRoot.ActualHeight);
             var place = FloatingToolbarLayout.Place(work, CurrentController.SelectionVisualBounds, dock, new Vector2(width, height));
@@ -1353,6 +1381,39 @@ public sealed partial class BoardWindow : Window
 
     internal void RefreshToolSettings() => _boardPenPalette?.RefreshSettings();
 
+    internal void RestoreFromAnnotation()
+    {
+        _services.ConfigureController(CurrentController);
+        ApplyEraserSize();
+        RefreshBackground();
+    }
+
+    internal async Task<bool> HideForAnnotationAsync()
+    {
+        if (_closed || _archiveClosing || CurrentController.HasActiveInteraction) return false;
+        try
+        {
+            await SaveArchiveBeforeCloseAsync("退出白板");
+            if (_closed) return false;
+            CurrentController.EndPlayback();
+            CurrentController.HideEraserPreview();
+            foreach (var panel in _toolPanels.Values.ToArray()) panel.Close();
+            DismissBoardFlyout();
+            SetPagePaneOpen(false);
+            _media.PausePlayers();
+            AutoSaveCurrentPage("board-exit");
+            AppWindow.Hide();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (!_closed) await ShowMessageAsync("白板存档失败，内容已保留。\n" + ex.GetBaseException().Message);
+            return false;
+        }
+    }
+
+    internal void CloseForShutdown() => base.Close();
+
     private void RefreshBackground()
     {
         DismissBoardFlyout();
@@ -1499,9 +1560,8 @@ public sealed partial class BoardWindow : Window
         UpdatePageNavigation();
     }
 
-    private async Task ConfirmClearCurrentPageAsync()
+    private void ClearCurrentPage()
     {
-        if (!await ConfirmAsync("清除当前页", "清除当前页上的全部墨迹、图片和视频？")) return;
         AutoSaveCurrentPage("board-clear");
         // WPF BoardSymbolIconDelete_Click switches back to the pen before clearing (MW_BoardIcons.cs:106-110).
         SetTool(InkTool.Pen);
@@ -1547,20 +1607,99 @@ public sealed partial class BoardWindow : Window
     {
         if (_closed) return;
         DismissBoardFlyout();
-        _pagePane.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
-        if (!open) PageNavigator.SetOverview(false);
+        _pagePaneOpen = open;
+        _pagePane.IsHitTestVisible = open;
+        int generation = ++_pagePaneAnimation;
+        if (open) _pageOverlay.Visibility = Visibility.Visible;
         PageNavigator.SetOpen(open);
         UpdatePagePaneLayout();
         PlaceSelectionPanel();
+        _ = AnimatePagePaneAsync(open, generation);
     }
 
     private void UpdatePagePaneLayout()
     {
         if (_pagePane is null) return;
-        _pagePane.Width = PageNavigator.IsOverview ? double.NaN : Math.Min(244, Math.Max(120, _contentRoot.ActualWidth));
-        _pagePane.MaxHeight = Math.Max(120, _contentRoot.ActualHeight - Math.Max(60, _dock.ActualHeight) - 8);
-        _pagePane.VerticalAlignment = VerticalAlignment.Top;
-        _pagePane.BorderBrush = _barBorder;
+        bool overview = PageNavigator.IsOverview;
+        _pagePane.Width = overview ? double.NaN : Math.Min(BoardPageNavigator.SidebarWidth, Math.Max(120, _contentRoot.ActualWidth - 16));
+        _pagePane.Height = overview ? double.NaN : Math.Max(120, _contentRoot.ActualHeight - Math.Max(60, _dock.ActualHeight) - 28);
+        _pagePane.MaxHeight = double.PositiveInfinity;
+        _pagePane.HorizontalAlignment = overview ? HorizontalAlignment.Stretch : _pagePaneRight ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+        _pagePane.VerticalAlignment = overview ? VerticalAlignment.Stretch : VerticalAlignment.Bottom;
+        _pagePane.Margin = overview ? new Thickness(0) : new Thickness(8, 8, 8, Math.Max(60, _dock.ActualHeight) + 12);
+        _pagePane.CornerRadius = new CornerRadius(overview ? 0 : 12);
+        _pagePane.BorderBrush = PopupBrushes.ToolPanelBorder(_boardTheme);
+        UpdatePageMaterialClip();
+    }
+
+    private void UpdatePageMaterialClip()
+    {
+        var visual = ElementCompositionPreview.GetElementVisual(_surfaceHost);
+        if (_pageOverlay.Visibility != Visibility.Visible)
+        {
+            visual.Clip = null;
+            _pageClip?.Dispose(); _pageClip = null;
+            _pageClipGeometry?.Dispose(); _pageClipGeometry = null;
+            _pageClipSource?.Dispose(); _pageClipSource = null;
+            _dock.Visibility = Visibility.Visible;
+            return;
+        }
+        bool overview = PageNavigator.IsOverview;
+        _dock.Visibility = overview ? Visibility.Collapsed : Visibility.Visible;
+        float width = (float)_contentRoot.ActualWidth, height = (float)_contentRoot.ActualHeight;
+        if (width <= 0 || height <= 0) return;
+        // Expose the window's native Mica only beneath the page surface.
+        // Ink stays opaque everywhere else, including on Windows' solid-material fallback.
+        using var board = CanvasGeometry.CreateRectangle(CanvasDevice.GetSharedDevice(), 0, 0, width, height);
+        float paneWidth = overview ? width : (float)_pagePane.Width;
+        float paneHeight = overview ? height : (float)_pagePane.Height;
+        float x = overview ? 0 : _pagePaneRight ? width - paneWidth - 8 : 8;
+        float y = overview ? 0 : height - (float)_pagePane.Margin.Bottom - paneHeight;
+        using var panel = CanvasGeometry.CreateRoundedRectangle(CanvasDevice.GetSharedDevice(), x, y, paneWidth, paneHeight,
+            overview ? 0 : 12, overview ? 0 : 12);
+        var remaining = board.CombineWith(panel, Matrix3x2.Identity, CanvasGeometryCombine.Exclude);
+        var path = new Microsoft.UI.Composition.CompositionPath(remaining);
+        _pageClipGeometry ??= visual.Compositor.CreatePathGeometry();
+        _pageClipGeometry.Path = path;
+        _pageClip ??= visual.Compositor.CreateGeometricClip(_pageClipGeometry);
+        visual.Clip = _pageClip;
+        _pageClipSource?.Dispose();
+        _pageClipSource = remaining;
+    }
+
+    private async Task AnimatePagePaneAsync(bool open, int generation)
+    {
+        ElementCompositionPreview.SetIsTranslationEnabled(_pagePane, true);
+        var visual = ElementCompositionPreview.GetElementVisual(_pagePane);
+        visual.StopAnimation("Translation");
+        visual.StopAnimation("Opacity");
+        if (Motion.AnimationsEnabled)
+        {
+            float distance = PageNavigator.IsOverview ? 0 : (float)(_pagePane.Width + 16) * (_pagePaneRight ? 1 : -1);
+            var slide = visual.Compositor.CreateVector3KeyFrameAnimation();
+            slide.InsertKeyFrame(0, new Vector3(open ? distance : 0, 0, 0));
+            slide.InsertKeyFrame(1, new Vector3(open ? 0 : distance, 0, 0),
+                visual.Compositor.CreateCubicBezierEasingFunction(new(.16f, 1), new(.3f, 1)));
+            slide.Duration = Motion.Normal;
+            var fade = visual.Compositor.CreateScalarKeyFrameAnimation();
+            fade.InsertKeyFrame(0, open ? 0 : 1);
+            fade.InsertKeyFrame(1, open ? 1 : 0);
+            fade.Duration = Motion.Fast;
+            visual.StartAnimation("Translation", slide);
+            visual.StartAnimation("Opacity", fade);
+            await Task.Delay(Motion.Normal);
+        }
+        if (_closed || generation != _pagePaneAnimation) return;
+        visual.StopAnimation("Translation");
+        visual.StopAnimation("Opacity");
+        visual.Properties.InsertVector3("Translation", Vector3.Zero);
+        visual.Opacity = 1;
+        if (!open)
+        {
+            _pageOverlay.Visibility = Visibility.Collapsed;
+            PageNavigator.SetOverview(false);
+            UpdatePageMaterialClip();
+        }
     }
 
     private void NavigateToPage(int index)
@@ -1682,7 +1821,12 @@ public sealed partial class BoardWindow : Window
 
     private void OnPageChanged()
     {
-        _services.ApplySettings();
+        if (ReferenceEquals(_boundController, _board.Current))
+        {
+            UpdatePageNavigation();
+            return;
+        }
+        _services.ConfigureController(_board.Current);
         BindPage();
         RefreshBackground();
         CurrentPageChanged?.Invoke();
@@ -1989,6 +2133,7 @@ public sealed partial class BoardWindow : Window
             WindowChrome.Place(this, work.X, work.Y, work.Width, work.Height);
         }
         _isFullscreen = fullscreen;
+        SystemBackdrop ??= new MicaBackdrop { Kind = Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt };
         WindowChrome.ApplyTheme(this, _boardTheme);
         UpdatePageNavigation();
     }
@@ -2004,6 +2149,9 @@ public sealed partial class BoardWindow : Window
         foreach (var window in _toolPanels.Values.ToArray()) window.Close();
         CurrentController.EndPlayback();
         _closed = true;
+        _pageOverlay.Visibility = Visibility.Collapsed;
+        UpdatePageMaterialClip();
+        SystemBackdrop = null;
         PageNavigator.Dispose();
         _imageImportCancellation?.Cancel();
         _mediaImportCancellation?.Cancel();

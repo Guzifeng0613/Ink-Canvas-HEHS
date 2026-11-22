@@ -266,33 +266,6 @@ public sealed partial class SettingsWindow
                 ?? (S.Automation.IsAutoClearWhenExitingWritingMode ? null : "请先在“画布与识别”中启用切换到鼠标模式后自动清屏。")));
     }
 
-    private void BuildExperimentalSettings()
-    {
-        _content.Children.Add(InfoRow("屏幕内容跟随优先适配 Word、PowerPoint 与 Microsoft Edge。隐藏墨迹或切回鼠标模式后仍读取页面状态，返回批注时恢复对应位置。识别失败时暂停显示该页墨迹，可手动重新绑定。"));
-        _content.Children.Add(ToggleRow("启用屏幕内容跟随（实验性）", () => S.Experimental.ScreenContentTracking,
-            value => S.Experimental.ScreenContentTracking = value));
-        AddSection("跟随与页面记忆");
-        _content.Children.Add(ToggleRow("批注跟随正文滚动", () => S.Experimental.FollowScroll, value => S.Experimental.FollowScroll = value));
-        _content.Children.Add(ToggleRow("批注跟随页面缩放", () => S.Experimental.FollowZoom, value => S.Experimental.FollowZoom = value));
-        _content.Children.Add(ToggleRow("遮罩固定区域和悬浮界面", () => S.Experimental.MaskFixedRegions, value => S.Experimental.MaskFixedRegions = value,
-            note: "正文区域外的墨迹始终裁切；页面内部的固定页眉和侧栏在确认滚动后加入遮罩。"));
-        _content.Children.Add(ToggleRow("自动记忆不同文档与页面的墨迹", () => S.Experimental.RememberPages, value => S.Experimental.RememberPages = value,
-            note: "本次运行期间按 Word 文档、网页地址和 PPT 幻灯片标识保存墨迹、图片及撤销记录。同一页面的工具栏、标题变化不会触发切换。"));
-        _content.Children.Add(ToggleRow("保留页面中未变化区域的批注", () => S.Experimental.PreserveUnchangedRegions,
-            value => S.Experimental.PreserveUnchangedRegions = value,
-            note: "仅同步能够唯一匹配的相同段落区域。共享区域发生跨页同步时会重置目标页撤销记录，避免撤销恢复过期内容。"));
-        AddSection("适配应用");
-        _content.Children.Add(ToggleRow("适配 Microsoft Word", () => S.Experimental.Word, value => S.Experimental.Word = value));
-        _content.Children.Add(ToggleRow("适配 Microsoft PowerPoint", () => S.Experimental.PowerPoint, value => S.Experimental.PowerPoint = value));
-        _content.Children.Add(ToggleRow("适配 Microsoft Edge", () => S.Experimental.Edge, value => S.Experimental.Edge = value));
-        _screenTrackingStatus = new TextBlock { Text = _services.ScreenTrackingStatus, TextWrapping = TextWrapping.Wrap, FontSize = 14 };
-        _screenTrackingStatus.Loaded += (_, _) => _trackingStatusTimer.Start();
-        _screenTrackingStatus.Unloaded += (_, _) => _trackingStatusTimer.Stop();
-        _content.Children.Add(Card(_screenTrackingStatus));
-        _content.Children.Add(ButtonRow("重新绑定当前批注位置", "定位中断或页面排版发生大幅变化时使用", _services.ResetScreenTrackingAnchor));
-        _content.Children.Add(InfoRow("需要目标应用提供可访问性滚动与缩放信息；受保护窗口、自绘画布和部分网页可能无法识别。页面记忆保存在当前进程内，不会修改文档、注入网页脚本或上传屏幕内容。白板画布不参与此实验。"));
-    }
-
     private void BuildAboutSettings()
     {
         AddSection("版本与更新");

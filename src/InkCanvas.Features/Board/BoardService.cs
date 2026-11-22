@@ -193,9 +193,9 @@ public sealed partial class BoardService
         if (index < 0) yield break;
         var images = _images[index];
         var mediaObjects = _media[index];
-        var present = _images.SelectMany(items => items).Select(image => image.Id)
-            .Concat(_media.SelectMany(items => items).Select(media => media.Id)).ToHashSet();
-        foreach (var id in _selectionElements.Keys.Where(id => !present.Contains(id)).ToArray()) _selectionElements.Remove(id);
+        var present = images.Select(image => image.Id).Concat(mediaObjects.Select(media => media.Id)).ToHashSet();
+        foreach (var id in _selectionElements.Where(pair => ReferenceEquals(pair.Value.Page, page) && !present.Contains(pair.Key))
+            .Select(pair => pair.Key).ToArray()) _selectionElements.Remove(id);
         foreach (var image in images)
         {
             if (!_selectionElements.TryGetValue(image.Id, out var element) || !ReferenceEquals(element.Image, image))
@@ -251,7 +251,7 @@ public sealed partial class BoardService
     /// <summary>Only the runtime collection capacity limits page creation.</summary>
     public bool CanAddPages(int count = 1) => count > 0 && count <= Array.MaxLength - PageCount;
 
-    public bool HasContent => _pages.Any(page => page.Document.Count > 0)
+    public bool HasContent => _extensions.Count > 0 || _pages.Any(page => page.Document.Count > 0)
         || _images.Any(images => images.Count > 0)
         || _media.Any(media => media.Count > 0);
 
@@ -922,6 +922,8 @@ public sealed partial class BoardService
 
     private sealed class BoardFile
     {
+        [System.Text.Json.Serialization.JsonIgnore]
+        public Dictionary<string, byte[]> Extensions { get; set; } = new(StringComparer.Ordinal);
         [System.Text.Json.Serialization.JsonIgnore]
         public BoardArchiveMetadata Archive { get; set; }
         public string Format { get; set; }

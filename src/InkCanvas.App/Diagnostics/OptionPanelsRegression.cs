@@ -3,6 +3,7 @@ using InkCanvas.App.Services;
 using InkCanvas.App.Views;
 using InkCanvas.Controls.Controls;
 using InkCanvas.Core.Shapes;
+using InkCanvas.Host.Contracts;
 using InkCanvas.Ink;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -32,6 +33,7 @@ internal static class OptionPanelsRegression
         {
             await Task.Delay(180);
             var bar = shell.OpenWindows.OfType<FloatingBarWindow>().Single();
+            await CheckMouseModeDismissal();
             var pen = await Pen(false);
             await Task.Delay(60);
             var shape = Shapes();
@@ -157,6 +159,34 @@ internal static class OptionPanelsRegression
             Check("reopened whiteboard pane dismisses on canvas input", closed.Contains(boardPen));
             await CheckShapeLayout(true);
             board.Close();
+            await Task.Delay(80);
+            var pdf = services.Modules.GetExport<IPdfWorkspaceService>();
+            string pdfPath = Path.Combine(directory, "panel-dismissal.pdf");
+            pdf.GetType().Assembly.GetType("InkCanvas.Modules.Pdf.PdfDiagnostics", true)
+                .GetMethod("CreateFixture", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
+                .Invoke(null, new object[] { pdfPath, 1 });
+            await shell.OpenPdfAsync(pdfPath);
+            await Task.Delay(100);
+            var document = shell.OpenWindows.OfType<IDocumentWorkspace>().Single();
+            foreach (bool pinned in new[] { false, true })
+            {
+                shell.RefreshDocumentTarget(WindowChrome.GetHwnd(document.Window));
+                document.Controller.Tool = InkTool.Pen;
+                shell.OpenPenPalette(false);
+                pen = Track(shell.OpenWindows.OfType<PenPaletteWindow>().Single());
+                var penHost = (Viewbox)((ScrollViewer)pen.Content).Content;
+                ((PenPalette)penHost.Child).Header.IsPinned = pinned;
+                shell.ToggleClickThrough();
+                Check("PDF mouse mode respects option pin " + pinned, document.Controller.Tool == InkTool.Pan
+                    && closed.Contains(pen) == !pinned);
+                if (!closed.Contains(pen)) pen.Close();
+                shell.ToggleClickThrough();
+            }
+            shell.RefreshDocumentTarget(WindowChrome.GetHwnd(document.Window));
+            shape = Shapes();
+            document.Controller.Tool = InkTool.Pan;
+            Check("PDF reading mode also dismisses transient options", closed.Contains(shape));
+            await document.CloseAsync();
 
             T Track<T>(T window) where T : Window
             {
@@ -186,6 +216,49 @@ internal static class OptionPanelsRegression
                 var position = bar.AppWindow.Position;
                 panel.ShowAboveBar(position.X, position.Y, bar.AppWindow.Size.Width);
                 return panel;
+            }
+            async Task CheckMouseModeDismissal()
+            {
+                foreach (string kind in new[] { "Pen", "Highlighter", "Shape", "Eraser", "More", "Gesture" })
+                foreach (int state in new[] { 0, 1, 2, 3 })
+                {
+                    if (shell.Overlay.ClickThrough) shell.ToggleClickThrough();
+                    Window pane;
+                    if (kind is "Pen" or "Highlighter") pane = await Pen(kind == "Highlighter");
+                    else if (kind == "Shape") pane = Shapes();
+                    else
+                    {
+                        var panelKind = Enum.Parse<BarPanelKind>(kind);
+                        var button = (Button)bar.Bar.GetPanelButton(panelKind);
+                        if (panelKind == BarPanelKind.Eraser && services.OverlayInk.Tool != InkTool.Eraser) Invoke(button);
+                        Invoke(button);
+                        pane = Track(bar.GetOpenPanel(panelKind));
+                    }
+                    await Task.Delay(60);
+                    var header = Header(pane);
+                    if (state >= 2)
+                    {
+                        switch (pane)
+                        {
+                            case PenPaletteWindow penPane: penPane.Detach(); break;
+                            case ShapePickerWindow shapePane: shapePane.Detach(); break;
+                            case BarPanelWindow barPane: barPane.Detach(); break;
+                        }
+                    }
+                    header.IsPinned = state is 1 or 2;
+                    Invoke(Descendants(bar.Content).OfType<TouchIconButton>().Single(button => button.Label == "鼠标"));
+                    await Task.Delay(60);
+                    bool pinned = state is 1 or 2;
+                    Check($"mouse mode dismisses transient options and preserves pin {kind} {state}",
+                        shell.Overlay.ClickThrough && closed.Contains(pane) == !pinned);
+                    if (!pinned && pane is BarPanelWindow)
+                        Check($"mouse mode resets toolbar panel state {kind} {state}", bar.GetOpenPanel(Enum.Parse<BarPanelKind>(kind)) is null);
+                    shell.ToggleClickThrough();
+                    Check($"returning to annotation does not reopen dismissed options {kind} {state}",
+                        !shell.Overlay.ClickThrough && closed.Contains(pane) == !pinned);
+                    if (!closed.Contains(pane)) pane.Close();
+                }
+                shell.StartInClickThrough();
             }
             async Task CheckShapeLayout(bool boardMode)
             {
@@ -248,6 +321,7 @@ internal static class OptionPanelsRegression
         void Check(string name, bool passed) => checks.Add(new { check = name, passed });
     }
 
+    private static void Invoke(Button button) => ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke();
     private static PopupHeader Header(Window window) => Descendants(window.Content).OfType<PopupHeader>().Single();
     private static async Task CloseHeader(PopupHeader header)
     {

@@ -32,13 +32,16 @@ public static class WindowChrome
     public static void MakeBorderless(Window window, bool topmost = true, bool resizable = false, bool noActivate = false)
     {
         var appWindow = window.AppWindow;
-        if (appWindow.Presenter is OverlappedPresenter presenter)
+        if (appWindow.Presenter is OverlappedPresenter)
         {
+            // Configure before attachment so WinUI applies one native frame change.
+            var presenter = OverlappedPresenter.Create();
             presenter.SetBorderAndTitleBar(false, false);
             presenter.IsResizable = resizable;
             presenter.IsMaximizable = resizable;
             presenter.IsMinimizable = resizable;
             presenter.IsAlwaysOnTop = topmost;
+            appWindow.SetPresenter(presenter);
         }
         // No system backdrop: these windows paint their own tokenised surface.
         window.SystemBackdrop = null;

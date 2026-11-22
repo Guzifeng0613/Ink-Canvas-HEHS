@@ -180,8 +180,6 @@ public sealed partial class LotteryWindow : Window
         else { _measuredCount = -1; UpdateResultLayout(); }
     }
 
-    public event Action<string> Picked;
-
     internal async Task RollAsync()
     {
         if (_rolling || _closed || DrawCount == 0) return;
@@ -212,7 +210,6 @@ public sealed partial class LotteryWindow : Window
             }
             token.ThrowIfCancellationRequested();
             _lastResult = _lottery.Draw(take); ShowNames(_lastResult);
-            if (_lastResult.Count > 0) Picked?.Invoke(string.Join("、", _lastResult));
             _resultTitle.Text = $"本次抽选 {_lastResult.Count} 人";
             if (Motion.AnimationsEnabled) await Task.Yield();
             if (_closed || token.IsCancellationRequested) return;

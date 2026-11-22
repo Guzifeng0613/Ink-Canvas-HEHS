@@ -64,6 +64,15 @@ public sealed class PptInkSession : IDisposable
     public PptSnapshot Snapshot => _last;
     public IReadOnlyList<InkStroke> CurrentStrokes => Clone(CaptureCurrentInk());
 
+    /// <summary>Capture one slide for preview without copying the rest of the presentation.</summary>
+    public IReadOnlyList<InkStroke> CaptureSlideInk(int slideId)
+    {
+        ThrowIfDisposed();
+        if (slideId <= 0) return Array.Empty<InkStroke>();
+        if (_last.IsSlideShowRunning && _last.Slide?.SlideId == slideId) return CurrentStrokes;
+        return _slides.TryGetValue(slideId, out var strokes) ? Clone(strokes) : Array.Empty<InkStroke>();
+    }
+
     /// <summary>
     /// Events request immediate refreshes. Polling covers missed events and hosts that
     /// cannot expose the Office connection point.
@@ -174,6 +183,9 @@ public sealed class PptInkSession : IDisposable
     public bool Previous() => NavigateWithScreenshot(PptScreenshotReason.BeforeNavigation, _interop.Previous);
     public bool GoToSlide(int oneBasedIndex) =>
         NavigateWithScreenshot(PptScreenshotReason.BeforeNavigation, () => _interop.GoToSlide(oneBasedIndex));
+
+    public bool GoToSlideId(int slideId) =>
+        NavigateWithScreenshot(PptScreenshotReason.BeforeNavigation, () => _interop.GoToSlideId(slideId));
     public bool ExitSlideShow() { ThrowIfDisposed(); return _interop.ExitSlideShow(); }
 
     private bool NavigateWithScreenshot(PptScreenshotReason reason, Func<bool> navigate)

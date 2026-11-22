@@ -40,6 +40,7 @@ public sealed class BoardArchiveService : IDisposable
         _kind = kind;
         _board.PageChanged += OnPagesChanged;
         _board.ImagesChanged += MarkChanged;
+        _board.ExtensionsChanged += MarkChanged;
         _board.BackgroundChanged += MarkChanged;
         _board.ImagePlacementChanged += OnImagePlacement;
         _board.MediaPlacementChanged += OnMediaPlacement;
@@ -90,6 +91,7 @@ public sealed class BoardArchiveService : IDisposable
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            _board.FlushExtensions();
             var settings = CopySettings();
             string configuration = Configuration(settings);
             if (settings.SkipEmptyBoards && !_board.HasContent
@@ -131,6 +133,7 @@ public sealed class BoardArchiveService : IDisposable
             ObjectDisposedException.ThrowIf(_disposed, this);
             IsSaving = true;
             LastError = null;
+            target.FlushExtensions();
             long revision = _revision;
             var settings = CopySettings();
             string configuration = Configuration(settings);
@@ -247,6 +250,7 @@ public sealed class BoardArchiveService : IDisposable
         _disposed = true;
         _board.PageChanged -= OnPagesChanged;
         _board.ImagesChanged -= MarkChanged;
+        _board.ExtensionsChanged -= MarkChanged;
         _board.BackgroundChanged -= MarkChanged;
         _board.ImagePlacementChanged -= OnImagePlacement;
         _board.MediaPlacementChanged -= OnMediaPlacement;

@@ -24,7 +24,6 @@ public sealed partial class AssistantWindow
     {
         _frame = WindowFrame.Attach(this, _root).UseAcrylic();
         _frame.Header.IconSource = null;
-        _frame.Header.Content = _demoBadge;
         Activated += (_, args) =>
         {
             if (_positioned || args.WindowActivationState == WindowActivationState.Deactivated) return;
@@ -64,7 +63,7 @@ public sealed partial class AssistantWindow
         var work = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Nearest).WorkArea;
         int margin = (int)(12 * Dpi);
         margin = Math.Min(margin, Math.Min(work.Width, work.Height) / 20);
-        int width = Math.Min(work.Width - margin * 2, (int)(380 * Dpi)), height = Math.Min(work.Height - margin * 2, (int)(760 * Dpi));
+        int width = Math.Min(work.Width - margin * 2, (int)(380 * Dpi)), height = work.Height - margin * 2;
         AppWindow.MoveAndResize(new(right ? work.X + work.Width - width - margin : work.X + margin,
             work.Y + Math.Max(0, (work.Height - height) / 2), width, height));
     }
@@ -72,14 +71,13 @@ public sealed partial class AssistantWindow
     public void CollapseToEdge()
     {
         if (_collapsed || _closed) return;
-        _preview.Hide(); _agentFlyout.Hide();
         _expandedBounds = new(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);
         _collapsed = true;
-        var handle = new Window { Title = "展开 AI 助教", SystemBackdrop = new DesktopAcrylicBackdrop() };
+        var handle = new Window { Title = "展开 AI 助手", SystemBackdrop = new DesktopAcrylicBackdrop() };
         _edgeHandle = handle;
         var button = new TouchIconButton { Width = 44, Height = 64, Content = AiGlyph.CreateFramed(24, 24),
             CornerRadius = new CornerRadius(12), Padding = new Thickness(0), BorderThickness = new Thickness(0) };
-        AutomationProperties.SetName(button, "展开 AI 助教"); ToolTipService.SetToolTip(button, "展开 AI 助教");
+        AutomationProperties.SetName(button, "展开 AI 助手"); ToolTipService.SetToolTip(button, "展开 AI 助手");
         button.Click += (_, _) => ShowPanel();
         handle.Content = new Grid { RequestedTheme = _frame.RequestedTheme, Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), Children = { button } };
         var presenter = (OverlappedPresenter)handle.AppWindow.Presenter;
@@ -103,7 +101,7 @@ public sealed partial class AssistantWindow
                 Math.Clamp(_expandedBounds.Y, work.Y, work.Y + work.Height - height), width, height));
         }
         Activate();
-        if (_lastSession is not null) Apply(_lastSession, _pendingThumbnail, preserveScroll: true);
+        foreach (var turn in _turns) turn.Refresh();
         Motion.PlayEntrance(_root, 0);
     }
 

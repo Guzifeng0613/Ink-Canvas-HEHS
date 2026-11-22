@@ -44,6 +44,8 @@ internal static class IconFontRegression
         window.Activate();
         try
         {
+            shell.ToggleClickThrough();
+            await Task.Delay(100);
             Check("new installations use Regular icons", services.Settings.Appearance.IsIconRegularStyle);
             foreach (bool regular in new[] { true, false, true })
             {
@@ -56,6 +58,12 @@ internal static class IconFontRegression
                 Check("same controls follow style changes " + regular, icons.All(icon => icon.FontFamily.Source == IconFontStyle.Family));
                 Check("icon preference persists " + regular, services.Store.Load().Appearance.IsIconRegularStyle == regular);
                 var bar = shell.OpenWindows.OfType<FloatingBarWindow>().Single();
+                var boardEntry = Descendants(bar.Content).OfType<TouchIconButton>().Single(button => button.Label == "画板");
+                var selectionEntry = Descendants(bar.Content).OfType<TouchIconButton>().Single(button => button.Label == "选择");
+                Check("whiteboard entry uses the whiteboard icon " + regular,
+                    Descendants(boardEntry).OfType<FontIcon>().Single().Glyph == Glyphs.Board);
+                Check("selection uses a single selection-frame icon " + regular,
+                    Descendants(selectionEntry).OfType<FontIcon>().Single().Glyph == Glyphs.Select);
                 var handle = Descendants(bar.Content).OfType<Border>().Single(item => AutomationProperties.GetName(item) == "拖动移动工具栏");
                 var smile = Descendants(handle).OfType<FontIcon>().Single();
                 Check("toolbar drag handle keeps smile in both styles " + regular,
@@ -65,9 +73,12 @@ internal static class IconFontRegression
                     panel.RequestedTheme = theme == 1 ? ElementTheme.Light : ElementTheme.Dark;
                     panel.Background = new SolidColorBrush(theme == 1 ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black);
                     foreach (var icon in icons) icon.Foreground = new SolidColorBrush(theme == 1 ? Microsoft.UI.Colors.Black : Microsoft.UI.Colors.White);
+                    WindowChrome.ApplyTheme(bar, theme);
                     await Task.Delay(80);
                     Check("glyph sheet renders " + regular + " " + theme,
                         await BoardWindowRegression.SaveVisual(panel, Path.Combine(directory, $"icons-{regular}-{theme}.png")));
+                    Check("toolbar updated icons render " + regular + " " + theme,
+                        await BoardWindowRegression.SaveVisual((FrameworkElement)bar.Content, Path.Combine(directory, $"toolbar-{regular}-{theme}.png")));
                 }
             }
             Check("toolbar icon screenshot", await BoardWindowRegression.SaveVisual((FrameworkElement)shell.OpenWindows.OfType<FloatingBarWindow>().Single().Content,

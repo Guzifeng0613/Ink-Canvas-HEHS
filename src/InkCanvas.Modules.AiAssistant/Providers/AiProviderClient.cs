@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace InkCanvas.Modules.AiAssistant.Providers;
 
-public sealed class AiProviderClient : IDisposable
+public sealed partial class AiProviderClient : IDisposable
 {
     private readonly HttpClient _http;
     private readonly bool _ownsClient;
@@ -155,7 +155,7 @@ public sealed class AiProviderClient : IDisposable
     private static void EnsureSuccess(HttpResponseMessage response)
     {
         if (!response.IsSuccessStatusCode) throw new HttpRequestException("AI 接口返回 HTTP " + (int)response.StatusCode
-            + ((int)response.StatusCode is 401 or 403 ? "，请检查 API Key、模型权限与服务区域。" : "，请检查端点地址、协议与模型。"));
+            + ((int)response.StatusCode is 401 or 403 ? "，请检查 API Key、模型权限与服务区域。" : "，请检查端点地址、协议与模型。"), null, response.StatusCode);
     }
     internal static string String(JsonElement value, string name) => value.ValueKind == JsonValueKind.Object
         && value.TryGetProperty(name, out var field) && field.ValueKind == JsonValueKind.String ? field.GetString() ?? "" : "";

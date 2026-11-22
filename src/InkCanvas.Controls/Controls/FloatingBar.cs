@@ -78,14 +78,17 @@ public sealed class FloatingBar : UserControl
 {
     /// <summary>WPF Viewbox Height=50 over 36px content.</summary>
     public const double WpfScale = 50.0 / 36.0;
+    public const double ChromeHeight = 36 * WpfScale;
+    public const double ChromeCornerRadius = 5 * WpfScale;
+    public const double ChromeBorderThickness = WpfScale;
     private const double S = WpfScale;
-    private const double PartH = 36 * S;          // 50
+    private const double PartH = ChromeHeight;
     private const double BtnW = 30 * S;           // 41.7
     private const double BtnH = 32 * S;           // 44.4
     private const double IconSz = 16 * S;         // 22.2
     private const double LabelSz = 8 * S;         // 11.1
-    private const double PartCorner = 5 * S;      // 6.94
-    private const double PartBorder = 1 * S;      // 1.39
+    private const double PartCorner = ChromeCornerRadius;
+    private const double PartBorder = ChromeBorderThickness;
     private const double PartGap = 2 * S;         // 2.78 inter-rect gap (WPF Margin 2,0,0,0)
     private const double MainPadH = 4 * S;        // padding(2)+margin(2)
     private const double MainPadV = 1 * S;
@@ -412,7 +415,6 @@ public sealed class FloatingBar : UserControl
         _gestureRows.Children.Clear();
         _captioned.Clear();
         _gestureOptionRows.Clear();
-        _boardDividers.Clear();
         _badgeBorders.Clear();
         _gestureIcons.Clear();
         _gestureLabels.Clear();
@@ -441,7 +443,7 @@ public sealed class FloatingBar : UserControl
         _highlighterButton.IconFont = IconFontStyle.Family;
         _clearButton = AddPrimary(Glyphs.Delete, "清空", "清空（有选中时删除选中墨迹）— 快捷键 Ctrl+E", ClearOrDeleteSelection);
 
-        _aiButton = AddPrimary(Glyphs.Ai, "AI 助教", "AI 识别（先框选内容）", () => Shell?.OpenAiAssistant());
+        _aiButton = AddPrimary(Glyphs.Ai, "AI 助手", "打开通用 AI 助手", () => Shell?.OpenAiAssistant());
         _aiButton.Visibility = Shell?.AiAssistantAvailable == true ? Visibility.Visible : Visibility.Collapsed;
         _primary.Children.Add(_canvasControls);
         _eraserButton = AddPrimary(_canvasControls, Glyphs.Eraser, "橡皮", "橡皮（选中后再次点击打开选项）— 快捷键 Alt+E", () =>
@@ -452,7 +454,7 @@ public sealed class FloatingBar : UserControl
             _eraserOpen = !_eraserOpen;
             PanelRequested?.Invoke(BarPanelKind.Eraser, _eraserOpen);
         });
-        _selectButton = AddComposite(_canvasControls, Glyphs.SelectWpf, Glyphs.SelectOverlay, 10 * S, "选择", "选择 — 快捷键 Alt+S", () => SetTool(InkTool.Select));
+        _selectButton = AddPrimary(_canvasControls, Glyphs.SelectWpf, "选择", "选择 — 快捷键 Alt+S", () => SetTool(InkTool.Select));
         _shapeButton = AddPrimary(_canvasControls, Glyphs.ShapesWpf, "图形", "图形（选中后再次点击打开选项）", () =>
         {
             bool active = !ClickThroughActive && Controller?.Tool == InkTool.Shape;
@@ -472,8 +474,6 @@ public sealed class FloatingBar : UserControl
         _lrSwitchButton = AddPrimary(Glyphs.LRSwitch, "左右切换", "将工具栏移动到当前屏幕的另一侧", () => SwitchSideRequested?.Invoke());
 
         _boardButton = AddPrimary(Glyphs.BoardWpf, "画板", "画板 — 快捷键 Alt+B", () => Shell?.ToggleBoard());
-        _boardButton.Margin = new Thickness(PartBorder, 0, 0, 0);
-        AddBoardDivider(_boardButton);
         _toolsButton = AddPrimary(Glyphs.Tools, "工具", "更多设置", ToggleOverflow);
         _foldButton = AddPrimary(Glyphs.FoldWpf, "隐藏", "收纳工具栏到屏幕侧边 — 快捷键 Alt+V", () => Shell?.ToggleFold());
         _foldButton.Margin = new Thickness(-PartGap, 0, -PartGap, 0);
@@ -612,29 +612,6 @@ public sealed class FloatingBar : UserControl
         }
         button.Click += (_, _) => onClick();
     }
-
-    private void AddBoardDivider(TouchIconButton button)
-    {
-        // WPF draws the group separator as a 1px left border inside the 画板 button.
-        if (button.Content is Border border && border.Child is StackPanel stack)
-        {
-            var divider = new Border
-            {
-                Width = PartBorder,
-                VerticalAlignment = VerticalAlignment.Stretch,
-                Margin = new Thickness(0, 2 * S, 0, 2 * S),
-                HorizontalAlignment = HorizontalAlignment.Left,
-            };
-            var grid = new Grid();
-            border.Child = null; // detach before re-parenting: WinUI refuses double-parented children
-            grid.Children.Add(stack);
-            grid.Children.Add(divider);
-            border.Child = grid;
-            _boardDividers.Add(divider);
-        }
-    }
-
-    private readonly List<Border> _boardDividers = new();
 
     public void RefreshExtensionCommands()
     {
@@ -1050,7 +1027,6 @@ public sealed class FloatingBar : UserControl
             part.BorderBrush = _border;
         }
         _dragIcon.Foreground = _fg;
-        foreach (var divider in _boardDividers) divider.Background = _fg;
         foreach (var badge in _badgeBorders)
         {
             badge.BorderBrush = _fg;

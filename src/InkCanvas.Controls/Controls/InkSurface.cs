@@ -192,6 +192,8 @@ public sealed class InkSurface : UserControl, IDisposable
         // WinUI may coalesce several digitizer packets into one routed event.
         // Intermediate points are newest first. Preserve their original timestamps.
         var points = e.GetIntermediatePoints(this);
+        // Erase every sample, then update board layers once for the coalesced input packet.
+        using var eraseUpdate = _controller.Tool == InkTool.Eraser ? _controller.Document.DeferNotifications() : null;
         for (int i = points.Count - 1; i >= 0; i--)
         {
             var intermediate = Translate(e, points[i]);

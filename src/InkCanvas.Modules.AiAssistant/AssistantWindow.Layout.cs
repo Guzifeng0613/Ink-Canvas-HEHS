@@ -1,126 +1,110 @@
 using InkCanvas.Controls.Controls;
-using InkCanvas.Core.AiAssistant;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
 using Windows.System;
 
 namespace InkCanvas.Modules.AiAssistant;
 
 public sealed partial class AssistantWindow
 {
-    private Border _demoBadge;
-    public void SetConnectionStatus(bool demoMode) => _demoBadge.Visibility = demoMode ? Visibility.Visible : Visibility.Collapsed;
-
-    private void BuildLayout(bool demoMode)
+    private void BuildLayout()
     {
-        for (int row = 0; row < 5; row++) _root.RowDefinitions.Add(new() { Height = row == 3 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
-        var toolbar = new Grid { ColumnSpacing = 8 };
-        toolbar.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-        toolbar.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var modeContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { _modeIcon, _modeText,
-            new FontIcon { Glyph = Glyphs.ChevronDown, FontFamily = IconFontStyle.Font, FontSize = 12 } } };
-        var mode = CreateSecondaryButton(""); mode.Content = modeContent; mode.HorizontalAlignment = HorizontalAlignment.Left;
-        AutomationProperties.SetName(mode, "讲解方式");
-        var menu = new MenuFlyout();
-        foreach (AssistantTeachingMode option in Enum.GetValues<AssistantTeachingMode>())
+        _root.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        _root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
+        _root.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        var header = new Grid { ColumnSpacing = 4 };
+        header.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        header.Children.Add(_chats); AutomationProperties.SetName(_chats, "对话历史");
+        _chats.SelectionChanged += (_, _) =>
         {
-            var item = new MenuFlyoutItem { Text = AssistantTeachingPolicy.Label(option), Icon = new FontIcon
-                { Glyph = ModeGlyph(option), FontFamily = IconFontStyle.Font, FontSize = 18 } };
-            item.Click += (_, _) => TeachingModeRequested?.Invoke(option); menu.Items.Add(item);
-        }
-        mode.Flyout = menu; toolbar.Children.Add(mode);
-        var globals = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
-        _annotationButton = CreateIconButton("显示或隐藏题目标注", Symbol.View);
-        _annotationButton.Click += (_, _) =>
-        {
-            _annotationsVisible = !_annotationsVisible;
-            _annotationButton.Opacity = _annotationsVisible ? 1 : .55;
-            ToolTipService.SetToolTip(_annotationButton, _annotationsVisible ? "隐藏题目标注" : "显示题目标注");
-            ApplyAnnotations(_lastSession);
+            if (_binding || _chats.SelectedItem is not AssistantChat chat || ReferenceEquals(chat, _chat)) return;
+            ConversationChanging?.Invoke(); BindChat(chat); Changed?.Invoke();
         };
-        _pinButton = CreateIconButton("取消窗口置顶", Symbol.Pin);
-        _pinButton.Click += (_, _) => TogglePin();
-        _agentButton = CreateIconButton("Agent 能力", Symbol.Emoji2);
-        _agentButton.Content = new FontIcon { Glyph = Glyphs.Agent, FontFamily = IconFontStyle.Font, FontSize = 20 };
-        BuildAgentMenu(); _agentButton.Flyout = _agentFlyout;
-        var dock = CreateIconButton("停靠与收起", Symbol.BackToWindow);
-        dock.Content = new FontIcon { Glyph = Glyphs.ChevronRight, FontFamily = IconFontStyle.Font, FontSize = 18 };
-        var docking = new MenuFlyout();
-        Add("停靠屏幕左侧", () => DockPanel(false)); Add("停靠屏幕右侧", () => DockPanel(true));
-        docking.Items.Add(new MenuFlyoutSeparator()); Add("收起为边缘悬浮条", CollapseToEdge);
-        dock.ContextFlyout = docking;
-        dock.Click += (_, _) => CollapseToEdge();
-        ToolTipService.SetToolTip(dock, "收起助教，长按或右键选择停靠位置");
-        globals.Children.Add(_annotationButton); globals.Children.Add(_pinButton); globals.Children.Add(_agentButton); globals.Children.Add(dock);
-        Grid.SetColumn(globals, 1); toolbar.Children.Add(globals); _root.Children.Add(toolbar);
-        void Add(string title, Action action)
-        { var item = new MenuFlyoutItem { Text = title }; item.Click += (_, _) => action(); docking.Items.Add(item); }
-
-        var context = new Grid { ColumnSpacing = 8, MinHeight = 40 };
-        context.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        context.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-        context.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var preview = CreateIconButton("预览和调整题目选区", Symbol.Pictures);
-        preview.Content = new Grid { Width = 36, Height = 36, Children = { new SymbolIcon(Symbol.Pictures) { Opacity = .35 }, _contextThumbnail } };
-        preview.Flyout = _preview;
-        context.Children.Add(preview);
-        Grid.SetColumn(_contextTitle, 1); _contextTitle.VerticalAlignment = VerticalAlignment.Center; context.Children.Add(_contextTitle);
-        var contextActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
-        var add = CreateIconButton("追加选区", Symbol.Add); add.Click += (_, _) => { _preview.Hide(); AddRegionRequested?.Invoke(); };
-        var capture = CreateIconButton("重新获取当前画布", Symbol.Refresh); capture.Click += (_, _) => { _preview.Hide(); RetryRequested?.Invoke(); };
-        contextActions.Children.Add(add); contextActions.Children.Add(capture); Grid.SetColumn(contextActions, 2); context.Children.Add(contextActions);
-        var strip = new Border { Padding = new Thickness(4), Background = _inputBgBrush, CornerRadius = new CornerRadius(10), Child = context };
-        Grid.SetRow(strip, 1); _root.Children.Add(strip);
-        Grid.SetRow(_notice, 2); _root.Children.Add(_notice);
-        _scroll.Content = _conversation; Grid.SetRow(_scroll, 3); _root.Children.Add(_scroll);
-        AutomationProperties.SetName(_scroll, "助教对话");
-
-        var composer = new StackPanel { Spacing = 8 };
-        var chips = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        _variantBasic.Click += (_, _) => VariantRequested?.Invoke(false);
-        _variantAdvanced.Click += (_, _) => VariantRequested?.Invoke(true);
-        foreach (var chip in new[] { _variantBasic, _variantAdvanced })
-        { chip.CornerRadius = new CornerRadius(20); chip.FontSize = 12; chips.Children.Add(chip); }
-        _summary.CornerRadius = new CornerRadius(20); _summary.FontSize = 12;
-        _summary.Click += (_, _) => { if (!_busy && _aiTeachingEnabled) FollowUpRequested?.Invoke("请总结当前题目的关键考点与易错点。"); }; chips.Children.Add(_summary);
-        composer.Children.Add(new ScrollViewer { Content = chips, HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Disabled,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, ZoomMode = ZoomMode.Disabled });
-        var input = new Grid { ColumnSpacing = 4 };
-        input.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-        input.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        input.Children.Add(_followUp); Grid.SetColumn(_send, 1); input.Children.Add(_send);
-        _send.VerticalAlignment = VerticalAlignment.Bottom;
-        _send.Click += (_, _) => SendFollowUp();
-        _followUp.TextCompositionStarted += (_, _) => _composing = true;
-        _followUp.TextCompositionEnded += (_, _) => DispatcherQueue.TryEnqueue(() => _composing = false);
-        _followUp.KeyDown += (_, args) =>
+        var actions = new StackPanel { Orientation = Orientation.Horizontal };
+        var create = IconButton("新建对话", Symbol.Add);
+        create.Click += (_, _) => { ConversationChanging?.Invoke(); BindChat(_workspace.CreateChat()); Changed?.Invoke(); _input.Focus(FocusState.Programmatic); };
+        var more = IconButton("对话管理", Symbol.More);
+        var menu = new MenuFlyout();
+        var rename = new MenuFlyoutItem { Text = "重命名对话" };
+        rename.Click += async (_, _) =>
+        {
+            var chat = _chat;
+            var name = new TextBox { Text = chat.Title, MaxLength = 80 };
+            var dialog = new ContentDialog { XamlRoot = _root.XamlRoot, Title = "重命名对话", Content = name,
+                PrimaryButtonText = "保存", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Primary };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary || string.IsNullOrWhiteSpace(name.Text)) return;
+            chat.Title = name.Text.Trim(); chat.UpdatedAt = DateTimeOffset.Now; RefreshChat(chat); Changed?.Invoke();
+        };
+        var delete = new MenuFlyoutItem { Text = "删除对话" };
+        delete.Click += async (_, _) =>
+        {
+            var chat = _chat;
+            var dialog = new ContentDialog { XamlRoot = _root.XamlRoot, Title = "删除对话", Content = "删除「" + chat.Title + "」及其附件记录？",
+                PrimaryButtonText = "删除", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+            ConversationChanging?.Invoke(); _workspace.Chats.Remove(chat);
+            BindChat(_workspace.Chats.LastOrDefault() ?? _workspace.CreateChat()); Changed?.Invoke();
+        };
+        menu.Items.Add(rename); menu.Items.Add(delete); menu.Items.Add(new MenuFlyoutSeparator());
+        void Menu(string text, Action action) { var item = new MenuFlyoutItem { Text = text }; item.Click += (_, _) => action(); menu.Items.Add(item); }
+        Menu("停靠左侧", () => DockPanel(false)); Menu("停靠右侧", () => DockPanel(true)); Menu("收起侧栏", CollapseToEdge);
+        more.Flyout = menu;
+        _pinButton = IconButton("取消窗口置顶", Symbol.Pin); _pinButton.Click += (_, _) => TogglePin();
+        actions.Children.Add(create); actions.Children.Add(_pinButton); actions.Children.Add(more);
+        Grid.SetColumn(actions, 1); header.Children.Add(actions); _root.Children.Add(header);
+        var body = new Grid(); body.Children.Add(_conversation); body.Children.Add(_empty);
+        AutomationProperties.SetName(_conversation, "助手对话"); Grid.SetRow(body, 1); _root.Children.Add(body);
+        var composer = new StackPanel { Spacing = 8 }; composer.Children.Add(_error);
+        composer.Children.Add(new ScrollViewer { Content = _attachments, MaxHeight = 120, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
+        var input = new StackPanel { Spacing = 4 }; input.Children.Add(_input);
+        var row = new Grid(); row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+        var add = IconButton("添加图片或文件", Symbol.Attach); add.Click += async (_, _) => await PickAttachmentsAsync();
+        var capture = IconButton("添加当前画布", Symbol.Camera); capture.Click += (_, _) => CaptureRequested?.Invoke();
+        _attachmentButtons.Add(add); _attachmentButtons.Add(capture);
+        var reason = IconButton("思考设置", Symbol.Emoji2);
+        reason.Content = new FontIcon { Glyph = Glyphs.Hint, FontFamily = IconFontStyle.Font, FontSize = 20 };
+        var settings = new StackPanel { Spacing = 12, Width = 200 }; settings.Children.Add(_thinking);
+        foreach (string label in new[] { "低", "高", "最高" }) _effort.Items.Add(label);
+        settings.Children.Add(_effort); reason.Flyout = new Flyout { Content = settings };
+        _thinking.Toggled += (_, _) =>
+        {
+            _effort.IsEnabled = _thinking.IsOn;
+            if (_binding || _chat is null) return;
+            _chat.Thinking = _thinking.IsOn; Changed?.Invoke();
+        };
+        _effort.SelectionChanged += (_, _) =>
+        {
+            if (_binding || _chat is null) return;
+            _chat.Effort = _effort.SelectedIndex switch { 0 => "low", 2 => "xhigh", _ => "high" }; Changed?.Invoke();
+        };
+        buttons.Children.Add(add); buttons.Children.Add(capture); buttons.Children.Add(reason); row.Children.Add(buttons);
+        var send = new Grid(); send.Children.Add(_send); send.Children.Add(_stop); Grid.SetColumn(send, 1); row.Children.Add(send);
+        _send.Click += (_, _) => Send(); _stop.Click += (_, _) => StopRequested?.Invoke(); _stop.Visibility = Visibility.Collapsed;
+        input.Children.Add(row);
+        var border = new Border { Padding = new Thickness(8), CornerRadius = new CornerRadius(12), BorderThickness = new Thickness(1), Child = input };
+        border.Loaded += (_, _) => { border.Background = ThemeBrushes.Resolve(border, "IcSurfaceAltBrush"); border.BorderBrush = ThemeBrushes.Resolve(border, "IcStrokeBrush"); };
+        border.ActualThemeChanged += (_, _) => { border.Background = ThemeBrushes.Resolve(border, "IcSurfaceAltBrush"); border.BorderBrush = ThemeBrushes.Resolve(border, "IcStrokeBrush"); };
+        composer.Children.Add(border); composer.Children.Add(_model); Grid.SetRow(composer, 2); _root.Children.Add(composer);
+        AutomationProperties.SetName(_input, "消息内容");
+        _input.TextChanged += (_, _) => { if (_binding || _chat is null) return; _chat.Draft = _input.Text; Changed?.Invoke(); };
+        _input.TextCompositionStarted += (_, _) => _composing = true;
+        _input.TextCompositionEnded += (_, _) => DispatcherQueue.TryEnqueue(() => _composing = false);
+        _input.KeyDown += (_, args) =>
         {
             bool shift = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
             if (args.Key != VirtualKey.Enter || shift || _composing) return;
-            SendFollowUp(); args.Handled = true;
+            Send(); args.Handled = true;
         };
-        AutomationProperties.SetName(_followUp, "追问内容");
-        composer.Children.Add(new Border { Background = _inputBgBrush, BorderBrush = _controlStrokeBrush,
-            BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12), Padding = new Thickness(4), Child = input });
-        Grid.SetRow(composer, 4); _root.Children.Add(composer);
-        _demoBadge = new Border { Padding = new Thickness(6, 2, 6, 2), CornerRadius = new CornerRadius(4),
-            Background = ThemeBrushes.Resolve(_root, "SystemFillColorCautionBackgroundBrush"),
-            Visibility = demoMode ? Visibility.Visible : Visibility.Collapsed, VerticalAlignment = VerticalAlignment.Center,
-            Child = new TextBlock { Text = "演示", FontSize = 11, Foreground = new SolidColorBrush(Microsoft.UI.Colors.Black) } };
-        ToolTipService.SetToolTip(_demoBadge, "尚未配置 AI 服务，当前显示本地示例。");
     }
 
-    private Button CreateSecondaryButton(string text) => new()
-    { Content = text, MinHeight = 40, Padding = new Thickness(10, 6, 10, 6), CornerRadius = new CornerRadius(8), FontSize = 13 };
-
-    private static TouchIconButton CreateIconButton(string name, Symbol symbol)
+    internal static TouchIconButton IconButton(string name, Symbol symbol)
     {
-        var button = new TouchIconButton { Width = 40, Height = 40, MinWidth = 40, MinHeight = 40, Padding = new Thickness(8),
-            BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(8), Content = new SymbolIcon(symbol) { Symbol = symbol } };
-        AutomationProperties.SetName(button, name); ToolTipService.SetToolTip(button, name);
-        return button;
+        var button = new TouchIconButton { Width = 40, Height = 40, MinWidth = 40, MinHeight = 40,
+            CornerRadius = new CornerRadius(8), Padding = new Thickness(8), BorderThickness = new Thickness(0), Content = new SymbolIcon(symbol) };
+        AutomationProperties.SetName(button, name); ToolTipService.SetToolTip(button, name); return button;
     }
 }

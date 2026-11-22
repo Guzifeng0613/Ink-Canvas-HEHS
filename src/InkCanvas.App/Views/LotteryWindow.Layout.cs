@@ -20,7 +20,7 @@ public sealed partial class LotteryWindow
     private Border _results, _controlCard, _noticeHost;
     private ItemsRepeater _resultView;
     private ScrollViewer _resultScroll;
-    private readonly UniformGridLayout _resultLayout = new()
+    private readonly ResultGridLayout _resultLayout = new()
     {
         Orientation = Orientation.Horizontal, ItemsStretch = UniformGridLayoutItemsStretch.Fill,
         MinColumnSpacing = 12, MinRowSpacing = 12, MinItemWidth = 140, MinItemHeight = 94,
@@ -38,6 +38,17 @@ public sealed partial class LotteryWindow
     private double _measuredWidth;
     private Flyout _options;
     private StackPanel _optionsContent;
+
+    private sealed class ResultGridLayout : UniformGridLayout
+    {
+        protected override Windows.Foundation.Size MeasureOverride(VirtualizingLayoutContext context, Windows.Foundation.Size availableSize)
+        {
+            // WinUI 1.8 can compute zero columns when shrinking below the previous item
+            // width. Keep one item measurable until the deferred size update catches up.
+            availableSize.Width = Math.Max(MinItemWidth, availableSize.Width);
+            return base.MeasureOverride(context, availableSize);
+        }
+    }
 
     private void BuildUi()
     {

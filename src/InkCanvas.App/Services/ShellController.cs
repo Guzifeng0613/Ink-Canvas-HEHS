@@ -80,6 +80,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private SelectionToolbarWindow _selectionToolbar;
     private bool _selectionToolbarCollapsed;
     private BoardWindow _board;
+    private BoardWindow _cachedBoard;
+    private bool _boardSwitching;
     private SettingsWindow _settings;
     private bool _settingsOpening;
     private IntPtr _settingsDrawingSurface;
@@ -127,6 +129,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         Overlay.Window.DisplaySettingsChanged += QueueDisplayRefresh;
         _screens = ScreenService.All();
         _documentAi = new DocumentAiHost(this);
+        RegisterAssistantTools();
         services.StartModules(new ScreenTrackingHost(services, Overlay, () => _board is not null || DocumentActive), new DocumentHost(this), new CanvasToolsHost(this), new AssistantHost(this), new LibraryHost(this), new TimeMachineHost(this), _documentAi);
         _pptStore = new PptInkFileStore(services.Settings.Automation.AutoSavedStrokesLocation);
         services.SettingsApplied += ApplyArchivePaths;
@@ -451,6 +454,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private void OnControllerToolChanged()
     {
         RefreshShortcutRegistration();
+        if (DocumentActive && ActiveController.Tool == InkTool.Pan) OptionPopupCoordinator.DismissUnpinned();
         if (_bar is not null) _bar.Bar.ClickThroughActive = DocumentActive ? ActiveController.Tool == InkTool.Pan : Overlay.ClickThrough;
         _bar?.Bar.RefreshSelection();
         QueueDesktopSelection();
@@ -882,7 +886,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
 
     private PptNavigationWindow CreatePptNavigation(PptNavigationPlacement placement)
     {
-        var window = new PptNavigationWindow(placement, this, Services.Settings.Appearance.Theme, _bar);
+        var window = new PptNavigationWindow(placement, this, Services.Settings.Appearance.Theme, _bar, CreatePptPreviewContext());
         return window;
     }
 
@@ -890,6 +894,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
     {
         foreach (var window in _pptNavigations.Values) window.Close();
         _pptNavigations.Clear();
+        _pptPreviewSource?.Dispose();
+        _pptPreviewSource = null;
     }
 
     private void ApplyAutoFold()
@@ -927,6 +933,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
 
     public void ToggleBoard()
     {
+        if (_boardSwitching) return;
         CloseDetachedPalettes();
         _imageImportCancellation?.Cancel();
         _videoImportCancellation?.Cancel();
@@ -935,18 +942,24 @@ public sealed partial class ShellController : IShellActions, IDisposable
         if (_board is null)
         {
             Services.BoardModeActive = true;
-            Services.ApplySettings();
+            Services.ConfigureController(Services.Board.Current);
             _documentWorkspace?.Window.AppWindow.Hide();
             _palette?.Close(); _shapePicker?.Close();
-            _board = new BoardWindow(Services, this, _bar);
-            NotifyWindowOpened(_board);
+            bool restoring = _cachedBoard is not null;
+            _board = _cachedBoard ?? new BoardWindow(Services, this, _bar);
+            _cachedBoard = null;
+            if (!restoring)
+            {
+                NotifyWindowOpened(_board);
+                var boardWindow = _board;
+                _board.Closed += (_, _) => OnBoardClosed(boardWindow);
+            }
             _board.CanvasInputBegan += OnBoardInputBegan;
             _board.CurrentPageChanged += OnBoardPageChanged;
             BindBoardController(_board.CurrentController);
             BoardOpenChanged?.Invoke();
             BindToolbar(_board.CurrentController);
-            var boardWindow = _board;
-            _board.Closed += (_, _) => OnBoardClosed(boardWindow);
+            _board.RestoreFromAnnotation();
             _board.Activate();
             // The board is opaque and full-screen; the screen overlay would draw over it.
             Overlay.Hide();
@@ -955,8 +968,20 @@ public sealed partial class ShellController : IShellActions, IDisposable
         }
         else
         {
-            _board.Close();
+            _ = ReturnToAnnotationAsync(_board);
         }
+    }
+
+    private async Task ReturnToAnnotationAsync(BoardWindow board)
+    {
+        _boardSwitching = true;
+        try
+        {
+            if (!await board.HideForAnnotationAsync() || !ReferenceEquals(_board, board)) return;
+            _cachedBoard = board;
+            OnBoardClosed(board);
+        }
+        finally { _boardSwitching = false; }
     }
 
     private void OnBoardPageChanged()
@@ -981,10 +1006,11 @@ public sealed partial class ShellController : IShellActions, IDisposable
 
     private void OnBoardClosed(BoardWindow board)
     {
+        if (board.IsClosed && ReferenceEquals(_cachedBoard, board)) _cachedBoard = null;
         if (!ReferenceEquals(_board, board)) return;
         _board = null;
         Services.BoardModeActive = false;
-        Services.ApplySettings();
+        Services.ConfigureController(Services.OverlayInk);
         board.CurrentPageChanged -= OnBoardPageChanged;
         board.CanvasInputBegan -= OnBoardInputBegan;
         BoardOpenChanged?.Invoke();
@@ -1187,7 +1213,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
     {
         if (_lottery is not null) { _lottery.Activate(); return; }
         _lottery = new LotteryWindow(Services.Lottery, autoClose: false, EffectiveTheme, RosterDirectory, OpenRosterSettings);
-        _lottery.Picked += OnLotteryPicked;
         _lottery.OptionsChanged += () =>
         {
             Services.Settings.Rand.PeopleCount = Services.Lottery.PeopleCount;
@@ -1207,16 +1232,9 @@ public sealed partial class ShellController : IShellActions, IDisposable
     public void OpenLotteryQuick()
     {
         var quick = new LotteryWindow(Services.Lottery, autoClose: true, EffectiveTheme, RosterDirectory, OpenRosterSettings);
-        quick.Picked += OnLotteryPicked;
         WindowChrome.ApplyTheme(quick, EffectiveTheme);
         quick.Activate();
         WindowChrome.EnsureAbove(quick);
-    }
-
-    private void OnLotteryPicked(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name)) return;
-        _ = PasteTextCardAsync("抽奖结果", name);
     }
 
     public void OpenRoster()
@@ -2383,6 +2401,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         bool enableMouseMode = !Overlay.ClickThrough;
         if (enableMouseMode)
         {
+            OptionPopupCoordinator.DismissUnpinned();
             SaveBeforeMouseMode();
             bool showInk = _lastSlideShowState
                 ? !Services.Settings.PowerPoint.HideStrokesAfterLeavingAnnotation
@@ -2801,8 +2820,9 @@ public sealed partial class ShellController : IShellActions, IDisposable
     public void PptOpenNavigation()
     {
         if (!_lastSlideShowState) return;
-        if (!Overlay.ClickThrough) ToggleClickThrough();
-        _pptSession.ShowSlideNavigationPane();
+        var window = _pptNavigations.GetValueOrDefault(PptNavigationPlacement.BottomLeft)
+            ?? _pptNavigations.Values.FirstOrDefault();
+        window?.SetPreviewOpen(!window.PreviewOpen);
     }
 
     private void SaveTeachingSession()
@@ -3004,6 +3024,10 @@ public sealed partial class ShellController : IShellActions, IDisposable
     public void Dispose()
     {
         if (_disposed) return; _disposed = true;
+        _pptPreviewSource?.Dispose();
+        _board?.CloseForShutdown();
+        _cachedBoard?.CloseForShutdown();
+        _cachedBoard = null;
         _documentAi?.Dispose();
         _spotlight?.Close();
         _magnifier?.Close();

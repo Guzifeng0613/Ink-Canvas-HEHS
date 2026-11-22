@@ -141,7 +141,7 @@ public sealed class PresetWindow : Window
     {
         ClassroomTool.PptAnnotation => "课件批注",
         ClassroomTool.SlideNavigator => "批注导航",
-        ClassroomTool.AiAssistant => "AI 助教",
+        ClassroomTool.AiAssistant => "AI 助手",
         ClassroomTool.AiStepGuide => "AI 分步引导",
         ClassroomTool.Spotlight => "聚光灯",
         ClassroomTool.Magnifier => "放大镜",

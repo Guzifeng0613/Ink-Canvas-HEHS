@@ -40,6 +40,7 @@ public sealed class AppServices : IDisposable
         Archives = new BoardArchiveService(Board, () => Settings.Archive, Store.Directory);
         ScreenImages = new BoardService(OverlayInk);
         ScreenArchives = new ScreenArchiveService(ScreenImages, () => Settings.Archive, Store.Directory);
+        _cloudSync = new CloudSyncHost(this);
         OverlayInk.GetSelectableElements = ScreenImages.GetSelectionElements;
         ScreenImages.ImagePlacementChanged += OnScreenImagePlacementChanged;
         // 1:1 SetBoardTheme：白板模式决定画板明暗。未验证。
@@ -59,6 +60,9 @@ public sealed class AppServices : IDisposable
 
     public AppSettings Settings { get; private set; }
     public ModuleRuntime Modules { get; } = new();
+    public ModuleSettingsRegistry ModuleSettings { get; } = new();
+    public AssistantToolRegistry AssistantTools { get; } = new();
+    private readonly CloudSyncHost _cloudSync;
     public PluginManager Plugins { get; }
     internal async Task<Action> PrepareInkOpenAsync(string path, BoardService target, bool entireBoard = false)
     {
@@ -94,6 +98,9 @@ public sealed class AppServices : IDisposable
     public void StartModules(IScreenTrackingHost host, IDocumentWorkspaceHost documents = null, ICanvasToolsHost canvasTools = null, IAiAssistantHost assistant = null, IBoardLibraryHost library = null, ITimeMachineHost timeMachine = null, IAiDocumentHost documentAi = null)
     {
         if (_modulesStarted) return; _modulesStarted = true;
+        Modules.AddService<IModuleSettingsRegistry>(ModuleSettings);
+        Modules.AddService<IAssistantToolRegistry>(AssistantTools);
+        Modules.AddService<ICloudSyncHost>(_cloudSync);
         Modules.AddService(host);
         if (documents is not null) Modules.AddService(documents);
         if (canvasTools is not null) Modules.AddService(canvasTools);
@@ -105,7 +112,8 @@ public sealed class AppServices : IDisposable
         Modules.RegisterPackage("inkcanvas.screen-tracking", "屏幕内容跟随", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.screen-tracking"));
         if (documents is not null) Modules.RegisterPackage("inkcanvas.pdf", "PDF 阅读与批注", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.pdf"));
         if (canvasTools is not null) Modules.RegisterPackage("inkcanvas.analytic-geometry", "解析几何", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.analytic-geometry"));
-        if (assistant is not null) Modules.RegisterPackage("inkcanvas.ai-assistant", "AI 助教", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.ai-assistant"));
+        if (assistant is not null) Modules.RegisterPackage("inkcanvas.ai-assistant", "AI 助手", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.ai-assistant"));
+        Modules.RegisterPackage("inkcanvas.cloud-sync", "云同步", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.cloud-sync"));
         if (timeMachine is not null) Modules.RegisterPackage("inkcanvas.time-machine", "板书时光机", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.time-machine"));
         Modules.Start(ExtensionPreferences.DisabledModules);
         Modules.Changed += UpdateModuleStatus;
@@ -245,7 +253,7 @@ public sealed class AppServices : IDisposable
         foreach (var page in Board.Pages) yield return page;
     }
 
-    public void SaveSettings() => Store.Save(Settings);
+    public void SaveSettings() { Store.Save(Settings); _cloudSync?.NotifyPreferencesSaved(); }
 
     public void RememberToolOptions(InkController controller)
     {
@@ -274,6 +282,7 @@ public sealed class AppServices : IDisposable
         Plugins.Dispose();
         Modules.Changed -= UpdateModuleStatus;
         Modules.Dispose();
+        _cloudSync.Dispose();
         ScreenImages.ImagePlacementChanged -= OnScreenImagePlacementChanged;
         OverlayInk.Dispose();
         foreach (var page in Board.Pages) page.Dispose();

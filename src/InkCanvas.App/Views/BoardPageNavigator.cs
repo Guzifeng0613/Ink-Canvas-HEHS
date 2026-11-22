@@ -42,9 +42,10 @@ public sealed class BoardPageThumbnail : INotifyPropertyChanged
 /// <summary>Virtualized, touch-reorderable page list and grid sharing the board's live page identities.</summary>
 internal sealed class BoardPageNavigator : UserControl, IDisposable
 {
+    internal const double SidebarWidth = 292;
     private readonly BoardService _board;
     private readonly Action<int> _navigate;
-    private readonly Action _add, _duplicate, _delete;
+    private readonly Action _add, _duplicate, _delete, _rename;
     private readonly ObservableCollection<BoardPageThumbnail> _items = new();
     private readonly ListView _list = new();
     private readonly GridView _grid = new();
@@ -53,6 +54,7 @@ internal sealed class BoardPageNavigator : UserControl, IDisposable
     private readonly NumberBox _page = new() { Minimum = 1, SmallChange = 1, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Hidden,
         Width = 80, MinHeight = 44, IsWrapEnabled = false };
     private readonly PopupHeader _header;
+    private readonly TouchIconButton _overviewButton, _undoPageButton, _redoPageButton;
     private readonly Dictionary<SelectorItem, BoardPageThumbnail> _containers = new();
     private readonly Dictionary<InkController, Action> _documentHandlers = new();
     private readonly HashSet<ScrollViewer> _scrollHosts = new();
@@ -72,7 +74,7 @@ internal sealed class BoardPageNavigator : UserControl, IDisposable
 
     public BoardPageNavigator(BoardService board, Func<Vector2> canvasSize, Action<int> navigate, Action add, Action duplicate, Action delete, Action rename)
     {
-        _board = board; _canvasSize = canvasSize; _navigate = navigate; _add = add; _duplicate = duplicate; _delete = delete;
+        _board = board; _canvasSize = canvasSize; _navigate = navigate; _add = add; _duplicate = duplicate; _delete = delete; _rename = rename;
         _root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         _root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         _root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
@@ -80,18 +82,20 @@ internal sealed class BoardPageNavigator : UserControl, IDisposable
         _header = new PopupHeader("页面管理", 1, canPin: false);
         _header.CloseRequested += () => CloseRequested?.Invoke();
         _root.Children.Add(_header);
-        var commands = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(6, 0, 6, 6), Children =
+        _overviewButton = Command("总览", Glyphs.Tools, () => SetOverview(!_overview));
+        _undoPageButton = Command("撤销", Glyphs.Undo, () => _board.UndoPage());
+        _redoPageButton = Command("重做", Glyphs.Redo, () => _board.RedoPage());
+        ToolTipService.SetToolTip(_undoPageButton, "撤销页面操作");
+        ToolTipService.SetToolTip(_redoPageButton, "重做页面操作");
+        AutomationProperties.SetName(_undoPageButton, "撤销页面操作");
+        AutomationProperties.SetName(_redoPageButton, "重做页面操作");
+        var commands = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(8, 0, 8, 8), Children =
         {
             Command("加页", Glyphs.Add, _add), Command("复制", "\uF32C", _duplicate),
-            Command("删除", Glyphs.Delete, _delete), Command("总览", "\uF149", () => SetOverview(!_overview)),
+            _overviewButton, _undoPageButton, _redoPageButton,
         } };
-        var renamePage = Command("重命名", "\uF3DD", rename);
-        var undoPage = Command("撤销页面操作", Glyphs.Undo, () => _board.UndoPage());
-        var redoPage = Command("重做页面操作", Glyphs.Redo, () => _board.RedoPage());
-        var naming = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(6, 0, 6, 6),
-            Children = { renamePage, undoPage, redoPage } };
-        var commandRows = new StackPanel { Children = { commands, naming } };
-        Grid.SetRow(commandRows, 1); _root.Children.Add(commandRows);
+        Grid.SetRow(commands, 1); _root.Children.Add(commands);
         ConfigureView(_list, false); ConfigureView(_grid, true);
         Grid.SetRow(_list, 2); Grid.SetRow(_grid, 2);
         _grid.Visibility = Visibility.Collapsed;
@@ -180,7 +184,11 @@ internal sealed class BoardPageNavigator : UserControl, IDisposable
         {
             if (_syncing || _dragging || args.ClickedItem is not BoardPageThumbnail item) return;
             int index = FindPage(item.Controller);
-            if (index >= 0) _navigate(index);
+            if (index >= 0)
+            {
+                _navigate(index);
+                if (_overview) CloseRequested?.Invoke();
+            }
         };
         view.SelectionChanged += (_, _) =>
         {
@@ -192,7 +200,13 @@ internal sealed class BoardPageNavigator : UserControl, IDisposable
         {
             if (args.Item is not BoardPageThumbnail item) return;
             if (args.InRecycleQueue) _containers.Remove(args.ItemContainer);
-            else { _containers[args.ItemContainer] = item; item.LastUsed = ++_clock; Schedule(); }
+            else
+            {
+                _containers[args.ItemContainer] = item;
+                args.ItemContainer.ContextFlyout ??= CreatePageMenu(args.ItemContainer);
+                item.LastUsed = ++_clock;
+                Schedule();
+            }
         };
         view.DragItemsStarting += (_, args) =>
         {
@@ -205,6 +219,30 @@ internal sealed class BoardPageNavigator : UserControl, IDisposable
             CompleteReorder(_open && args.DropResult == Windows.ApplicationModel.DataTransfer.DataPackageOperation.Move
                 ? args.Items.FirstOrDefault() as BoardPageThumbnail : null);
         };
+    }
+
+    private MenuFlyout CreatePageMenu(SelectorItem container)
+    {
+        var menu = new MenuFlyout();
+        Add("重命名", _rename);
+        Add("复制页面", _duplicate);
+        menu.Items.Add(new MenuFlyoutSeparator());
+        Add("删除", _delete);
+        return menu;
+
+        void Add(string text, Action action)
+        {
+            var command = new MenuFlyoutItem { Text = text };
+            command.Click += (_, _) =>
+            {
+                if (_board.Current.HasActiveInteraction || !_containers.TryGetValue(container, out var item)) return;
+                int index = FindPage(item.Controller);
+                if (index < 0) return;
+                _navigate(index);
+                if (ReferenceEquals(_board.Current, item.Controller)) action();
+            };
+            menu.Items.Add(command);
+        }
     }
 
     internal bool CompleteReorder(BoardPageThumbnail item)
@@ -243,7 +281,11 @@ internal sealed class BoardPageNavigator : UserControl, IDisposable
         _overview = overview; _generation++;
         _list.Visibility = overview ? Visibility.Collapsed : Visibility.Visible;
         _grid.Visibility = overview ? Visibility.Visible : Visibility.Collapsed;
-        _buttons[3].IsSelected = overview;
+        _overviewButton.IsSelected = overview;
+        _overviewButton.Label = overview ? "返回列表" : "总览";
+        _overviewButton.Glyph = overview ? Glyphs.SlideList : Glyphs.Tools;
+        AutomationProperties.SetName(_overviewButton, _overviewButton.Label);
+        ToolTipService.SetToolTip(_overviewButton, _overviewButton.Label);
         ViewModeChanged?.Invoke(overview);
         if (_open) { Synchronize(); Schedule(); }
     }
@@ -289,9 +331,9 @@ internal sealed class BoardPageNavigator : UserControl, IDisposable
             _list.SelectedItem = _grid.SelectedItem = _items.FirstOrDefault(item => ReferenceEquals(item.Controller, _board.Current));
             _count.Text = $"共 {_board.PageCount} 页";
             _page.Maximum = _board.PageCount; _page.Value = _board.CurrentIndex + 1;
-            _buttons[0].IsEnabled = _buttons[1].IsEnabled = _board.CanAddPages();
-            _buttons[5].IsEnabled = _board.CanUndoPage;
-            _buttons[6].IsEnabled = _board.CanRedoPage;
+            foreach (var button in _buttons.Where(button => button.Label is "加页" or "复制")) button.IsEnabled = _board.CanAddPages();
+            _undoPageButton.IsEnabled = _board.CanUndoPage;
+            _redoPageButton.IsEnabled = _board.CanRedoPage;
             if (ActiveView.SelectedItem is not null) ActiveView.ScrollIntoView(ActiveView.SelectedItem);
         }
         finally { _syncing = false; }
@@ -322,7 +364,7 @@ internal sealed class BoardPageNavigator : UserControl, IDisposable
     public void ApplyTheme(int theme)
     {
         RequestedTheme = theme == 2 ? ElementTheme.Dark : ElementTheme.Light;
-        _root.Background = PopupBrushes.WindowSurface(theme);
+        _root.Background = null;
         _header.ApplyTheme(theme); _count.Foreground = PopupBrushes.Foreground(theme);
         foreach (var button in _buttons)
         {

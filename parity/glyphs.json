@@ -27,10 +27,10 @@
     },
     {
       "name": "Select",
-      "codepoint": "U+F7A4",
-      "char": "",
+      "codepoint": "U+F6A1",
+      "char": "",
       "target": "sys.symbol.square_dashed",
-      "fluentName": "square_multiple",
+      "fluentName": "select_object",
       "segoeCodepoint": "U+E8B3"
     },
     {
@@ -114,10 +114,10 @@
     },
     {
       "name": "Board",
-      "codepoint": "U+F1E3",
-      "char": "",
+      "codepoint": "U+F8C3",
+      "char": "",
       "target": "sys.symbol.square_and_pencil",
-      "fluentName": "board",
+      "fluentName": "whiteboard",
       "segoeCodepoint": "U+E7F4"
     },
     {
@@ -372,10 +372,10 @@
     },
     {
       "name": "SelectWpf",
-      "codepoint": "U+F7A4",
-      "char": "",
+      "codepoint": "U+F6A1",
+      "char": "",
       "target": "sys.symbol.square_dashed",
-      "fluentName": "square_multiple",
+      "fluentName": "select_object",
       "segoeCodepoint": "U+E958"
     },
     {
@@ -404,10 +404,10 @@
     },
     {
       "name": "BoardWpf",
-      "codepoint": "U+F1E3",
-      "char": "",
+      "codepoint": "U+F8C3",
+      "char": "",
       "target": "sys.symbol.square_and_pencil",
-      "fluentName": "board",
+      "fluentName": "whiteboard",
       "segoeCodepoint": "U+E929"
     },
     {

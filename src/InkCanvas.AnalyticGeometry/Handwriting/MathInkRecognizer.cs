@@ -5,12 +5,25 @@ namespace InkCanvas.AnalyticGeometry.Handwriting;
 
 /// <summary>
 /// Built-in 2D mathematical handwriting recognition engine (similar to Windows Math Input Panel).
-/// Groups multi-stroke symbols, classifies them offline, parses 2D spatial structures
-/// (fractions, radicals, superscripts, subscripts), and outputs expression + MathML 3.0.
+/// Groups multi-stroke symbols and English letters, classifies them offline, resolves letter/function
+/// context (sin, cos, tan, log, ln, GeoGebra commands, case &amp; digit disambiguation), parses 2D
+/// spatial structures (fractions, radicals, superscripts, subscripts), and outputs expression + MathML 3.0.
 /// </summary>
 public static class MathInkRecognizer
 {
-    private static readonly string[] KnownFunctions = { "sin", "cos", "tan", "asin", "acos", "atan", "ln", "log", "abs", "lim", "exp" };
+    private static readonly string[] KnownFunctions =
+    {
+        "sin", "cos", "tan", "asin", "acos", "atan", "sinh", "cosh", "tanh",
+        "ln", "log", "abs", "exp", "lim", "sqrt", "pi",
+    };
+
+    private static readonly string[] KnownCommands =
+    {
+        "Point", "Line", "Segment", "Circle", "Polygon", "Midpoint", "Vector",
+        "Solve", "Factor", "Expand", "Simplify", "Integral", "Derivative", "Limit",
+    };
+
+    private static readonly HashSet<char> BicameralLookAlikes = new("copsxzuvwCOPSXZUVW");
 
     public static MathInkRecognitionResult Recognize(
         IReadOnlyList<MathInkStroke> strokes,
@@ -48,6 +61,9 @@ public static class MathInkRecognizer
             recognized.Add(new RecognizedSymbol(best, confidence, bounds, ids, alternatives));
         }
 
+        // Context-aware English letter & function disambiguation using top-K alternatives and relative height.
+        recognized = ResolveLetterContext(recognized, symbolOverrides);
+
         string primary = ParseSpatial(recognized);
         var candidates = new List<string>();
         if (!string.IsNullOrWhiteSpace(primary)) candidates.Add(primary);
@@ -81,6 +97,136 @@ public static class MathInkRecognizer
         return new MathInkRecognitionResult(primary, mathMl, recognized, candidates);
     }
 
+    private static List<RecognizedSymbol> ResolveLetterContext(
+        List<RecognizedSymbol> symbols,
+        IReadOnlyDictionary<int, string> overrides)
+    {
+        if (symbols.Count == 0) return symbols;
+        var ordered = symbols.OrderBy(s => s.Bounds.Left).ToList();
+        var locked = new HashSet<int>();
+        if (overrides is not null)
+        {
+            for (int i = 0; i < ordered.Count; i++)
+                if (ordered[i].StrokeIds.Any(overrides.ContainsKey)) locked.Add(i);
+        }
+
+        double medianHeight = Median(ordered
+            .Where(s => s.Symbol is not ("-" or "=" or "." or "," or "·"))
+            .Select(s => s.Bounds.Height)
+            .DefaultIfEmpty(36));
+
+        // 1. Disambiguate bicameral letters (C/c, O/o, S/s, P/p, U/u, V/v, W/w, X/x, Z/z) using relative size & context.
+        for (int i = 0; i < ordered.Count; i++)
+        {
+            if (locked.Contains(i)) continue;
+            var sym = ordered[i];
+            if (sym.Symbol.Length != 1) continue;
+            char ch = sym.Symbol[0];
+            bool followedByPointDef = i + 2 < ordered.Count && ordered[i + 1].Symbol == "=" && ordered[i + 2].Symbol == "(";
+            bool followedByFuncCall = i + 1 < ordered.Count && ordered[i + 1].Symbol == "(";
+
+            if (followedByPointDef && char.IsLetter(ch))
+            {
+                string upper = char.ToUpperInvariant(ch).ToString();
+                if (sym.Alternatives.Contains(upper) || BicameralLookAlikes.Contains(ch))
+                    ordered[i] = sym with { Symbol = upper };
+            }
+            else if (followedByFuncCall && char.IsLetter(ch) && i == 0 && sym.Bounds.Height <= medianHeight * 1.25)
+            {
+                string lower = char.ToLowerInvariant(ch).ToString();
+                if (sym.Alternatives.Contains(lower))
+                    ordered[i] = sym with { Symbol = lower };
+            }
+            else if (BicameralLookAlikes.Contains(ch) && ordered.Count >= 2)
+            {
+                bool clearlyTall = sym.Bounds.Height > medianHeight * 1.28;
+                string preferred = clearlyTall ? char.ToUpperInvariant(ch).ToString() : char.ToLowerInvariant(ch).ToString();
+                if (sym.Alternatives.Contains(preferred) && sym.Symbol != preferred)
+                    ordered[i] = sym with { Symbol = preferred };
+            }
+        }
+
+        // 2. Match multi-letter math functions and GeoGebra commands using each symbol's top-K alternatives.
+        var vocabulary = KnownFunctions.Concat(KnownCommands).OrderByDescending(w => w.Length).ToArray();
+        for (int i = 0; i < ordered.Count; i++)
+        {
+            foreach (string word in vocabulary)
+            {
+                if (i + word.Length > ordered.Count) continue;
+                bool aligned = true;
+                for (int k = 0; k < word.Length; k++)
+                {
+                    var current = ordered[i + k];
+                    if (k > 0)
+                    {
+                        var prev = ordered[i + k - 1];
+                        double gap = current.Bounds.Left - prev.Bounds.Right;
+                        double dy = Math.Abs(current.Bounds.CenterY - prev.Bounds.CenterY);
+                        if (gap > Math.Max(medianHeight * 1.35, 52) || dy > Math.Max(medianHeight * 0.75, 28))
+                        { aligned = false; break; }
+                    }
+                    if (!CanMatchLetter(current, word[k], locked.Contains(i + k)))
+                    { aligned = false; break; }
+                }
+                if (!aligned) continue;
+
+                // Promote the matched word letters so downstream spatial parser cleanly recognizes the function/command.
+                for (int k = 0; k < word.Length; k++)
+                {
+                    if (locked.Contains(i + k)) continue;
+                    string letter = word[k].ToString();
+                    var alts = ordered[i + k].Alternatives.ToList();
+                    if (!alts.Contains(letter)) alts.Insert(0, letter);
+                    ordered[i + k] = ordered[i + k] with { Symbol = letter, Confidence = Math.Max(ordered[i + k].Confidence, 0.90), Alternatives = alts };
+                }
+                i += word.Length - 1;
+                break;
+            }
+        }
+
+        // 3. Local digit vs letter disambiguation ('0' vs 'o'/'O', '1' vs 'l'/'I').
+        for (int i = 0; i < ordered.Count; i++)
+        {
+            if (locked.Contains(i)) continue;
+            var sym = ordered[i];
+            bool prevDigit = i > 0 && ordered[i - 1].Symbol.Length == 1 && char.IsAsciiDigit(ordered[i - 1].Symbol[0]);
+            bool nextDigit = i + 1 < ordered.Count && ordered[i + 1].Symbol.Length == 1 && char.IsAsciiDigit(ordered[i + 1].Symbol[0]);
+            bool nextDot = i + 1 < ordered.Count && ordered[i + 1].Symbol == ".";
+            bool prevDot = i > 0 && ordered[i - 1].Symbol == ".";
+            if (prevDigit || nextDigit || prevDot || nextDot)
+            {
+                if (sym.Symbol is "o" or "O" && sym.Alternatives.Contains("0"))
+                    ordered[i] = sym with { Symbol = "0" };
+                else if (sym.Symbol is "l" or "I" && sym.Alternatives.Contains("1"))
+                    ordered[i] = sym with { Symbol = "1" };
+            }
+        }
+
+        return ordered;
+    }
+
+    private static bool CanMatchLetter(RecognizedSymbol sym, char expected, bool isLocked)
+    {
+        if (sym.Symbol.Length == 1 && char.ToLowerInvariant(sym.Symbol[0]) == char.ToLowerInvariant(expected)) return true;
+        if (isLocked) return false;
+        char lower = char.ToLowerInvariant(expected);
+        foreach (string alt in sym.Alternatives)
+        {
+            if (alt.Length == 1 && char.ToLowerInvariant(alt[0]) == lower) return true;
+        }
+        // Common handwritten confusions inside known function words (e.g. '0' for 'o', '1' for 'l'/'i', '5' for 's', '2' for 'z').
+        return (lower, sym.Symbol) switch
+        {
+            ('o', "0") => true,
+            ('l', "1") or ('l', "I") or ('l', "|") => true,
+            ('i', "1") or ('i', "l") => true,
+            ('s', "5") => true,
+            ('z', "2") => true,
+            ('g', "9") => true,
+            _ => false,
+        };
+    }
+
     private static List<List<MathInkStroke>> GroupStrokes(IReadOnlyList<MathInkStroke> strokes)
     {
         int n = strokes.Count;
@@ -90,6 +236,7 @@ public static class MathInkRecognizer
 
         double medianHeight = Median(strokes.Where(s => !s.IsDot && !s.IsHorizontalLine).Select(s => s.Bounds.Height).DefaultIfEmpty(36));
         double medianWidth = Median(strokes.Where(s => !s.IsDot && !s.IsHorizontalLine).Select(s => s.Bounds.Width).DefaultIfEmpty(26));
+        double touchTolerance = Math.Clamp(medianWidth * 0.22, 6, 12);
 
         // Detect candidate long fraction bars first so they are NOT merged with numerator/denominator strokes.
         var fractionBars = new HashSet<int>();
@@ -118,16 +265,22 @@ public static class MathInkRecognizer
                 var a = strokes[i];
                 var b = strokes[j];
 
-                // 1. Direct intersection (e.g., +, x, t, 4, f, ≠).
-                if (MathInkStroke.SegmentsIntersect(a, b, 7))
+                // 1. Direct intersection or near-touching strokes forming multi-stroke letters (A, B, D, E, F, H, K, P, R, T, X, Y, a, b, d, f, k, p, q, t, x, y).
+                if (MathInkStroke.SegmentsIntersect(a, b, touchTolerance))
                 {
-                    // Avoid merging a radical √ with its radicand if they barely touch at the roof.
                     if (LooksLikeRadicalTouchingContent(a, b) || LooksLikeRadicalTouchingContent(b, a)) continue;
-                    Union(i, j);
-                    continue;
+                    // Only merge near-touching (non-crossing) strokes if their X-spans overlap meaningfully or one is a bar/stem.
+                    double overlapX = Math.Min(a.Bounds.Right, b.Bounds.Right) - Math.Max(a.Bounds.Left, b.Bounds.Left);
+                    double minW = Math.Max(1, Math.Min(a.Bounds.Width, b.Bounds.Width));
+                    bool trueCross = MathInkStroke.SegmentsIntersect(a, b, 3.5);
+                    if (trueCross || overlapX >= minW * 0.25 || a.IsHorizontalLine || b.IsHorizontalLine || a.IsVerticalLine || b.IsVerticalLine)
+                    {
+                        Union(i, j);
+                        continue;
+                    }
                 }
 
-                // 2. Parallel horizontal bars forming '='.
+                // 2. Parallel horizontal bars forming '=' (or top/bottom serifs / E / F).
                 if (a.IsHorizontalLine && b.IsHorizontalLine)
                 {
                     double overlapX = Math.Min(a.Bounds.Right, b.Bounds.Right) - Math.Max(a.Bounds.Left, b.Bounds.Left);
@@ -140,13 +293,14 @@ public static class MathInkRecognizer
                     }
                 }
 
-                // 3. Dot above vertical stem ('i') or dots above/below a short horizontal bar ('÷').
+                // 3. Dot above stem ('i', 'j') or dots above/below a short horizontal bar ('÷').
                 if (a.IsDot ^ b.IsDot)
                 {
                     var dot = a.IsDot ? a : b;
                     var stem = a.IsDot ? b : a;
-                    if (stem.IsVerticalLine && dot.Bounds.CenterX >= stem.Bounds.Left - 12 && dot.Bounds.CenterX <= stem.Bounds.Right + 12
-                        && dot.Bounds.Bottom <= stem.Bounds.Top + 6 && stem.Bounds.Top - dot.Bounds.Bottom <= Math.Max(22, stem.Bounds.Height * 0.6))
+                    if (!stem.IsHorizontalLine && stem.Bounds.Height >= 14
+                        && dot.Bounds.CenterX >= stem.Bounds.Left - 14 && dot.Bounds.CenterX <= stem.Bounds.Right + 14
+                        && dot.Bounds.Bottom <= stem.Bounds.Top + 8 && stem.Bounds.Top - dot.Bounds.Bottom <= Math.Max(24, stem.Bounds.Height * 0.65))
                     {
                         Union(i, j);
                         continue;
@@ -159,7 +313,7 @@ public static class MathInkRecognizer
                     }
                 }
 
-                // 4. 'π' top bar with two vertical legs underneath.
+                // 4. 'π' / 'T' top bar with vertical leg(s) underneath.
                 if (a.IsHorizontalLine ^ b.IsHorizontalLine)
                 {
                     var bar = a.IsHorizontalLine ? a : b;
@@ -199,7 +353,7 @@ public static class MathInkRecognizer
         var tokens = new List<(InkBounds Bounds, string Text, bool IsOperator, bool IsAtom)>();
 
         double typicalHeight = Median(remaining
-            .Where(s => s.Symbol is not ("-" or "=" or "." or "·"))
+            .Where(s => s.Symbol is not ("-" or "=" or "." or "," or "·"))
             .Select(s => s.Bounds.Height)
             .DefaultIfEmpty(36));
 
@@ -257,11 +411,10 @@ public static class MathInkRecognizer
             }
         }
 
-        // Add remaining symbols as tokens.
         foreach (var sym in remaining)
         {
             string mapped = NormalizeSymbol(sym.Symbol);
-            bool isOp = mapped is "+" or "-" or "*" or "/" or "=" or "<" or ">" or "<=" or ">=" or "!=" or "(" or ")" or "[" or "]";
+            bool isOp = mapped is "+" or "-" or "*" or "/" or "=" or "," or "<" or ">" or "<=" or ">=" or "!=" or "(" or ")" or "[" or "]";
             tokens.Add((sym.Bounds, mapped, isOp, !isOp || mapped == ")"));
         }
 
@@ -277,7 +430,6 @@ public static class MathInkRecognizer
 
             if (current.IsAtom && !current.IsOperator && idx < tokens.Count)
             {
-                // Check for superscript tokens to the upper-right of current base.
                 var supTokens = new List<RecognizedSymbol>();
                 var subTokens = new List<RecognizedSymbol>();
                 double baseTop = current.Bounds.Top;
@@ -334,7 +486,6 @@ public static class MathInkRecognizer
             }
         }
 
-        // Step 4: Join tokens, recognize function names (sin, cos, tan, ln, log), and insert implicit multiplication.
         return AssembleExpression(output);
     }
 
@@ -344,19 +495,26 @@ public static class MathInkRecognizer
         var sb = new StringBuilder();
         for (int i = 0; i < tokens.Count; i++)
         {
-            // Try matching multi-letter function names like s-i-n, c-o-s, t-a-n, l-n, l-o-g.
-            string matchedFunc = TryMatchFunction(tokens, i, out int consumed);
+            string matchedFunc = TryMatchWord(tokens, i, KnownFunctions, out int consumed);
             if (matchedFunc is not null)
             {
                 if (sb.Length > 0 && NeedsImplicitMultiply(sb[^1], matchedFunc[0])) sb.Append('*');
                 sb.Append(matchedFunc);
                 i += consumed - 1;
-                if (i + 1 < tokens.Count && tokens[i + 1].Text != "(")
+                if (matchedFunc != "pi" && i + 1 < tokens.Count && tokens[i + 1].Text != "(")
                 {
                     sb.Append('(');
                     sb.Append(tokens[++i].Text);
                     sb.Append(')');
                 }
+                continue;
+            }
+
+            string matchedCmd = TryMatchWord(tokens, i, KnownCommands, out int cmdConsumed);
+            if (matchedCmd is not null)
+            {
+                sb.Append(matchedCmd);
+                i += cmdConsumed - 1;
                 continue;
             }
 
@@ -368,19 +526,19 @@ public static class MathInkRecognizer
         return sb.ToString();
     }
 
-    private static string TryMatchFunction(List<(string Text, bool IsOperator, bool IsAtom)> tokens, int start, out int consumed)
+    private static string TryMatchWord(List<(string Text, bool IsOperator, bool IsAtom)> tokens, int start, string[] words, out int consumed)
     {
         consumed = 0;
-        foreach (string fn in KnownFunctions)
+        foreach (string word in words)
         {
-            if (start + fn.Length > tokens.Count) continue;
+            if (start + word.Length > tokens.Count) continue;
             bool match = true;
-            for (int k = 0; k < fn.Length; k++)
+            for (int k = 0; k < word.Length; k++)
             {
-                if (tokens[start + k].Text.Length != 1 || char.ToLowerInvariant(tokens[start + k].Text[0]) != fn[k])
+                if (tokens[start + k].Text.Length != 1 || char.ToLowerInvariant(tokens[start + k].Text[0]) != char.ToLowerInvariant(word[k]))
                 { match = false; break; }
             }
-            if (match) { consumed = fn.Length; return fn; }
+            if (match) { consumed = word.Length; return word; }
         }
         return null;
     }

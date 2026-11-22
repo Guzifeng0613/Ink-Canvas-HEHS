@@ -279,6 +279,17 @@ internal sealed class BoardMediaLayer : Canvas, IDisposable
         foreach (var entry in entries) DisposeEntry(entry);
     }
 
+    public void PausePlayers()
+    {
+        foreach (var entry in _entries.Values) entry.Player.Pause();
+    }
+
+    public void ReleasePlayers()
+    {
+        ClearEntries();
+        _posters.Clear();
+    }
+
     internal static bool IsPlaybackControl(DependencyObject source)
     {
         bool control = false;

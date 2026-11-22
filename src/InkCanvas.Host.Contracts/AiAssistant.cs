@@ -21,6 +21,7 @@ public interface IAiAssistantHost
     ScreenRect OverlayBounds { get; }
     AssistantSource Source { get; }
     bool IsClassroomPresentation { get; }
+    IAssistantToolRegistry Tools => null;
     SlideContext GetSlideContext(int slideId, int slideIndex);
     void ConfigureWindow(Window window);
     void SaveSettings();

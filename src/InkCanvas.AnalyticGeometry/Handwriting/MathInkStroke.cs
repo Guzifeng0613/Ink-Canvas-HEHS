@@ -41,7 +41,20 @@ public sealed class MathInkStroke
     public bool IsHorizontalLine => !IsDot && Bounds.Width >= 14 && Bounds.Height <= Math.Max(14, Bounds.Width * 0.28)
         && Math.Abs(End.X - Start.X) >= Bounds.Width * 0.65;
     public bool IsVerticalLine => !IsDot && Bounds.Height >= 16 && Bounds.Width <= Math.Max(14, Bounds.Height * 0.32)
-        && Math.Abs(End.Y - Start.Y) >= Bounds.Height * 0.65;
+        && Math.Abs(End.Y - Start.Y) >= Bounds.Height * 0.65 && !HasHorizontalBow();
+
+    private bool HasHorizontalBow()
+    {
+        if (Points.Count < 3 || Bounds.Width < 5) return false;
+        double chordMidX = (Start.X + End.X) * 0.5;
+        double maxDev = 0;
+        for (int i = 1; i < Points.Count - 1; i++)
+        {
+            double dev = Math.Abs(Points[i].X - chordMidX);
+            if (dev > maxDev) maxDev = dev;
+        }
+        return maxDev >= Bounds.Width * 0.42;
+    }
 
     public MathInkStroke(int id, IReadOnlyList<InkSample> points)
     {

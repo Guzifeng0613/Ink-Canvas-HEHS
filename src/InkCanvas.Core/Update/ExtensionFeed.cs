@@ -15,6 +15,7 @@ public static partial class ExtensionFeed
         new Dictionary<string, (string, string, RepositoryExtensionKind)>(StringComparer.Ordinal)
         {
             ["inkcanvas.ai-assistant"] = ("AI 助教", "选区识别、分步讲解与画布联动", RepositoryExtensionKind.Module),
+            ["inkcanvas.cloud-sync"] = ("云同步", "账号登录、白板云端备份和个人偏好同步", RepositoryExtensionKind.Module),
             ["inkcanvas.pdf"] = ("PDF 阅读与批注", "原生 PDF 阅读、搜索与墨迹保存", RepositoryExtensionKind.Module),
             ["inkcanvas.analytic-geometry"] = ("解析几何", "代数计算与二维、三维几何作图", RepositoryExtensionKind.Module),
             ["inkcanvas.library"] = ("文稿库", "文件夹导航、预览与白板文稿管理", RepositoryExtensionKind.Module),

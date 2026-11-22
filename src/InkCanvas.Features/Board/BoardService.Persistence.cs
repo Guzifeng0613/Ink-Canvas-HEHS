@@ -8,7 +8,7 @@ namespace InkCanvas.Features.Board;
 
 public sealed partial class BoardService
 {
-    private sealed record BoardSnapshot(List<PreparedPage> Pages, BoardArchiveMetadata Metadata);
+    private sealed record BoardSnapshot(List<PreparedPage> Pages, BoardArchiveMetadata Metadata, Dictionary<string, byte[]> Extensions);
     private sealed record BoardBlobReference(int Page, int Index, string Kind, string Entry, long Length);
     private static readonly JsonSerializerOptions PackageJsonOptions = CreatePackageJsonOptions();
     private static readonly SemaphoreSlim PackageCommitGate = new(1, 1);
@@ -61,12 +61,17 @@ public sealed partial class BoardService
         }
     }
 
-    private BoardSnapshot CaptureSnapshot(IEnumerable<int> indices, BoardArchiveMetadata metadata) => new(
+    private BoardSnapshot CaptureSnapshot(IEnumerable<int> indices, BoardArchiveMetadata metadata)
+    {
+        FlushExtensions();
+        return new(
         indices.Select(index => new PreparedPage(
             _pages[index].Document.Strokes.Select(stroke => stroke.Clone()).ToList(),
             _images[index].Select(image => image.Copy(copyData: false)).ToList(),
             _media[index].Select(media => media.Copy(copyData: false)).ToList(), _papers[_pages[index]], _pages[index].ViewTransform)
-            { Viewport = new[] { _pages[index].ViewCenter.X * 2, _pages[index].ViewCenter.Y * 2 } }).ToList(), metadata ?? ArchiveMetadata);
+            { Viewport = new[] { _pages[index].ViewCenter.X * 2, _pages[index].ViewCenter.Y * 2 } }).ToList(), metadata ?? ArchiveMetadata,
+        new Dictionary<string, byte[]>(_extensions, StringComparer.Ordinal));
+    }
 
     private static Task SaveSnapshotAsync(string path, BoardSnapshot snapshot, bool overwrite, CancellationToken cancellationToken) => Task.Run(async () =>
     {
@@ -122,6 +127,12 @@ public sealed partial class BoardService
                             await WriteBlob(pageIndex, index, "video", page.Media[index].Data);
                             await WriteBlob(pageIndex, index, "poster", page.Media[index].PosterData);
                         }
+                    }
+                    foreach (var extension in snapshot.Extensions)
+                    {
+                        var entry = archive.CreateEntry("extensions/" + extension.Key + ".bin", CompressionLevel.Optimal);
+                        await using var content = entry.Open();
+                        await content.WriteAsync(extension.Value, cancellationToken).ConfigureAwait(false);
                     }
                     var manifest = archive.CreateEntry("board.json", CompressionLevel.Fastest);
                     await using (var metadata = manifest.Open())
@@ -187,12 +198,13 @@ public sealed partial class BoardService
             return (Action)(() =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (entireBoard) { ApplyBoard(prepared); ArchiveMetadata = model.Archive; }
+                if (entireBoard) { ApplyBoard(prepared); ArchiveMetadata = model.Archive; ReplaceExtensions(model.Extensions); }
                 else
                 {
                     int index = _pages.IndexOf(target);
                     if (index < 0) throw new InvalidOperationException("目标画板页面已关闭。");
                     ReplacePage(index, prepared[0]);
+                    ReplaceExtensions(model.Extensions);
                     PageChanged?.Invoke(); ImagesChanged?.Invoke();
                 }
             });
@@ -224,7 +236,7 @@ public sealed partial class BoardService
             return (Action)(() =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (entireBoard) ApplyBoard(new[] { page });
+                if (entireBoard) { ApplyBoard(new[] { page }); ReplaceExtensions(model.Extensions); }
                 else
                 {
                     int index = _pages.IndexOf(target);
@@ -287,6 +299,18 @@ public sealed partial class BoardService
         long previewBytes = 0;
         var loaded = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         if (entries.TryGetValue("archive.json", out var archiveInfo)) model.Archive = await ReadArchiveInfoAsync(archiveInfo, cancellationToken).ConfigureAwait(false);
+        if (!previewPage.HasValue && !visualMetadataOnly)
+            foreach (var entry in archive.Entries.Where(entry => entry.FullName.StartsWith("extensions/", StringComparison.Ordinal)
+                && entry.FullName.EndsWith(".bin", StringComparison.Ordinal)))
+            {
+                string id = entry.FullName[11..^4];
+                if (id.Length == 0 || id.Any(character => !char.IsAsciiLetterOrDigit(character) && character is not ('.' or '-'))
+                    || entry.Length > Array.MaxLength) continue;
+                var data = new byte[checked((int)entry.Length)];
+                await using var content = entry.Open();
+                await content.ReadExactlyAsync(data, cancellationToken).ConfigureAwait(false);
+                model.Extensions[id] = data;
+            }
         var assigned = new HashSet<(int Page, int Index, string Kind)>();
         foreach (var reference in model.Blobs ?? new())
         {

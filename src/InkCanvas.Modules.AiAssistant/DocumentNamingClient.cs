@@ -32,7 +32,7 @@ public sealed class DocumentNamingClient
     {
         if (string.IsNullOrWhiteSpace(settings.Endpoint) && _connections?.Active is { } connection)
         {
-            if (!connection.SendImages) throw new InvalidOperationException("存档命名需要在 AI 助教连接中启用截图输入，并选择支持图片的模型。");
+            if (!connection.SendImages) throw new InvalidOperationException("存档命名需要在 AI 助手连接中启用截图输入，并选择支持图片的模型。");
             var encoded = new List<string>();
             foreach (var image in images) encoded.Add(Convert.ToBase64String(await File.ReadAllBytesAsync(image.Path, token)));
             using var client = new AiProviderClient();

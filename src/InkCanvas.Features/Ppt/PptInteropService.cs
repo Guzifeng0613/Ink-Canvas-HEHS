@@ -313,6 +313,74 @@ public sealed class PptInteropService : IDisposable
     public bool ShowSlideNavigationPane()
         => InvokeShow("Show slide navigation pane", view => view.SlideNavigation.Visible = true, activateWindow: true);
 
+    /// <summary>Export a slide without changing the current editing or slideshow page.</summary>
+    public bool ExportSlidePreview(PptPresentationInfo requested, int slideId, string path, int maximumDimension = 512)
+    {
+        VerifyThread();
+        if (_app is null || slideId <= 0 || requested is null) return false;
+        using var scope = new ComScope();
+        try
+        {
+            Poll();
+            if (!MatchesPresentation(requested, _snapshot.Presentation)) return false;
+            dynamic app = _app;
+            object p = _snapshot.IsSlideShowRunning ? GetShowPresentation(scope, app) : GetActivePresentation(scope, app);
+            if (p is null) return false;
+            dynamic slides = scope.Own((object)((dynamic)p).Slides);
+            dynamic slide = scope.Own((object)slides.FindBySlideID(slideId));
+            double width = Math.Max(1, requested.SlideWidth), height = Math.Max(1, requested.SlideHeight);
+            double scale = Math.Clamp(maximumDimension, 64, 1024) / Math.Max(width, height);
+            slide.Export(Path.GetFullPath(path), "PNG", Math.Max(1, (int)Math.Round(width * scale)), Math.Max(1, (int)Math.Round(height * scale)));
+            return File.Exists(path);
+        }
+        catch (Exception ex) { Fail("Export slide preview", ex.Message, Marshal.GetHRForException(ex)); return false; }
+    }
+
+    public IReadOnlyList<PptSlideInfo> GetPreviewSlides(PptPresentationInfo requested, CancellationToken token)
+    {
+        VerifyThread();
+        Poll();
+        if (_app is null || !MatchesPresentation(requested, _snapshot.Presentation))
+            throw new InvalidOperationException("当前课件已切换，请重新打开预览。");
+        using var scope = new ComScope();
+        dynamic app = _app;
+        object p = _snapshot.IsSlideShowRunning ? GetShowPresentation(scope, app) : GetActivePresentation(scope, app);
+        if (p is null) throw new InvalidOperationException("尚未连接到当前课件。");
+        dynamic slides = scope.Own((object)((dynamic)p).Slides);
+        int count = (int)slides.Count;
+        var result = new List<PptSlideInfo>(count);
+        for (int index = 1; index <= count; index++)
+        {
+            token.ThrowIfCancellationRequested();
+            using var itemScope = new ComScope();
+            dynamic slide = itemScope.Own((object)slides[index]);
+            result.Add(new((int)slide.SlideID, index, "", null, null, null));
+        }
+        return result;
+    }
+
+    public bool GoToSlideId(int slideId)
+    {
+        VerifyThread();
+        if (_app is null || slideId <= 0) return false;
+        using var scope = new ComScope();
+        try
+        {
+            dynamic app = _app;
+            object p = _snapshot.IsSlideShowRunning ? GetShowPresentation(scope, app) : GetActivePresentation(scope, app);
+            if (p is null) return false;
+            dynamic slides = scope.Own((object)((dynamic)p).Slides);
+            dynamic slide = scope.Own((object)slides.FindBySlideID(slideId));
+            return GoToSlide((int)slide.SlideIndex);
+        }
+        catch (Exception ex) { Fail("Go to slide ID", ex.Message, Marshal.GetHRForException(ex)); return false; }
+    }
+
+    internal static bool MatchesPresentation(PptPresentationInfo requested, PptPresentationInfo current) => requested is not null && current is not null
+        && string.Equals(requested.ApplicationProgId, current.ApplicationProgId, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(requested.FullName, current.FullName, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(requested.Name, current.Name, StringComparison.Ordinal);
+
     /// <summary>Navigate by one-based presentation slide index, not SlideID/show position.</summary>
     public bool GoToSlide(int slideIndex)
     {

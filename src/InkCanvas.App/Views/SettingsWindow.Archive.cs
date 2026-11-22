@@ -124,10 +124,6 @@ public sealed partial class SettingsWindow
             try { OpenStorageFolder(ArchivePolicy.AutomaticDirectory(S.Archive)); }
             catch (Exception ex) { ShowNotification(ex.Message, InfoBarSeverity.Error); }
         }, "打开文件夹"));
-        AddSection("AI 存档整理");
-        var documentAi = _services.Modules.GetExport<InkCanvas.Host.Contracts.IAiDocumentService>();
-        if (documentAi is not null) _content.Children.Add(Searchable(Card(documentAi.CreateSettingsView()), "AI 存档命名与描述", "多图 PNG 长页 高清 局部 模型"));
-        else _content.Children.Add(InfoRow("AI 存档命名需要安装并启用 AI 助教插件，安装后可在此手动开启。"));
         foreach (var refresh in _refreshControls.ToArray()) refresh();
     }
 

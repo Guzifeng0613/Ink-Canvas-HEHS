@@ -84,7 +84,7 @@ internal static class PptNavigationLayoutRegression
                             && bounds.Y + bounds.Height <= area.Y + area.Height
                             && (!bottom || Math.Abs(bounds.Y + bounds.Height - toolbar.Y - toolbar.Height + edgeGap) <= 3),
                             new { area, toolbar, bounds, overlap, bottom, edgeGap });
-                        var card = (Border)((Viewbox)pair.Value.Content).Child;
+                        var card = pair.Value.NavigationCard;
                         var fill = (card.Background as SolidColorBrush)?.Color;
                         var stroke = (card.BorderBrush as SolidColorBrush)?.Color;
                         var expectedFill = PopupBrushes.FloatBarBackground(theme).Color;
@@ -93,6 +93,10 @@ internal static class PptNavigationLayoutRegression
                             fill == expectedFill && stroke == expectedStroke,
                             new { fill = fill?.ToString(), expectedFill = expectedFill.ToString(),
                                 stroke = stroke?.ToString(), expectedStroke = expectedStroke.ToString(), barTheme = bar.Bar.Theme });
+                        Check("matches toolbar height corner radius and border " + pair.Key,
+                            Math.Abs((bottom ? card.ActualHeight : card.ActualWidth) - InkCanvas.Controls.Controls.FloatingBar.ChromeHeight) < 1
+                            && Math.Abs(card.CornerRadius.TopLeft - InkCanvas.Controls.Controls.FloatingBar.ChromeCornerRadius) < .01
+                            && Math.Abs(card.BorderThickness.Left - InkCanvas.Controls.Controls.FloatingBar.ChromeBorderThickness) < .01);
                     }
 
                     foreach (var navigation in navs.Values) navigation.RecordInteraction();

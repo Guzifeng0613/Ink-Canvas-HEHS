@@ -12,6 +12,7 @@ public sealed class BoardSelectionElement : IImageSelectionElement
 {
     private readonly BoardService _board;
     private readonly InkController _page;
+    internal InkController Page => _page;
     private int _restoreIndex = -1;
     public BoardImageAsset Image { get; }
     public BoardMediaAsset Media { get; }

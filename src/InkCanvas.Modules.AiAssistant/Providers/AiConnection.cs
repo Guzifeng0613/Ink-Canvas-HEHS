@@ -16,6 +16,8 @@ public sealed record AiConnection
     public string Model { get; init; } = "";
     public bool Search { get; init; }
     public bool SendImages { get; init; } = true;
+    public bool SendFiles { get; init; } = true;
+    public string Reasoning { get; init; } = "auto";
     public int MaxOutputTokens { get; init; } = 8192;
 }
 

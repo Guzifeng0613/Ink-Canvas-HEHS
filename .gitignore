@@ -41,3 +41,12 @@ harmony/entry/src/main/resources/rawfile/fonts/SegoeFluentIcons.ttf
 harmony/entry/src/main/resources/rawfile/fonts/SegoeMDL2Assets.ttf
 src/InkCanvas.App/Assets/SegoeMDL2Assets.ttf
 
+# Local service environments, credentials and Python caches
+.env
+.env.*
+!.env.example
+__pycache__/
+.pytest_cache/
+.venv/
+*.pyc
+
