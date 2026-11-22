@@ -60,7 +60,7 @@ internal static class SettingsRegression
             Check("search indexes real setting labels across categories", searchHits.Any(hit => hit.Title == "荧光笔粗细")
                 && searchHits.Any(hit => hit.Title == "荧光笔透明度"));
             Check("search indexing preserves settings and selected category", JsonSerializer.Serialize(services.Settings) == original
-                && Descendants(window.Content).OfType<WindowWorkspace>().Single().SelectedPage == "启动选项");
+                && Descendants(window.Content).OfType<WindowWorkspace>().Single().SelectedPage == "常规");
             Check("search index builds without blocking the window", searchTimer.ElapsedMilliseconds < 1500);
             Check("search includes choice values", window.SearchSettings("深色").Any(hit => hit.Title == "颜色主题"));
             Check("search includes ink hold and hardware brush settings", window.SearchSettings("停笔").Any()
@@ -69,20 +69,20 @@ internal static class SettingsRegression
             Check("search handles case and category terms", window.SearchSettings("powerpoint").Any()
                 && highlighterMatches.Any(hit => hit.Title == "荧光笔粗细")
                 && highlighterMatches.Any(hit => hit.Title == "荧光笔透明度")
-                && highlighterMatches.All(hit => hit.Category == "画板选项"));
+                && highlighterMatches.All(hit => hit.Category == "书写与擦除"));
             Check("search missing and empty queries have no matches", window.SearchSettings("不存在的设置条目").Count == 0
                 && window.SearchSettings(" ").Count == 0);
             var widthHit = searchHits.Single(hit => hit.Title == "荧光笔粗细");
             Check("search result opens matching category", window.NavigateToSetting(widthHit)
-                && Descendants(window.Content).OfType<WindowWorkspace>().Single().SelectedPage == "画板选项");
+                && Descendants(window.Content).OfType<WindowWorkspace>().Single().SelectedPage == "书写与擦除");
             ((FrameworkElement)window.Content).UpdateLayout();
             await Task.Delay(100);
             Check("search result exposes original editable setting", Find<Slider>("荧光笔粗细") is { IsEnabled: true });
-            await BoardWindowRegression.SaveVisual((FrameworkElement)window.Content, Path.Combine(directory, "settings-search-result.png"));
+            await SaveSettingsVisual(window, Path.Combine(directory, "settings-search-result.png"));
             Check("settings uses shared WinUI title bar", window.Content is WindowFrame { Header.Title: "Ink Canvas 设置" }
                 && window.ExtendsContentIntoTitleBar);
             Check("update search includes release list entry", window.SearchSettings("版本列表").Any());
-            window.SelectCategory("关于 Ink Canvas Artistry");
+            window.SelectCategory("关于与更新");
             ((FrameworkElement)window.Content).UpdateLayout();
             Check("release list and update status are visible in settings", Descendants(window.Content).OfType<TextBlock>().Any(text => text.Text == "版本列表")
                 && Descendants(window.Content).OfType<TextBlock>().Any(text => text.Text == updater.Status));
@@ -91,7 +91,7 @@ internal static class SettingsRegression
             ((FrameworkElement)window.Content).UpdateLayout();
             Invoke(Descendants(searchBox).OfType<Button>().Single(button => button.Name == "QueryButton"));
             await Task.Delay(80);
-            Check("search button navigates through the normal query event", Descendants(window.Content).OfType<WindowWorkspace>().Single().SelectedPage == "手势选项"
+            Check("search button navigates through the normal query event", Descendants(window.Content).OfType<WindowWorkspace>().Single().SelectedPage == "触控与手势"
                 && Find<ToggleSwitch>("双指缩放") is not null);
             var originalSize = window.AppWindow.ClientSize;
             window.AppWindow.ResizeClient(new Windows.Graphics.SizeInt32(640, 480)); await Task.Delay(100);
@@ -107,6 +107,45 @@ internal static class SettingsRegression
             searchBox.Text = "不存在的设置条目";
             Invoke(Descendants(searchBox).OfType<Button>().Single(button => button.Name == "QueryButton"));
             Check("missing search query provides visible feedback", Descendants(window.Content).OfType<InfoBar>().Any(info => info.IsOpen && info.Message == "没有找到相关设置"));
+
+            var groupedNavigation = Descendants(window.Content).OfType<NavigationView>().Single();
+            Check("settings navigation exposes three labeled groups", groupedNavigation.MenuItems.OfType<NavigationViewItemHeader>()
+                .Select(item => item.Content?.ToString()).SequenceEqual(new[] { "使用与书写", "课堂与扩展", "应用与数据" }));
+            var migratedSettings = new[]
+            {
+                ("常规", "关闭软件时二次弹窗确认"), ("常规", "自动查杀 希沃白板5"),
+                ("书写与擦除", "荧光笔粗细"), ("画布与识别", "切换到鼠标模式后自动清屏"),
+                ("画布与识别", "启用墨迹识别"), ("触控与手势", "启用笔尖模式"),
+                ("触控与手势", "所有显示器均可书写"), ("外观与工具栏", "进入“希沃轻白板”时自动收纳"),
+                ("外观与工具栏", "在调色盘窗口中显示 启用笔尖模式 切换按钮"),
+                ("演示与课件", "进入PPT 放映时自动收纳至侧边栏"),
+                ("保存与备份", "清屏时自动截图"), ("保存与备份", "墨迹、截图自动保存位置"),
+                ("保存与备份", "保存时间设置（Days）"), ("关于与更新", "自动检查更新"),
+                ("关于与更新", "记录日志"),
+            };
+            foreach (var (category, title) in migratedSettings)
+            {
+                var matches = window.SearchSettings(title).Where(hit => hit.Title == title).ToArray();
+                Check("migrated setting has one searchable location " + title, matches.Length == 1 && matches[0].Category == category);
+                Check("migrated setting opens its editor " + title, matches.Length == 1 && window.NavigateToSetting(matches[0])
+                    && Descendants(window.Content).OfType<WindowWorkspace>().Single().SelectedPage == category);
+            }
+            foreach (var page in SettingsCategoryCatalog.Pages)
+            {
+                window.SelectCategory(page.Name);
+                ((FrameworkElement)window.Content).UpdateLayout();
+                Check("grouped navigation opens a populated page " + page.Name,
+                    Descendants(window.Content).OfType<WindowWorkspace>().Single().SelectedPage == page.Name
+                    && Descendants(window.Content).OfType<TextBlock>().Any(text => text.Text == page.Name)
+                    && Descendants(window.Content).OfType<SettingsRow>().Any());
+            }
+            foreach (string legacy in new[] { "启动选项", "画板选项", "手势选项", "显示器", "高级选项", "自动选项", "墨迹识别选项", "外观选项", "PPT 选项", "实验性设置", "关于 Ink Canvas Artistry" })
+            {
+                window.SelectCategory(legacy);
+                Check("legacy navigation remains available " + legacy,
+                    Descendants(window.Content).OfType<WindowWorkspace>().Single().SelectedPage == SettingsCategoryCatalog.Resolve(legacy));
+            }
+            Check("browsing reorganized pages preserves settings", JsonSerializer.Serialize(services.Settings) == original);
 
             var toggles = new (string Label, Func<bool> Get)[]
             {
@@ -221,7 +260,7 @@ internal static class SettingsRegression
             var alpha = Find<Slider>("荧光笔透明度");
             alpha.Value = 180;
             Check("highlighter alpha applies", services.OverlayInk.CurrentAttributes.HighlighterAlpha == 180);
-            window.SelectCategory("画板选项");
+            window.SelectCategory("书写与擦除");
             var penStyles = Find<ComboBox>("笔迹风格");
             penStyles.SelectedIndex = 7;
             penStyles.IsDropDownOpen = true;
@@ -275,7 +314,7 @@ internal static class SettingsRegression
                 {
                     window.AppWindow.ResizeClient(new Windows.Graphics.SizeInt32(width, 760));
                     await Task.Delay(100);
-                    foreach (string category in new[] { "启动选项", "画板选项", "手势选项", "显示器", "墨迹识别选项", "外观选项", "PPT 选项", "高级选项", "自动选项", "实验性设置", "模块与插件", "关于 Ink Canvas Artistry", "抽奖与点名" })
+                    foreach (string category in SettingsCategoryCatalog.Pages.Select(page => page.Name))
                     {
                         window.SelectCategory(category);
                         ((FrameworkElement)window.Content).UpdateLayout();
@@ -291,13 +330,13 @@ internal static class SettingsRegression
                         })).Select(row => row.Title).ToArray();
                         checks.Add(new { check = "settings rows fit responsive page", themeIndex, width, category,
                             passed = invalid.Length == 0, invalid, rows = rows.Length, stacked = rows.Count(row => row.IsStacked) });
-                        if (category == "外观选项")
+                        if (category == "外观与工具栏")
                         {
                             Check("scale presets share the slider card " + themeIndex + " " + width, rows
                                 .Where(row => row.Title.Contains("UI 缩放")).All(row => Descendants(row).OfType<Button>().Count() == 5));
                         }
-                        if (width is 640 or 1280 && category is "启动选项" or "外观选项" or "画板选项")
-                            await BoardWindowRegression.SaveVisual((FrameworkElement)window.Content, Path.Combine(directory, $"settings-{category}-{themeIndex}-{width}.png"));
+                        if (width is 640 or 1280 && category is "常规" or "外观与工具栏" or "书写与擦除")
+                            await SaveSettingsVisual(window, Path.Combine(directory, $"settings-{category}-{themeIndex}-{width}.png"));
                     }
                 }
             }
@@ -313,7 +352,7 @@ internal static class SettingsRegression
                 T FindOnPage() => Descendants(window.Content).OfType<T>().SingleOrDefault(control => AutomationProperties.GetName(control) == label);
                 var result = FindOnPage();
                 if (result is not null) return result;
-                foreach (string category in new[] { "启动选项", "画板选项", "手势选项", "墨迹识别选项", "外观选项", "PPT 选项", "高级选项", "自动选项", "抽奖与点名" })
+                foreach (string category in SettingsCategoryCatalog.Pages.Select(page => page.Name))
                 {
                     window.SelectCategory(category);
                     ((FrameworkElement)window.Content).UpdateLayout();
@@ -347,7 +386,7 @@ internal static class SettingsRegression
             foreach (int width in new[] { 640, 1230 })
             {
                 window.AppWindow.ResizeClient(new Windows.Graphics.SizeInt32(width, 850));
-                foreach (string category in new[] { "存储与缓存", "画板选项", "保存与备份" })
+                foreach (string category in new[] { "存储与缓存", "书写与擦除", "保存与备份" })
                 {
                     window.SelectCategory(category);
                     await Task.Delay(100);
@@ -378,6 +417,17 @@ internal static class SettingsRegression
                 }
             }
         }
+    }
+
+    private static async Task SaveSettingsVisual(SettingsWindow window, string path)
+    {
+        var frame = (WindowFrame)window.Content;
+        var material = frame.Background;
+        // RenderTargetBitmap cannot capture the native Mica backdrop.
+        frame.Background = new SolidColorBrush(frame.ActualTheme == ElementTheme.Dark
+            ? Windows.UI.Color.FromArgb(255, 32, 32, 32) : Windows.UI.Color.FromArgb(255, 243, 243, 243));
+        try { await BoardWindowRegression.SaveVisual(frame, path); }
+        finally { frame.Background = material; }
     }
 
     private static void Invoke(Button button) => ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke();

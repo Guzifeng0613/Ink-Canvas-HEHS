@@ -706,7 +706,7 @@ public sealed partial class BoardService
     /// Record one completed element change (move/resize/rotate/flip/gesture) as a single
     /// page-local undo step. <paramref name="before"/> is a <see cref="BoardImageAsset.Copy"/>
     /// snapshot taken by the caller at gesture start; the after-state is captured here.
-    /// Port of WPF TimeMachine.CommitStrokeManipulationHistory for elements.
+    /// Element-level manipulation history mirroring the stroke undo path.
     /// </summary>
     public void RecordImageChange(BoardImageAsset image, BoardImageAsset before, string name)
     {

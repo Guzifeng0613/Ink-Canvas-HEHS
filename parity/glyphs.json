@@ -281,6 +281,56 @@
       "segoeCodepoint": "U+E8EF"
     },
     {
+      "name": "Pages",
+      "codepoint": "U+E52D",
+      "char": "",
+      "target": null
+    },
+    {
+      "name": "Search",
+      "codepoint": "U+F69A",
+      "char": "",
+      "target": null
+    },
+    {
+      "name": "SaveCopy",
+      "codepoint": "U+F68D",
+      "char": "",
+      "target": null
+    },
+    {
+      "name": "ZoomIn",
+      "codepoint": "U+F8DD",
+      "char": "",
+      "target": "sys.symbol.magnifyingglass",
+      "fluentName": "zoom_in",
+      "segoeCodepoint": "U+E8A3"
+    },
+    {
+      "name": "ZoomOut",
+      "codepoint": "U+F8DF",
+      "char": "",
+      "target": null
+    },
+    {
+      "name": "FitPage",
+      "codepoint": "U+F160",
+      "char": "",
+      "target": null
+    },
+    {
+      "name": "FitWidth",
+      "codepoint": "U+F8E6",
+      "char": "",
+      "target": null
+    },
+    {
+      "name": "Hand",
+      "codepoint": "U+E6ED",
+      "char": "",
+      "target": null
+    },
+    {
       "name": "Cursor",
       "codepoint": "U+E450",
       "char": "",
@@ -378,9 +428,10 @@
     },
     {
       "name": "Emoji",
-      "codepoint": "U+E76E",
-      "char": "",
+      "codepoint": "U+F3E0",
+      "char": "",
       "target": "custom:text",
+      "fluentName": "emoji",
       "segoeCodepoint": "U+E76E"
     },
     {

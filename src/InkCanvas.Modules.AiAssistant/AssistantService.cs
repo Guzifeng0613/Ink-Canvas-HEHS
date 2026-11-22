@@ -16,7 +16,7 @@ using Windows.ApplicationModel.DataTransfer;
 
 namespace InkCanvas.Modules.AiAssistant;
 
-internal sealed class AssistantService(IAiAssistantHost _host) : IAiAssistantService, IDisposable
+internal sealed partial class AssistantService(IAiAssistantHost _host, ICanvasToolsHost _canvasHost) : IAiAssistantService, IAssistantAgentBridge, IDisposable
 {
     private readonly DispatcherQueue _dispatcher = DispatcherQueue.GetForCurrentThread();
     private bool _disposed;
@@ -53,7 +53,7 @@ internal sealed class AssistantService(IAiAssistantHost _host) : IAiAssistantSer
     public void Open()
     {
         if (_disposed) return;
-        if (_aiAssistant is not null) { _aiAssistant.Activate(); return; }
+        if (_aiAssistant is not null) { _aiAssistant.ShowPanel(); return; }
         CaptureCanvas();
     }
 
@@ -135,7 +135,8 @@ internal sealed class AssistantService(IAiAssistantHost _host) : IAiAssistantSer
         _aiAnchor = CenterAnchor();
         _aiSession = AssistantMachine.CreateSession(AssistantMode.Auto, "");
         AssistantMachine.Fail(_aiSession, message);
-        PrepareAssistantWindow().Apply(_aiSession, _aiThumb);
+        var window = PrepareAssistantWindow();
+        window.BeginTurn(); window.Apply(_aiSession, _aiThumb);
     }
 
     private async Task StartAssistantAsync(
@@ -234,8 +235,8 @@ internal sealed class AssistantService(IAiAssistantHost _host) : IAiAssistantSer
         _aiAssistant = window;
         window.StopRequested += OnAiStopRequested;
         window.RetryRequested += OnAiRetryRequested;
-        window.CopyRequested += OnAiCopyRequested;
-        window.PasteRequested += OnAiPasteRequested;
+        window.AnswerCopyRequested += OnAiCopyRequested;
+        window.AnswerPasteRequested += OnAiPasteRequested;
         window.FollowUpRequested += OnAiFollowUpRequested;
         window.TeachingModeRequested += OnAiTeachingModeChanged;
         window.RevealNextRequested += OnAiRevealNext;
@@ -249,6 +250,7 @@ internal sealed class AssistantService(IAiAssistantHost _host) : IAiAssistantSer
         UpdateSource(window);
         _host.ConfigureWindow(window);
         window.UseNativeFrame();
+        window.SetAgentAvailability(_agentProvider?.Name);
         window.Activate();
         ShowLassoAiHintOnce(window);
         return window;
@@ -298,22 +300,23 @@ internal sealed class AssistantService(IAiAssistantHost _host) : IAiAssistantSer
         _regionGeneration++;
         _aiRegionStream?.Abort();
         _aiRegionStream = null;
+        _variantPending = request.Purpose == "variant";
+        if (request.Purpose != "region") _reRecognizeRegionId = null;
 
         long now = Environment.TickCount64;
-        if (followUp)
+        _agentCancellation?.Cancel();
+        if (_aiSession?.State is AssistantState.Capturing or AssistantState.Recognizing or AssistantState.Streaming)
         {
-            _aiSession ??= AssistantMachine.CreateSession(AssistantMode.Chat, request.SessionId);
-            AssistantMachine.BeginFollowUp(_aiSession, question, now);
-            _aiSession.Mode = AssistantMode.Chat;
+            AssistantMachine.Finish(_aiSession);
+            _aiAssistant.Apply(_aiSession, _aiThumb);
         }
-        else
-        {
-            _aiSession = AssistantMachine.CreateSession(request.Mode, request.SessionId);
-            AssistantMachine.BeginCapture(_aiSession, now);
-            AssistantMachine.BeginRecognize(_aiSession);
-            _aiSession.TeachingMode = request.Teaching;
-            _aiSession.RevealedSteps = 0;
-        }
+        request.Messages = _aiAssistant.ConversationMessages();
+        _aiSession = AssistantMachine.CreateSession(followUp ? AssistantMode.Chat : request.Mode, request.SessionId);
+        AssistantMachine.BeginCapture(_aiSession, now);
+        AssistantMachine.BeginRecognize(_aiSession);
+        _aiSession.TeachingMode = request.Teaching;
+        _aiAssistant.BeginTurn(followUp ? question : request.Purpose == "variant"
+            ? request.Difficulty == "advanced" ? "生成提高变式" : "生成基础变式" : "");
 
         _aiAssistant?.Apply(_aiSession, _aiThumb);
         _aiAssistant?.SetBusy(true);
@@ -649,6 +652,7 @@ internal sealed class AssistantService(IAiAssistantHost _host) : IAiAssistantSer
 
     private void OnAiStopRequested()
     {
+        _agentCancellation?.Cancel();
         _aiGate.Invalidate();
         _renderTimer?.Stop();
         _aiStream?.Abort();
@@ -903,10 +907,9 @@ internal sealed class AssistantService(IAiAssistantHost _host) : IAiAssistantSer
         StartAssistantStream(BuildProblemRequest(), followUp: false, question: "");
     }
 
-    private void OnAiCopyRequested()
+    private void OnAiCopyRequested(AssistantTurn turn)
     {
-        if (_aiSession is null) return;
-        string text = string.IsNullOrEmpty(_aiSession.Formula) ? _aiSession.Text : _aiSession.Formula;
+        string text = AssistantTurn.VisibleText(turn.Session);
         if (string.IsNullOrEmpty(text)) return;
 
         try
@@ -921,34 +924,36 @@ internal sealed class AssistantService(IAiAssistantHost _host) : IAiAssistantSer
         }
     }
 
-    private void OnAiPasteRequested() => _ = RunWindowOperationAsync(PasteAssistantAsync);
+    private void OnAiPasteRequested(AssistantTurn turn) => _ = RunWindowOperationAsync(() => PasteAssistantAsync(turn));
 
-    private async Task PasteAssistantAsync()
+    private async Task PasteAssistantAsync(AssistantTurn turn)
     {
-        if (_aiSession is null || _aiAssistant is null) return;
-        if (_aiSession.State != AssistantState.Done) return;
+        if (_aiAssistant is null || turn.Pasted || turn.Pasting) return;
+        if (turn.Session.State != AssistantState.Done) return;
 
         var window = _aiAssistant;
-        AssistantSession session = _aiSession;
+        var page = _host.Board.Current;
+        AssistantSession session = AssistantTurn.Snapshot(turn.Session);
         List<string> lines = BuildPasteLines(session);
         var (width, height) = PasteCardLayout.Estimate(lines);
 
-        window.SetBusy(true);
-        byte[] png = await PasteCardRenderer.RenderPngAsync("AI 助教", lines, width, height);
-        if (_disposed || !ReferenceEquals(_aiAssistant, window) || !ReferenceEquals(_aiSession, session)) return;
+        turn.Pasting = true; window.RefreshAnswer(turn);
+        byte[] png;
+        try { png = await PasteCardRenderer.RenderPngAsync("AI 助教", lines, width, height); }
+        finally { turn.Pasting = false; if (!_disposed) window.RefreshAnswer(turn); }
+        if (_disposed || !ReferenceEquals(_aiAssistant, window)) return;
+        if (!ReferenceEquals(_host.Board.Current, page)) { window.ShowNotice("画布已换页，请再次点击贴回白板。"); return; }
 
         if (png is null || png.Length == 0)
         {
-            window.SetBusy(false);
-            AssistantMachine.Fail(session, "贴回失败");
-            window.Apply(session, _aiThumb);
+            window.ShowNotice("贴回失败，请重试。");
             return;
         }
 
         var work = ScreenService.WorkArea;
         double dpi = _host.DpiScale;
         var (left, top, w, h) = PasteCardLayout.Place(
-            _aiAnchor, width, height, work.Width / dpi, work.Height / dpi);
+            turn.Anchor, width, height, work.Width / dpi, work.Height / dpi);
 
         string metadata = "";
         if (_host.Settings.Ai.EnableEditablePaste)
@@ -978,13 +983,14 @@ internal sealed class AssistantService(IAiAssistantHost _host) : IAiAssistantSer
 
         if (!_host.BoardOpen) _host.ShowBoard();
 
-        window.SetBusy(false);
-        window.SetPasted(true);
+        turn.Pasted = true; window.RefreshAnswer(turn);
     }
 
     private void OnAiFollowUpRequested(string question)
     {
         if (_aiSession is null) return;
+        if (_aiAssistant?.AgentMode == true)
+        { _ = RunWindowOperationAsync(() => RunAgentAsync(question)); return; }
 
         var request = new AssistantRequest
         {
@@ -993,6 +999,7 @@ internal sealed class AssistantService(IAiAssistantHost _host) : IAiAssistantSer
             Viewport = new AssistantViewport { Scale = 1.0, Rect = _aiAnchor },
             Mode = AssistantMode.Chat,
             SessionId = _aiSession.SessionId,
+            Teaching = _aiSession.TeachingMode,
         };
         StartAssistantStream(request, followUp: true, question: question);
     }
@@ -1000,6 +1007,7 @@ internal sealed class AssistantService(IAiAssistantHost _host) : IAiAssistantSer
     private void OnAiWindowClosed(AssistantWindow window)
     {
         if (!ReferenceEquals(_aiAssistant, window)) return;
+        _agentCancellation?.Cancel();
         _renderTimer?.Stop();
         _captureGeneration++;
         _aiGate.Invalidate();
@@ -1218,7 +1226,8 @@ internal sealed class AssistantService(IAiAssistantHost _host) : IAiAssistantSer
         }
 
         int number = 1;
-        foreach (AssistantStep step in session.Steps)
+        int visible = AssistantTeachingPolicy.VisibleSteps(session.TeachingMode, session.RevealedSteps, session.Steps.Count);
+        foreach (AssistantStep step in session.Steps.Take(visible))
         {
             string detail = step.Text ?? "";
             string latex = AssistantText.LatexToPlain(step.Latex ?? "");
@@ -1231,7 +1240,8 @@ internal sealed class AssistantService(IAiAssistantHost _host) : IAiAssistantSer
             number = index + 1;
         }
 
-        if (!string.IsNullOrEmpty(session.Formula))
+        if (AssistantTeachingPolicy.ShowsFinalAnswer(session.TeachingMode, session.RevealedSteps, session.Steps.Count)
+            && !string.IsNullOrEmpty(session.Formula))
             lines.Add(AssistantText.LatexToPlain(session.Formula));
 
         if (lines.Count == 0) lines.Add("AI 助教暂无返回内容");
@@ -1244,7 +1254,8 @@ internal sealed class AssistantService(IAiAssistantHost _host) : IAiAssistantSer
         var metadata = new AiPasteMetadata
         {
             Kind = DerivePasteKind(session),
-            Latex = session.Formula ?? "",
+            Latex = AssistantTeachingPolicy.ShowsFinalAnswer(session.TeachingMode, session.RevealedSteps, session.Steps.Count)
+                ? session.Formula ?? "" : "",
             Text = session.Text ?? "",
             Lines = BuildPasteLines(session),
         };
@@ -1335,6 +1346,7 @@ internal sealed class AssistantService(IAiAssistantHost _host) : IAiAssistantSer
         review.Text = text;
         _aiSession = review;
 
+        _aiAssistant.BeginTurn();
         _aiAssistant?.Apply(review, "");
         _aiAssistant?.SetBusy(false);
         _aiAssistant?.ShowNotice("已调出第 " + slideIndex + " 页保存的 AI 讲解");
@@ -1357,6 +1369,7 @@ internal sealed class AssistantService(IAiAssistantHost _host) : IAiAssistantSer
     {
         if (_disposed) return;
         _disposed = true;
+        _agentCancellation?.Cancel();
         _captureGeneration++;
         _aiGate.Invalidate();
         _regionGeneration++;

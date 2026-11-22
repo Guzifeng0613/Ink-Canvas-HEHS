@@ -325,8 +325,8 @@ public sealed class AppearanceSettings
     [JsonPropertyName("enableViewboxBlackBoardScaleTransform")] public double BlackboardScale { get; set; } = 100.0;
     [JsonPropertyName("floatingBarBottomMargin")] public double FloatingBarBottomMargin { get; set; } = 100.0;
     [JsonPropertyName("isTransparentButtonBackground")] public bool IsTransparentButtonBackground { get; set; } = true;
-    /// <summary>Icon style: Fluent System Icons Regular (line) vs Filled (solid, default).</summary>
-    [JsonPropertyName("isIconRegularStyle")] public bool IsIconRegularStyle { get; set; }
+    /// <summary>Icon style: Fluent System Icons Regular (default) vs Filled.</summary>
+    [JsonPropertyName("isIconRegularStyle")] public bool IsIconRegularStyle { get; set; } = true;
     [JsonPropertyName("isShowExitButton")] public bool IsShowExitButton { get; set; } = true;
     [JsonPropertyName("isShowEraserButton")] public bool IsShowEraserButton { get; set; } = true;
     [JsonPropertyName("isShowHideControlButton")] public bool IsShowHideControlButton { get; set; }

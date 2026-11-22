@@ -1,4 +1,4 @@
-using InkCanvas.Controls.Controls;
+﻿using InkCanvas.Controls.Controls;
 using InkCanvas.Controls.Theming;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
@@ -46,13 +46,19 @@ public sealed partial class PdfWindow
         _commandHost.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
         var surface = material ? dark ? Color.FromArgb(76, 58, 58, 58) : Color.FromArgb(128, 255, 255, 255) : color;
         _viewport.Background = new SolidColorBrush(surface);
-        _sidebar.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        _sidebar.Background = new SolidColorBrush(_split.DisplayMode == Microsoft.UI.Xaml.Controls.SplitViewDisplayMode.Overlay
+            ? color : Microsoft.UI.Colors.Transparent);
         _split.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-        _split.PaneBackground = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        _split.PaneBackground = _sidebar.Background;
         _status.Foreground = new SolidColorBrush(foreground);
-        _saveState.Foreground = _toolState.Foreground = new SolidColorBrush(foreground);
-        _statusBar.Background = new SolidColorBrush(surface);
-        _statusBar.BorderBrush = new SolidColorBrush(highContrast ? foreground : dark ? Color.FromArgb(255, 64, 64, 64) : Color.FromArgb(255, 224, 224, 224));
+        _documentName.Foreground = _saveState.Foreground = new SolidColorBrush(foreground);
+        _saveBadge.Background = new SolidColorBrush(highContrast ? color : Color.FromArgb(20, foreground.R, foreground.G, foreground.B));
+        _floatingSearch.Background = new SolidColorBrush(color);
+        _floatingSearch.BorderBrush = new SolidColorBrush(highContrast ? foreground : dark ? Color.FromArgb(255, 72, 72, 72) : Color.FromArgb(255, 216, 216, 216));
+        _thumbnailBorder.Color = highContrast ? foreground : dark ? Color.FromArgb(255, 96, 96, 96) : Color.FromArgb(255, 206, 206, 206);
+        _thumbnailAccent.Color = highContrast ? foreground
+            : _uiSettings.GetColorValue(dark ? UIColorType.AccentLight2 : UIColorType.Accent);
+        _zoom.Foreground = _pageCount.Foreground = new SolidColorBrush(foreground);
         _pageNumber.Background = new SolidColorBrush(highContrast ? color : dark ? Color.FromArgb(255, 32, 32, 32) : Microsoft.UI.Colors.White);
         _pageNumber.Foreground = new SolidColorBrush(foreground);
         foreach (var button in _commandButtons)
@@ -73,6 +79,7 @@ public sealed partial class PdfWindow
             scrollbar.Resources["ScrollBarThumbFillPressed"] = new SolidColorBrush(foreground);
         }
         _pageEdgeColor = highContrast ? foreground : dark ? Color.FromArgb(255, 104, 104, 104) : Color.FromArgb(255, 196, 196, 196);
+        _navigationPictureDirty = true;
         _selection.ApplyTheme(dark ? 2 : 1);
         _selectionBorder.Background = highContrast ? new SolidColorBrush(color) : PopupBrushes.Surface(dark ? 2 : 1);
         _paper.Invalidate();

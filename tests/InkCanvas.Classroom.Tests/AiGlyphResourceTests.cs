@@ -47,7 +47,9 @@ public sealed class AiGlyphResourceTests
             string path = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
             Assert.True(File.Exists(path), relative);
 
-            string source = File.ReadAllText(path);
+            string source = relative.EndsWith("AssistantWindow.cs", StringComparison.Ordinal)
+                ? string.Join("\n", Directory.GetFiles(Path.GetDirectoryName(path)!, "AssistantWindow*.cs").Select(File.ReadAllText))
+                : File.ReadAllText(path);
             Assert.Contains("AiGlyph.Create", source);
             Assert.DoesNotContain("Text = \"AI\"", source);
         }

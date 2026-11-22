@@ -6,7 +6,7 @@ using System.Text.Json;
 
 namespace InkCanvas.Features.Update;
 
-public sealed class UpdateService : IDisposable
+public sealed partial class UpdateService : IDisposable
 {
     private readonly UpdateTransport _transport;
     private FileStream _lease;
@@ -86,11 +86,20 @@ public sealed class UpdateService : IDisposable
     {
         if (release is null || !release.IsPortable || !TrustedAsset(release.InstallerUrl))
             throw new InvalidDataException("此发行版没有可自动更新的 WinUI 3 x64 ZIP 包。");
-        string hash = release.Sha256;
-        if (string.IsNullOrEmpty(hash) && TrustedAsset(release.ChecksumsUrl))
+        return await DownloadAssetAsync(new(release.AssetName, release.InstallerUrl, release.InstallerSize,
+            release.Sha256, release.ChecksumsUrl), progress, cancellation).ConfigureAwait(false);
+    }
+
+    /// <summary>Shared verified download and cache path for application and extension release assets.</summary>
+    public async Task<string> DownloadAssetAsync(RepositoryAsset asset, IProgress<double> progress = null, CancellationToken cancellation = default)
+    {
+        if (asset is null || !TrustedAsset(asset.Url) || string.IsNullOrWhiteSpace(asset.Name))
+            throw new InvalidDataException("此文件不是当前仓库的 Release 附件。");
+        string hash = asset.Sha256;
+        if (string.IsNullOrEmpty(hash) && TrustedAsset(asset.ChecksumsUrl))
         {
-            string sums = await _transport.GetTextAsync(release.ChecksumsUrl, text => Checksum(text, release.AssetName) is not null, cancellation).ConfigureAwait(false);
-            hash = Checksum(sums, release.AssetName);
+            string sums = await _transport.GetTextAsync(asset.ChecksumsUrl, text => Checksum(text, asset.Name) is not null, cancellation).ConfigureAwait(false);
+            hash = Checksum(sums, asset.Name);
         }
         if (hash is not { Length: 64 } || !hash.All(Uri.IsHexDigit)) throw new InvalidDataException("此安装包缺少 SHA256 校验信息。");
         string directory = Cache.PackageDirectory(hash);
@@ -106,14 +115,14 @@ public sealed class UpdateService : IDisposable
             ProgressChanged?.Invoke(new(UpdateStage.Verifying, Source: "本地缓存"));
             await using var cached = File.OpenRead(path);
             string cachedHash = Convert.ToHexStringLower(await System.Security.Cryptography.SHA256.HashDataAsync(cached, cancellation).ConfigureAwait(false));
-            if ((release.InstallerSize <= 0 || cached.Length == release.InstallerSize) && cachedHash.Equals(hash, StringComparison.OrdinalIgnoreCase))
+            if ((asset.Size <= 0 || cached.Length == asset.Size) && cachedHash.Equals(hash, StringComparison.OrdinalIgnoreCase))
             {
                 File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
                 ProgressChanged?.Invoke(new(UpdateStage.Verifying, Fraction: 1, Source: "本地缓存"));
                 return path;
             }
         }
-        await _transport.DownloadAsync(release.InstallerUrl, path, release.InstallerSize, hash, progress, cancellation).ConfigureAwait(false);
+        await _transport.DownloadAsync(asset.Url, path, asset.Size, hash, progress, cancellation).ConfigureAwait(false);
         return path;
     }
 
@@ -150,6 +159,18 @@ public sealed class UpdateService : IDisposable
         };
         start.ArgumentList.Add(Path.GetFullPath(planPath));
         return Process.Start(start) ?? throw new IOException("无法启动更新进程。");
+    }
+
+    public static Process LaunchRestart()
+    {
+        using var current = Process.GetCurrentProcess();
+        var start = new ProcessStartInfo(Path.Combine(AppContext.BaseDirectory, "UpdateHost", "InkCanvas.UpdateHost.exe"))
+        { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden };
+        start.ArgumentList.Add("--restart");
+        start.ArgumentList.Add(current.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        start.ArgumentList.Add(current.StartTime.ToUniversalTime().Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        start.ArgumentList.Add(Environment.ProcessPath);
+        return Process.Start(start) ?? throw new IOException("无法启动重启进程。");
     }
 
     private bool TrustedAsset(string url) => Uri.TryCreate(url, UriKind.Absolute, out var uri)

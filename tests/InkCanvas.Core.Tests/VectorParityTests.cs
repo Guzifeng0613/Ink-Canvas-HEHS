@@ -1,3 +1,4 @@
+#nullable enable annotations
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using InkCanvas.Core.Imaging;
@@ -1055,6 +1056,9 @@ public sealed class VectorParityTests
             var settings = JsonSerializer.Deserialize<AppSettings>(input, CaseInsensitive)!;
             var actual = JsonNode.Parse(JsonSerializer.Serialize(settings))!;
             var expected = JsonNode.Parse(c.GetProperty("expected").GetRawText())!;
+            // WinUI defaults to Regular icons when older settings omit the style choice.
+            if (JsonNode.Parse(input)?["appearance"]?["isIconRegularStyle"] is null
+                && expected["appearance"] is JsonObject appearance) appearance["isIconRegularStyle"] = true;
             // WPF vectors predate the WinUI screen-follow extension, covered by ScreenTrackingTests.
             if (expected["experimental"] is null) actual.AsObject().Remove("experimental");
             // Monitor selection is a Windows extension with its own persistence coverage.

@@ -50,12 +50,19 @@ public static class Glyphs
     public const string Help = "\uF648";
     public const string Info = "\uF4AB";
     public const string Download = "\uF151";
-    public const string TimeMachine = "\uF486";
     public const string SlideList = "\uF6F3";
 
     public const string Pdf = "\uF3AD";
     public const string Import = "\uF15A";
     public const string Calculator = "\uE247";
+    public const string Pages = "\uE52D";
+    public const string Search = "\uF69A";
+    public const string SaveCopy = "\uF68D";
+    public const string ZoomIn = "\uF8DD";
+    public const string ZoomOut = "\uF8DF";
+    public const string FitPage = "\uF160";
+    public const string FitWidth = "\uF8E6";
+    public const string Hand = "\uE6ED";
     // ---- Exact WPF floating-bar codepoints (upstream MainWindow.xaml) ----
     public const string Cursor = "\uE450";
     public const string PenWpf = "\uF253";
@@ -69,7 +76,7 @@ public static class Glyphs
     public const string BoardWpf = "\uF1E3";
     public const string Tools = "\uF467";
     public const string FoldWpf = "\uF166";
-    public const string Emoji = "";
+    public const string Emoji = "\uF3E0";
     public const string EmojiDrag = "\uF3C1";
     public const string Gesture = "\uE6E5";
     public const string TimerWpf = "\uF2E2";

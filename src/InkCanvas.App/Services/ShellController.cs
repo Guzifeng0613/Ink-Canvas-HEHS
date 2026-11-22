@@ -23,7 +23,6 @@ using InkCanvas.Platform.Windows;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.Json;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 using Windows.Storage.Pickers;
@@ -47,8 +46,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private SpotlightWindow _spotlight;
     private MagnifierWindow _magnifier;
     private ToolkitWindow _toolkit;
-    private TimeMachineWindow _timeMachine;
-    private InkRecorder _recorder;
     private readonly NavigationGuard _pptGuard = new();
     private readonly SlideSwitchGate _pptGate = new();
     private readonly Dictionary<PptNavigationPlacement, PptNavigationWindow> _pptNavigations = new();
@@ -112,10 +109,15 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private bool _displayRefreshPending;
     private long _lastDisplayCheck;
 
+    internal event Action ActiveControllerChanged;
+    internal event Action BoardOpenChanged;
+    internal event Action<ClassroomSignal> ClassroomSignal;
+
     public ShellController(AppServices services)
     {
         Services = services;
         services.SettingsApplied += ApplyDocumentSettings;
+        services.SettingsApplied += RefreshIconFonts;
         _dispatcher = DispatcherQueue.GetForCurrentThread();
         Overlay = new OverlayHost(services.OverlayInk);
         Overlay.InteractionChanged += RefreshShortcutRegistration;
@@ -125,7 +127,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         Overlay.Window.DisplaySettingsChanged += QueueDisplayRefresh;
         _screens = ScreenService.All();
         _documentAi = new DocumentAiHost(this);
-        services.StartModules(new ScreenTrackingHost(services, Overlay, () => _board is not null || DocumentActive), new DocumentHost(this), new CanvasToolsHost(this), new AssistantHost(this), new LibraryHost(this), _documentAi);
+        services.StartModules(new ScreenTrackingHost(services, Overlay, () => _board is not null || DocumentActive), new DocumentHost(this), new CanvasToolsHost(this), new AssistantHost(this), new LibraryHost(this), new TimeMachineHost(this), _documentAi);
         _pptStore = new PptInkFileStore(services.Settings.Automation.AutoSavedStrokesLocation);
         services.SettingsApplied += ApplyArchivePaths;
         _pptSession = new PptInkSession(services.Ppt, _pptStore)
@@ -199,6 +201,17 @@ public sealed partial class ShellController : IShellActions, IDisposable
             if (owner is not null) WindowChrome.CenterOnOwner(w, owner);
         }
         WindowOpened?.Invoke(w);
+    }
+
+    private void RefreshIconFonts()
+    {
+        foreach (var window in OpenWindows)
+        {
+            IconFontStyle.Refresh(window.Content);
+            if (window.Content is FrameworkElement { XamlRoot: { } root })
+                foreach (var popup in Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(root))
+                    IconFontStyle.Refresh(popup.Child);
+        }
     }
 
     private void QueueDisplayRefresh()
@@ -361,7 +374,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
         Overlay.Hotkeys.Register(HotkeyModifiers.None, 0x78 /* F9 */, ToggleBlackScreen);
         Overlay.Hotkeys.Register(HotkeyModifiers.None, 0x42 /* B */, ToggleBlackScreen, () => PresentationShortcutsEnabled);
         Overlay.Hotkeys.Register(HotkeyModifiers.None, 0x1B /* Escape */, CloseBlackScreen, () => _blackScreen is not null);
-        _ = NotifyPendingJournalAsync();
         StartShortcutTracking();
         _pollTimer.Start();
 
@@ -375,19 +387,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
 
         if (Services.Settings.Startup.IsAutoUpdate)
             _ = Updater.CheckAsync(interactive: false);
-    }
-
-    private async Task NotifyPendingJournalAsync()
-    {
-        try
-        {
-            await NotifyAsync("板书时光机", "检测到未完成的课堂录制，已恢复为最近会话。");
-        }
-        catch (Exception ex)
-        {
-            Core.Diagnostics.FileLog.WriteLogToFile(
-                $"板书时光机恢复提示失败：{ex.Message}", Core.Diagnostics.LogType.Info);
-        }
     }
 
     /// <summary>
@@ -469,6 +468,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         {
             controller.ToolChanged += OnControllerToolChanged;
         }
+        ActiveControllerChanged?.Invoke();
     }
 
     private int EffectiveTheme => _board is not null
@@ -942,9 +942,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
             NotifyWindowOpened(_board);
             _board.CanvasInputBegan += OnBoardInputBegan;
             _board.CurrentPageChanged += OnBoardPageChanged;
-            _recorder = new InkRecorder(Services.Board);
-            _recorder.Start();
             BindBoardController(_board.CurrentController);
+            BoardOpenChanged?.Invoke();
             BindToolbar(_board.CurrentController);
             var boardWindow = _board;
             _board.Closed += (_, _) => OnBoardClosed(boardWindow);
@@ -988,7 +987,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         Services.ApplySettings();
         board.CurrentPageChanged -= OnBoardPageChanged;
         board.CanvasInputBegan -= OnBoardInputBegan;
-        StopRecording();
+        BoardOpenChanged?.Invoke();
         if (_disposed || _exiting) return;
         _replay?.Close();
         _palette?.Close(); _shapePicker?.Close();
@@ -1004,42 +1003,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
                             Services.Settings.Appearance.FloatingBarScale, recenter: false);
         }
         QueueDesktopSelection();
-    }
-
-    private void StopRecording()
-    {
-        if (_recorder is null) return;
-        _recorder.Stop();
-
-        try { _recorder.Save(); }
-        catch { /* 磁盘问题不应影响关闭流程 */ }
-        _recorder.Dispose();
-        _recorder = null;
-    }
-
-    /// <summary>暂停录制（仅录制中有效）；暂停期间事件不入时间轴，计时扣除暂停时长。</summary>
-    public void PauseRecording()
-    {
-        var recorder = _recorder;
-        if (recorder is null || !recorder.IsRecording || recorder.IsPaused) return;
-        recorder.Pause();
-    }
-
-    /// <summary>继续录制（仅录制中有效）。</summary>
-    public void ResumeRecording()
-    {
-        var recorder = _recorder;
-        if (recorder is null || !recorder.IsRecording || !recorder.IsPaused) return;
-        recorder.Resume();
-    }
-
-    /// <summary>浮条入口：在暂停 / 继续之间切换；未在录制时静默忽略。</summary>
-    public void ToggleRecordingPause()
-    {
-        var recorder = _recorder;
-        if (recorder is null || !recorder.IsRecording) return;
-        if (recorder.IsPaused) recorder.Resume();
-        else recorder.Pause();
     }
 
     public void OpenSettings() => OpenSettingsPage(null);
@@ -1191,77 +1154,33 @@ public sealed partial class ShellController : IShellActions, IDisposable
     }
 
     private void OnTimerStarted(TimeSpan remaining)
-        => RecordClassroomEvent(TimelineEventKind.TimerStarted,
+        => RaiseClassroomSignal(ClassroomSignalKind.TimerStarted,
             ((int)Math.Max(0, remaining.TotalMilliseconds)).ToString());
 
     private void OnTimerStopped(TimeSpan remaining)
-        => RecordClassroomEvent(TimelineEventKind.TimerStopped,
+        => RaiseClassroomSignal(ClassroomSignalKind.TimerStopped,
             ((int)Math.Max(0, remaining.TotalMilliseconds)).ToString());
 
-    private void OnTimerEnded() => _ = CaptureTimerEndedAsync();
+    private void OnTimerEnded() => CaptureTimerEnded();
 
     /// <summary>
-    /// 倒计时归零：练习会话先生成板书快照（未录制也保存），录制中再写 TimerEnded
-    /// 并追加「练习结束」章节书签；非练习的普通计时只影响原有录制语义。
+    /// 倒计时归零：向时光机插件转发 TimerEnded / PracticeFinished 信号；
+    /// 板书快照与章节书签的决策归插件本体。
     /// </summary>
-    private async Task CaptureTimerEndedAsync()
+    private void CaptureTimerEnded()
     {
         int pageIndex = Services.Board.CurrentIndex;
-
-        string screenshot = null;
-        try
-        {
-            screenshot = await CaptureScreenshotToFileAsync();
-        }
-        catch (Exception ex)
-        {
-            Core.Diagnostics.FileLog.WriteLogToFile(
-                $"倒计时结束快照失败：{ex.Message}", Core.Diagnostics.LogType.Error);
-        }
-
         PracticePlan practice = _activePractice;
         if (practice is not null)
         {
-            PracticeFinishRecord record = PracticeFinishPolicy.Plan(
-                practice, _recorder?.IsRecording == true, !string.IsNullOrEmpty(screenshot));
-            record.FinishedAtMs = Environment.TickCount64;
-            record.SnapshotPath = screenshot ?? "";
             _teachingSession?.Link(
-                "practice", practice.Id, _pptSession.Snapshot?.Slide?.SlideId ?? 0, _pptSession.Snapshot?.Slide?.Index ?? 0, pageIndex,
-                record.BookmarkName, record.FinishedAtMs);
+                "practice", practice.Id, _pptSession.Snapshot?.Slide?.SlideId ?? 0,
+                _pptSession.Snapshot?.Slide?.Index ?? 0, pageIndex, "练习结束", Environment.TickCount64);
             _activePractice = null;
-            _ = NotifyAsync("随堂练习",
-                string.IsNullOrEmpty(record.SnapshotPath)
-                    ? "练习结束，板书快照保存失败。"
-                    : "练习结束，已保存板书快照。");
+            RaiseClassroomSignal(ClassroomSignalKind.PracticeFinished, "练习结束");
+            _ = NotifyAsync("随堂练习", "练习结束。");
         }
-
-        var recorder = _recorder;
-        if (recorder is null || !recorder.IsRecording || recorder.Session is null) return;
-
-        long timeMs = recorder.ElapsedMs;
-        string payload = string.IsNullOrEmpty(screenshot)
-            ? "倒计时结束"
-            : JsonSerializer.Serialize(new { screenshot });
-
-        try
-        {
-            recorder.Append(new TimelineEvent
-            {
-                TimeMs = timeMs,
-                PageIndex = pageIndex,
-                Kind = TimelineEventKind.TimerEnded,
-                Payload = payload,
-            });
-
-            if (practice is not null)
-                recorder.Timeline.AddBookmark(timeMs, practice.BookmarkName, "practice");
-        }
-        catch (Exception ex)
-        {
-            Core.Diagnostics.FileLog.WriteLogToFile(
-                $"Timeline/TimerEnded: {ex.Message}", Core.Diagnostics.LogType.Error);
-        }
+        RaiseClassroomSignal(ClassroomSignalKind.TimerEnded, "倒计时结束");
     }
 
     public void OpenLottery()
@@ -1318,7 +1237,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private void OnRosterNameDrawn(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return;
-        RecordClassroomEvent(TimelineEventKind.RosterDrawn, name);
+        RaiseClassroomSignal(ClassroomSignalKind.RosterDrawn, name);
     }
 
     private void PasteRosterNameToBoard(string name) => _ = PasteRosterNameAsync(name);
@@ -1485,7 +1404,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
             return;
         }
 
-        var window = new ResourceBundleWindow(Services.Settings.Features, Services.Settings.Appearance.Theme);
+        var window = new ResourceBundleWindow(Services.Settings.Features, Services.Settings.Appearance.Theme,
+            Core.Settings.ArchivePolicy.ResolveDirectory(Services.Settings.Archive.DefaultDirectory));
         _resourceBundle = window;
         window.Closed += (_, _) =>
         {
@@ -2280,160 +2200,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
         WindowChrome.EnsureAbove(_replay);
     }
 
-    public void OpenTimeMachine() => _ = OpenTimeMachineAsync();
-
-    private async Task OpenTimeMachineAsync()
-    {
-        if (_timeMachine is not null) { _timeMachine.Activate(); return; }
-
-        // 正在录制画板：直接回放当前会话，无需弹会话管理。
-        if (_recorder?.IsRecording == true && _recorder.Session.Events.Count > 0)
-        {
-            ShowTimeMachine(_recorder.Session);
-            return;
-        }
-
-        var sessions = ClassroomSessionStore
-            .LoadAll(ClassroomSessionStore.MaxSessionsLoaded, out int omitted)
-            .Where(s => s.Events.Count > 0)
-            .ToList();
-        if (omitted > 0)
-        {
-            // 仅列表截断，不删除磁盘上的旧会话；提示用户可通过显式清理回收空间。
-            Core.Diagnostics.FileLog.WriteLogToFile(
-                $"板书时光机：仅列出最近 {ClassroomSessionStore.MaxSessionsLoaded} 个会话，省略 {omitted} 个（未删除）",
-                Core.Diagnostics.LogType.Info);
-        }
-        if (sessions.Count == 0)
-        {
-            await NotifyAsync("板书时光机", "暂无录制记录。先在画板中书写，再打开时光机。");
-            return;
-        }
-
-        var chosen = await PickSessionAsync(sessions);
-        if (chosen is not null) ShowTimeMachine(chosen);
-    }
-
-    private void ShowTimeMachine(ClassroomSession session)
-    {
-        _timeMachine = new TimeMachineWindow(session, Services.Board, Services.Settings.Appearance.Theme);
-        _timeMachine.Closed += (_, _) => _timeMachine = null;
-        _timeMachine.Activate();
-    }
-
-    /// <summary>简单会话列表对话框：选择 / 重命名 / 删除 / 导入 / 导出。</summary>
-    private async Task<ClassroomSession> PickSessionAsync(List<ClassroomSession> sessions)
-    {
-        if (_bar?.Content is not FrameworkElement root || root.XamlRoot is null) return null;
-
-        var list = new ListView { Height = 300, SelectionMode = ListViewSelectionMode.Single };
-        void Rebuild()
-        {
-            list.Items.Clear();
-            foreach (var s in sessions)
-            {
-                int pageCount = s.Events is { Count: > 0 } ? s.Events.Max(e => e.PageIndex) + 1 : 0;
-                long durationMs = s.Events is { Count: > 0 } ? Math.Max(0, s.Events[^1].TimeMs) : 0;
-                list.Items.Add(
-                    $"{s.Name}  ·  录制 {s.CreatedAt:yyyy-MM-dd HH:mm}  ·  时长 {FormatSessionDuration(durationMs)}"
-                    + $"  ·  {pageCount} 页  ·  {s.Events.Count} 事件");
-            }
-        }
-        Rebuild();
-
-        var nameBox = new TextBox { PlaceholderText = "新名称", MinWidth = 140 };
-        var renameButton = new Button { Content = "重命名选中" };
-        var deleteButton = new Button { Content = "删除选中" };
-        var importButton = new Button { Content = "导入…" };
-        var exportButton = new Button { Content = "导出选中…" };
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        actions.Children.Add(nameBox);
-        actions.Children.Add(renameButton);
-        actions.Children.Add(deleteButton);
-        actions.Children.Add(importButton);
-        actions.Children.Add(exportButton);
-
-        var panel = new StackPanel { Spacing = 8 };
-        panel.Children.Add(new TextBlock { Text = "选择要回放的板书会话：", Opacity = 0.8 });
-        panel.Children.Add(list);
-        panel.Children.Add(actions);
-
-        renameButton.Click += (_, _) =>
-        {
-            int i = list.SelectedIndex;
-            if (i < 0 || string.IsNullOrWhiteSpace(nameBox.Text)) return;
-            string newName = nameBox.Text.Trim();
-            if (ClassroomSessionStore.Rename(sessions[i].Id, newName)) { sessions[i].Name = newName; Rebuild(); list.SelectedIndex = i; }
-        };
-        deleteButton.Click += (_, _) =>
-        {
-            int i = list.SelectedIndex;
-            if (i < 0) return;
-            ClassroomSessionStore.Delete(sessions[i].Id);
-            sessions.RemoveAt(i);
-            Rebuild();
-        };
-        importButton.Click += async (_, _) =>
-        {
-            var file = await PickSessionFileAsync(save: false);
-            if (file is null) return;
-            var imported = ClassroomSessionStore.Import(file.Path);
-            if (imported is null) return;
-            sessions.Insert(0, imported);
-            Rebuild();
-        };
-        exportButton.Click += async (_, _) =>
-        {
-            int i = list.SelectedIndex;
-            if (i < 0) return;
-            var file = await PickSessionFileAsync(save: true);
-            if (file is null) return;
-            ClassroomSessionStore.Export(sessions[i], file.Path);
-        };
-
-        var dialog = new ContentDialog
-        {
-            Title = "板书时光机 · 会话",
-            Content = panel,
-            PrimaryButtonText = "回放所选",
-            CloseButtonText = "取消",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = root.XamlRoot,
-        };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return null;
-        int index = list.SelectedIndex;
-        return index >= 0 && index < sessions.Count ? sessions[index] : null;
-    }
-
-    private static string FormatSessionDuration(long durationMs)
-    {
-        long totalSeconds = Math.Max(0, durationMs) / 1000;
-        long minutes = totalSeconds / 60;
-        long seconds = totalSeconds % 60;
-        return minutes >= 60
-            ? $"{minutes / 60}:{minutes % 60:00}:{seconds:00}"
-            : $"{minutes}:{seconds:00}";
-    }
-
-    private async Task<StorageFile> PickSessionFileAsync(bool save)
-    {
-        if (_bar is null) return null;
-        if (save)
-        {
-            var picker = new FileSavePicker { SuggestedFileName = "classroom-session" };
-            picker.FileTypeChoices.Add("板书会话", new List<string> { ".json" });
-            InitializeWithWindow.Initialize(picker, WindowChrome.GetHwnd(_bar));
-            return await picker.PickSaveFileAsync();
-        }
-        else
-        {
-            var picker = new FileOpenPicker();
-            picker.FileTypeFilter.Add(".json");
-            InitializeWithWindow.Initialize(picker, WindowChrome.GetHwnd(_bar));
-            return await picker.PickSingleFileAsync();
-        }
-    }
-
     public void OpenGuide()
     {
         if (_guide is not null) { _guide.Activate(); return; }
@@ -3009,71 +2775,10 @@ public sealed partial class ShellController : IShellActions, IDisposable
     {
         if (transition is null) return;
 
-        // 统一课堂时间轴：翻页与批注变化都写入当前录制会话。
-        if (transition.Kind is PptInkTransitionKind.Slide or PptInkTransitionKind.Begin)
-        {
-            int slideIndex = transition.Current?.Slide?.Index ?? 0;
-            int slideId = transition.Current?.Slide?.SlideId ?? 0;
-            if (slideIndex > 0)
-            {
-                string screenshot = ResolvePptScreenshotPath(transition, slideIndex, slideId);
-                RecordClassroomEvent(TimelineEventKind.PptSlideChanged,
-                    InkTimeline.EncodePptSlideChanged(slideId, slideIndex, screenshot));
-            }
-            RecordClassroomEvent(TimelineEventKind.PptInkChanged,
-                (transition.Incoming?.Count ?? 0).ToString());
-        }
-
         // A slide change invalidates any selection made on the previous slide.
         if (transition.Kind != PptInkTransitionKind.Slide) return;
         Services.OverlayInk.Selection.Clear();
         _bar?.Bar.RefreshSelection();
-    }
-
-    /// <summary>
-    /// 为翻页事件解析可用的截图路径：
-    /// 优先复用最近一次 <see cref="OnPptScreenshotRequested"/> 的截图；
-    /// 录制中且没有可用截图时主动截取放映窗口并保存到会话目录。
-    /// 任何失败都只记日志并返回空串，绝不阻塞或中断 PPT 翻页。
-    /// </summary>
-    private string ResolvePptScreenshotPath(PptInkTransition transition, int slideIndex, int slideId)
-    {
-        if (!string.IsNullOrWhiteSpace(_pptScreenshotPath)
-            && ((_pptScreenshotSlideId > 0 && _pptScreenshotSlideId == slideId)
-                || _pptScreenshotSlideIndex == slideIndex))
-        {
-            return _pptScreenshotPath;
-        }
-
-        var recorder = _recorder;
-        if (recorder is null || !recorder.IsRecording || recorder.Session is null) return "";
-
-        try
-        {
-            string root = recorder.SessionDirectory ?? ClassroomSessionStore.DefaultDirectory;
-            string directory = Path.Combine(root, recorder.Session.Id);
-            string path = Path.Combine(directory, $"ppt-{slideIndex}.png");
-            if (File.Exists(path))
-            {
-                RememberPptScreenshot(path, slideIndex, slideId);
-                return path;
-            }
-
-            ScreenRect area = ResolveSlideShowBounds(transition);
-            var (pixels, width, height) = ScreenshotService.Capture(area.X, area.Y, area.Width, area.Height);
-            if (width <= 0 || height <= 0) return "";
-
-            Directory.CreateDirectory(directory);
-            _ = ScreenshotService.SavePngAsync(path, pixels, width, height);
-            RememberPptScreenshot(path, slideIndex, slideId);
-            return path;
-        }
-        catch (Exception ex)
-        {
-            Core.Diagnostics.FileLog.WriteLogToFile(
-                $"PPT timeline screenshot: {ex}", Core.Diagnostics.LogType.Error);
-            return "";
-        }
     }
 
     private void RememberPptScreenshot(string path, int slideIndex, int slideId)
@@ -3081,42 +2786,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
         _pptScreenshotPath = path;
         _pptScreenshotSlideIndex = slideIndex;
         _pptScreenshotSlideId = slideId;
-    }
-
-    private static ScreenRect ResolveSlideShowBounds(PptInkTransition transition)
-    {
-        nint hwnd = transition.Current?.WindowHandle ?? 0;
-        if (hwnd != 0 && ShowWindowTracker.TryGet(hwnd, out ShowWindowInfo info)
-            && info.IsFullScreen && info.Width > 0 && info.Height > 0)
-        {
-            return new ScreenRect(info.X, info.Y, info.Width, info.Height);
-        }
-        return ScreenService.Primary;
-    }
-
-    /// <summary>
-    /// 向录制中的课堂时间轴追加一个非墨迹事件；未录制时静默忽略，异常只记录日志。
-    /// </summary>
-    private void RecordClassroomEvent(TimelineEventKind kind, string payload = null, int? pageIndex = null)
-    {
-        var recorder = _recorder;
-        if (recorder is null || !recorder.IsRecording || recorder.Session is null) return;
-
-        try
-        {
-            recorder.Append(new TimelineEvent
-            {
-                TimeMs = recorder.ElapsedMs,
-                PageIndex = pageIndex ?? Services.Board.CurrentIndex,
-                Kind = kind,
-                Payload = payload,
-            });
-        }
-        catch (Exception ex)
-        {
-            Core.Diagnostics.FileLog.WriteLogToFile(
-                $"Timeline/{kind}: {ex.Message}", Core.Diagnostics.LogType.Error);
-        }
     }
 
     public void PptExit()
@@ -3309,7 +2978,11 @@ public sealed partial class ShellController : IShellActions, IDisposable
             if (restart)
             {
                 Services.SaveSettings();
-                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath, "-m") { UseShellExecute = true }); }
+                try
+                {
+                    if (Services.ExtensionInstalls.Pending.Count > 0) { using var helper = Features.Update.UpdateService.LaunchRestart(); }
+                    else System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath, "-m") { UseShellExecute = true });
+                }
                 catch (Exception ex) { await NotifyAsync("重启失败", ex.Message); return; }
             }
             _exiting = true;
@@ -3332,8 +3005,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
     {
         if (_disposed) return; _disposed = true;
         _documentAi?.Dispose();
-        StopRecording();
-        _timeMachine?.Close();
         _spotlight?.Close();
         _magnifier?.Close();
         _roster?.Close();
@@ -3356,6 +3027,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         Services.Plugins.Changed -= OnExtensionCommandsChanged;
         Services.Modules.Changed -= OnExtensionCommandsChanged;
         Services.SettingsApplied -= ApplyDocumentSettings;
+        Services.SettingsApplied -= RefreshIconFonts;
         Services.SettingsApplied -= ApplyArchivePaths;
         Services.SettingsApplied -= ApplyDisplaySettings;
         Services.SettingsApplied -= RefreshPaletteNibModes;

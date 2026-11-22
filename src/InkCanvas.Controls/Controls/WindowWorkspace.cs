@@ -25,6 +25,7 @@ public sealed class WindowWorkspace : UserControl
         HorizontalContentAlignment = HorizontalAlignment.Stretch,
     };
     private readonly List<(string Name, Func<UIElement> Build)> _pages = new();
+    private readonly List<NavigationViewItem> _pageItems = new();
     private FrameworkElement _scrollTarget;
     public string SelectedPage { get; private set; }
     public AutoSuggestBox SearchBox
@@ -88,16 +89,20 @@ public sealed class WindowWorkspace : UserControl
     {
         int index = _pages.Count;
         _pages.Add((name, build));
-        _navigation.MenuItems.Add(new NavigationViewItem { Content = name, Tag = index,
-            Icon = new FontIcon { Glyph = glyph, IsTextScaleFactorEnabled = false } });
+        var item = new NavigationViewItem { Content = name, Tag = index,
+            Icon = new FontIcon { Glyph = glyph, FontFamily = IconFontStyle.Font, IsTextScaleFactorEnabled = false } };
+        _pageItems.Add(item);
+        _navigation.MenuItems.Add(item);
     }
+
+    public void AddGroup(string title) => _navigation.MenuItems.Add(new NavigationViewItemHeader { Content = title });
 
     public void SelectPage(string name)
     {
         int index = _pages.FindIndex(page => page.Name == name);
         if (index < 0) return;
-        if (ReferenceEquals(_navigation.SelectedItem, _navigation.MenuItems[index])) ShowPage(index);
-        else _navigation.SelectedItem = _navigation.MenuItems[index];
+        if (ReferenceEquals(_navigation.SelectedItem, _pageItems[index])) ShowPage(index);
+        else _navigation.SelectedItem = _pageItems[index];
     }
 
     private void ShowPage(int index)

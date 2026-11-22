@@ -9,14 +9,11 @@ public sealed partial class SettingsWindow
 {
     private void BuildArchiveSettings()
     {
-        var documentAi = _services.Modules.GetExport<InkCanvas.Host.Contracts.IAiDocumentService>();
-        if (documentAi is not null) _content.Children.Add(Searchable(Card(documentAi.CreateSettingsView()), "AI 存档命名与描述", "多图 PNG 长页 高清 局部 模型"));
-        else _content.Children.Add(InfoRow("AI 存档命名需要安装并启用 AI 助教插件，安装后可在此手动开启。"));
         AddSection("默认存档目录");
         _content.Children.Add(ArchiveDirectoryRow("手动存档默认目录", () => S.Archive.DefaultDirectory, path => S.Archive.DefaultDirectory = path));
         _content.Children.Add(ArchiveDirectoryRow("白板自动存档目录", () => S.Archive.AutomaticDirectory, path => S.Archive.AutomaticDirectory = path));
         _content.Children.Add(InfoRow("自动存档目录留空时，使用手动默认目录下的 AutoSave 子目录。保存、打开白板文件时将使用默认目录。"));
-        _content.Children.Add(ArchiveDirectoryRow("桌面墨迹、PPT 与截图目录", () => S.Automation.AutoSavedStrokesLocation, path => S.Automation.AutoSavedStrokesLocation = path));
+        _content.Children.Add(ArchiveDirectoryRow("墨迹、截图自动保存位置", () => S.Automation.AutoSavedStrokesLocation, path => S.Automation.AutoSavedStrokesLocation = path, shortcuts: PathShortcuts()));
 
         AddSection("白板自动保存");
         _content.Children.Add(ToggleRow("退出时自动保存完整白板", () => S.Archive.SaveOnExit, value => S.Archive.SaveOnExit = value,
@@ -55,6 +52,27 @@ public sealed partial class SettingsWindow
             if (!_closed) ShowNotification(result is null ? _services.ScreenArchives.LastError ?? "当前模式未启用，或没有可保存的屏幕墨迹。" : "已保存到 " + result.Path,
                 result is null ? InfoBarSeverity.Informational : InfoBarSeverity.Success);
         }, "立即保存"));
+
+        AddSection("墨迹与截图保存");
+        _content.Children.Add(ToggleRow("清屏时自动截图", () => S.Automation.IsAutoSaveStrokesAtClear,
+            v => S.Automation.IsAutoSaveStrokesAtClear = v));
+        _content.Children.Add(ToggleRow("截图分日期文件夹保存", () => S.Automation.IsSaveScreenshotsInDateFolders,
+            v => S.Automation.IsSaveScreenshotsInDateFolders = v));
+        _content.Children.Add(ToggleRow("截图时自动保存墨迹", () => S.Automation.IsAutoSaveStrokesAtScreenshot,
+            v => S.Automation.IsAutoSaveStrokesAtScreenshot = v));
+        _content.Children.Add(SliderRow("自动保存所需最少墨迹数（0 表示不限制）",
+            () => S.Automation.MinimumAutomationStrokeNumber, 0, 10,
+            v => S.Automation.MinimumAutomationStrokeNumber = (int)v));
+        AddSection("历史文件清理");
+        var retentionDays = OriginalMenuCatalog.AutoDeleteDays.Append(S.Automation.AutoDelSavedFilesDaysThreshold)
+            .Where(day => day > 0).Distinct().Order().ToArray();
+        _content.Children.Add(Require(ToggleRow("定期自动删除超过保存时间的墨迹、截图文件", () => S.Automation.AutoDelSavedFiles,
+            value => S.Automation.AutoDelSavedFiles = value,
+            note: "每小时清理保存目录中过期的墨迹存档和程序生成的截图，跳过链接目录。"), SaveDirectoryRequirement));
+        _content.Children.Add(Require(ComboRow("保存时间设置（Days）", retentionDays.Select(day => day + " 天").ToArray(),
+            () => Math.Max(0, Array.IndexOf(retentionDays, S.Automation.AutoDelSavedFilesDaysThreshold)),
+            index => S.Automation.AutoDelSavedFilesDaysThreshold = retentionDays[index]),
+            () => !S.Automation.AutoDelSavedFiles ? "请先启用定期自动删除。" : SaveDirectoryRequirement()));
 
         AddSection("文件名与存档信息");
         _content.Children.Add(TextRow("课程或存档标题", () => S.Archive.Title, value => S.Archive.Title = value));
@@ -106,6 +124,10 @@ public sealed partial class SettingsWindow
             try { OpenStorageFolder(ArchivePolicy.AutomaticDirectory(S.Archive)); }
             catch (Exception ex) { ShowNotification(ex.Message, InfoBarSeverity.Error); }
         }, "打开文件夹"));
+        AddSection("AI 存档整理");
+        var documentAi = _services.Modules.GetExport<InkCanvas.Host.Contracts.IAiDocumentService>();
+        if (documentAi is not null) _content.Children.Add(Searchable(Card(documentAi.CreateSettingsView()), "AI 存档命名与描述", "多图 PNG 长页 高清 局部 模型"));
+        else _content.Children.Add(InfoRow("AI 存档命名需要安装并启用 AI 助教插件，安装后可在此手动开启。"));
         foreach (var refresh in _refreshControls.ToArray()) refresh();
     }
 
@@ -125,7 +147,7 @@ public sealed partial class SettingsWindow
         return Searchable(Card(Row(title, number)), title);
     }
 
-    private UIElement ArchiveDirectoryRow(string title, Func<string> get, Action<string> set)
+    private UIElement ArchiveDirectoryRow(string title, Func<string> get, Action<string> set, FrameworkElement shortcuts = null)
     {
         var browse = new Button { Content = "选择文件夹", MinHeight = 40, HorizontalAlignment = HorizontalAlignment.Right };
         Accessible(browse, title + " · 选择文件夹");
@@ -140,6 +162,14 @@ public sealed partial class SettingsWindow
             }
             catch (Exception ex) { if (!_closed) ShowNotification("目录选择失败 · " + ex.Message, InfoBarSeverity.Error); }
         };
-        return TextRow(title, get, set, browse);
+        FrameworkElement actions = browse;
+        if (shortcuts is not null)
+        {
+            var panel = new StackPanel { Spacing = 8 };
+            panel.Children.Add(browse);
+            panel.Children.Add(shortcuts);
+            actions = panel;
+        }
+        return TextRow(title, get, set, actions);
     }
 }

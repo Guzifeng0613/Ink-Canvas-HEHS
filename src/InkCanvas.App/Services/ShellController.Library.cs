@@ -1,4 +1,5 @@
 using InkCanvas.Core.Settings;
+using InkCanvas.Features.Persistence;
 using InkCanvas.Host.Contracts;
 using Microsoft.UI.Xaml;
 
@@ -23,6 +24,14 @@ public sealed partial class ShellController
         }
         public async Task<bool> OpenBoardAsync(string path)
         {
+            // 新格式课堂录制文件：插件在位则路由给时光机模块，否则抛出守卫提示。
+            if (ClassroomRecordingProbe.IsClassroomRecording(path))
+            {
+                var service = shell.Services.Modules.GetExport<ITimeMachineService>();
+                if (service is null) throw new InvalidDataException(ClassroomRecordingProbe.PluginRequiredMessage);
+                await service.OpenFileAsync(path);
+                return true;
+            }
             var board = shell.Services.Board;
             var current = board.Current;
             var apply = await board.PrepareOpenAsync(path, true);

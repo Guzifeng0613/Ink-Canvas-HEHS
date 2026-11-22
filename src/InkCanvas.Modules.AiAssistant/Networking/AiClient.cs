@@ -175,6 +175,7 @@ public sealed class AiClient : IDisposable
             Purpose = request.Purpose ?? "",
             Difficulty = request.Difficulty ?? "",
             SlideContext = request.SlideContext,
+            Messages = request.Messages,
         };
     }
 
@@ -210,6 +211,11 @@ public sealed class AiClient : IDisposable
             WriteViewport(writer, request.Viewport ?? new AssistantViewport());
             writer.WriteString("stage", StageText(request.Stage));
             if (!string.IsNullOrWhiteSpace(request.Question)) writer.WriteString("question", request.Question);
+            if (request.Messages is { Count: > 0 })
+            {
+                writer.WritePropertyName("messages");
+                JsonSerializer.Serialize(writer, request.Messages, RequestJson);
+            }
             writer.WriteString("teaching", AssistantTeachingPolicy.Wire(request.Teaching));
             if (!string.IsNullOrEmpty(request.Purpose))
                 writer.WriteString("purpose", request.Purpose);

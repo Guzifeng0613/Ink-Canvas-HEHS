@@ -47,8 +47,6 @@ public interface IShellActions
     void RotatePptNavigationCorner() { }
     void CollapsePptNavigation() { }
     void TogglePptNavigationWindow() { }
-    void OpenTimeMachine() { }
-    void ToggleRecordingPause() { }
     void OpenAiAssistant() { }
     bool AiAssistantAvailable => false;
     void OpenGroupScore() { }
@@ -149,6 +147,7 @@ public sealed class FloatingBar : UserControl
         };
         _dragHandle = MakePart(new Grid { Children = { _dragIcon } }, PartH, PartH);
         ToolTipService.SetToolTip(_dragHandle, "拖动移动工具栏；点击收起/展开主工具栏");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_dragHandle, "拖动移动工具栏");
 
         _mainHost = MakePart(_primary, double.NaN, PartH);
         _mainHost.Margin = new Thickness(PartGap, 0, 0, 0);
@@ -645,8 +644,6 @@ public sealed class FloatingBar : UserControl
         while (_moreRows.Children.Count > 3) _moreRows.Children.RemoveAt(_moreRows.Children.Count - 1);
         var classroom = MoreRow();
         AddMore(classroom, Glyphs.Board, "课堂工具", () => Shell?.OpenToolkit());
-        AddMore(classroom, Glyphs.TimeMachine, "板书时光机", () => Shell?.OpenTimeMachine());
-        AddMore(classroom, Glyphs.Pause, "暂停 / 继续录制", () => Shell?.ToggleRecordingPause());
         var presentation = MoreRow();
         AddMore(presentation, Glyphs.SlideList, "课件页导航", () => Shell?.ToggleSlideNavigator());
         AddMore(presentation, Glyphs.ChevronRight, "翻页悬浮窗", () => Shell?.TogglePptNavigationWindow());

@@ -240,7 +240,10 @@
     {
       "segoeCodepoint": "U+E76E",
       "name": "Emoji2",
-      "symbol": "custom:text"
+      "symbol": "custom:text",
+      "fluentName": "emoji",
+      "fluentCodepoint": "U+F3E0",
+      "fluentRegularCodepoint": "U+F3E1"
     },
     {
       "segoeCodepoint": "U+E77A",

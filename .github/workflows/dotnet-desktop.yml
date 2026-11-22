@@ -35,8 +35,11 @@ jobs:
       - name: Test PowerPoint integration
         run: dotnet test tests/InkCanvas.P0.Tests/InkCanvas.P0.Tests.csproj -c Release -p:Platform=x64 --no-build
 
-      - name: Test classroom recording and tools
+      - name: Test classroom tools
         run: dotnet test tests/InkCanvas.Classroom.Tests/InkCanvas.Classroom.Tests.csproj -c Release -p:Platform=x64 --no-build
+
+      - name: Test time machine plugin
+        run: dotnet test tests/InkCanvas.TimeMachine.Tests/InkCanvas.TimeMachine.Tests.csproj -c Release -p:Platform=x64 --no-build
 
       - name: Publish
         run: dotnet publish src/InkCanvas.App/InkCanvas.App.csproj -c Release -p:Platform=x64 -o artifacts/app

@@ -1,4 +1,4 @@
-﻿using InkCanvas.Core.Ink;
+using InkCanvas.Core.Ink;
 using InkCanvas.Core.Settings;
 using InkCanvas.Features.Board;
 using InkCanvas.Features.Persistence;
@@ -29,10 +29,13 @@ public sealed class AppServices : IDisposable
         // 图标风格（Fluent Filled/Regular，与鸿蒙端同一 MIT 字体集）注入字体族解析。
         Controls.Controls.IconFontStyle.BindStyleSource(() => Settings.Appearance.IsIconRegularStyle);
         UpdateCache = new UpdateCache(settingsDirectory is null ? null : Path.Combine(settingsDirectory, "UpdateCache"));
+        ExtensionInstalls = new ExtensionInstallStore(Store.Directory);
+        ExtensionInstalls.ApplyPending();
         ExtensionStore = new ExtensionPreferencesStore(Store.Directory);
         ExtensionPreferences = ExtensionStore.Load();
         Plugins = new PluginManager(Path.Combine(AppContext.BaseDirectory, "PluginHost", "InkCanvas.PluginHost.exe"), Path.Combine(Store.Directory, "PluginData"));
-        Plugins.Discover(Path.Combine(AppContext.BaseDirectory, "Plugins"), Path.Combine(Store.Directory, "Plugins"));
+        Plugins.DiscoverManaged(Path.Combine(AppContext.BaseDirectory, "Plugins"), Path.Combine(Store.Directory, "Plugins"));
+        ExtensionUpdates = new ExtensionUpdateCoordinator(this);
         Board = new BoardService();
         Archives = new BoardArchiveService(Board, () => Settings.Archive, Store.Directory);
         ScreenImages = new BoardService(OverlayInk);
@@ -51,6 +54,8 @@ public sealed class AppServices : IDisposable
 
     public SettingsStore Store { get; }
     public UpdateCache UpdateCache { get; }
+    public ExtensionInstallStore ExtensionInstalls { get; }
+    public ExtensionUpdateCoordinator ExtensionUpdates { get; }
 
     public AppSettings Settings { get; private set; }
     public ModuleRuntime Modules { get; } = new();
@@ -58,7 +63,17 @@ public sealed class AppServices : IDisposable
     internal async Task<Action> PrepareInkOpenAsync(string path, BoardService target, bool entireBoard = false)
     {
         if (Path.GetExtension(path).Equals(".icink", StringComparison.OrdinalIgnoreCase))
+        {
+            // 新格式课堂录制文件：插件在位则路由给时光机模块，否则给出中文守卫提示。
+            if (ClassroomRecordingProbe.IsClassroomRecording(path))
+            {
+                var service = Modules.GetExport<ITimeMachineService>();
+                if (service is null) throw new InvalidDataException(ClassroomRecordingProbe.PluginRequiredMessage);
+                await service.OpenFileAsync(path);
+                return () => { };
+            }
             return await target.PrepareOpenAsync(path, entireBoard);
+        }
 
         string directory = Directory.CreateTempSubdirectory("InkCanvas-import-").FullName;
         string output = Path.Combine(directory, "page.icink");
@@ -76,20 +91,22 @@ public sealed class AppServices : IDisposable
     public ExtensionPreferencesStore ExtensionStore { get; }
     public ExtensionPreferences ExtensionPreferences { get; }
     private bool _modulesStarted;
-    public void StartModules(IScreenTrackingHost host, IDocumentWorkspaceHost documents = null, ICanvasToolsHost canvasTools = null, IAiAssistantHost assistant = null, IBoardLibraryHost library = null, IAiDocumentHost documentAi = null)
+    public void StartModules(IScreenTrackingHost host, IDocumentWorkspaceHost documents = null, ICanvasToolsHost canvasTools = null, IAiAssistantHost assistant = null, IBoardLibraryHost library = null, ITimeMachineHost timeMachine = null, IAiDocumentHost documentAi = null)
     {
         if (_modulesStarted) return; _modulesStarted = true;
         Modules.AddService(host);
         if (documents is not null) Modules.AddService(documents);
         if (canvasTools is not null) Modules.AddService(canvasTools);
         if (assistant is not null) Modules.AddService(assistant);
+        if (timeMachine is not null) Modules.AddService(timeMachine);
         if (documentAi is not null) Modules.AddService(documentAi);
         if (library is not null) Modules.AddService(library);
-        if (library is not null) Modules.RegisterPackage("inkcanvas.library", "文稿库", Path.Combine(AppContext.BaseDirectory, "Modules", "inkcanvas.library", "module.json"));
-        Modules.RegisterPackage("inkcanvas.screen-tracking", "屏幕内容跟随", Path.Combine(AppContext.BaseDirectory, "Modules", "inkcanvas.screen-tracking", "module.json"));
-        if (documents is not null) Modules.RegisterPackage("inkcanvas.pdf", "PDF 阅读与批注", Path.Combine(AppContext.BaseDirectory, "Modules", "inkcanvas.pdf", "module.json"));
-        if (canvasTools is not null) Modules.RegisterPackage("inkcanvas.analytic-geometry", "解析几何", Path.Combine(AppContext.BaseDirectory, "Modules", "inkcanvas.analytic-geometry", "module.json"));
-        if (assistant is not null) Modules.RegisterPackage("inkcanvas.ai-assistant", "AI 助教", Path.Combine(AppContext.BaseDirectory, "Modules", "inkcanvas.ai-assistant", "module.json"));
+        if (library is not null) Modules.RegisterPackage("inkcanvas.library", "文稿库", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.library"));
+        Modules.RegisterPackage("inkcanvas.screen-tracking", "屏幕内容跟随", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.screen-tracking"));
+        if (documents is not null) Modules.RegisterPackage("inkcanvas.pdf", "PDF 阅读与批注", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.pdf"));
+        if (canvasTools is not null) Modules.RegisterPackage("inkcanvas.analytic-geometry", "解析几何", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.analytic-geometry"));
+        if (assistant is not null) Modules.RegisterPackage("inkcanvas.ai-assistant", "AI 助教", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.ai-assistant"));
+        if (timeMachine is not null) Modules.RegisterPackage("inkcanvas.time-machine", "板书时光机", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.time-machine"));
         Modules.Start(ExtensionPreferences.DisabledModules);
         Modules.Changed += UpdateModuleStatus;
         UpdateModuleStatus();
@@ -250,6 +267,7 @@ public sealed class AppServices : IDisposable
 
     public void Dispose()
     {
+        ExtensionUpdates.Dispose();
         Archives.Dispose();
         ScreenArchives.Dispose();
         LotteryMemory.Dispose();

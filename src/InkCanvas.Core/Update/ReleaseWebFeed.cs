@@ -31,6 +31,9 @@ public static partial class ReleaseWebFeed
     }
 
     public static ReleaseInfo ReadAssets(string html, string repository, Entry entry)
+        => ReleaseFeed.ParseLatest(ReadAssetsJson(html, repository, entry));
+
+    public static string ReadAssetsJson(string html, string repository, Entry entry)
     {
         string prefix = "/" + repository + "/releases/download/" + Uri.EscapeDataString(entry.Tag) + "/";
         var assets = new List<object>();
@@ -44,12 +47,12 @@ public static partial class ReleaseWebFeed
             assets.Add(new { name, browser_download_url = uri.AbsoluteUri, digest });
         }
         // Reuse the same asset selection and digest validation as API releases.
-        return ReleaseFeed.ParseLatest(JsonSerializer.Serialize(new
+        return JsonSerializer.Serialize(new
         {
             tag_name = entry.Tag, name = entry.Name, body = entry.Notes,
             html_url = "https://github.com/" + repository + "/releases/tag/" + Uri.EscapeDataString(entry.Tag),
             draft = false, prerelease = false, assets,
-        }));
+        });
     }
 
     public static bool IsAssetsPage(string html, string repository, Entry entry)

@@ -66,10 +66,6 @@ public sealed class PracticePlan
     public int CountdownMinutes { get; set; } = 3;
 
     public string SceneId { get; set; } = "practice";
-
-    public bool SaveSnapshotOnFinish { get; set; } = true;
-
-    public string BookmarkName { get; set; } = "练习结束";
 }
 
 public static class ExerciseFlowPolicy
@@ -157,8 +153,6 @@ public static class ExerciseFlowPolicy
             BoardPageIndex = Math.Max(0, newBoardPageIndex),
             CountdownMinutes = Math.Max(1, countdownMinutes),
             SceneId = string.IsNullOrWhiteSpace(sceneId) ? "practice" : sceneId,
-            SaveSnapshotOnFinish = true,
-            BookmarkName = "练习结束",
         };
     }
 
@@ -188,40 +182,4 @@ public static class ExerciseFlowPolicy
 
         return string.Join("\n", kept);
     }
-}
-
-/// <summary>倒计时结束时的练习收尾数据；由 Shell 层落快照与书签。</summary>
-public sealed class PracticeFinishRecord
-{
-    public const int CurrentVersion = 1;
-
-    public int Version { get; set; } = CurrentVersion;
-
-    public string ExerciseId { get; set; } = "";
-
-    public int BoardPageIndex { get; set; } = -1;
-
-    public string SnapshotPath { get; set; } = "";
-
-    public string BookmarkName { get; set; } = "练习结束";
-
-    public bool BookmarkCreated { get; set; }
-
-    public long FinishedAtMs { get; set; }
-}
-
-public static class PracticeFinishPolicy
-{
-    /// <summary>结束时无论是否录制都要保留板书快照；录制中额外生成章节书签。</summary>
-    public static PracticeFinishRecord Plan(PracticePlan plan, bool isRecording, bool snapshotSaved)
-        => new()
-        {
-            ExerciseId = plan?.ExerciseId ?? "",
-            BoardPageIndex = plan?.BoardPageIndex ?? -1,
-            BookmarkName = plan?.BookmarkName ?? "练习结束",
-            BookmarkCreated = isRecording,
-            FinishedAtMs = 0,
-        };
-
-    public static bool ShouldNotify(bool isRecording) => isRecording;
 }

@@ -22,6 +22,16 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        var moduleResourcesCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--moduleresourcescheck=", StringComparison.OrdinalIgnoreCase));
+        if (moduleResourcesCheck is not null) { _ = Diagnostics.ModuleResourcesRegression.Run(moduleResourcesCheck["--moduleresourcescheck=".Length..]); return; }
+        var resizeCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--windowresizecheck="));
+        if (resizeCheck is not null) { _ = Diagnostics.WindowResizeRegression.Run(resizeCheck["--windowresizecheck=".Length..]); return; }
+        var extensionUpdatesCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--extensionupdatescheck=", StringComparison.OrdinalIgnoreCase));
+        if (extensionUpdatesCheck is not null) { _ = Diagnostics.ExtensionUpdateRegression.Run(extensionUpdatesCheck["--extensionupdatescheck=".Length..]); return; }
+        var countdownCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--countdowncheck=", StringComparison.OrdinalIgnoreCase));
+        if (countdownCheck is not null) { _ = Diagnostics.CountdownWindowRegression.Run(countdownCheck["--countdowncheck=".Length..]); return; }
+        var iconCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--iconfontcheck=", StringComparison.OrdinalIgnoreCase));
+        if (iconCheck is not null) { _ = Diagnostics.IconFontRegression.Run(iconCheck["--iconfontcheck=".Length..]); return; }
         var documentAiCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--documentaicheck=", StringComparison.OrdinalIgnoreCase));
         if (documentAiCheck is not null) { _ = Diagnostics.DocumentAiRegression.Run(documentAiCheck["--documentaicheck=".Length..]); return; }
         var libraryCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--librarycheck=", StringComparison.OrdinalIgnoreCase));
@@ -96,6 +106,8 @@ public partial class App : Application
         if (shortcutCheck is not null) { _ = Diagnostics.ShortcutRegression.Run(shortcutCheck["--shortcutcheck=".Length..]); return; }
         var geometryCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--geometrycheck=", StringComparison.OrdinalIgnoreCase));
         if (geometryCheck is not null) { _ = Diagnostics.GeometryRegression.Run(geometryCheck[16..]); return; }
+        var pdfLifetimeCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--pdflifetimecheck=", StringComparison.OrdinalIgnoreCase));
+        if (pdfLifetimeCheck is not null) { _ = Diagnostics.PdfRegression.Run(pdfLifetimeCheck["--pdflifetimecheck=".Length..], lifetimeOnly: true); return; }
         var pdfCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--pdfcheck=", StringComparison.OrdinalIgnoreCase));
         if (pdfCheck is not null) { _ = Diagnostics.PdfRegression.Run(pdfCheck[11..]); return; }
         var extensionsCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--extensionscheck=", StringComparison.OrdinalIgnoreCase));

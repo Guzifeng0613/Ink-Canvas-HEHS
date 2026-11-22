@@ -2,6 +2,32 @@ using System.Diagnostics;
 using System.Text.Json;
 using InkCanvas.Core.Update;
 
+if (args.Length == 4 && args[0] == "--restart")
+{
+    try
+    {
+        int parentId = int.Parse(args[1], System.Globalization.CultureInfo.InvariantCulture);
+        long started = long.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture);
+        string executable = Path.GetFullPath(args[3]);
+        if (!Path.GetFileName(executable).Equals("InkCanvas.exe", StringComparison.OrdinalIgnoreCase)) return 2;
+        try
+        {
+            using var parent = Process.GetProcessById(parentId);
+            if (parent.StartTime.ToUniversalTime().Ticks == started)
+            {
+                if (!string.Equals(parent.MainModule?.FileName, executable, StringComparison.OrdinalIgnoreCase)) return 2;
+                using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+                await parent.WaitForExitAsync(timeout.Token);
+            }
+        }
+        catch (ArgumentException) { }
+        Process.Start(new ProcessStartInfo(executable, "-m") { WorkingDirectory = Path.GetDirectoryName(executable), UseShellExecute = true });
+        return 0;
+    }
+    catch (Exception exception)
+    { InkCanvas.Core.Diagnostics.FileLog.WriteLogToFile("Restart failed: " + exception, InkCanvas.Core.Diagnostics.LogType.Error); return 1; }
+}
+
 if (args.Length != 1) return 2;
 string planPath = Path.GetFullPath(args[0]), directory = Path.GetDirectoryName(planPath);
 UpdatePlan plan = null;

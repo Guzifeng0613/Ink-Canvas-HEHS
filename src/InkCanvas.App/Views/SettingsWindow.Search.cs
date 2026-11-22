@@ -86,7 +86,7 @@ public sealed partial class SettingsWindow
 
     private Border Searchable(Border card, string title, string keywords = null)
     {
-        var entry = new SettingsSearchEntry(_buildingCategory, title, keywords);
+        var entry = new SettingsSearchEntry(_buildingCategory, title, string.Join(" ", keywords, SettingsCategoryCatalog.SearchTerms(_buildingCategory)));
         if (_indexingSearch) _searchEntries.Add(entry);
         else _searchTargets[entry.Key] = card;
         return card;

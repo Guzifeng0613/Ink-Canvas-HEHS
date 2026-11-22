@@ -26,6 +26,10 @@ public sealed class TouchIconButton : Button
         nameof(Glyph), typeof(string), typeof(TouchIconButton),
         new PropertyMetadata("", OnGlyphChanged));
 
+    public static readonly DependencyProperty IconSizeProperty = DependencyProperty.Register(
+        nameof(IconSize), typeof(double), typeof(TouchIconButton),
+        new PropertyMetadata(20d, OnIconSizeChanged));
+
     private readonly FontIcon _icon;
     private readonly Viewbox _glyphHost;
     private readonly TextBlock _aiText;
@@ -45,23 +49,13 @@ public sealed class TouchIconButton : Button
 
     public TouchIconButton()
     {
-        MinWidth = 40;
-        MinHeight = 40;
-        Padding = new Thickness(8);
-        CornerRadius = new CornerRadius(8);
-        BorderThickness = new Thickness(0);
-        Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-        HorizontalAlignment = HorizontalAlignment.Center;
-        VerticalAlignment = VerticalAlignment.Center;
-        // Center the content cell explicitly rather than relying on the Button template's
-        // default content alignment, so the icon stays centered at every configured size.
-        HorizontalContentAlignment = HorizontalAlignment.Center;
-        VerticalContentAlignment = VerticalAlignment.Center;
+        // Theme-style defaults allow an explicit module style to override touch sizing.
+        DefaultStyleKey = typeof(TouchIconButton);
 
         _icon = new FontIcon
         {
             FontFamily = IconFontStyle.Font,
-            FontSize = 20,
+            FontSize = IconSize,
             IsTextScaleFactorEnabled = false,
             // Apply the current value explicitly: assigning a value equal to the DP default
             // does not raise the change callback, which would leave the icon blank.
@@ -72,8 +66,8 @@ public sealed class TouchIconButton : Button
         _glyphHost = new Viewbox
         {
             Child = _icon,
-            Width = 24,
-            Height = 24,
+            Width = Math.Ceiling(IconSize + 4),
+            Height = Math.Ceiling(IconSize + 4),
             Stretch = Stretch.Uniform,
             StretchDirection = StretchDirection.DownOnly,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -114,14 +108,8 @@ public sealed class TouchIconButton : Button
 
     public double IconSize
     {
-        get => _icon.FontSize;
-        set
-        {
-            _icon.FontSize = value;
-            // Keep the complete glyph line box inside the icon cell, including its descender.
-            _glyphHost.Width = Math.Ceiling(value + 4);
-            _glyphHost.Height = Math.Ceiling(value + 4);
-        }
+        get => (double)GetValue(IconSizeProperty);
+        set => SetValue(IconSizeProperty, value);
     }
 
     /// <summary>Override for glyphs that live outside Segoe Fluent Icons (e.g. geometric shapes).</summary>
@@ -305,6 +293,17 @@ public sealed class TouchIconButton : Button
 
     private static void OnGlyphChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         => ((TouchIconButton)d).UpdateGlyph();
+
+    private static void OnIconSizeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var button = (TouchIconButton)d;
+        if (button._glyphHost is null) return;
+        double size = (double)e.NewValue;
+        button._icon.FontSize = size;
+        // Keep the complete glyph line box inside the icon cell, including its descender.
+        button._glyphHost.Width = Math.Ceiling(size + 4);
+        button._glyphHost.Height = Math.Ceiling(size + 4);
+    }
 
     private void UpdateGlyph()
     {

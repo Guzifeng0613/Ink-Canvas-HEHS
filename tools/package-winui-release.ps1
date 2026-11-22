@@ -14,9 +14,9 @@ $outputRoot = if ([IO.Path]::IsPathRooted($OutputDirectory)) { [IO.Path]::GetFul
 $app = Join-Path $outputRoot 'InkCanvas'
 if (Test-Path -LiteralPath $app) { throw 'Use a fresh release output directory so older build files cannot enter the release.' }
 New-Item -ItemType Directory -Path $app -Force | Out-Null
-& dotnet publish $projectPath -c Release -p:Platform=x64 -o $app --nologo
+& dotnet publish $projectPath -c Release -p:Platform=x64 -m:1 -p:BuildInParallel=false -o $app --nologo
 if ($LASTEXITCODE -ne 0) { throw 'Application publish failed.' }
-$modules = @('InkCanvas.Modules.Library', 'InkCanvas.Modules.AiAssistant', 'InkCanvas.Modules.AnalyticGeometry', 'InkCanvas.Modules.Pdf', 'InkCanvas.Modules.ScreenTracking')
+$modules = @('InkCanvas.Modules.Library', 'InkCanvas.Modules.AiAssistant', 'InkCanvas.Modules.AnalyticGeometry', 'InkCanvas.Modules.Pdf', 'InkCanvas.Modules.ScreenTracking', 'InkCanvas.Modules.TimeMachine')
 foreach ($module in $modules) {
     & (Join-Path $PSScriptRoot 'pack-extension.ps1') -Project (Join-Path $repoRoot ('src\' + $module + '\' + $module + '.csproj')) -Kind Module -OutputDirectory $outputRoot
     if ($LASTEXITCODE -ne 0) { throw ('Module publish failed ' + $module) }
