@@ -23,6 +23,7 @@ public sealed class AppSettings
     [JsonPropertyName("experimental")] public ExperimentalSettings Experimental { get; set; } = new();
     [JsonPropertyName("display")] public DisplaySettings Display { get; set; } = new();
     [JsonPropertyName("storage")] public StorageSettings Storage { get; set; } = new();
+    [JsonPropertyName("archive")] public ArchiveSettings Archive { get; set; } = new();
 
     private AiSettings _ai = new();
 
@@ -213,6 +214,7 @@ public sealed class FeatureSettings
 /// </summary>
 public sealed class AiSettings
 {
+    public AiDocumentSettings Documents { get; set; } = new();
     [JsonPropertyName("enableLocalCorrection")] public bool EnableLocalCorrection { get; set; } = true;
     [JsonPropertyName("enableEditablePaste")] public bool EnableEditablePaste { get; set; } = true;
     [JsonPropertyName("enableVerification")] public bool EnableVerification { get; set; } = true;
@@ -226,6 +228,14 @@ public sealed class AiSettings
     /// 因此升级后的首次使用仍会提示一次；之后不再反复打扰。
     /// </summary>
     [JsonPropertyName("hasSeenLassoHint")] public bool HasSeenLassoHint { get; set; }
+}
+
+public sealed class AiDocumentSettings
+{
+    public bool Enabled { get; set; }
+    public string Endpoint { get; set; } = "";
+    public string Model { get; set; } = "";
+    public bool AssistantProtocol { get; set; }
 }
 
 public enum OptionalOperation { Yes, No, Ask }

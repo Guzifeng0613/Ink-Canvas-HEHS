@@ -16,9 +16,11 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>false</SelfContained>
     <ApplicationIcon>Assets\InkCanvas.ico</ApplicationIcon>
-    <Version>3.7.6</Version>
+    <Version>3.8.0</Version>
     <Product>Ink Canvas (WinUI 3)</Product>
     <IncludeScreenTrackingModule Condition="'$(IncludeScreenTrackingModule)' == ''">true</IncludeScreenTrackingModule>
+    <IncludeAiAssistantModule Condition="'$(IncludeAiAssistantModule)' == ''">true</IncludeAiAssistantModule>
+    <IncludeLibraryModule Condition="'$(IncludeLibraryModule)' == ''">true</IncludeLibraryModule>
     <IncludePdfModule Condition="'$(IncludePdfModule)' == ''">true</IncludePdfModule>
     <IncludeAnalyticGeometryModule Condition="'$(IncludeAnalyticGeometryModule)' == ''">true</IncludeAnalyticGeometryModule>
   </PropertyGroup>
@@ -43,6 +45,8 @@
     <ProjectReference Include="..\InkCanvas.Modules.ScreenTracking\InkCanvas.Modules.ScreenTracking.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeScreenTrackingModule)' == 'true'" />
     <ProjectReference Include="..\InkCanvas.Modules.Pdf\InkCanvas.Modules.Pdf.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludePdfModule)' == 'true'" />
     <ProjectReference Include="..\InkCanvas.Modules.AnalyticGeometry\InkCanvas.Modules.AnalyticGeometry.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeAnalyticGeometryModule)' == 'true'" />
+    <ProjectReference Include="..\InkCanvas.Modules.AiAssistant\InkCanvas.Modules.AiAssistant.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeAiAssistantModule)' == 'true'" />
+    <ProjectReference Include="..\InkCanvas.Modules.Library\InkCanvas.Modules.Library.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeLibraryModule)' == 'true'" />
     <ProjectReference Include="..\InkCanvas.PluginHost\InkCanvas.PluginHost.csproj" ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
   <ItemGroup>
@@ -86,9 +90,13 @@
       <_WorkerOutput>$(MSBuildProjectDirectory)\..\InkCanvas.PluginHost\bin\$(Platform)\$(Configuration)\net10.0\$(RuntimeIdentifier)\</_WorkerOutput>
       <_UpdaterOutput>$(MSBuildProjectDirectory)\..\InkCanvas.UpdateHost\bin\$(Platform)\$(Configuration)\net10.0\$(RuntimeIdentifier)\</_UpdaterOutput>
       <_PdfOutput>$(MSBuildProjectDirectory)\..\InkCanvas.Modules.Pdf\bin\$(Platform)\$(Configuration)\net10.0-windows10.0.26100.0\$(RuntimeIdentifier)\</_PdfOutput>
+      <_AssistantOutput>$(MSBuildProjectDirectory)\..\InkCanvas.Modules.AiAssistant\bin\$(Platform)\$(Configuration)\net10.0-windows10.0.26100.0\$(RuntimeIdentifier)\</_AssistantOutput>
+      <_LibraryOutput>$(MSBuildProjectDirectory)\..\InkCanvas.Modules.Library\bin\$(Platform)\$(Configuration)\net10.0-windows10.0.26100.0\$(RuntimeIdentifier)\</_LibraryOutput>
       <_GeometryOutput>$(MSBuildProjectDirectory)\..\InkCanvas.Modules.AnalyticGeometry\bin\$(Platform)\$(Configuration)\net10.0-windows10.0.26100.0\$(RuntimeIdentifier)\</_GeometryOutput>
     </PropertyGroup>
     <ItemGroup>
+      <_AssistantFiles Include="$(_AssistantOutput)InkCanvas.Modules.AiAssistant.dll;$(_AssistantOutput)InkCanvas.Modules.AiAssistant.deps.json;$(_AssistantOutput)module.json" Condition="'$(IncludeAiAssistantModule)' == 'true'" />
+      <_LibraryFiles Include="$(_LibraryOutput)InkCanvas.Modules.Library.dll;$(_LibraryOutput)InkCanvas.Modules.Library.deps.json;$(_LibraryOutput)module.json" Condition="'$(IncludeLibraryModule)' == 'true'" />
       <_ModuleFiles Include="$(_ExtensionOutput)InkCanvas.Modules.ScreenTracking.dll;$(_ExtensionOutput)InkCanvas.Modules.ScreenTracking.deps.json;$(_ExtensionOutput)Interop.UIAutomationClient.dll;$(_ExtensionOutput)module.json;$(_ExtensionOutput)UIAutomation-Interop.txt" Condition="'$(IncludeScreenTrackingModule)' == 'true'" />
       <_WorkerFiles Include="$(_WorkerOutput)*.dll;$(_WorkerOutput)*.exe;$(_WorkerOutput)*.json" />
       <_UpdaterFiles Include="$(_UpdaterOutput)*.dll;$(_UpdaterOutput)*.exe;$(_UpdaterOutput)*.json" />
@@ -100,6 +108,10 @@
       <_GeometryLicenses Include="$(_GeometryOutput)Licenses\*.txt" Condition="'$(IncludeAnalyticGeometryModule)' == 'true'" />
       <_GeometryFiles Include="$(_GeometryOutput)Jint.dll;$(_GeometryOutput)Acornima.dll" Condition="'$(IncludeAnalyticGeometryModule)' == 'true'" />
     </ItemGroup>
+    <Copy SourceFiles="@(_AssistantFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.ai-assistant\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_LibraryFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.library\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_LibraryFiles)" DestinationFolder="$(PublishDir)Modules\inkcanvas.library\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
+    <Copy SourceFiles="@(_AssistantFiles)" DestinationFolder="$(PublishDir)Modules\inkcanvas.ai-assistant\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
     <Copy SourceFiles="@(_ModuleFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.screen-tracking\" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_WorkerFiles)" DestinationFolder="$(OutDir)PluginHost\" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_UpdaterFiles)" DestinationFolder="$(OutDir)UpdateHost\" SkipUnchangedFiles="true" />

@@ -36,7 +36,7 @@ namespace InkCanvas.App.Views;
 /// center tools, right page-navigation mirror — themed to the black/white board, plus the
 /// top-left selection action panel (MW_SelectionGestures.cs).
 /// </summary>
-public sealed class BoardWindow : Window
+public sealed partial class BoardWindow : Window
 {
     // WPF board glyph codes (Segoe Fluent Icons / MDL2), MainWindow.xaml board regions.
     private const string GlyphPrev = "";
@@ -254,6 +254,7 @@ public sealed class BoardWindow : Window
         _board.ImagePlacementChanged += _images.UpdateElement;
         _board.MediaPlacementChanged += _media.UpdateElement;
         Closed += OnClosed;
+        AppWindow.Closing += OnArchiveClosing;
         Activated += (_, _) => OnActivated();
 
         BindPage();
@@ -1492,7 +1493,7 @@ public sealed class BoardWindow : Window
         if (index < 0) return;
         var automation = _services.Settings.Automation;
         if (automation.IsAutoSaveStrokesAtClear && target.Document.Count > automation.MinimumAutomationStrokeNumber)
-            _services.AutoSave.SaveSnapshot(target.Document.Strokes, "board-delete");
+            _ = _services.AutoSave.SaveSnapshotAsync(target.Document.Strokes, "board-delete");
         _board.RemovePage(index);
         UpdatePageNavigation();
     }
@@ -1513,7 +1514,7 @@ public sealed class BoardWindow : Window
         if (!automation.IsAutoSaveStrokesAtClear) return;
         if (_board.Current.Document.Count <= automation.MinimumAutomationStrokeNumber) return;
         if (reason == "board-clear" && _shell is not null) _ = _shell.ScreenshotAsync();
-        _services.AutoSave.SaveSnapshot(_board.Current.Document.Strokes, reason);
+        _ = _services.AutoSave.SaveSnapshotAsync(_board.Current.Document.Strokes, reason);
     }
 
     private void UpdatePageNavigation()
@@ -2102,19 +2103,29 @@ public sealed class BoardWindow : Window
 
     private async Task SavePageAsync()
     {
-        var picker = CreateSavePicker("画板页面", ".icink", $"Page-{_board.CurrentIndex + 1}.icink");
-        var file = await picker.PickSaveFileAsync();
-        if (file is null) return;
-        try { await _board.SavePageAsync(file.Path); }
+        try
+        {
+            string name = ArchivePolicy.FileName(_services.Settings.Archive, DateTimeOffset.Now, 1, "当前页");
+            var library = _services.Modules.GetExport<InkCanvas.Host.Contracts.IBoardLibraryService>();
+            string path = library is not null ? await library.PickSaveAsync(name) : await ImageFilePicker.SaveArchiveAsync(WindowChrome.GetWorkArea(this),
+                ArchivePolicy.ResolveDirectory(_services.Settings.Archive.DefaultDirectory), name);
+            if (path is null || _closed) return;
+            await _services.Archives.SaveManualAsync(_board, path, entireBoard: false);
+        }
         catch (Exception ex) { await ShowMessageAsync($"页面保存失败：{ex.Message}"); }
     }
 
     private async Task SaveBoardAsync()
     {
-        var picker = CreateSavePicker("画板文件", ".icink", "InkCanvas-Board.icink");
-        var file = await picker.PickSaveFileAsync();
-        if (file is null) return;
-        try { await _board.SaveBoardAsync(file.Path); }
+        try
+        {
+            string name = ArchivePolicy.FileName(_services.Settings.Archive, DateTimeOffset.Now, _board.PageCount, "整板");
+            var library = _services.Modules.GetExport<InkCanvas.Host.Contracts.IBoardLibraryService>();
+            string path = library is not null ? await library.PickSaveAsync(name) : await ImageFilePicker.SaveArchiveAsync(WindowChrome.GetWorkArea(this),
+                ArchivePolicy.ResolveDirectory(_services.Settings.Archive.DefaultDirectory), name);
+            if (path is null || _closed) return;
+            await _services.Archives.SaveManualAsync(_board, path, entireBoard: true);
+        }
         catch (Exception ex) { await ShowMessageAsync($"画板保存失败：{ex.Message}"); }
     }
 
@@ -2150,11 +2161,11 @@ public sealed class BoardWindow : Window
 
     private async Task<StorageFile> PickInkFileAsync()
     {
-        var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
-        picker.FileTypeFilter.Add(".icink");
-        foreach (string extension in _services.Plugins.ImportExtensions) picker.FileTypeFilter.Add(extension);
-        InitializeWithWindow.Initialize(picker, WindowChrome.GetHwnd(this));
-        return await picker.PickSingleFileAsync();
+        var extensions = new[] { ".icink" }.Concat(_services.Plugins.ImportExtensions).Distinct().ToArray();
+        var library = _services.Modules.GetExport<InkCanvas.Host.Contracts.IBoardLibraryService>();
+        string path = library is not null ? await library.PickOpenAsync(extensions) : await ImageFilePicker.OpenArchiveAsync(WindowChrome.GetWorkArea(this),
+            ArchivePolicy.ResolveDirectory(_services.Settings.Archive.DefaultDirectory), extensions);
+        return path is null ? null : await StorageFile.GetFileFromPathAsync(path);
     }
 
     private async Task ShowMessageAsync(string message)

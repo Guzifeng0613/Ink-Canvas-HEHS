@@ -167,6 +167,7 @@ public sealed class AiClient : IDisposable
             Viewport = request.Viewport,
             Mode = request.Mode,
             SessionId = request.SessionId ?? "",
+            Question = request.Question ?? "",
             Stage = stage,
             Region = request.Region,
             Images = request.Images,
@@ -208,6 +209,7 @@ public sealed class AiClient : IDisposable
             writer.WritePropertyName("viewport");
             WriteViewport(writer, request.Viewport ?? new AssistantViewport());
             writer.WriteString("stage", StageText(request.Stage));
+            if (!string.IsNullOrWhiteSpace(request.Question)) writer.WriteString("question", request.Question);
             writer.WriteString("teaching", AssistantTeachingPolicy.Wire(request.Teaching));
             if (!string.IsNullOrEmpty(request.Purpose))
                 writer.WriteString("purpose", request.Purpose);

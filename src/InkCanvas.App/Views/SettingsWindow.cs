@@ -29,7 +29,7 @@ public sealed partial class SettingsWindow : Window
     private readonly IShellActions _shell;
     private StackPanel _content;
     private WindowWorkspace _workspace;
-    private static readonly string[] Categories = { "启动选项", "画板选项", "手势选项", "显示器", "墨迹识别选项", "外观选项", "PPT 选项", "高级选项", "自动选项", "实验性设置", "模块与插件", "关于 Ink Canvas Artistry", "抽奖与点名", "存储与缓存" };
+    private static readonly string[] Categories = { "启动选项", "画板选项", "手势选项", "显示器", "墨迹识别选项", "外观选项", "PPT 选项", "高级选项", "自动选项", "实验性设置", "模块与插件", "关于 Ink Canvas Artistry", "抽奖与点名", "存储与缓存", "保存与备份" };
     private TextBlock _screenTrackingStatus;
     private TextBlock _updateStatus;
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _trackingStatusTimer;
@@ -141,7 +141,7 @@ public sealed partial class SettingsWindow : Window
         _workspace.Resources["NavigationViewHeaderMargin"] = new Thickness(24, 24, 24, 12);
         _workspace.Resources["NavigationViewContentBackground"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
         _workspace.Resources["NavigationViewContentGridBorderBrush"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-        string[] icons = { "\uF610", "\uF3DD", "\uE6E5", "\uF1E3", "\uF379", "\uF2F6", "\uE600", "\uF6B3", "\uF576", "\uF6B3", "\uF4DD", "\uF4AB", "\uF5B3", "\uF41D" };
+        string[] icons = { "\uF610", "\uF3DD", "\uE6E5", "\uF1E3", "\uF379", "\uF2F6", "\uE600", "\uF6B3", "\uF576", "\uF6B3", "\uF4DD", "\uF4AB", "\uF5B3", "\uF41D", "\uF603" };
         for (int index = 0; index < Categories.Length; index++)
         {
             string category = Categories[index];
@@ -304,6 +304,9 @@ public sealed partial class SettingsWindow : Window
     {
         switch (category)
         {
+            case "保存与备份":
+                BuildArchiveSettings();
+                break;
             case "模块与插件":
                 BuildExtensionsCategory();
                 break;
@@ -569,6 +572,7 @@ public sealed partial class SettingsWindow : Window
                 _content.Children.Add(InfoRow("触摸参数根据驱动报告的接触尺寸生效，可先使用校准区域测量。"));
                 break;
             case "自动选项":
+                _content.Children.Add(ButtonRow("保存与备份", "设置默认存档目录、白板退出保存、定时保存及文件名。", () => SelectCategory("保存与备份"), "前往设置"));
                 AddSection("工具栏自动收纳");
                 _content.Children.Add(ToggleRow("进入“希沃白板”时自动收纳", () => S.Automation.IsAutoFoldInEasiNote,
                     v => S.Automation.IsAutoFoldInEasiNote = v));

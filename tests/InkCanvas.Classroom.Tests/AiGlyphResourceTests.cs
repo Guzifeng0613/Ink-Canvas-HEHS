@@ -12,7 +12,7 @@ public sealed class AiGlyphResourceTests
     {
         "src/InkCanvas.Controls/Controls/TouchIconButton.cs",
         "src/InkCanvas.App/Views/ToolkitWindow.cs",
-        "src/InkCanvas.App/Views/AssistantWindow.cs",
+        "src/InkCanvas.Modules.AiAssistant/AssistantWindow.cs",
         "src/InkCanvas.App/Views/SlideNavigatorWindow.cs",
     };
 

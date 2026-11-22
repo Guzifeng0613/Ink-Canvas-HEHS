@@ -22,6 +22,18 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        var documentAiCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--documentaicheck=", StringComparison.OrdinalIgnoreCase));
+        if (documentAiCheck is not null) { _ = Diagnostics.DocumentAiRegression.Run(documentAiCheck["--documentaicheck=".Length..]); return; }
+        var libraryCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--librarycheck=", StringComparison.OrdinalIgnoreCase));
+        if (libraryCheck is not null) { _ = Diagnostics.LibraryRegression.Run(libraryCheck["--librarycheck=".Length..]); return; }
+        var screenArchiveFixture = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--screenarchivefixture=", StringComparison.OrdinalIgnoreCase));
+        if (screenArchiveFixture is not null) { Diagnostics.ScreenArchiveRegression.Fixture(screenArchiveFixture["--screenarchivefixture=".Length..]); return; }
+        var screenArchiveCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--screenarchivecheck=", StringComparison.OrdinalIgnoreCase));
+        if (screenArchiveCheck is not null) { _ = Diagnostics.ScreenArchiveRegression.Run(screenArchiveCheck["--screenarchivecheck=".Length..]); return; }
+        var archiveCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--archivecheck=", StringComparison.OrdinalIgnoreCase));
+        if (archiveCheck is not null) { _ = Diagnostics.ArchiveRegression.Run(archiveCheck["--archivecheck=".Length..]); return; }
+        var aiPluginCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--aiplugincheck=", StringComparison.OrdinalIgnoreCase));
+        if (aiPluginCheck is not null) { _ = Diagnostics.AiPluginRegression.Run(aiPluginCheck["--aiplugincheck=".Length..]); return; }
         var micaCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--micacheck=", StringComparison.OrdinalIgnoreCase));
         if (micaCheck is not null) { _ = Diagnostics.MicaWindowRegression.Run(micaCheck["--micacheck=".Length..]); return; }
         var inkWashCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--inkwashcheck=", StringComparison.OrdinalIgnoreCase));
@@ -38,6 +50,8 @@ public partial class App : Application
         if (storageCheck is not null) { _ = Diagnostics.StorageUpdateRegression.Run(storageCheck["--storagecheck=".Length..]); return; }
         var pptCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--pptcheck=", StringComparison.OrdinalIgnoreCase));
         if (pptCheck is not null) { _ = Diagnostics.PptRegression.Run(pptCheck["--pptcheck=".Length..]); return; }
+        var pptNavigationCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--pptnavlayoutcheck=", StringComparison.OrdinalIgnoreCase));
+        if (pptNavigationCheck is not null) { _ = Diagnostics.PptNavigationLayoutRegression.Run(pptNavigationCheck["--pptnavlayoutcheck=".Length..]); return; }
         var updateSourceCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--updatesourcecheck=", StringComparison.OrdinalIgnoreCase));
         if (updateSourceCheck is not null) { _ = Diagnostics.UpdateSourceRegression.Run(updateSourceCheck["--updatesourcecheck=".Length..]); return; }
         var toolbarAnimationCheck = Environment.GetCommandLineArgs().FirstOrDefault(a => a.StartsWith("--toolbaranimationcheck=", StringComparison.OrdinalIgnoreCase));
@@ -165,6 +179,8 @@ public partial class App : Application
         var services = new AppServices();
         _shell = new ShellController(services);
         _shell.Start();
+        var boardArgument = Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(a => !a.StartsWith("--") && Path.GetExtension(a).Equals(".icink", StringComparison.OrdinalIgnoreCase));
+        if (boardArgument is not null) _ = _shell.OpenLibraryDocumentAsync(boardArgument);
         var pdfArgument = Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(a => a.StartsWith("--pdf=", StringComparison.OrdinalIgnoreCase)
             || !a.StartsWith("--") && Path.GetExtension(a).Equals(".pdf", StringComparison.OrdinalIgnoreCase));
         if (pdfArgument is not null)

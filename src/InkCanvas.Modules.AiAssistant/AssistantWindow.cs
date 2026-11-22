@@ -1,11 +1,9 @@
-using InkCanvas.App.Services;
 using InkCanvas.Controls.Controls;
 using InkCanvas.Core.AiAssistant;
 using InkCanvas.Core.Classroom;
 using InkCanvas.Core.Settings;
 using Microsoft.UI;
 using Microsoft.UI.Text;
-using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
@@ -13,28 +11,23 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Shapes;
-using Windows.Graphics;
 using Windows.Storage.Streams;
 using Windows.UI.Text;
 
-namespace InkCanvas.App.Views;
+namespace InkCanvas.Modules.AiAssistant;
 
 /// <summary>
-/// AI 助教浮窗：纯 code-behind，无 XAML。正文按 <see cref="AssistantText"/> 的解析结果
+/// AI 助教原生工作区，正文按 <see cref="AssistantText"/> 的解析结果
 /// 渲染 Markdown/公式，底部提供停止、重试、复制、贴回与追问。窗口不持有流，只把点击
-/// 转成事件，由 ShellController 统一管理会话与取消。
+/// 转成事件，由插件服务管理会话与取消。
 /// </summary>
 public sealed class AssistantWindow : Window
 {
-    public const double CardWidth = 380;
-    public const double MaxHeightRatio = 0.62;
-
-    private const double MaxCardHeight = 460;
-    private const double TitleHeight = 40;
+    private const double CardWidth = 320;
     private const double MonoFontSize = 12;
-    private const double BodyFontSize = 13.5;
-    private const double BodyLineHeight = 21;
-    private const double MaxThumbnailHeight = 96;
+    private const double BodyFontSize = 15;
+    private const double BodyLineHeight = 24;
+    private const double MaxThumbnailHeight = 220;
     private const double MinRegionSize = 6;
     private const double DragThreshold = 4;
     private static readonly TimeSpan HighlightDuration = TimeSpan.FromSeconds(1.6);
@@ -42,7 +35,6 @@ public sealed class AssistantWindow : Window
     private readonly Grid _titleBar;
     private readonly Ellipse _statusDot;
     private readonly TextBlock _statusText;
-    private readonly TextBlock _titleText;
     private readonly Button _modeCapsule;
     private readonly TextBlock _modeText;
     private readonly ProgressRing _progressRing;
@@ -79,16 +71,12 @@ public sealed class AssistantWindow : Window
     private readonly Button _paste;
     private readonly Button _favorite;
     private readonly Button _revealNext;
-    private readonly Button _close;
     private readonly TextBlock _cursor;
     private readonly DispatcherTimer _cursorTimer;
     private readonly TextBox _followUp;
     private readonly Button _send;
     private readonly Border _root;
 
-    private readonly Brush _rootBgBrush;
-    private readonly Brush _highlightBrush;
-    private readonly Brush _dividerBrush;
     private readonly Brush _textPrimary;
     private readonly Brush _textSecondary;
     private readonly Brush _accentBrush;
@@ -117,6 +105,8 @@ public sealed class AssistantWindow : Window
     private bool _busy;
     private bool _pasted;
     private bool _hasCopyable;
+    private bool _closed;
+    private int _thumbnailGeneration, _problemGeneration;
     private readonly FeatureSettings _features;
     private bool _aiTeachingEnabled = true;
     private string _sourcePresentation = "";
@@ -135,7 +125,7 @@ public sealed class AssistantWindow : Window
 
     public event Action<string> FollowUpRequested;
 
-    /// <summary>讲题模式切换请求；由 ShellController 决定是否重发请求。</summary>
+    /// <summary>讲题模式切换请求；由插件服务决定是否重发请求。</summary>
     public event Action<AssistantTeachingMode> TeachingModeRequested;
 
     /// <summary>分步引导下请求展示下一步。</summary>
@@ -168,9 +158,6 @@ public sealed class AssistantWindow : Window
         bool light = theme == 1 || (theme != 2 && Application.Current.RequestedTheme == ApplicationTheme.Light);
         if (light)
         {
-            _rootBgBrush = Solid(0xF2, 0xFF, 0xFF, 0xFF);
-            _highlightBrush = Solid(0xCC, 0xFF, 0xFF, 0xFF);
-            _dividerBrush = Solid(0x14, 0x00, 0x00, 0x00);
             _textPrimary = Solid(0xE4, 0x00, 0x00, 0x00);
             _textSecondary = Solid(0x9E, 0x00, 0x00, 0x00);
             _accentBrush = Solid(0xFF, 0x00, 0x67, 0xC0);
@@ -181,9 +168,6 @@ public sealed class AssistantWindow : Window
         }
         else
         {
-            _rootBgBrush = Solid(0xE6, 0x20, 0x21, 0x24);
-            _highlightBrush = Solid(0x22, 0xFF, 0xFF, 0xFF);
-            _dividerBrush = Solid(0x1A, 0xFF, 0xFF, 0xFF);
             _textPrimary = Solid(0xF2, 0xFF, 0xFF, 0xFF);
             _textSecondary = Solid(0xA8, 0xFF, 0xFF, 0xFF);
             _accentBrush = Solid(0xFF, 0x4C, 0xC2, 0xFF);
@@ -196,102 +180,21 @@ public sealed class AssistantWindow : Window
         _pillBrush = _accentSoftBrush;
         _accentSolidBrush = GetSystemAccent() ?? _accentBrush;
 
-        // ---- header ------------------------------------------------------
-        _statusDot = new Ellipse
+        _statusDot = new Ellipse { Width = 8, Height = 8, Fill = _textSecondary, VerticalAlignment = VerticalAlignment.Center };
+        _modeText = new TextBlock { Text = "分步引导", VerticalAlignment = VerticalAlignment.Center };
+        _modeCapsule = new Button { Content = _modeText, MinHeight = 40, MinWidth = 120 };
+        var modes = new MenuFlyout();
+        foreach (AssistantTeachingMode mode in Enum.GetValues<AssistantTeachingMode>())
         {
-            Width = 8,
-            Height = 8,
-            Fill = _textSecondary,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        _titleText = new TextBlock
-        {
-            Text = "AI 助教",
-            FontSize = 15,
-            FontWeight = FontWeights.SemiBold,
-            Foreground = _textPrimary,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        // 标题前缀「AI」徽标独立成控件：WinUI 3 的 TextBlock.Inlines 不接受
-        // InlineUIContainer 时会抛 E_INVALIDARG，直接把徽标放进标题行更稳。
-        var titleBadge = new Border
-        {
-            Background = _accentSoftBrush,
-            CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(4, 1, 4, 1),
-            VerticalAlignment = VerticalAlignment.Center,
-            Child = AiGlyph.CreateLabel(AiGlyph.BadgeLabelSize, _accentBrush),
-        };
-        _modeText = new TextBlock
-        {
-            Text = "自动",
-            FontSize = 11,
-            Foreground = _accentBrush,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        _modeCapsule = new Button
-        {
-            Content = _modeText,
-            Background = Solid(0x0F, 0x00, 0x67, 0xC0),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(8, 2, 8, 2),
-            MinHeight = 24,
-            MinWidth = 0,
-            BorderThickness = new Thickness(0),
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        ToolTipService.SetToolTip(_modeCapsule, "切换讲题模式：只给提示 → 分步引导 → 完整解答 → 教师解析");
-        _modeCapsule.Click += (_, _) =>
-        {
-            if (_lastSession is null) return;
-            TeachingModeRequested?.Invoke(AssistantTeachingPolicy.Next(_lastSession.TeachingMode));
-        };
-
-        var headerLeft = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(12, 0, 0, 0),
-        };
-        headerLeft.Children.Add(_statusDot);
-        headerLeft.Children.Add(titleBadge);
-        headerLeft.Children.Add(_titleText);
-        headerLeft.Children.Add(_modeCapsule);
-
-        var closeButton = new Button
-        {
-            Content = new TextBlock { Text = "✕", FontSize = 12, Foreground = _textPrimary },
-            Width = 28,
-            Height = 28,
-            CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(0),
-            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-            BorderThickness = new Thickness(0),
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 8, 0),
-        };
-        closeButton.Click += (_, _) => Close();
-
-        _titleBar = new Grid { Height = TitleHeight, Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
-        _titleBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        _titleBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        _titleBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        Grid.SetColumn(headerLeft, 0);
-        Grid.SetColumn(closeButton, 2);
-        _titleBar.Children.Add(headerLeft);
-        _titleBar.Children.Add(closeButton);
-
-        var divider = new Border
-        {
-            Height = 1,
-            VerticalAlignment = VerticalAlignment.Bottom,
-            Background = _dividerBrush,
-        };
-        Grid.SetColumnSpan(divider, 3);
-        _titleBar.Children.Add(divider);
+            var item = new MenuFlyoutItem { Text = AssistantTeachingPolicy.Label(mode) };
+            item.Click += (_, _) => TeachingModeRequested?.Invoke(mode);
+            modes.Items.Add(item);
+        }
+        _modeCapsule.Flyout = modes;
+        var modeLabel = new TextBlock { Text = "讲解方式", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
+        var modeRow = new StackPanel { Orientation = Orientation.Horizontal, Children = { modeLabel, _modeCapsule } };
+        _titleBar = new Grid { Padding = new Thickness(20, 12, 20, 4) };
+        _titleBar.Children.Add(modeRow);
 
         // ---- status row --------------------------------------------------
         _progressRing = new ProgressRing
@@ -317,6 +220,7 @@ public sealed class AssistantWindow : Window
             Margin = new Thickness(12, 8, 12, 0),
             VerticalAlignment = VerticalAlignment.Center,
         };
+        statusRow.Children.Add(_statusDot);
         statusRow.Children.Add(_progressRing);
         statusRow.Children.Add(_statusText);
         statusRow.Children.Add(_statusBadge);
@@ -386,7 +290,7 @@ public sealed class AssistantWindow : Window
         };
 
         _addRegionLink = CreateSecondaryButton("＋ 追加选区");
-        _addRegionLink.Height = 28;
+        _addRegionLink.MinHeight = 40;
         _addRegionLink.HorizontalAlignment = HorizontalAlignment.Left;
         _addRegionLink.Visibility = Visibility.Collapsed;
         ToolTipService.SetToolTip(_addRegionLink, "先回画布用选择工具框选题干/图形/条件，再点此追加为同一题");
@@ -468,16 +372,6 @@ public sealed class AssistantWindow : Window
         _cursorTimer.Tick += (_, _) => _cursor.Opacity = _cursor.Opacity < 0.5 ? 1 : 0.15;
 
         _body = new StackPanel { Spacing = 10 };
-        if (demoMode) _body.Children.Add(new TextBlock
-        {
-            Text = "演示模式：当前显示固定示例，尚未连接 AI 服务。",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = _textSecondary,
-            FontSize = 12,
-        });
-        _body.Children.Add(_thumbnailHost);
-        _body.Children.Add(_problemScroll);
-        _body.Children.Add(_addRegionLink);
         _body.Children.Add(_hintRow);
         _body.Children.Add(_content);
 
@@ -522,19 +416,6 @@ public sealed class AssistantWindow : Window
         _studyRow.Children.Add(_variantAdvanced);
         _studyRow.Children.Add(_toggleAnnotations);
         _body.Children.Insert(0, _studyRow);
-        _close = new Button
-        {
-            Content = new TextBlock { Text = "✕", FontSize = 12, Foreground = _textPrimary },
-            Width = 32,
-            Height = 32,
-            CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(0),
-            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-            BorderThickness = new Thickness(0),
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-        };
-
         _stop.Visibility = Visibility.Collapsed;
         _retry.Visibility = Visibility.Collapsed;
         _paste.Visibility = Visibility.Collapsed;
@@ -548,7 +429,6 @@ public sealed class AssistantWindow : Window
         _paste.Click += (_, _) => PasteRequested?.Invoke();
         _favorite.Click += (_, _) => FavoriteExample();
         _revealNext.Click += (_, _) => RevealNextRequested?.Invoke();
-        _close.Click += (_, _) => Close();
 
         var actionRow = new StackPanel
         {
@@ -563,8 +443,7 @@ public sealed class AssistantWindow : Window
         actionRow.Children.Add(_copy);
         actionRow.Children.Add(_retry);
 
-        // 底部最多同时出现「贴回/收藏/停止/下一步/复制/重试」，380 宽卡片放不下，
-        // 放进横向滚动容器避免新增按钮把「重试」挤出可视区，纵向仍不滚动。
+        // Resizing the workspace keeps every action reachable through horizontal scrolling.
         var actionScroll = new ScrollViewer
         {
             Content = actionRow,
@@ -579,22 +458,17 @@ public sealed class AssistantWindow : Window
         _actions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         _actions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         Grid.SetColumn(actionScroll, 0);
-        Grid.SetColumn(_close, 1);
         _actions.Children.Add(actionScroll);
-        _actions.Children.Add(_close);
 
         _followUp = new TextBox
         {
             PlaceholderText = "继续追问…",
-            Height = 36,
-            FontSize = 13,
-            CornerRadius = new CornerRadius(8),
-            Background = _inputBgBrush,
-            BorderThickness = new Thickness(0),
+            MinHeight = 44,
+            FontSize = 14,
             VerticalContentAlignment = VerticalAlignment.Center,
         };
         _send = CreatePrimaryButton("发送");
-        _send.Height = 36;
+        _send.MinHeight = 44;
         _send.Click += (_, _) => SendFollowUp();
         _followUp.KeyDown += (_, e) =>
         {
@@ -613,51 +487,59 @@ public sealed class AssistantWindow : Window
         footer.Children.Add(_actions);
         footer.Children.Add(followRow);
 
-        // ---- root --------------------------------------------------------
-        var rootGrid = new Grid();
-        rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(TitleHeight) });
-        rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var source = new StackPanel { Spacing = 12, Padding = new Thickness(16) };
+        source.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10,
+            Children = { AiGlyph.CreateLabel(20, _accentBrush), new TextBlock { Text = "题目选区", FontSize = 18, FontWeight = FontWeights.SemiBold } } });
+        source.Children.Add(_thumbnailHost);
+        source.Children.Add(_problemScroll);
+        source.Children.Add(_addRegionLink);
+        var capture = CreateSecondaryButton("重新获取当前画布");
+        capture.Click += (_, _) => RetryRequested?.Invoke();
+        source.Children.Add(capture);
+        source.Children.Add(new TextBlock { Text = "在画布上选择题干或图形后，可追加多个选区。拖动预览中的矩形可局部纠错。", TextWrapping = TextWrapping.Wrap, Foreground = _textSecondary });
+        if (demoMode) source.Children.Add(new InfoBar { Title = "演示模式", Message = "尚未配置 AI 服务，当前显示本地示例。", IsOpen = true, IsClosable = false, Severity = InfoBarSeverity.Informational });
+        var bodyGrid = new Grid { Margin = new Thickness(16, 8, 16, 16) };
+        var sourceCard = new Border { Background = _inputBgBrush, CornerRadius = new CornerRadius(8), Child = new ScrollViewer { Content = source, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled } };
+        var answer = new Grid { Margin = new Thickness(12, 0, 0, 0) };
+        answer.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        answer.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        answer.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        answer.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         Grid.SetRow(_titleBar, 0);
         Grid.SetRow(statusRow, 1);
         Grid.SetRow(_scroll, 2);
         Grid.SetRow(footer, 3);
-        rootGrid.Children.Add(_titleBar);
-        rootGrid.Children.Add(statusRow);
-        rootGrid.Children.Add(_scroll);
-        rootGrid.Children.Add(footer);
-
-        _root = new Border
+        answer.Children.Add(_titleBar);
+        answer.Children.Add(statusRow);
+        answer.Children.Add(_scroll);
+        answer.Children.Add(footer);
+        var split = new SplitView { Pane = sourceCard, Content = answer, DisplayMode = SplitViewDisplayMode.Inline, IsPaneOpen = true, OpenPaneLength = 280,
+            PaneBackground = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
+        bodyGrid.Children.Add(split);
+        var sourceToggle = new Button { Content = new SymbolIcon(Symbol.List), MinWidth = 40, MinHeight = 40, Margin = new Thickness(0, 0, 12, 0) };
+        ToolTipService.SetToolTip(sourceToggle, "展开或收起题目选区");
+        sourceToggle.Click += (_, _) => split.IsPaneOpen = !split.IsPaneOpen;
+        modeRow.Children.Insert(0, sourceToggle);
+        bool compact = false;
+        bodyGrid.SizeChanged += (_, args) =>
         {
-            Background = _rootBgBrush,
-            BorderBrush = _highlightBrush,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(12),
-            Child = rootGrid,
+            bool next = args.NewSize.Width < 760;
+            if (next == compact) return;
+            compact = next;
+            split.DisplayMode = compact ? SplitViewDisplayMode.Overlay : SplitViewDisplayMode.Inline;
+            split.IsPaneOpen = !compact;
         };
+        _root = new Border { Child = bodyGrid, RequestedTheme = theme == 1 ? ElementTheme.Light : theme == 2 ? ElementTheme.Dark : ElementTheme.Default };
         Content = _root;
-
-        SystemBackdrop = new DesktopAcrylicBackdrop();
-
-        ExtendsContentIntoTitleBar = true;
-        SetTitleBar(_titleBar);
-
-        if (AppWindow.Presenter is OverlappedPresenter presenter)
-        {
-            presenter.SetBorderAndTitleBar(false, false);
-            presenter.IsAlwaysOnTop = true;
-            presenter.IsResizable = false;
-            presenter.IsMaximizable = false;
-            presenter.IsMinimizable = false;
-        }
-
-        WindowChrome.ApplyTheme(this, theme);
-        ApplyRoundedCorners();
         UpdateActionState();
+        _root.ActualThemeChanged += (_, _) => RefreshTheme();
+        _root.Loaded += (_, _) => RefreshTheme();
 
         base.Closed += (_, _) =>
         {
+            _closed = true;
+            _thumbnailGeneration++;
+            _problemGeneration++;
             _cursorTimer.Stop();
             _highlightTimer.Stop();
             _noticeTimer.Stop();
@@ -675,27 +557,22 @@ public sealed class AssistantWindow : Window
         };
     }
 
-    /// <summary>按 DIP 定位并显示；高度取工作区高的 <see cref="MaxHeightRatio"/>（上限 460）。</summary>
-    public void ShowAt(AssistantPlacement placement, double dpiScale)
+    public void UseNativeFrame() => WindowFrame.Attach(this, _root).UseMica();
+
+    private void RefreshTheme()
     {
-        double dpi = dpiScale > 0 ? dpiScale : 1.0;
-        var work = InkCanvas.Platform.System.ScreenService.WorkArea;
-        double workHeightDip = work.Height / dpi;
-        double cardHeight = Math.Min(MaxCardHeight, workHeightDip * MaxHeightRatio);
-        cardHeight = Math.Max(200, cardHeight);
-
-        _scroll.MaxHeight = Math.Max(120, cardHeight - TitleHeight - 104);
-
-        AppWindow.MoveAndResize(new RectInt32(
-            (int)Math.Round(placement.X * dpi),
-            (int)Math.Round(placement.Y * dpi),
-            (int)Math.Round(CardWidth * dpi),
-            (int)Math.Round(cardHeight * dpi)));
-        // 窗口可能在隐藏状态创建；AppWindow.Show 后再 Activate，
-        // 否则首次打开只显示空白原生边框。
-        AppWindow.Show();
-        Activate();
-        ApplyRoundedCorners();
+        void Update(Brush target, string token)
+        {
+            if (target is SolidColorBrush color && ThemeBrushes.Resolve(_root, token) is SolidColorBrush value)
+                color.Color = value.Color;
+        }
+        Update(_textPrimary, "IcTextPrimaryBrush");
+        Update(_textSecondary, "IcTextSecondaryBrush");
+        Update(_accentBrush, "IcAccentBrush");
+        Update(_accentSoftBrush, "IcAccentSoftBrush");
+        Update(_inputBgBrush, "IcSurfaceAltBrush");
+        Update(_codeBgBrush, "IcSurfaceBrush");
+        Update(_controlStrokeBrush, "IcStrokeBrush");
     }
 
     public void Apply(AssistantSession session, string thumbnailBase64, bool preserveScroll = false)
@@ -715,6 +592,15 @@ public sealed class AssistantWindow : Window
 
         if (!string.IsNullOrEmpty(thumbnailBase64) && thumbnailBase64 != _thumbBase64)
             _ = LoadThumbnailAsync(thumbnailBase64);
+        else if (string.IsNullOrEmpty(thumbnailBase64))
+        {
+            _thumbnailGeneration++;
+            _thumbBase64 = "";
+            _thumbnail.Source = null;
+            _thumbnailHost.Visibility = Visibility.Collapsed;
+            _thumbStream?.Dispose();
+            _thumbStream = null;
+        }
 
         UpdateThumbnailSize();
         ApplyAnnotations(session);
@@ -781,14 +667,17 @@ public sealed class AssistantWindow : Window
 
     /// <summary>
     /// 渲染拼题选区列表。单选区保持原有大图与圈选纠错；多选区改为横向缩略图，
-    /// 支持按顺序追加、删除与前后移动，重排后由 ShellController 重新请求。
+    /// 支持按顺序追加、删除与前后移动，重排后由插件服务重新请求。
     /// </summary>
     public void ApplyProblem(ProblemContext problem, string notice = null)
     {
         if (!string.IsNullOrWhiteSpace(notice)) ShowNotice(notice);
 
         _problem = problem;
-
+        _problemGeneration++;
+        _problemImages.Clear();
+        foreach (var stream in _problemStreams) stream.Dispose();
+        _problemStreams.Clear();
         _problemList.Children.Clear();
         if (problem is null || problem.Count <= 1)
         {
@@ -955,10 +844,12 @@ public sealed class AssistantWindow : Window
 
     private async Task LoadProblemImageAsync(string base64, Image target)
     {
+        int generation = _problemGeneration;
+        InMemoryRandomAccessStream stream = null;
         try
         {
             byte[] bytes = Convert.FromBase64String(base64);
-            var stream = new InMemoryRandomAccessStream();
+            stream = new InMemoryRandomAccessStream();
             using (var writer = new DataWriter(stream))
             {
                 writer.WriteBytes(bytes);
@@ -970,15 +861,17 @@ public sealed class AssistantWindow : Window
             stream.Seek(0);
             var bitmap = new BitmapImage();
             await bitmap.SetSourceAsync(stream);
-
+            if (_closed || generation != _problemGeneration) return;
             _problemImages[base64] = bitmap;
             _problemStreams.Add(stream);
+            stream = null;
             target.Source = bitmap;
         }
         catch (Exception)
         {
             // 单个缩略图损坏不影响其他选区与正文。
         }
+        finally { stream?.Dispose(); }
     }
 
     /// <summary>状态行临时提示（例如局部纠错失败），不改变会话状态。</summary>
@@ -1006,7 +899,7 @@ public sealed class AssistantWindow : Window
 
     /// <summary>
     /// 设置「收藏为例题」可取得的来源信息：课件名、幻灯片 id、画板页。
-    /// 由 ShellController 在创建/更新浮窗时注入；取不到时传空或 0。
+    /// 由插件服务 在创建/更新浮窗时注入；取不到时传空或 0。
     /// boardPage 语义原样透传：0 = 第 1 页，-1 = 无白板，N = 第 N+1 页。
     /// </summary>
     public void SetFavoriteSource(string presentation, int slideId, int boardPage)
@@ -1180,32 +1073,16 @@ public sealed class AssistantWindow : Window
     private Button CreatePrimaryButton(string text) => new()
     {
         Content = text,
-        Height = 32,
-        MinHeight = 32,
-        Padding = new Thickness(14, 0, 14, 0),
-        FontSize = 13,
-        CornerRadius = new CornerRadius(6),
-        Background = _accentSolidBrush,
-        Foreground = WhiteBrush,
-        BorderThickness = new Thickness(0),
-        HorizontalContentAlignment = HorizontalAlignment.Center,
-        VerticalContentAlignment = VerticalAlignment.Center,
+        MinHeight = 40,
+        Padding = new Thickness(16, 8, 16, 8),
+        Style = (Style)Application.Current.Resources["AccentButtonStyle"],
     };
 
     private Button CreateSecondaryButton(string text) => new()
     {
         Content = text,
-        Height = 32,
-        MinHeight = 32,
-        Padding = new Thickness(12, 0, 12, 0),
-        FontSize = 13,
-        CornerRadius = new CornerRadius(6),
-        Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-        Foreground = _textPrimary,
-        BorderBrush = _controlStrokeBrush,
-        BorderThickness = new Thickness(1),
-        HorizontalContentAlignment = HorizontalAlignment.Center,
-        VerticalContentAlignment = VerticalAlignment.Center,
+        MinHeight = 40,
+        Padding = new Thickness(12, 8, 12, 8),
     };
 
     private void SendFollowUp()
@@ -1312,7 +1189,6 @@ public sealed class AssistantWindow : Window
             _statusText.Foreground = _textSecondary;
         }
 
-        _close.IsEnabled = true;
     }
 
     private static bool IsActive(AssistantState state)
@@ -1786,10 +1662,13 @@ public sealed class AssistantWindow : Window
 
     private async Task LoadThumbnailAsync(string base64)
     {
+        int generation = ++_thumbnailGeneration;
+        _thumbBase64 = base64;
+        InMemoryRandomAccessStream stream = null;
         try
         {
             byte[] bytes = Convert.FromBase64String(base64);
-            var stream = new InMemoryRandomAccessStream();
+            stream = new InMemoryRandomAccessStream();
             using (var writer = new DataWriter(stream))
             {
                 writer.WriteBytes(bytes);
@@ -1801,9 +1680,10 @@ public sealed class AssistantWindow : Window
             stream.Seek(0);
             var bitmap = new BitmapImage();
             await bitmap.SetSourceAsync(stream);
-
+            if (_closed || generation != _thumbnailGeneration) return;
             _thumbStream?.Dispose();
             _thumbStream = stream;
+            stream = null;
             _thumbnail.Source = bitmap;
             _thumbnailHost.Visibility = _problem is { Count: > 1 }
                 ? Visibility.Collapsed
@@ -1815,21 +1695,7 @@ public sealed class AssistantWindow : Window
         {
             // 截图可能是空或损坏的 base64；正文仍应正常显示。
         }
-    }
-
-    private void ApplyRoundedCorners()
-    {
-        try
-        {
-            IntPtr hwnd = WindowChrome.GetHwnd(this);
-            if (hwnd == IntPtr.Zero) return;
-            int preference = 2; // DWMWCP_ROUND
-            DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, ref preference, sizeof(int));
-        }
-        catch (Exception)
-        {
-            // 旧版 Windows 或 DWM 不可用：忽略，保留方形窗口。
-        }
+        finally { stream?.Dispose(); }
     }
 
     private static Brush GetSystemAccent()
@@ -1849,6 +1715,4 @@ public sealed class AssistantWindow : Window
     private static Brush Solid(byte a, byte r, byte g, byte b)
         => new SolidColorBrush(Windows.UI.Color.FromArgb(a, r, g, b));
 
-    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 }

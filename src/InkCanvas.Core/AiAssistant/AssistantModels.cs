@@ -90,6 +90,8 @@ public sealed class AssistantRequest
 
     public string SessionId { get; set; } = "";
 
+    public string Question { get; set; } = "";
+
     public AssistantStage Stage { get; set; } = AssistantStage.WithImage;
 
     public AssistantRegion Region { get; set; }

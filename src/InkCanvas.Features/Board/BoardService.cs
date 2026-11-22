@@ -778,6 +778,8 @@ public sealed partial class BoardService
             _papers.Add(controller, page.Paper with { Name = page.Paper.Name ?? $"页面 {_nextPageNumber}" });
             _nextPageNumber++;
             controller.ViewTransform = page.View;
+            if (page.Viewport is { Length: 2 } && page.Viewport.All(value => float.IsFinite(value) && value > 0))
+                controller.ViewCenter = new(page.Viewport[0] / 2, page.Viewport[1] / 2);
             _images.Add(page.Images);
             _media.Add(page.Media);
         }
@@ -787,7 +789,10 @@ public sealed partial class BoardService
         ImagesChanged?.Invoke();
     }
 
-    private sealed record PreparedPage(List<InkStroke> Strokes, List<BoardImageAsset> Images, List<BoardMediaAsset> Media, BoardPaper Paper, Matrix3x2 View);
+    private sealed record PreparedPage(List<InkStroke> Strokes, List<BoardImageAsset> Images, List<BoardMediaAsset> Media, BoardPaper Paper, Matrix3x2 View)
+    {
+        public float[] Viewport { get; init; }
+    }
 
     private static PreparedPage PreparePage(BoardPageFile page, BoardPaper fallback)
     {
@@ -797,7 +802,7 @@ public sealed partial class BoardService
             (page.Media ?? new()).Where(IsValidMedia).ToList(),
             ReadPaper(page.Background, page.GridSpacing, fallback) with
             { Name = string.IsNullOrWhiteSpace(page.Name) ? null : page.Name.Trim() },
-            ReadViewTransform(page.ViewTransform));
+            ReadViewTransform(page.ViewTransform)) { Viewport = page.Viewport };
     }
 
     private static BoardPaper ReadPaper(string background, float? spacing, BoardPaper fallback) => new(
@@ -917,6 +922,8 @@ public sealed partial class BoardService
 
     private sealed class BoardFile
     {
+        [System.Text.Json.Serialization.JsonIgnore]
+        public BoardArchiveMetadata Archive { get; set; }
         public string Format { get; set; }
         public int Version { get; set; }
         public string Background { get; set; }
@@ -928,6 +935,7 @@ public sealed partial class BoardService
 
     private sealed class BoardPageFile
     {
+        public float[] Viewport { get; set; }
         public string Name { get; set; }
         public float[] ViewTransform { get; set; }
         public string Background { get; set; }

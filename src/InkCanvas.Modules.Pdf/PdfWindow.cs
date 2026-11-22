@@ -521,6 +521,7 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
             SetStatus("正在保存 PDF 矢量批注…");
             await _file.SaveAsync(path, pages, _lifetime.Token);
             _targetPath = path; _savedVersion = version; UpdateTitle();
+            NotifyDocumentAi(path);
             SetStatus(IsDirty ? "已保存快照，新的批注尚未保存"
                 : "已保存 · " + Path.GetFileName(path) + " · " + (new FileInfo(path).Length / 1024d).ToString("N0") + " KB");
             return true;

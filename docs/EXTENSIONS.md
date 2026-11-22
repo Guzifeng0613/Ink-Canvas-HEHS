@@ -15,12 +15,19 @@
 | InkCanvas.Modules.ScreenTracking | 首个独立分包的内置模块，包含页面记忆、Office/UIA 观察和跟随协调 | Host.Contracts、SDK，UIA 为包内私有依赖 |
 | InkCanvas.Pdf / InkCanvas.Modules.Pdf | PDF 文件与矢量墨迹持久化、WinUI 3 文档工作区 | Host.Contracts 与共用墨迹控件，PDF 解析依赖随模块分发 |
 | InkCanvas.AnalyticGeometry / InkCanvas.Modules.AnalyticGeometry | 有界公式解析、曲线采样与原生公式编辑器 | Host.Contracts、共用墨迹控件与 Windows 本地手写服务 |
+| InkCanvas.Modules.AiAssistant | AI 会话、SSE 网络传输、识别与纠错、原生 WinUI 3 助教窗口 | Host.Contracts 与共用控件，通过明确宿主接口对接画布和课堂 |
+| InkCanvas.Modules.Library | 文稿库、目录导航、保存选择和按需页面预览 | Host.Contracts、共用控件与白板存储，独立状态和预览缓存 |
+| InkCanvas.ShellExtension | 文件资源管理器缩略图与首页预览 | 原生 COM、WIC 和 Win32，独立安装，使用系统隔离宿主 |
 | InkCanvas.PluginHost | 一个外部插件对应一个工作进程 | SDK、扩展运行时 |
 | InkCanvas.App | 主体组合根、窗口和交互入口 | 宿主契约与运行时，通过服务接口调用模块 |
 
 App 对屏幕跟随项目使用仅构建引用。其实现 DLL 和 UIA DLL 存放在模块目录，不进入主体运行依赖清单。移除该模块后，主体仍能启动、书写、撤销及管理插件。
 
 PDF 模块采用同样的独立分包方式。`IncludePdfModule=false` 可发布基础包，安装包和原生文档工作区接口见 [PDF 模块](PDF.md)。
+
+AI 助教通过独立原生插件安装，使用 `IncludeAiAssistantModule=false` 可发布不含 AI 的基础包。安装、配置与构建方法见 [AI 助教插件](AI-ASSISTANT.md)。
+
+文稿库通过 `IBoardLibraryService` 对接打开、保存入口，使用 `IncludeLibraryModule=false` 可发布不含文稿库的基础包。资源管理器插件单独注册到当前用户。安装和预览格式见 [文稿库与资源管理器预览](BOARD-LIBRARY.md)。
 
 现有课堂工具和 PPT 服务仍在原项目中。本轮用屏幕跟随完成实际拆包，并为后续迁移提供同一套注册、契约和打包入口。
 

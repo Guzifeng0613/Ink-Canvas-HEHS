@@ -50,6 +50,7 @@ public interface IShellActions
     void OpenTimeMachine() { }
     void ToggleRecordingPause() { }
     void OpenAiAssistant() { }
+    bool AiAssistantAvailable => false;
     void OpenGroupScore() { }
     void OpenHandout() { }
     void CyclePreset() { }
@@ -109,7 +110,7 @@ public sealed class FloatingBar : UserControl
     private TouchIconButton _eraserButton, _selectButton, _shapeButton;
     private TouchIconButton _undoButton, _redoButton, _clearMouseButton;
     private TouchIconButton _boardButton, _toolsButton, _foldButton, _gestureButton, _hideControlButton, _lrSwitchButton;
-    private TouchIconButton _exitButton;
+    private TouchIconButton _exitButton, _aiButton;
     private readonly List<TouchIconButton> _captioned = new();
     private readonly List<StackPanel> _gestureOptionRows = new();
     private ToggleSwitch _multiTouchSwitch, _translateSwitch, _zoomSwitch, _rotateSwitch;
@@ -441,7 +442,8 @@ public sealed class FloatingBar : UserControl
         _highlighterButton.IconFont = IconFontStyle.Family;
         _clearButton = AddPrimary(Glyphs.Delete, "清空", "清空（有选中时删除选中墨迹）— 快捷键 Ctrl+E", ClearOrDeleteSelection);
 
-        AddPrimary(Glyphs.Ai, "AI 助教", "AI 识别（先框选内容）", () => Shell?.OpenAiAssistant());
+        _aiButton = AddPrimary(Glyphs.Ai, "AI 助教", "AI 识别（先框选内容）", () => Shell?.OpenAiAssistant());
+        _aiButton.Visibility = Shell?.AiAssistantAvailable == true ? Visibility.Visible : Visibility.Collapsed;
         _primary.Children.Add(_canvasControls);
         _eraserButton = AddPrimary(_canvasControls, Glyphs.Eraser, "橡皮", "橡皮（选中后再次点击打开选项）— 快捷键 Alt+E", () =>
         {
@@ -637,9 +639,11 @@ public sealed class FloatingBar : UserControl
 
     public void RefreshExtensionCommands()
     {
+        var aiVisibility = Shell?.AiAssistantAvailable == true ? Visibility.Visible : Visibility.Collapsed;
+        bool aiChanged = _aiButton.Visibility != aiVisibility;
+        _aiButton.Visibility = aiVisibility;
         while (_moreRows.Children.Count > 3) _moreRows.Children.RemoveAt(_moreRows.Children.Count - 1);
         var classroom = MoreRow();
-        AddMore(classroom, Glyphs.Ai, "AI 助教", () => Shell?.OpenAiAssistant());
         AddMore(classroom, Glyphs.Board, "课堂工具", () => Shell?.OpenToolkit());
         AddMore(classroom, Glyphs.TimeMachine, "板书时光机", () => Shell?.OpenTimeMachine());
         AddMore(classroom, Glyphs.Pause, "暂停 / 继续录制", () => Shell?.ToggleRecordingPause());
@@ -650,6 +654,7 @@ public sealed class FloatingBar : UserControl
         _moreRows.Children.Add(classroom);
         _moreRows.Children.Add(presentation);
         AppendExtensionCommands();
+        if (aiChanged) LayoutChanged?.Invoke();
     }
 
     private void AppendExtensionCommands()

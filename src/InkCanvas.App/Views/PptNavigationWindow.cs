@@ -95,7 +95,6 @@ public sealed class PptNavigationWindow : Window
         _scaled.AddHandler(UIElement.PointerWheelChangedEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler((_, _) => RecordInteraction()), true);
         _scaled.KeyDown += (_, _) => RecordInteraction();
         WindowChrome.MakeBorderless(this, topmost: true, noActivate: true);
-        FloatingBarWindow.EnableTransparency(this);
         WindowChrome.ClipToSurfaces(this, () => new[] { _card });
         ApplyChrome();
         if (_owner is not null)
@@ -145,14 +144,14 @@ public sealed class PptNavigationWindow : Window
 
     private void ApplyChrome()
     {
-        int theme = _owner?.Bar.Theme ?? _theme;
+        int theme = _owner?.Bar.Settings?.Appearance.Theme ?? _theme;
+        if (theme == 0) theme = _owner?.Bar.Theme ?? 1;
         WindowChrome.ApplyTheme(this, theme);
         _card.Background = _owner?.Bar.ColorfulBackground == true ? PopupBrushes.FloatBarColorful() : PopupBrushes.FloatBarBackground(theme);
         _card.BorderBrush = PopupBrushes.FloatBarBorder(theme);
         var foreground = PopupBrushes.FloatBarForeground(theme);
         _previousIcon.Foreground = _nextIcon.Foreground = _counterText.Foreground = foreground;
         _separator1.Fill = _separator2.Fill = foreground;
-        FloatingBarWindow.UpdateAcrylicTint(this, theme);
     }
 
     public void Update(PptSnapshot snapshot, bool panelVisible, bool counterVisible)

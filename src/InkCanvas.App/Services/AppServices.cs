@@ -25,6 +25,7 @@ public sealed class AppServices : IDisposable
         Store = new SettingsStore(settingsDirectory);
         Settings = Store.Load();
         Settings.Storage ??= new();
+        Settings.Archive ??= new();
         // 图标风格（Fluent Filled/Regular，与鸿蒙端同一 MIT 字体集）注入字体族解析。
         Controls.Controls.IconFontStyle.BindStyleSource(() => Settings.Appearance.IsIconRegularStyle);
         UpdateCache = new UpdateCache(settingsDirectory is null ? null : Path.Combine(settingsDirectory, "UpdateCache"));
@@ -33,7 +34,9 @@ public sealed class AppServices : IDisposable
         Plugins = new PluginManager(Path.Combine(AppContext.BaseDirectory, "PluginHost", "InkCanvas.PluginHost.exe"), Path.Combine(Store.Directory, "PluginData"));
         Plugins.Discover(Path.Combine(AppContext.BaseDirectory, "Plugins"), Path.Combine(Store.Directory, "Plugins"));
         Board = new BoardService();
+        Archives = new BoardArchiveService(Board, () => Settings.Archive, Store.Directory);
         ScreenImages = new BoardService(OverlayInk);
+        ScreenArchives = new ScreenArchiveService(ScreenImages, () => Settings.Archive, Store.Directory);
         OverlayInk.GetSelectableElements = ScreenImages.GetSelectionElements;
         ScreenImages.ImagePlacementChanged += OnScreenImagePlacementChanged;
         // 1:1 SetBoardTheme：白板模式决定画板明暗。未验证。
@@ -73,15 +76,20 @@ public sealed class AppServices : IDisposable
     public ExtensionPreferencesStore ExtensionStore { get; }
     public ExtensionPreferences ExtensionPreferences { get; }
     private bool _modulesStarted;
-    public void StartModules(IScreenTrackingHost host, IDocumentWorkspaceHost documents = null, ICanvasToolsHost canvasTools = null)
+    public void StartModules(IScreenTrackingHost host, IDocumentWorkspaceHost documents = null, ICanvasToolsHost canvasTools = null, IAiAssistantHost assistant = null, IBoardLibraryHost library = null, IAiDocumentHost documentAi = null)
     {
         if (_modulesStarted) return; _modulesStarted = true;
         Modules.AddService(host);
         if (documents is not null) Modules.AddService(documents);
         if (canvasTools is not null) Modules.AddService(canvasTools);
+        if (assistant is not null) Modules.AddService(assistant);
+        if (documentAi is not null) Modules.AddService(documentAi);
+        if (library is not null) Modules.AddService(library);
+        if (library is not null) Modules.RegisterPackage("inkcanvas.library", "文稿库", Path.Combine(AppContext.BaseDirectory, "Modules", "inkcanvas.library", "module.json"));
         Modules.RegisterPackage("inkcanvas.screen-tracking", "屏幕内容跟随", Path.Combine(AppContext.BaseDirectory, "Modules", "inkcanvas.screen-tracking", "module.json"));
         if (documents is not null) Modules.RegisterPackage("inkcanvas.pdf", "PDF 阅读与批注", Path.Combine(AppContext.BaseDirectory, "Modules", "inkcanvas.pdf", "module.json"));
         if (canvasTools is not null) Modules.RegisterPackage("inkcanvas.analytic-geometry", "解析几何", Path.Combine(AppContext.BaseDirectory, "Modules", "inkcanvas.analytic-geometry", "module.json"));
+        if (assistant is not null) Modules.RegisterPackage("inkcanvas.ai-assistant", "AI 助教", Path.Combine(AppContext.BaseDirectory, "Modules", "inkcanvas.ai-assistant", "module.json"));
         Modules.Start(ExtensionPreferences.DisabledModules);
         Modules.Changed += UpdateModuleStatus;
         UpdateModuleStatus();
@@ -104,6 +112,8 @@ public sealed class AppServices : IDisposable
     public PptInteropService Ppt { get; }
 
     public AutoSaveService AutoSave { get; }
+    public BoardArchiveService Archives { get; }
+    public ScreenArchiveService ScreenArchives { get; }
 
     public LotteryService Lottery { get; }
     public LotteryMemoryStore LotteryMemory { get; }
@@ -118,6 +128,14 @@ public sealed class AppServices : IDisposable
         Settings.Canvas.InkWash = Settings.Canvas.InkWash.Normalize();
         Settings.Canvas.InkWashWidth = double.IsFinite(Settings.Canvas.InkWashWidth) ? Math.Clamp(Settings.Canvas.InkWashWidth, 1, 120) : 30;
         Settings.Storage ??= new();
+        Settings.Archive ??= new();
+        Settings.Archive.AutoSaveMinutes = Math.Clamp(Settings.Archive.AutoSaveMinutes, 1, 120);
+        Settings.Archive.AutomaticCopiesToKeep = Math.Clamp(Settings.Archive.AutomaticCopiesToKeep, 1, 200);
+        Settings.Archive.ScreenCapture.IntervalMinutes = Math.Clamp(Settings.Archive.ScreenCapture.IntervalMinutes, 1, 120);
+        Settings.Archive.ScreenCapture.CopiesToKeep = Math.Clamp(Settings.Archive.ScreenCapture.CopiesToKeep, 1, 200);
+        Archives.Configure();
+        ScreenArchives.Configure();
+        AutoSave.Settings = Settings.Automation;
         Settings.Storage.UpdateCacheDays = Math.Clamp(Settings.Storage.UpdateCacheDays, 1, 30);
         Settings.Experimental ??= new ExperimentalSettings();
         foreach (var controller in AllControllers())
@@ -232,6 +250,8 @@ public sealed class AppServices : IDisposable
 
     public void Dispose()
     {
+        Archives.Dispose();
+        ScreenArchives.Dispose();
         LotteryMemory.Dispose();
         Plugins.Dispose();
         Modules.Changed -= UpdateModuleStatus;

@@ -21,8 +21,8 @@ public sealed class FeatureGateUiContractTests
     private static string AssistantWindowSource()
     {
         string path = Path.Combine(
-            RepoRoot(), "src", "InkCanvas.App", "Views", "AssistantWindow.cs");
-        Assert.True(File.Exists(path), "缺少文件：src/InkCanvas.App/Views/AssistantWindow.cs");
+            RepoRoot(), "src", "InkCanvas.Modules.AiAssistant", "AssistantWindow.cs");
+        Assert.True(File.Exists(path), "缺少文件：src/InkCanvas.Modules.AiAssistant/AssistantWindow.cs");
         return File.ReadAllText(path);
     }
 

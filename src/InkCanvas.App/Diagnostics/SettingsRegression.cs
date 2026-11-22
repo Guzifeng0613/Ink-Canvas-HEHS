@@ -48,6 +48,11 @@ internal static class SettingsRegression
             string original = JsonSerializer.Serialize(services.Settings);
             Open();
             await Task.Delay(600);
+            if (Environment.GetCommandLineArgs().Contains("--settingslayout-only"))
+            {
+                await CheckScrollViewportAsync(window, directory, checks);
+                return;
+            }
             Check("opening settings preserves stored values", JsonSerializer.Serialize(services.Settings) == original);
             Check("settings permit keyboard activation", !NativeMethods.HasExStyle(WindowChrome.GetHwnd(window), NativeMethods.WS_EX_NOACTIVATE));
             var searchTimer = System.Diagnostics.Stopwatch.StartNew();
@@ -331,6 +336,47 @@ internal static class SettingsRegression
             bar.Close();
             File.WriteAllText(Path.Combine(directory, "settings.json"), JsonSerializer.Serialize(checks, new JsonSerializerOptions { WriteIndented = true }));
             Application.Current.Exit();
+        }
+    }
+
+    private static async Task CheckScrollViewportAsync(SettingsWindow window, string directory, List<object> checks)
+    {
+        foreach (int theme in new[] { 1, 2 })
+        {
+            WindowChrome.ApplyTheme(window, theme);
+            foreach (int width in new[] { 640, 1230 })
+            {
+                window.AppWindow.ResizeClient(new Windows.Graphics.SizeInt32(width, 850));
+                foreach (string category in new[] { "存储与缓存", "画板选项", "保存与备份" })
+                {
+                    window.SelectCategory(category);
+                    await Task.Delay(100);
+                    var workspace = Descendants(window.Content).OfType<WindowWorkspace>().Single();
+                    var scroll = Descendants(workspace).OfType<ScrollViewer>().Single(view => view.Content is StackPanel or Border { Child: StackPanel });
+                    scroll.ChangeView(null, scroll.ScrollableHeight / 2, null, true);
+                    await Task.Delay(50);
+                    var viewport = Descendants(scroll).OfType<ScrollContentPresenter>().First();
+                    var bottom = viewport.TransformToVisual(scroll).TransformPoint(new(0, viewport.ActualHeight));
+                    double gap = scroll.ActualHeight - bottom.Y;
+                    checks.Add(new { check = "settings scroll viewport reaches the content area's bottom", theme, width, category, gap,
+                        passed = gap >= -1 && gap <= 1 });
+                    scroll.ChangeView(null, scroll.ScrollableHeight, null, true);
+                    await Task.Delay(50);
+                    FrameworkElement page = scroll.Content is Border wrapper ? (FrameworkElement)wrapper.Child : (FrameworkElement)scroll.Content;
+                    var end = page.TransformToVisual(viewport).TransformPoint(new(0, page.ActualHeight));
+                    double endPadding = viewport.ActualHeight - end.Y;
+                    checks.Add(new { check = "last setting remains reachable with breathing room at the page end", theme, width, category, endPadding,
+                        passed = scroll.ScrollableHeight == 0 || endPadding >= 23 && endPadding <= 25 });
+                    if (category != "存储与缓存") continue;
+                    scroll.ChangeView(null, scroll.ScrollableHeight / 2, null, true);
+                    await Task.Delay(50);
+                    var frame = (WindowFrame)window.Content;
+                    var material = frame.Background;
+                    frame.Background = new SolidColorBrush(theme == 1 ? Windows.UI.Color.FromArgb(255, 243, 243, 243) : Windows.UI.Color.FromArgb(255, 32, 32, 32));
+                    try { await BoardWindowRegression.SaveVisual(frame, Path.Combine(directory, $"storage-{theme}-{width}.png")); }
+                    finally { frame.Background = material; }
+                }
+            }
         }
     }
 

@@ -13,18 +13,18 @@ public sealed partial class SettingsWindow
 
     private void BuildExtensionsCategory()
     {
-        _content.Children.Add(InfoRow("书写、选择、擦除和画布由主体维护。内置模块按依赖顺序启动，模块开关重启后生效。外部插件使用独立进程，可即时启用或停用。"));
-        AddSection("内置模块");
+        _content.Children.Add(InfoRow("原生功能插件提供 AI 助教、PDF 和解析几何等独立功能，安装于 Modules 目录，开关重启后生效。外部命令插件使用独立进程，可即时启用或停用。"));
+        AddSection("原生功能插件");
         if (_services.Modules.Status.Count == 0) _content.Children.Add(InfoRow("模块状态在主工具栏启动后显示。"));
         foreach (var module in _services.Modules.Status)
         {
             if (module.State == ExtensionState.NotInstalled)
             {
-                _content.Children.Add(ToggleRow(module.Name + " · 内置模块", () => false, _ => { }, enabled: false,
+                _content.Children.Add(ToggleRow(module.Name + " · 原生插件", () => false, _ => { }, enabled: false,
                     disabledReason: "此发行包未安装该模块，请将模块 ZIP 解压到 Modules 目录并重启。"));
                 continue;
             }
-            _content.Children.Add(ToggleRow(module.Name + " · 内置模块", () => !_services.ExtensionPreferences.DisabledModules.Contains(module.Id), enabled =>
+            _content.Children.Add(ToggleRow(module.Name + " · 原生插件", () => !_services.ExtensionPreferences.DisabledModules.Contains(module.Id), enabled =>
             {
                 bool previous = !_services.ExtensionPreferences.DisabledModules.Contains(module.Id);
                 if (enabled) _services.ExtensionPreferences.DisabledModules.Remove(module.Id); else _services.ExtensionPreferences.DisabledModules.Add(module.Id);

@@ -13,10 +13,12 @@ public sealed partial class ShellController
         get
         {
             var commands = Services.Plugins.Commands.ToList();
+            if (Services.Modules.HasExport<Host.Contracts.IBoardLibraryService>()) commands.Add(new ExtensionCommand("inkcanvas.library", "open", "文稿库", "浏览文件夹、预览与打开白板文稿"));
             if (Services.Modules.HasExport<Host.Contracts.IPdfWorkspaceService>()) commands.AddRange(new[] {
             new ExtensionCommand("inkcanvas.pdf", "open", "打开 PDF", "查看 PDF 并将墨迹批注保存到文件"),
             new ExtensionCommand("inkcanvas.pdf", "import", "PDF 导入画板", "选择 PDF 页码并导入新画板页") });
             if (Services.Modules.HasExport<Host.Contracts.IAnalyticGeometryService>()) commands.Add(new ExtensionCommand("inkcanvas.analytic-geometry", "open", "解析几何", "数学工作区、代数计算、二维与三维联动作图"));
+            if (AiAssistantAvailable) commands.Add(new ExtensionCommand("inkcanvas.ai-assistant", "open", "AI 助教", "选区识别、分步讲解、局部纠错与白板贴回"));
             return commands;
         }
     }
@@ -34,6 +36,9 @@ public sealed partial class ShellController
             var commands = ExtensionCommands.ToArray();
             if (_displayedExtensionCommands.SequenceEqual(commands)) return;
             _displayedExtensionCommands = commands;
+            _toolkit?.SetAiAvailable(AiAssistantAvailable);
+            _spotlight?.SetAiAvailable(AiAssistantAvailable);
+            _magnifier?.SetAiAvailable(AiAssistantAvailable);
             _bar?.ClosePanels(); _bar?.Bar.RefreshExtensionCommands();
             _board?.RefreshExtensionCommands();
         });
@@ -43,6 +48,16 @@ public sealed partial class ShellController
         // A menu or detached panel may outlive a module that stopped after it opened.
         if (!ExtensionCommands.Any(available => available.PluginId == command.PluginId && available.CommandId == command.CommandId))
         { OnExtensionCommandsChanged(); return; }
+        if (command.PluginId == "inkcanvas.library")
+        {
+            Services.Modules.Invoke<Host.Contracts.IBoardLibraryService>(library => library.Open());
+            return;
+        }
+        if (command.PluginId == "inkcanvas.ai-assistant")
+        {
+            OpenAiAssistant();
+            return;
+        }
         if (command.PluginId == "inkcanvas.analytic-geometry")
         {
             try { Services.Modules.GetExport<Host.Contracts.IAnalyticGeometryService>()?.Open(); }

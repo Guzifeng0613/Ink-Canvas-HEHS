@@ -1061,6 +1061,9 @@ public sealed class VectorParityTests
             if (expected["display"] is null) actual.AsObject().Remove("display");
             // Cache retention is a WinUI extension, covered by StorageManagementTests.
             if (expected["storage"] is null) actual.AsObject().Remove("storage");
+            // WinUI archive paths and schedules have dedicated BoardArchiveTests coverage.
+            if (expected["archive"] is null) actual.AsObject().Remove("archive");
+            if (expected["ai"]?["Documents"] is null) actual["ai"]?.AsObject().Remove("Documents");
             // Soft cooldown settings extend the WPF schema and have dedicated persistence tests.
             foreach (string field in new[] { "samplingMode", "cooldownHalfLifeDays", "cooldownPenaltyStrength" })
                 if (expected["randSettings"]?[field] is null) actual["randSettings"]?.AsObject().Remove(field);
@@ -1072,12 +1075,13 @@ public sealed class VectorParityTests
             foreach (string field in new[] { "HoldMilliseconds", "AutoAlign", "AlignmentAngle", "RecognizePolygons",
                 "RecognizeRoundShapes", "RecognizeCube", "RecognizeAxes" })
                 if (expected["inkToShape"]?[field] is null) actual["inkToShape"]?.AsObject().Remove(field);
-            // The retired WPF stylus-gesture switch is intentionally absent from WinUI settings.
-            expected["gesture"]?.AsObject().Remove("isEnableStylusGesture");
             // Teaching settings extend the shared settings schema.
             foreach (string field in new[] { "ai", "classroom", "features" })
                 if (expected[field] is null) actual.AsObject().Remove(field);
-            Assert.True(JsonNode.DeepEquals(actual, expected), $"settings case {id} mismatch");
+            foreach (var section in expected.AsObject())
+                Assert.True(JsonNode.DeepEquals(actual[section.Key], section.Value),
+                    $"settings case {id} section {section.Key} mismatch\nactual={actual[section.Key]}\nexpected={section.Value}");
+            Assert.True(JsonNode.DeepEquals(actual, expected), $"settings case {id} has unexpected root sections");
         }
     }
 

@@ -17,7 +17,8 @@ public sealed class PptInkFileStore : IPptInkStore
     private const string PositionName = "Position";
     private const string SlideFilePrefix = "slide-";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
-    private readonly string _root;
+    private string _root;
+    public void SetAutoSaveRoot(string root) => _root = InkCanvas.Core.Settings.ArchivePolicy.ResolveDirectory(root);
 
     public PptInkFileStore(string autoSaveRoot)
     {

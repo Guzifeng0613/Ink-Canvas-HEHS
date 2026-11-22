@@ -23,7 +23,6 @@ public sealed class WindowWorkspace : UserControl
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
         HorizontalContentAlignment = HorizontalAlignment.Stretch,
-        Padding = new Thickness(24, 8, 24, 24),
     };
     private readonly List<(string Name, Func<UIElement> Build)> _pages = new();
     private FrameworkElement _scrollTarget;
@@ -107,7 +106,9 @@ public sealed class WindowWorkspace : UserControl
         _scrollTarget = null;
         SelectedPage = _pages[index].Name;
         _navigation.Header = new TextBlock { Text = SelectedPage, FontSize = 28, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
-        _scroll.Content = _pages[index].Build();
+        // ScrollViewer padding becomes a fixed viewport margin in the WinUI template.
+        // Keep page spacing inside the scrollable content so rows reach the window edge.
+        _scroll.Content = new Border { Padding = new Thickness(24, 8, 24, 24), Child = _pages[index].Build() };
         _scroll.ChangeView(null, 0, null, true);
     }
 }
