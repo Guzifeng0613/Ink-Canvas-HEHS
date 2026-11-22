@@ -22,6 +22,14 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        var previewWorker = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--pptpreviewworker=", StringComparison.Ordinal));
+        if (previewWorker is not null)
+        {
+            int parent = int.Parse(Environment.GetCommandLineArgs().Single(arg => arg.StartsWith("--pptpreviewparent=", StringComparison.Ordinal))["--pptpreviewparent=".Length..]);
+            string directory = Environment.GetCommandLineArgs().Single(arg => arg.StartsWith("--pptpreviewdirectory=", StringComparison.Ordinal))["--pptpreviewdirectory=".Length..];
+            _ = PptPreviewWorker.Run(previewWorker["--pptpreviewworker=".Length..], parent, directory);
+            return;
+        }
         var cloudSyncCheck = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--cloudsynccheck=", StringComparison.OrdinalIgnoreCase));
         if (cloudSyncCheck is not null) { _ = Diagnostics.CloudSyncRegression.Run(cloudSyncCheck["--cloudsynccheck=".Length..]); return; }
         var assistantCompatibility = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--assistantcompatcheck=", StringComparison.OrdinalIgnoreCase));
