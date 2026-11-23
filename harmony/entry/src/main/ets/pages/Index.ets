@@ -3522,6 +3522,43 @@ this.rebuildAutoSave();
       && y >= top - pad && y <= top + this.barFrameH + pad;
   }
 
+  // L2：返回本 move 应派发的坐标序列（Catmull-Rom 细分中间点 + 原始终点）。
+  // 仅笔/荧光笔且门控开启时细分；曲线穿过原始采样点，不引入滞后；段长 <=1.5vp 不细分控成本。
+  private smoothedMoveCoords(id: number, px: number, py: number): number[][] {
+    const tool = this.controller.Tool;
+    const inkTool = tool === InkTool.Pen || tool === InkTool.Highlighter;
+    if (!this.inkSmoothEnabled || !inkTool) {
+      return [[px, py]];
+    }
+    const out: number[][] = [];
+    const hist = this.smoothHist.get(id);
+    if (hist !== undefined && hist.length >= 4) {
+      const p0x = hist[0];
+      const p0y = hist[1];
+      const p1x = hist[2];
+      const p1y = hist[3];
+      const dx = px - p1x;
+      const dy = py - p1y;
+      if (dx * dx + dy * dy > 2.25) {
+        for (let s = 1; s <= 2; s++) {
+          const t = s / 3;
+          const t2 = t * t;
+          const t3 = t2 * t;
+          const cx = 0.5 * (2 * p1x + (-p0x + px) * t + (2 * p0x - 5 * p1x + 3 * px) * t2 + (-p0x + 3 * p1x - 2 * px) * t3);
+          const cy = 0.5 * (2 * p1y + (-p0y + py) * t + (2 * p0y - 5 * p1y + 3 * py) * t2 + (-p0y + 3 * p1y - 2 * py) * t3);
+          out.push([cx, cy]);
+        }
+      }
+    }
+    out.push([px, py]);
+    if (hist !== undefined && hist.length >= 2) {
+      this.smoothHist.set(id, [hist[hist.length - 2], hist[hist.length - 1], px, py]);
+    } else {
+      this.smoothHist.set(id, [px, py]);
+    }
+    return out;
+  }
+
   private handleTouch(event: TouchEvent): void {
     // 任何模态弹窗/面板打开时，画布一律拒绝书写：这些面板的外层多为 Transparent 命中，
     // 触摸会同时到达画布层，导致在弹窗上点按或拖动时落墨。
@@ -3565,6 +3602,7 @@ this.rebuildAutoSave();
         }
         this.touchXSeen.set(touch.id, px);
         this.touchYSeen.set(touch.id, py);
+        this.smoothHist.set(touch.id, [px, py]);
       } else {
         const lastX = this.touchXSeen.get(touch.id);
         const lastY = this.touchYSeen.get(touch.id);
@@ -3628,22 +3666,37 @@ this.rebuildAutoSave();
         this.controller.onPointerDown(sample);
       } else if (event.type === TouchType.Move) {
         const tMove = Date.now();
-        this.controller.onPointerMove(sample);
+        const coords = this.smoothedMoveCoords(touch.id, px, py);
+        for (let c = 0; c < coords.length; c++) {
+          const ms = new PointerSample(
+            touch.id, coords[c][0], coords[c][1], pressure, width, height,
+            pointerKind(event.source, event.sourceTool), timeMs, false, false, tiltX, tiltY, hasPressure
+          );
+          if (c + 1 < coords.length) {
+            this.controller.appendLivePoint(ms);
+          } else {
+            this.controller.onPointerMove(ms);
+          }
+        }
         this.updateStrokePrediction(event, isStylus);
         this.moveProbeCount++;
         if (this.moveProbeCount % 32 === 0) {
-          console.info('[ink-latency] process_ms=' + (Date.now() - tMove));
+          const dbgHist = this.smoothHist.get(touch.id);
+          console.info('[ink-latency] process_ms=' + (Date.now() - tMove) + ' subdiv=' + coords.length
+            + ' tool=' + this.controller.Tool + ' hist=' + (dbgHist === undefined ? -1 : dbgHist.length));
         }
       } else if (event.type === TouchType.Up) {
         if (this.renderer !== null) {
           this.renderer.clearPrediction();
         }
+        this.smoothHist.delete(touch.id);
         this.controller.onPointerUp(sample);
         this.castLastStroke();
       } else if (event.type === TouchType.Cancel) {
         if (this.renderer !== null) {
           this.renderer.clearPrediction();
         }
+        this.smoothHist.delete(touch.id);
         this.controller.onPointerCanceled(sample);
       }
     }
@@ -3767,6 +3820,11 @@ this.rebuildAutoSave();
   private sceneInputCacheDocVersion: number = -1;
   // L1 探针：每 32 个 move 记录一次"事件派发→同步出帧"的处理耗时（ms），用于核对 ≤20ms 目标。
   private moveProbeCount: number = 0;
+  // L2 顺滑度：平台增强门控（鸿蒙报点率低于 Windows 实时墨迹，稀疏采样直连产生棱角）。
+  // 开启后在输入侧对笔/荧光笔做 Catmull-Rom 细分：曲线穿过原始采样点（无滞后），
+  // 仅增加点密度不改变文档语义；关闭则与 C# 逐点路径逐位一致。黄金向量不经过此输入路径。
+  private readonly inkSmoothEnabled: boolean = true;
+  private smoothHist: Map<number, number[]> = new Map();
 
   private toSceneStroke(stroke: InkStroke, preview: Matrix3x2 | null = null): SceneStrokeInput {
     const attr = stroke.Attributes;
