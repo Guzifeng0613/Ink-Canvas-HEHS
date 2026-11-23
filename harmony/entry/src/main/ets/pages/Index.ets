@@ -80,6 +80,12 @@ import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
 import { image } from '@kit.ImageKit';
 
+// L1：已提交笔画场景输入 memo 条目（key=几何版本+属性+预览矩阵）。
+interface SceneInputCacheEntry {
+  key: string;
+  input: SceneStrokeInput;
+}
+
 // 应用内 UI 偏好（减少动效开关）。独立于 Settings.json，避免分叉跨端设置格式。
 interface UiPrefs {
   reduceMotion: boolean;
@@ -3396,8 +3402,13 @@ this.ToolEntry('AI 圈选识题', 'aiCapture')
         }
         this.controller.onPointerDown(sample);
       } else if (event.type === TouchType.Move) {
+        const tMove = Date.now();
         this.controller.onPointerMove(sample);
         this.updateStrokePrediction(event, isStylus);
+        this.moveProbeCount++;
+        if (this.moveProbeCount % 32 === 0) {
+          console.info('[ink-latency] process_ms=' + (Date.now() - tMove));
+        }
       } else if (event.type === TouchType.Up) {
         if (this.renderer !== null) {
           this.renderer.clearPrediction();
@@ -3524,7 +3535,23 @@ this.ToolEntry('AI 圈选识题', 'aiCapture')
     this.controller.Redo();
   }
 
+  // L1 延迟优化：已提交笔画的 SceneStrokeInput 按"几何版本+属性+预览矩阵"memo，
+  // 书写帧（文档版本不变）直接复用同一输入对象，避免每 move 全量点拷贝；
+  // 文档结构版本变化（提交/擦除/改色等 touch）时整体失效，保证与逐帧重建逐位一致。
+  private sceneInputCache: Map<InkStroke, SceneInputCacheEntry> = new Map();
+  private sceneInputCacheDocVersion: number = -1;
+  // L1 探针：每 32 个 move 记录一次"事件派发→同步出帧"的处理耗时（ms），用于核对 ≤20ms 目标。
+  private moveProbeCount: number = 0;
+
   private toSceneStroke(stroke: InkStroke, preview: Matrix3x2 | null = null): SceneStrokeInput {
+    const attr = stroke.Attributes;
+    const key = stroke.GeometryVersion + '|' + attr.BaseWidth + '|' + attr.Color.packedArgb() + '|'
+      + (attr.IsHighlighter ? 1 : 0) + '|' + attr.HighlighterAlpha + '|' + attr.TaperKind + '|'
+      + (preview !== null ? matrixToArray(preview).join(',') : '');
+    const cached = this.sceneInputCache.get(stroke);
+    if (cached !== undefined && cached.key === key) {
+      return cached.input;
+    }
     const points: StrokePointInput[] = [];
     for (let i = 0; i < stroke.Count; i++) {
       const point = stroke.Points[i];
@@ -3535,7 +3562,7 @@ this.ToolEntry('AI 圈选识题', 'aiCapture')
         points.push({ X: point.X, Y: point.Y, Width: point.Width });
       }
     }
-    return {
+    const input: SceneStrokeInput = {
       BaseWidth: stroke.Attributes.BaseWidth,
       ColorPacked: stroke.Attributes.Color.packedArgb(),
       IsHighlighter: stroke.Attributes.IsHighlighter,
@@ -3543,11 +3570,19 @@ this.ToolEntry('AI 圈选识题', 'aiCapture')
       TaperKind: stroke.Attributes.TaperKind,
       Points: points
     };
+    this.sceneInputCache.set(stroke, { key: key, input: input });
+    return input;
   }
 
   private refreshScene(): void {
     if (this.renderer === null) {
       return;
+    }
+    // L1：文档结构版本变化时失效输入 memo（提交/擦除/改色/回放切换等），书写帧复用。
+    const docVersion = this.controller.Document.Version;
+    if (docVersion !== this.sceneInputCacheDocVersion) {
+      this.sceneInputCache.clear();
+      this.sceneInputCacheDocVersion = docVersion;
     }
     const committed: SceneStrokeInput[] = [];
     let strokes = this.controller.Document.Strokes;
