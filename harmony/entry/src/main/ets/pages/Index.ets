@@ -97,6 +97,9 @@ interface UiPrefs {
   inkCastPort: number;
   // 透明批注模式：窗口与画布透明，配合系统悬浮窗覆盖教材批注
   transparentAnnotate: boolean;
+  // L3 笔尖落点补偿（vp，仅手写笔通道）：抵消设备视差/报告点与笔尖的系统偏差，默认 0 不改变路径
+  penOffsetX: number;
+  penOffsetY: number;
 }
 
 // 端侧 OCR 结果：Text 为空时仍需区分“设备没有 OCR”与“没识别到文字”。
@@ -463,6 +466,10 @@ struct Index {
       const castPort = prefs.inkCastPort;
       this.inkCastPort = (typeof castPort === 'number' && castPort > 0 && castPort < 65536) ? castPort : 9091;
       this.transparentAnnotate = prefs.transparentAnnotate === true;
+      const offX = prefs.penOffsetX;
+      this.penOffsetX = (typeof offX === 'number' && offX >= -50 && offX <= 50) ? offX : 0;
+      const offY = prefs.penOffsetY;
+      this.penOffsetY = (typeof offY === 'number' && offY >= -50 && offY <= 50) ? offY : 0;
     } catch (e) {
       void e;
     }
@@ -479,7 +486,9 @@ struct Index {
       inkCastEnabled: this.inkCastEnabled,
       inkCastHost: this.inkCastHost,
       inkCastPort: this.inkCastPort,
-      transparentAnnotate: this.transparentAnnotate
+      transparentAnnotate: this.transparentAnnotate,
+      penOffsetX: this.penOffsetX,
+      penOffsetY: this.penOffsetY
     };
     this.storage.writeTextAtomic('UiPrefs.json', JSON.stringify(prefs));
   }
@@ -826,6 +835,19 @@ struct Index {
                 }
               })
             Text('已采集 ' + this.calibrationSamples.length + ' 次').fontSize(13).fontColor(this.dark ? Color.White : Color.Black)
+            Row({ space: 8 }) {
+              Text('笔尖偏移').fontSize(13).fontColor(this.dark ? Color.White : Color.Black)
+              Text('X-').fontSize(13).fontColor(Color.White).padding(6).backgroundColor('#FF0067C0').borderRadius(6)
+                .onClick(() => { this.penOffsetX = Math.max(-50, this.penOffsetX - 0.5); this.persistUiPrefs(); })
+              Text('X+').fontSize(13).fontColor(Color.White).padding(6).backgroundColor('#FF0067C0').borderRadius(6)
+                .onClick(() => { this.penOffsetX = Math.min(50, this.penOffsetX + 0.5); this.persistUiPrefs(); })
+              Text('Y-').fontSize(13).fontColor(Color.White).padding(6).backgroundColor('#FF0067C0').borderRadius(6)
+                .onClick(() => { this.penOffsetY = Math.max(-50, this.penOffsetY - 0.5); this.persistUiPrefs(); })
+              Text('Y+').fontSize(13).fontColor(Color.White).padding(6).backgroundColor('#FF0067C0').borderRadius(6)
+                .onClick(() => { this.penOffsetY = Math.min(50, this.penOffsetY + 0.5); this.persistUiPrefs(); })
+              Text(this.penOffsetX.toFixed(1) + ',' + this.penOffsetY.toFixed(1))
+                .fontSize(13).fontColor(this.dark ? '#A8FFFFFF' : '#9E000000')
+            }
             Row({ space: 10 }) {
               Text('应用校准').fontSize(14).fontColor(Color.White).padding({ left: 16, right: 16, top: 8, bottom: 8 }).backgroundColor('#FF0067C0').borderRadius(6)
                 .onClick(() => { this.applyCalibration(); })
@@ -3371,6 +3393,11 @@ this.ToolEntry('AI 圈选识题', 'aiCapture')
       const height = touch.height === undefined ? 0 : touch.height;
       let px = touch.x;
       let py = touch.y;
+      // L3：仅手写笔通道叠加笔尖落点补偿（手指/鼠标路径零变化），抵消设备视差系统偏差。
+      if (isStylus) {
+        px += this.penOffsetX;
+        py += this.penOffsetY;
+      }
       // 坐标合法性：鼠标拖出窗口/屏幕边缘时 ArkUI 会回传负坐标或超界坐标，
       // 直接落盘会在笔迹末端拉出“指向画布中心 / 中心对称位置”的假线段。
       const maxX = this.windowWidth > 0 ? this.windowWidth + 1 : 100000;
@@ -3600,6 +3627,9 @@ this.ToolEntry('AI 圈选识题', 'aiCapture')
   // 仅增加点密度不改变文档语义；关闭则与 C# 逐点路径逐位一致。黄金向量不经过此输入路径。
   private readonly inkSmoothEnabled: boolean = true;
   private smoothHist: Map<number, number[]> = new Map();
+  // L3 笔尖落点补偿（vp，仅手写笔通道），经校准面板调节并持久化 UiPrefs。
+  @State penOffsetX: number = 0;
+  @State penOffsetY: number = 0;
 
   private toSceneStroke(stroke: InkStroke, preview: Matrix3x2 | null = null): SceneStrokeInput {
     const attr = stroke.Attributes;
