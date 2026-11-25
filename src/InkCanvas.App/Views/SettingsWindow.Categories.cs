@@ -11,6 +11,9 @@ public sealed partial class SettingsWindow
     private void BuildGeneralSettings()
     {
         AddSection("启动行为");
+        _content.Children.Add(ComboRow("重启电脑后的白板续接", new[] { "关闭", "自动恢复", "快速提醒" },
+            () => (int)S.Resume.Whiteboard, value => S.Resume.Whiteboard = (ResumeBehavior)value));
+        _content.Children.Add(InfoRow("快速提醒显示 8 秒，可点击继续。忽略或超时后清除上次留存的恢复进度。PDF 续接在 PDF 插件设置中单独调整。"));
         _content.Children.Add(ToggleRow("开机时运行", () => Platform.System.AutoStartService.IsEnabled(),
             v => Platform.System.AutoStartService.SetEnabled(v, Environment.ProcessPath ?? "InkCanvas.exe")));
         _content.Children.Add(ToggleRow("开机运行后收纳到侧边栏", () => S.Startup.IsFoldAtStartup,
@@ -46,9 +49,12 @@ public sealed partial class SettingsWindow
         _content.Children.Add(SliderRow("画笔粗细（原菜单 1–30；设置值为菜单值的一半）",
             () => S.Canvas.InkWidth, 0.5, 15, v => S.Canvas.InkWidth = v, 0.5));
         _content.Children.Add(ToggleRow("显示画笔光标", () => S.Canvas.IsShowCursor, value => S.Canvas.IsShowCursor = value));
+        _content.Children.Add(ToggleRow("启用自定义颜色色板", () => S.Canvas.EnableCustomColorPalette,
+            value => S.Canvas.EnableCustomColorPalette = value,
+            note: "在亮系、暗系后切换到自定义色板，可添加、编辑和删除颜色并自动保存。画笔与荧光笔共用自定义颜色。"));
         AddSection("荧光笔");
-        _content.Children.Add(SliderRow("荧光笔透明度", () => S.Canvas.InkAlpha,
-            20, 240, v => S.Canvas.InkAlpha = (int)v, 20));
+        _content.Children.Add(SliderRow("荧光笔不透明度", () => OriginalMenuCatalog.ToHighlighterOpacityPercent(S.Canvas.InkAlpha),
+            0, 100, v => S.Canvas.InkAlpha = OriginalMenuCatalog.ToStoredHighlighterAlpha(v), unit: "%"));
         _content.Children.Add(SliderRow("荧光笔粗细", () => (S.Canvas.HighlighterWidth ?? S.Canvas.InkWidth) * 2,
             1, OriginalMenuCatalog.HighlighterWidthMaximum, v => S.Canvas.HighlighterWidth = v / 2));
         AddSection("水墨笔刷");
@@ -61,8 +67,9 @@ public sealed partial class SettingsWindow
         _content.Children.Add(SliderRow("水墨扁笔侧锋度（%）", () => Math.Round(S.Canvas.InkWash.Flatness * 100),
             0, 90, value => S.Canvas.InkWash = S.Canvas.InkWash with { Flatness = (float)(value / 100) }));
         AddSection("橡皮");
-        _content.Children.Add(ComboRow("橡皮大小", OriginalMenuCatalog.EraserSizes,
-            () => S.Canvas.EraserSize, i => S.Canvas.EraserSize = i));
+        _content.Children.Add(SliderRow("面积擦直径", () => OriginalMenuCatalog.GetEraserDiameter(S.Canvas),
+            OriginalMenuCatalog.EraserDiameterMinimum, OriginalMenuCatalog.EraserDiameterMaximum,
+            value => S.Canvas.EraserDiameter = value, unit: " px"));
         _content.Children.Add(ComboRow("橡皮模式", OriginalMenuCatalog.EraserModes,
             () => S.Canvas.EraserType, i => S.Canvas.EraserType = i));
     }
@@ -297,11 +304,7 @@ public sealed partial class SettingsWindow
         _content.Children.Add(ToggleRow("记录日志", () => S.Advanced.IsLogEnabled,
             v => S.Advanced.IsLogEnabled = v));
         AddSection("帮助");
-        _content.Children.Add(ButtonRow("操作指南", "模式、工具、手势与快捷键", () =>
-        {
-            var w = InfoWindow.OpenGuide(S.Appearance.Theme);
-            w.Activate();
-        }));
+        _content.Children.Add(ButtonRow("操作指南", "模式、工具、手势与快捷键", () => _workspace.SelectPage("操作指南")));
         _content.Children.Add(ButtonRow("更新日志", "查看版本变更记录", () =>
         {
             var w = InfoWindow.OpenChangeLog(S.Appearance.Theme);

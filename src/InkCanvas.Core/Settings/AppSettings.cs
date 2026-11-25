@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace InkCanvas.Core.Settings;
@@ -24,6 +24,7 @@ public sealed class AppSettings
     [JsonPropertyName("display")] public DisplaySettings Display { get; set; } = new();
     [JsonPropertyName("storage")] public StorageSettings Storage { get; set; } = new();
     [JsonPropertyName("archive")] public ArchiveSettings Archive { get; set; } = new();
+    [JsonPropertyName("resume")] public ResumeSettings Resume { get; set; } = new();
 
     private AiSettings _ai = new();
 
@@ -44,9 +45,6 @@ public sealed class AppSettings
         get => _classroom ??= new ClassroomSettings();
         set => _classroom = value ?? new ClassroomSettings();
     }
-
-    /// <summary>新功能回退开关；旧设置文件缺该节点时保持默认（全部开启）。</summary>
-    [JsonPropertyName("features")] public FeatureSettings Features { get; set; } = new();
 
     public AppSettings Clone() =>
         JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(this)) ?? new AppSettings();
@@ -144,6 +142,7 @@ public sealed class AppSettings
         Canvas.HighlighterColor = null;
         Canvas.ShapeKind = null;
         Canvas.EraserSize = 1;
+        Canvas.EraserDiameter = null;
         Canvas.EraserType = 0;
         Canvas.HideStrokeWhenSelecting = false;
         Canvas.UsingWhiteboard = false;
@@ -199,15 +198,6 @@ public sealed class ExperimentalSettings
     public bool Edge { get; set; } = true;
 }
 
-/// <summary>第一轮功能区开关，供后续新功能按需回退；默认全部开启。</summary>
-public sealed class FeatureSettings
-{
-    [JsonPropertyName("enableAiTeaching")] public bool EnableAiTeaching { get; set; } = true;
-    [JsonPropertyName("enableExerciseFlow")] public bool EnableExerciseFlow { get; set; } = true;
-    [JsonPropertyName("enableExampleLibrary")] public bool EnableExampleLibrary { get; set; } = true;
-    [JsonPropertyName("enableResourceBundle")] public bool EnableResourceBundle { get; set; } = true;
-}
-
 /// <summary>
 /// AI 助教灰度开关：每一项关闭时回退到旧的单段、无圈选、无自检或纯 PNG 贴回行为。
 /// 默认全部开启，便于旧版 Settings.json 直接升级。
@@ -240,8 +230,19 @@ public sealed class AiDocumentSettings
 
 public enum OptionalOperation { Yes, No, Ask }
 
+public enum ColorPaletteKind { Light, Dark, Custom }
+
 public sealed class CanvasSettings
 {
+    [JsonPropertyName("selectionMode")] public Selection.InkSelectionMode SelectionMode { get; set; }
+    [JsonPropertyName("enableCustomColorPalette")] public bool EnableCustomColorPalette { get; set; } = true;
+    [JsonPropertyName("colorPalette")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ColorPaletteKind? ColorPalette { get; set; }
+    private List<uint> _customColors = new();
+    [JsonPropertyName("customColors")]
+    public List<uint> CustomColors { get => _customColors; set => _customColors = value ?? new(); }
+
     public double InkWashWidth { get; set; } = 30;
     public Ink.InkWashBrushOptions InkWash { get; set; } = Ink.InkWashBrushOptions.Default;
     public bool UseHardwarePressure { get; set; } = true;
@@ -264,6 +265,8 @@ public sealed class CanvasSettings
     [JsonPropertyName("shapeKind")] public Shapes.ShapeKind? ShapeKind { get; set; }
 
     [JsonPropertyName("eraserSize")] public int EraserSize { get; set; } = 2;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonPropertyName("eraserDiameter")] public double? EraserDiameter { get; set; }
 
     /// <summary>0 = legacy default, 1 = area eraser, 2 = stroke eraser, 3 = lasso eraser.</summary>
     [JsonPropertyName("eraserType")] public int EraserType { get; set; }
@@ -455,31 +458,12 @@ public sealed class RandSettings
 
 public enum LotterySamplingMode { SoftCooldown, Uniform, RoundWithoutReplacement }
 
-/// <summary>课堂工具箱配置：场景预设、倒计时与常用参数；新字段只追加。</summary>
+/// <summary>计时器、聚光灯与放大镜的配置。</summary>
 public sealed class ClassroomSettings
 {
     [JsonPropertyName("version")] public int Version { get; set; } = 1;
-
-    [JsonPropertyName("presetId")] public string PresetId { get; set; } = "teach";
-
     [JsonPropertyName("countdownMinutes")] public int CountdownMinutes { get; set; } = 3;
-
-    [JsonPropertyName("toolkitCollapsed")] public bool ToolkitCollapsed { get; set; }
-
-    [JsonPropertyName("practicePageName")] public string PracticePageName { get; set; } = "随堂练习";
-
-    [JsonPropertyName("customPresets")] public string CustomPresets { get; set; } = "";
-
-    [JsonPropertyName("groupSplitMode")] public string GroupSplitMode { get; set; } = "groupCount";
-
-    [JsonPropertyName("groupSplitValue")] public int GroupSplitValue { get; set; } = 4;
-
     [JsonPropertyName("spotlightRegions")] public string SpotlightRegions { get; set; } = "";
-
-    /// <summary>工具箱窗口屏幕位置；int.MinValue 表示从未保存，按默认居中放置。</summary>
-    [JsonPropertyName("toolkitX")] public int ToolkitX { get; set; } = int.MinValue;
-    [JsonPropertyName("toolkitY")] public int ToolkitY { get; set; } = int.MinValue;
-
     /// <summary>放大镜窗口屏幕位置；int.MinValue 表示未保存。</summary>
     [JsonPropertyName("magnifierX")] public int MagnifierX { get; set; } = int.MinValue;
     [JsonPropertyName("magnifierY")] public int MagnifierY { get; set; } = int.MinValue;

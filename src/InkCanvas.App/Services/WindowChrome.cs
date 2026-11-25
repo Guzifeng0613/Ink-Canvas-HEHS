@@ -26,6 +26,7 @@ public static class WindowChrome
 
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Window, Placement> Placements = new();
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Window, ClippedWindowFrame> ClippedFrames = new();
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Window, List<Action>> DragCancellations = new();
     private readonly record struct SurfaceRect(double Left, double Top, double Right, double Bottom,
         double TopLeft, double TopRight, double BottomRight, double BottomLeft);
 
@@ -469,88 +470,120 @@ public static class WindowChrome
     public static void EnableDragMove(Window window, UIElement dragSurface, Action onDragMoved = null, bool fromAnywhere = false,
         Action onDragCompleted = null)
     {
-        bool pressed = false;
-        bool dragging = false;
+        var session = new Core.Input.WindowDragSession();
+        bool nativePointer = false;
         Microsoft.UI.Xaml.Input.PointerRoutedEventArgs pressedArgs = null;
-        NativeMethods.POINT originCursor = default;
-        PointInt32 originPx = default;
+        var timer = window.DispatcherQueue.CreateTimer();
+        timer.Interval = TimeSpan.FromMilliseconds(16);
 
-        void Complete()
+        void Finish(bool complete)
         {
-            bool moved = dragging;
+            bool moved = session.End();
             var pointer = pressedArgs?.Pointer;
-            pressed = false;
-            dragging = false;
             pressedArgs = null;
+            timer.Stop();
             if (pointer is not null) dragSurface.ReleasePointerCapture(pointer);
-            if (moved)
+            if (moved && complete)
             {
                 KeepVisible(window);
                 onDragCompleted?.Invoke();
             }
         }
 
+        bool MousePressed() => NativeMethods.GetAsyncKeyState(
+            NativeMethods.GetSystemMetrics(23 /* SM_SWAPBUTTON */) != 0 ? 0x02 : 0x01) < 0;
+
+        bool ReadPosition(out NativeMethods.POINT position)
+        {
+            if (nativePointer)
+            {
+                bool contact = NativeMethods.GetPointerInfo(pressedArgs.Pointer.PointerId, out var info)
+                    && (info.pointerFlags & 0x0004 /* POINTER_FLAG_INCONTACT */) != 0;
+                position = info.ptPixelLocation;
+                return contact;
+            }
+            return NativeMethods.GetCursorPos(out position);
+        }
+
         // WinUI 3 stops delivering PointerMoved once AppWindow.Move repositions the island
         // mid-gesture, so the drag is polled from a dispatcher timer instead: press/release
         // start/stop it and the native cursor is the position source.
-        var timer = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread().CreateTimer();
-        timer.Interval = TimeSpan.FromMilliseconds(16);
         timer.Tick += (_, _) =>
         {
-            if (!pressed) { timer.Stop(); return; }
+            if (!session.IsPressed) { timer.Stop(); return; }
             if (pressedArgs?.Pointer.PointerDeviceType == Microsoft.UI.Input.PointerDeviceType.Mouse
-                && NativeMethods.GetKeyState(0x01) >= 0)
-            { Complete(); timer.Stop(); return; }
-            NativeMethods.GetCursorPos(out var cur);
-            int dx = cur.X - originCursor.X, dy = cur.Y - originCursor.Y;
-            if (!dragging)
+                && !MousePressed())
+            { Finish(true); return; }
+            if (!ReadPosition(out var cur)) { Finish(true); return; }
+            bool moved = session.IsDragging;
+            if (!session.TryMove(cur.X, cur.Y, Environment.TickCount64, 8 * GetDpiScale(window), out var position))
             {
-                double threshold = 8 * GetDpiScale(window);
-                if (dx * dx + dy * dy < threshold * threshold) return; // 8 DIP threshold
-                dragging = true;
+                if (!session.IsPressed) Finish(false);
+                return;
+            }
+            if (!moved)
+            {
                 // Steal capture from a pressed button so its Click is suppressed for this gesture.
                 if (fromAnywhere && pressedArgs is not null) dragSurface.CapturePointer(pressedArgs.Pointer);
                 onDragMoved?.Invoke();
             }
-            window.AppWindow.Move(new PointInt32(originPx.X + dx, originPx.Y + dy));
+            window.AppWindow.Move(new PointInt32(position.X, position.Y));
         };
 
         void OnPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
+            if (session.IsPressed) return;
             if (e.Pointer.PointerDeviceType == Microsoft.UI.Input.PointerDeviceType.Mouse
                 && !e.GetCurrentPoint(dragSurface).Properties.IsLeftButtonPressed) return;
             if (!fromAnywhere && HasInteractiveAncestor(e.OriginalSource as DependencyObject, dragSurface)) return;
-            pressed = true;
-            dragging = false;
             pressedArgs = e;
-            NativeMethods.GetCursorPos(out originCursor);
-            originPx = window.AppWindow.Position;
+            nativePointer = e.Pointer.PointerDeviceType != Microsoft.UI.Input.PointerDeviceType.Mouse
+                && NativeMethods.GetPointerInfo(e.Pointer.PointerId, out _);
+            if (!ReadPosition(out var originCursor)) { Finish(false); return; }
+            var originPx = window.AppWindow.Position;
+            session.Begin(originPx.X, originPx.Y, originCursor.X, originCursor.Y, Environment.TickCount64);
             if (!fromAnywhere) dragSurface.CapturePointer(e.Pointer);
             timer.Start();
         }
 
         void OnReleased(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
-            if (!pressed) return;
-            timer.Stop();
-            if (dragging) e.Handled = true;
-            Complete();
-            dragSurface.ReleasePointerCapture(e.Pointer);
+            if (!session.IsPressed || pressedArgs.Pointer.PointerId != e.Pointer.PointerId) return;
+            if (session.IsDragging) e.Handled = true;
+            Finish(true);
         }
 
         // handledEventsToo so button-handled presses/releases are seen in fromAnywhere mode.
         dragSurface.AddHandler(UIElement.PointerPressedEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler(OnPressed), fromAnywhere);
         dragSurface.AddHandler(UIElement.PointerReleasedEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler(OnReleased), fromAnywhere);
-        dragSurface.PointerCanceled += (_, _) => { Complete(); timer.Stop(); };
-        dragSurface.PointerCaptureLost += (_, _) =>
+        dragSurface.PointerCanceled += (_, e) =>
         {
+            if (pressedArgs?.Pointer.PointerId == e.Pointer.PointerId) Finish(false);
+        };
+        dragSurface.PointerCaptureLost += (_, e) =>
+        {
+            if (!session.IsPressed || pressedArgs.Pointer.PointerId != e.Pointer.PointerId) return;
             // Moving the XAML island can drop capture while the mouse is still dragging.
             // Keep following the native cursor until button-up instead of ending after one step.
             if (pressedArgs?.Pointer.PointerDeviceType == Microsoft.UI.Input.PointerDeviceType.Mouse
-                && NativeMethods.GetKeyState(0x01) < 0) return;
-            Complete(); timer.Stop();
+                && MousePressed()) return;
+            if (nativePointer && ReadPosition(out var contactPosition)) return;
+            Finish(true);
         };
-        window.Closed += (_, _) => { pressed = false; pressedArgs = null; timer.Stop(); };
+        void Cancel() => Finish(false);
+        DragCancellations.GetOrCreateValue(window).Add(Cancel);
+        if (dragSurface is FrameworkElement element) element.Unloaded += (_, _) => Cancel();
+        window.AppWindow.Changed += (_, args) =>
+        {
+            if (args.DidVisibilityChange && !window.AppWindow.IsVisible) Cancel();
+        };
+        window.Closed += (_, _) => { Cancel(); DragCancellations.Remove(window); };
+    }
+
+    internal static void CancelAllDragMoves()
+    {
+        foreach (var sessions in DragCancellations)
+            foreach (var cancel in sessions.Value) cancel();
     }
 
     private static bool HasInteractiveAncestor(DependencyObject current, DependencyObject boundary)
@@ -752,7 +785,8 @@ public static class WindowChrome
     /// </summary>
     public static void EnsureAbove(Window window, IntPtr overlay = default)
     {
-        if (window.AppWindow.Presenter is OverlappedPresenter { IsAlwaysOnTop: false }) return;
+        if (window?.AppWindow is not { } appWindow || !appWindow.IsVisible) return;
+        if (appWindow.Presenter is OverlappedPresenter { IsAlwaysOnTop: false }) return;
         var hwnd = GetHwnd(window);
         if (hwnd == IntPtr.Zero || !NativeMethods.IsWindowVisible(hwnd)) return;
         if (overlay != IntPtr.Zero)

@@ -30,8 +30,8 @@ public static partial class ReleaseWebFeed
         { AppVersion.TryParse(entry.Tag, out var version); return version; }).ToArray();
     }
 
-    public static ReleaseInfo ReadAssets(string html, string repository, Entry entry)
-        => ReleaseFeed.ParseLatest(ReadAssetsJson(html, repository, entry));
+    public static ReleaseInfo ReadAssets(string html, string repository, Entry entry, bool preferMsi = false)
+        => ReleaseFeed.ParseLatest(ReadAssetsJson(html, repository, entry), preferMsi);
 
     public static string ReadAssetsJson(string html, string repository, Entry entry)
     {

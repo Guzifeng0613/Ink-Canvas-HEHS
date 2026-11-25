@@ -33,11 +33,15 @@ public sealed class PenPaletteWindow : Window
     public bool IsHighlighter { get; }
 
     public PenPaletteWindow(InkController controller, bool highlighter, int theme, double scalePercent = 100)
+        : this(controller, highlighter, theme, scalePercent, null) { }
+
+    public PenPaletteWindow(InkController controller, bool highlighter, int theme, double scalePercent,
+        Core.Settings.CanvasSettings settings)
     {
         IsHighlighter = highlighter;
         Title = highlighter ? "荧光笔" : "墨迹选项";
 
-        _palette = new PenPalette(highlighter) { Controller = controller };
+        _palette = new PenPalette(highlighter, settings) { Controller = controller };
         _palette.RequestClose = Close;
         _palette.ApplyChrome(theme);
         MeasureDesign();
@@ -71,6 +75,8 @@ public sealed class PenPaletteWindow : Window
         WindowChrome.EnableDragMove(this, _palette.Header, Detach, onDragCompleted: RefreshDisplayPlacement);
         _palette.RefreshFromController();
         WireDismissal();
+        AppWindow.Closing += (_, _) => _palette.FlushSliderChanges();
+        Closed += (_, _) => _palette.FlushSliderChanges();
         OptionPopupCoordinator.Attach(this, _palette.Header);
         scroll.Loaded += (_, _) => { _live = true; AttachDpiTracking(); };
         _palette.CardSurface.SizeChanged += (_, _) =>
@@ -108,6 +114,8 @@ public sealed class PenPaletteWindow : Window
         }
     }
     public Action AttributesChanged { get => _palette.AttributesChanged; set => _palette.AttributesChanged = value; }
+    public Action ColorPaletteChanged { get => _palette.ColorPaletteChanged; set => _palette.ColorPaletteChanged = value; }
+    public Func<FrameworkElement, Core.Ink.InkColor, Action<Core.Ink.InkColor>, Task> EditColorAsync { get => _palette.EditColorAsync; set => _palette.EditColorAsync = value; }
     public int HighlighterAlpha { get => _palette.HighlighterAlpha; set => _palette.HighlighterAlpha = value; }
     public bool LightColorScheme { get => _palette.LightColorScheme; set => _palette.LightColorScheme = value; }
 
@@ -123,6 +131,9 @@ public sealed class PenPaletteWindow : Window
     }
 
     public void RefreshFromController() => _palette.RefreshFromController();
+    public void FlushSliderChanges() => _palette.FlushSliderChanges();
+    public new void Close() { _palette.FlushSliderChanges(); base.Close(); }
+    public void RefreshFromController(Core.Settings.CanvasSettings settings) => _palette.RefreshFromController(settings);
 
     /// <summary>
     /// WPF has no dedicated menu-size setting: palettes live inside the scaled tools Viewbox
@@ -145,7 +156,7 @@ public sealed class PenPaletteWindow : Window
     /// <summary>Shell overlay-input hook: WPF HideSubPanels always hides PenPalette on inking.</summary>
     public void DismissOnOverlayInput()
     {
-        if (!_closed && !_palette.Header.IsPinned) Close();
+        if (!_closed && !_palette.Header.IsPinned && !_palette.IsEditingColor) Close();
     }
 
     /// <summary>
@@ -272,7 +283,7 @@ public sealed class PenPaletteWindow : Window
         {
             if (e.Key == Windows.System.VirtualKey.Escape) { e.Handled = true; if (!_closed) Close(); }
         };
-        TransientWindowDismissal.Attach(this, () => _ownerHwnd, () => !_palette.Header.IsPinned,
+        TransientWindowDismissal.Attach(this, () => _ownerHwnd, () => !_palette.Header.IsPinned && !_palette.IsEditingColor,
             () => _getAnchor?.Invoke() ?? default, () => _getInteractionRegion?.Invoke() ?? default);
         Closed += (_, _) => { _closed = true; _detachAnchor?.Invoke(); };
     }

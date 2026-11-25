@@ -44,7 +44,8 @@ internal static class BoardPopupRegression
                 try
                 {
                     await Task.Delay(100);
-                    var imageButtons = Descendants(tools.Content).OfType<TouchIconButton>().Where(button => button.Label == "插入图片").ToArray();
+                    var insertion = await MoreMenuRegression.OpenInsertionMenu(tools.Content);
+                    var imageButtons = Descendants(insertion).OfType<TouchIconButton>().Where(button => button.Label == "插入图片").ToArray();
                     checks.Add(new { check = "image insertion remains usable in tools menu",
                         passed = imageButtons.Length == 1 && imageButtons[0].IsEnabled && imageButtons[0].Opacity == 1 });
                 }

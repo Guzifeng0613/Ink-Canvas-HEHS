@@ -26,6 +26,7 @@ internal sealed class DocumentAiService : IAiDocumentService, IDisposable
     private bool _disposed;
     private AiDocumentSettings Settings => _assistant.Settings.Ai.Documents ??= new();
     public string Status { get; private set; } = "尚未进行 AI 存档命名。";
+    public bool SupportsSuggestions => true;
 
     public DocumentAiService(IAiAssistantHost assistant, IAiDocumentHost host, AiConnectionStore connections = null)
     {
@@ -100,7 +101,8 @@ internal sealed class DocumentAiService : IAiDocumentService, IDisposable
             var settings = new AiDocumentSettings { Endpoint = Settings.Endpoint, Model = Settings.Model, AssistantProtocol = Settings.AssistantProtocol };
             if (_connections?.Active is null || !string.IsNullOrWhiteSpace(settings.Endpoint)) DocumentNamingClient.ValidateConfiguration(settings);
             var result = await Task.Run(() => ProcessFileAsync(request, settings, token), token);
-            try { _host.Completed(result); } catch (Exception ex) { Core.Diagnostics.FileLog.WriteLogToFile("同步 AI 文稿结果 " + ex.Message); }
+            if (!request.PreviewOnly)
+                try { _host.Completed(result); } catch (Exception ex) { Core.Diagnostics.FileLog.WriteLogToFile("同步 AI 文稿结果 " + ex.Message); }
             return result;
         }
         catch (OperationCanceledException) { SetStatus("已取消 AI 命名，存档已保留。"); throw; }
@@ -158,16 +160,19 @@ internal sealed class DocumentAiService : IAiDocumentService, IDisposable
             if (caption is null) throw new InvalidDataException("文件中没有可供模型分析的页面。");
             token.ThrowIfCancellationRequested();
             string destination = request.Path;
-            if (Path.GetExtension(request.Path).Equals(".icink", StringComparison.OrdinalIgnoreCase))
-                destination = await BoardService.DescribeArchiveAsync(request.Path, caption.Title, caption.Description, length, written, token);
-            else
+            if (!request.PreviewOnly)
             {
-                stamp.Refresh();
-                if (stamp.Length != length || stamp.LastWriteTimeUtc != written) throw new IOException("文件已变化，此次命名结果已跳过。");
-                // PDF and construction editors retain open file handles. Their adapters receive the suggested name.
-                string details = request.Path + ".ai.json";
-                await File.WriteAllTextAsync(details + ".tmp", JsonSerializer.Serialize(caption), token);
-                File.Move(details + ".tmp", details, true);
+                if (Path.GetExtension(request.Path).Equals(".icink", StringComparison.OrdinalIgnoreCase))
+                    destination = await BoardService.DescribeArchiveAsync(request.Path, caption.Title, caption.Description, length, written, token);
+                else
+                {
+                    stamp.Refresh();
+                    if (stamp.Length != length || stamp.LastWriteTimeUtc != written) throw new IOException("文件已变化，此次命名结果已跳过。");
+                    // PDF and construction editors retain open file handles. Their adapters receive the suggested name.
+                    string details = request.Path + ".ai.json";
+                    await File.WriteAllTextAsync(details + ".tmp", JsonSerializer.Serialize(caption), token);
+                    File.Move(details + ".tmp", details, true);
+                }
             }
             var result = new AiDocumentResult(request.Path, destination, caption.Title, caption.Description, all.Count, DateTimeOffset.UtcNow);
             try { await File.WriteAllTextAsync(Path.Combine(directory, "analysis.json"), JsonSerializer.Serialize(new { Result = result, Images = all })); }

@@ -1056,6 +1056,12 @@ public sealed class VectorParityTests
             var settings = JsonSerializer.Deserialize<AppSettings>(input, CaseInsensitive)!;
             var actual = JsonNode.Parse(JsonSerializer.Serialize(settings))!;
             var expected = JsonNode.Parse(c.GetProperty("expected").GetRawText())!;
+            // The shared vectors include retired classroom controls from the earlier UI.
+            // AppearanceSettingsTests covers loading those keys and dropping them on save.
+            expected.AsObject().Remove("features");
+            foreach (string field in new[] { "presetId", "toolkitCollapsed", "practicePageName", "customPresets",
+                "groupSplitMode", "groupSplitValue", "toolkitX", "toolkitY" })
+                expected["classroom"]?.AsObject().Remove(field);
             // WinUI defaults to Regular icons when older settings omit the style choice.
             if (JsonNode.Parse(input)?["appearance"]?["isIconRegularStyle"] is null
                 && expected["appearance"] is JsonObject appearance) appearance["isIconRegularStyle"] = true;
@@ -1072,7 +1078,9 @@ public sealed class VectorParityTests
             foreach (string field in new[] { "samplingMode", "cooldownHalfLifeDays", "cooldownPenaltyStrength" })
                 if (expected["randSettings"]?[field] is null) actual["randSettings"]?.AsObject().Remove(field);
             // Native pressure, palm routing and hold-to-shape settings extend the legacy schema.
-            foreach (string field in new[] { "UseHardwarePressure", "UsePenTilt", "InkWash", "InkWashWidth" })
+            if (expected["resume"] is null) actual.AsObject().Remove("resume");
+            foreach (string field in new[] { "UseHardwarePressure", "UsePenTilt", "InkWash", "InkWashWidth",
+                "enableCustomColorPalette", "colorPalette", "customColors", "selectionMode" })
                 if (expected["canvas"]?[field] is null) actual["canvas"]?.AsObject().Remove(field);
             foreach (string field in new[] { "PenHasPriority", "PalmErases" })
                 if (expected["gesture"]?[field] is null) actual["gesture"]?.AsObject().Remove(field);

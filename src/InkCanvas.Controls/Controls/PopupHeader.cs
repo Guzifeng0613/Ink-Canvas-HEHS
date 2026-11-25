@@ -38,6 +38,7 @@ public sealed class PopupHeader : Grid
         _close.Click += (_, _) => CloseRequested?.Invoke();
         SetColumn(_pin, 1); SetColumn(_close, 2);
         Children.Add(_title); Children.Add(_pin); Children.Add(_close);
+        ActualThemeChanged += (_, _) => _title.Foreground = ThemeBrushes.Resolve(this, "IcTextPrimaryBrush");
         ApplyTheme(theme);
         RefreshPin();
     }
@@ -46,8 +47,8 @@ public sealed class PopupHeader : Grid
 
     public void ApplyTheme(int theme)
     {
-        RequestedTheme = theme == 2 ? ElementTheme.Dark : ElementTheme.Light;
-        _title.Foreground = _pin.Foreground = _close.Foreground = PopupBrushes.Foreground(theme);
+        RequestedTheme = theme switch { 1 => ElementTheme.Light, 2 => ElementTheme.Dark, _ => ElementTheme.Default };
+        _title.Foreground = ThemeBrushes.Resolve(this, "IcTextPrimaryBrush");
         _pin.Background = _close.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
     }
 

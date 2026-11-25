@@ -60,7 +60,11 @@ internal static class WindowResizeRegression
                     break;
                 case "settings": window = new SettingsWindow(services, shell: shell); break;
                 case "timer": window = new CountdownWindow(); break;
-                case "guide": window = InfoWindow.OpenGuide(services.Settings.Appearance.Theme); break;
+                case "guide":
+                    var guideSettings = new SettingsWindow(services);
+                    guideSettings.SelectCategory("操作指南");
+                    window = guideSettings;
+                    break;
                 case "geometry":
                     services.Modules.GetExport<IAnalyticGeometryService>().Open();
                     window = shell.OpenWindows.Single(item => item.GetType().Name == "GeometryWorkbenchWindow");

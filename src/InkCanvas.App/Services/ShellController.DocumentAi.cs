@@ -18,6 +18,7 @@ public sealed partial class ShellController
         public string DataDirectory => Path.Combine(_shell.Services.Store.Directory, "PluginData", "inkcanvas.ai-assistant", "Documents");
         public event Action<AiDocumentRequest> DocumentSaved;
         public bool Available => _shell.Services.Modules.HasExport<IAiDocumentService>();
+        public bool SupportsSuggestions => _shell.Services.Modules.GetExport<IAiDocumentService>()?.SupportsSuggestions == true;
         private void ArchiveSaved(ArchiveSaveResult saved) => Saved(new(saved.Path));
         public void Saved(AiDocumentRequest request)
         {

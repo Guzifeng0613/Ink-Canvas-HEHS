@@ -11,6 +11,7 @@ public sealed record AiDocumentImage(string Path, int Page, string Role, int Wid
 public sealed record AiDocumentRequest(string Path, string SourcePluginId = "inkcanvas.library")
 {
     public Func<string, CancellationToken, IAsyncEnumerable<AiDocumentImage>> ExportImages { get; init; }
+    public bool PreviewOnly { get; init; }
 }
 
 public sealed record AiDocumentResult(string OriginalPath, string Path, string Title, string Description, int Images, DateTimeOffset CompletedAtUtc);
@@ -19,6 +20,7 @@ public sealed record AiDocumentResult(string OriginalPath, string Path, string T
 public interface IAiDocumentService
 {
     string Status { get; }
+    bool SupportsSuggestions => false;
     FrameworkElement CreateSettingsView();
     Task<AiDocumentResult> DescribeAsync(AiDocumentRequest request, CancellationToken token = default);
 }
@@ -26,6 +28,8 @@ public interface IAiDocumentService
 public interface IAiDocumentBridge
 {
     bool Available { get; }
+    bool SupportsSuggestions => false;
+    void Completed(AiDocumentResult result) { }
     void Saved(AiDocumentRequest request);
     Task<AiDocumentResult> DescribeAsync(AiDocumentRequest request, CancellationToken token = default);
 }

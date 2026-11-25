@@ -14,7 +14,6 @@ using InkCanvas.Host.Contracts;
 using InkCanvas.Extensibility;
 
 using InkCanvas.Core.AiAssistant;
-using InkCanvas.Core.Classroom;
 using InkCanvas.Core.Ink;
 using InkCanvas.Features.AiAssistant;
 using InkCanvas.Features.Classroom;
@@ -28,7 +27,6 @@ using Windows.Storage;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
 
-using ClassroomRoster = InkCanvas.Features.Classroom.ClassroomRoster;
 
 namespace InkCanvas.App.Services;
 
@@ -42,10 +40,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private readonly DispatcherQueueTimer _pollTimer;
     private readonly PptInkFileStore _pptStore;
     private readonly PptInkSession _pptSession;
-    private RosterWindow _roster;
     private SpotlightWindow _spotlight;
     private MagnifierWindow _magnifier;
-    private ToolkitWindow _toolkit;
     private readonly NavigationGuard _pptGuard = new();
     private readonly SlideSwitchGate _pptGate = new();
     private readonly Dictionary<PptNavigationPlacement, PptNavigationWindow> _pptNavigations = new();
@@ -66,15 +62,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private readonly KeyPresentationSource _pptKeySource = new();
     private BlackScreenWindow _blackScreen;
     private DateTime _lastPptRpcBusyLogUtc = DateTime.MinValue;
-    private TeachingSession _teachingSession;
-    private PracticePlan _activePractice;
-    private GroupScoreService _groupScore;
-    private GroupScoreWindow _groupScoreWindow;
-    private ExampleLibraryWindow _exampleLibrary;
-    private ResourceBundleWindow _resourceBundle;
-    private ClassroomPreset _preset;
     private FocusRegionStore _focusRegions;
-    private PresetWindow _presetWindow;
 
     private FloatingBarWindow _bar;
     private SelectionToolbarWindow _selectionToolbar;
@@ -94,9 +82,9 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private CountdownWindow _countdown;
     private LotteryWindow _lottery;
     private ReplayWindow _replay;
-    private InfoWindow _guide;
     private readonly List<NoticeWindow> _notices = new();
     private PenPaletteWindow _palette;
+    private ColorEditorWindow _colorEditor;
     private readonly List<PenPaletteWindow> _detachedPalettes = new();
     private ShapePickerWindow _shapePicker;
     private bool _lastSlideShowState;
@@ -109,11 +97,9 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private InkController _boundBoardController;
     private IReadOnlyList<ScreenInfo> _screens = Array.Empty<ScreenInfo>();
     private bool _displayRefreshPending;
+    private bool _forceDisplayRefresh;
     private long _lastDisplayCheck;
 
-    internal event Action ActiveControllerChanged;
-    internal event Action BoardOpenChanged;
-    internal event Action<ClassroomSignal> ClassroomSignal;
 
     public ShellController(AppServices services)
     {
@@ -127,10 +113,11 @@ public sealed partial class ShellController : IShellActions, IDisposable
         services.SettingsApplied += ApplyDisplaySettings;
         services.SettingsApplied += RefreshPaletteNibModes;
         Overlay.Window.DisplaySettingsChanged += QueueDisplayRefresh;
+        Overlay.Window.PowerStateChanged += CancelWindowDrags;
         _screens = ScreenService.All();
         _documentAi = new DocumentAiHost(this);
         RegisterAssistantTools();
-        services.StartModules(new ScreenTrackingHost(services, Overlay, () => _board is not null || DocumentActive), new DocumentHost(this), new CanvasToolsHost(this), new AssistantHost(this), new LibraryHost(this), new TimeMachineHost(this), _documentAi);
+        services.StartModules(new ScreenTrackingHost(services, Overlay, () => _board is not null || DocumentActive), new DocumentHost(this), new CanvasToolsHost(this), new AssistantHost(this), new LibraryHost(this), _documentAi, new StylusInputHost(this));
         _pptStore = new PptInkFileStore(services.Settings.Automation.AutoSavedStrokesLocation);
         services.SettingsApplied += ApplyArchivePaths;
         _pptSession = new PptInkSession(services.Ppt, _pptStore)
@@ -144,6 +131,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
                 try
                 {
                     Overlay.Window.CancelInput();
+                    controller.NotifyInputContextChanging();
                     controller.EndPlayback();
                     controller.FinishDotAnimations();
                     controller.ClearSelection();
@@ -169,9 +157,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
         _pptSession.Failed += LogPptFailure;
         _pptComSource = new ComPresentationSource(
             () => _pptSession.Snapshot.IsAttached, () => _pptSession.Next(), () => _pptSession.Previous());
-        _teachingSession = TeachingSession.Create("课堂", Environment.TickCount64);
-        _preset = ClassroomPresetLibrary.ForId(Services.Settings.Classroom.PresetId)
-            ?? ClassroomPresetLibrary.ForScene(ClassroomSceneKind.Teach);
         _focusRegions = FocusRegionStore.Deserialize(Services.Settings.Classroom.SpotlightRegions);
         Updater = new UpdateCoordinator(services)
         {
@@ -219,24 +204,33 @@ public sealed partial class ShellController : IShellActions, IDisposable
 
     private void QueueDisplayRefresh()
     {
+        _forceDisplayRefresh = true;
         if (_displayRefreshPending || _disposed) return;
         _displayRefreshPending = true;
         _dispatcher.TryEnqueue(DispatcherQueuePriority.Low, () =>
         {
             _displayRefreshPending = false;
-            if (!_disposed) RefreshDisplays();
+            if (!_disposed) RefreshDisplays(ScreenService.All(), force: true);
         });
+    }
+
+    private void CancelWindowDrags()
+    {
+        WindowChrome.CancelAllDragMoves();
+        _bar?.CancelTap();
     }
 
     private void RefreshDisplays() => RefreshDisplays(ScreenService.All());
 
-    internal void RefreshDisplays(IReadOnlyList<ScreenInfo> screens)
+    internal void RefreshDisplays(IReadOnlyList<ScreenInfo> screens, bool force = false)
     {
         _lastDisplayCheck = Environment.TickCount64;
+        force |= _forceDisplayRefresh;
         if (screens.Count == 0) return;
-        if (_screens.SequenceEqual(screens)) return;
+        if (!force && _screens.SequenceEqual(screens)) return;
         try
         {
+            CancelWindowDrags();
             Overlay.RefreshDisplayBounds(screens);
             _bar?.RefreshDisplayPlacement();
             _palette?.RefreshDisplayPlacement();
@@ -251,6 +245,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
             QueueDesktopSelection();
             Services.Modules.Invoke<IScreenTrackingService>(tracking => tracking.Refresh());
             _screens = screens.ToArray();
+            _forceDisplayRefresh = false;
         }
         catch (Exception ex)
         {
@@ -270,10 +265,11 @@ public sealed partial class ShellController : IShellActions, IDisposable
             if (_documentWorkspace is not null) yield return _documentWorkspace.Window;
             foreach (var window in _documentWindows) if (!ReferenceEquals(window, _documentWorkspace?.Window)) yield return window;
             if (_settings is not null) yield return _settings;
+            if (_colorEditor is not null) yield return _colorEditor;
+            foreach (var reminder in _resumeReminders) yield return reminder;
             if (_countdown is not null) yield return _countdown;
             if (_lottery is not null) yield return _lottery;
             if (_replay is not null) yield return _replay;
-            if (_guide is not null) yield return _guide;
             if (_updateWindow is not null) yield return _updateWindow;
             foreach (var notice in _notices) yield return notice;
             if (_palette is not null) yield return _palette;
@@ -332,14 +328,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         Overlay.Show();
         // A click on the overlay raises it to the top of the topmost Z-band, above every chrome
         // window. Re-assert the chrome immediately so close buttons and title bars stay clickable.
-        Overlay.Window.InputBegan += () =>
-        {
-            RaiseChromeAboveOverlay();
-            _bar?.DismissPanelsOnInput();
-            // WPF HideSubPanels: laying ink dismisses the pen/shape popups (pin only survives picks).
-            _palette?.DismissOnOverlayInput();
-            _shapePicker?.DismissOnOverlayInput();
-        };
+        Overlay.Window.InputBegan += OnOverlayInputBegan;
         if (Services.Settings.Startup.IsFoldAtStartup) _bar.SetFolded(true);
         Overlay.RegisterHotkeys(
             undo: () => ActiveController.Undo(),
@@ -413,7 +402,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         if (_disposed || _exiting) return;
         var ink = Services.OverlayInk;
         if (_selectionToolbar is null && DesktopSelectionAvailable && ink.HasSelection && ink.Playback is null
-            && !ink.IsMarqueeSelecting && !ink.IsRotatingSelection)
+            && !ink.IsRegionSelecting && !ink.IsRotatingSelection)
         {
             var toolbar = new SelectionToolbarWindow(this);
             _selectionToolbar = toolbar;
@@ -472,7 +461,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
         {
             controller.ToolChanged += OnControllerToolChanged;
         }
-        ActiveControllerChanged?.Invoke();
     }
 
     private int EffectiveTheme => _board is not null
@@ -786,6 +774,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
     /// </summary>
     private void RaiseChromeAboveOverlay()
     {
+        if (_disposed || _exiting) return;
         ImageFilePicker.EnsureAbove(_board is not null ? WindowChrome.GetHwnd(_board) : Overlay.Window.Handle);
         if (_bar is not null && _board is null) WindowChrome.EnsureAbove(_bar, Overlay.Window.Handle);
         if (_selectionToolbar?.IsShown == true) WindowChrome.EnsureAbove(_selectionToolbar, Overlay.Window.Handle);
@@ -794,21 +783,28 @@ public sealed partial class ShellController : IShellActions, IDisposable
         if (_countdown is not null) WindowChrome.EnsureAbove(_countdown, Overlay.Window.Handle);
         if (_lottery is not null) WindowChrome.EnsureAbove(_lottery, Overlay.Window.Handle);
         if (_replay is not null) WindowChrome.EnsureAbove(_replay, Overlay.Window.Handle);
-        if (_guide is not null) WindowChrome.EnsureAbove(_guide, Overlay.Window.Handle);
         if (_updateWindow is not null) WindowChrome.EnsureAbove(_updateWindow, Overlay.Window.Handle);
         foreach (var notice in _notices) WindowChrome.EnsureAbove(notice, Overlay.Window.Handle);
         foreach (var navigation in _pptNavigations.Values)
-            if (navigation.AppWindow.IsVisible) WindowChrome.EnsureAbove(navigation, Overlay.Window.Handle);
-        if (_toolkit is not null) WindowChrome.EnsureAbove(_toolkit, Overlay.Window.Handle);
+            if (navigation.AppWindow?.IsVisible == true) WindowChrome.EnsureAbove(navigation, Overlay.Window.Handle);
 
         if (_palette is not null) WindowChrome.EnsureAbove(_palette, Overlay.Window.Handle);
         foreach (var palette in _detachedPalettes) WindowChrome.EnsureAbove(palette, Overlay.Window.Handle);
         if (_shapePicker is not null) WindowChrome.EnsureAbove(_shapePicker, Overlay.Window.Handle);
         if (_board is not null)
             foreach (var panel in _board.ToolPanels) WindowChrome.EnsureAbove(panel, Overlay.Window.Handle);
-        foreach (var window in _documentWindows) if (!ReferenceEquals(window, _documentWorkspace?.Window) && window.AppWindow.IsVisible) WindowChrome.EnsureAbove(window, Overlay.Window.Handle);
+        foreach (var window in _documentWindows) if (!ReferenceEquals(window, _documentWorkspace?.Window) && window.AppWindow?.IsVisible == true) WindowChrome.EnsureAbove(window, Overlay.Window.Handle);
         UpdateSettingsDrawingOrder();
         RefreshDesktopMedia();
+    }
+
+    private void OnOverlayInputBegan()
+    {
+        if (_disposed || _exiting) return;
+        RaiseChromeAboveOverlay();
+        _bar?.DismissPanelsOnInput();
+        _palette?.DismissOnOverlayInput();
+        _shapePicker?.DismissOnOverlayInput();
     }
 
     private const int RpcCallRejected = unchecked((int)0x80010001);
@@ -957,7 +953,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
             _board.CanvasInputBegan += OnBoardInputBegan;
             _board.CurrentPageChanged += OnBoardPageChanged;
             BindBoardController(_board.CurrentController);
-            BoardOpenChanged?.Invoke();
             BindToolbar(_board.CurrentController);
             _board.RestoreFromAnnotation();
             _board.Activate();
@@ -994,7 +989,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
         _palette = null;
         _shapePicker?.Close(); _shapePicker = null;
         Assistant?.NotifyBoardChanged();
-        if (_teachingSession is not null) _teachingSession.CurrentBoardPageIndex = Services.Board.CurrentIndex;
     }
 
     private void OnBoardInputBegan()
@@ -1013,7 +1007,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
         Services.ConfigureController(Services.OverlayInk);
         board.CurrentPageChanged -= OnBoardPageChanged;
         board.CanvasInputBegan -= OnBoardInputBegan;
-        BoardOpenChanged?.Invoke();
         if (_disposed || _exiting) return;
         _replay?.Close();
         _palette?.Close(); _shapePicker?.Close();
@@ -1151,8 +1144,9 @@ public sealed partial class ShellController : IShellActions, IDisposable
     private void RefreshPaletteNibModes()
     {
         _board?.RefreshToolSettings();
-        if (_palette is not null) { ConfigurePaletteNibMode(_palette); _palette.RefreshFromController(); }
-        foreach (var palette in _detachedPalettes) { ConfigurePaletteNibMode(palette); palette.RefreshFromController(); }
+        _bar?.Bar.RefreshSelection();
+        if (_palette is not null) { ConfigurePaletteNibMode(_palette); _palette.RefreshFromController(Services.Settings.Canvas); }
+        foreach (var palette in _detachedPalettes) { ConfigurePaletteNibMode(palette); palette.RefreshFromController(Services.Settings.Canvas); }
     }
 
     private void ConfigurePaletteNibMode(PenPaletteWindow palette) => palette.ConfigureNibMode(
@@ -1164,49 +1158,13 @@ public sealed partial class ShellController : IShellActions, IDisposable
         if (_countdown is not null) { _countdown.Activate(); return; }
         var window = new CountdownWindow(EffectiveTheme, Services.Settings.Classroom.CountdownMinutes);
         NotifyWindowOpened(window);
-        window.TimerStarted += OnTimerStarted;
-        window.TimerStopped += OnTimerStopped;
-        window.TimerEnded += OnTimerEnded;
         _countdown = window;
         WindowChrome.ApplyTheme(window, Services.Settings.Appearance.Theme);
         window.Closed += (_, _) =>
         {
-            window.TimerStarted -= OnTimerStarted;
-            window.TimerStopped -= OnTimerStopped;
-            window.TimerEnded -= OnTimerEnded;
             if (ReferenceEquals(_countdown, window)) _countdown = null;
         };
         window.Activate();
-    }
-
-    private void OnTimerStarted(TimeSpan remaining)
-        => RaiseClassroomSignal(ClassroomSignalKind.TimerStarted,
-            ((int)Math.Max(0, remaining.TotalMilliseconds)).ToString());
-
-    private void OnTimerStopped(TimeSpan remaining)
-        => RaiseClassroomSignal(ClassroomSignalKind.TimerStopped,
-            ((int)Math.Max(0, remaining.TotalMilliseconds)).ToString());
-
-    private void OnTimerEnded() => CaptureTimerEnded();
-
-    /// <summary>
-    /// 倒计时归零：向时光机插件转发 TimerEnded / PracticeFinished 信号；
-    /// 板书快照与章节书签的决策归插件本体。
-    /// </summary>
-    private void CaptureTimerEnded()
-    {
-        int pageIndex = Services.Board.CurrentIndex;
-        PracticePlan practice = _activePractice;
-        if (practice is not null)
-        {
-            _teachingSession?.Link(
-                "practice", practice.Id, _pptSession.Snapshot?.Slide?.SlideId ?? 0,
-                _pptSession.Snapshot?.Slide?.Index ?? 0, pageIndex, "练习结束", Environment.TickCount64);
-            _activePractice = null;
-            RaiseClassroomSignal(ClassroomSignalKind.PracticeFinished, "练习结束");
-            _ = NotifyAsync("随堂练习", "练习结束。");
-        }
-        RaiseClassroomSignal(ClassroomSignalKind.TimerEnded, "倒计时结束");
     }
 
     public void OpenLottery()
@@ -1235,89 +1193,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
         WindowChrome.ApplyTheme(quick, EffectiveTheme);
         quick.Activate();
         WindowChrome.EnsureAbove(quick);
-    }
-
-    public void OpenRoster()
-    {
-        if (_roster is not null) { _roster.Activate(); return; }
-        var window = new RosterWindow(PasteRosterNameToBoard);
-        window.NameDrawn += OnRosterNameDrawn;
-        _roster = window;
-        WindowChrome.ApplyTheme(window, Services.Settings.Appearance.Theme);
-        window.Closed += (_, _) =>
-        {
-            window.NameDrawn -= OnRosterNameDrawn;
-            if (ReferenceEquals(_roster, window)) _roster = null;
-        };
-        window.Activate();
-    }
-
-    private void OnRosterNameDrawn(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name)) return;
-        RaiseClassroomSignal(ClassroomSignalKind.RosterDrawn, name);
-    }
-
-    private void PasteRosterNameToBoard(string name) => _ = PasteRosterNameAsync(name);
-
-    /// <summary>把点名结果渲染成卡片贴到当前白板页，画板未开时先打开。</summary>
-    private async Task PasteRosterNameAsync(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name)) return;
-
-        try
-        {
-            const int width = 220;
-            const int height = 72;
-            byte[] png = await PasteCardRenderer.RenderPngAsync(
-                "点名结果", new[] { name }, width, height);
-            if (png is null || png.Length == 0)
-            {
-                Core.Diagnostics.FileLog.WriteLogToFile(
-                    $"点名贴板：渲染 PNG 失败（{name}）", Core.Diagnostics.LogType.Error);
-                return;
-            }
-
-            var work = ScreenService.WorkArea;
-            double dpi = CurrentDpi();
-            double viewWidth = work.Width / dpi;
-            double viewHeight = work.Height / dpi;
-            double left = Math.Clamp(viewWidth / 2.0 - width / 2.0, 8, Math.Max(8, viewWidth - width - 8));
-            double top = Math.Clamp(viewHeight / 2.0 - height / 2.0, 8, Math.Max(8, viewHeight - height - 8));
-
-            string metadata = new AiPasteMetadata
-            {
-                Kind = AiPasteKind.Steps,
-                Text = name,
-                Lines = new List<string> { name },
-            }.Serialize();
-
-            bool added = Services.Board.AddImage(new BoardImageAsset
-            {
-                Name = "点名结果",
-                Data = png,
-                ContentType = "image/png",
-                Left = (float)left,
-                Top = (float)top,
-                Width = width,
-                Height = height,
-                Metadata = metadata,
-            });
-
-            if (!added)
-            {
-                Core.Diagnostics.FileLog.WriteLogToFile(
-                    $"点名贴板：AddImage 失败（{name}）", Core.Diagnostics.LogType.Error);
-                return;
-            }
-
-            if (_board is null) ToggleBoard();
-        }
-        catch (Exception ex)
-        {
-            Core.Diagnostics.FileLog.WriteLogToFile(
-                $"点名贴板失败（{name}）：{ex.Message}", Core.Diagnostics.LogType.Error);
-        }
     }
 
     public void OpenSpotlight()
@@ -1355,30 +1230,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
         _magnifier.Activate();
     }
 
-    public void OpenToolkit()
-    {
-        if (_toolkit is not null) { _toolkit.ShowWithoutActivating(); return; }
-        var window = new ToolkitWindow(this, Services.Settings.Appearance.Theme,
-            OpenExampleLibrary, OpenResourceBundle);
-        window.SetCollapsed(Services.Settings.Classroom.ToolkitCollapsed);
-        RestoreWindowPosition(
-            window.MoveTo, Services.Settings.Classroom.ToolkitX, Services.Settings.Classroom.ToolkitY);
-        _toolkit = window;
-        _toolkit.Closed += (_, _) =>
-        {
-            Services.Settings.Classroom.ToolkitCollapsed = window.IsCollapsed;
-            try
-            {
-                Services.Settings.Classroom.ToolkitX = window.PositionX;
-                Services.Settings.Classroom.ToolkitY = window.PositionY;
-            }
-            catch (Exception) { }
-            Services.SaveSettings();
-            if (ReferenceEquals(_toolkit, window)) _toolkit = null;
-        };
-        _toolkit.ShowWithoutActivating();
-    }
-
     private static void RestoreWindowPosition(Action<int, int> move, int x, int y)
     {
         if (move is null || x == int.MinValue || y == int.MinValue) return;
@@ -1386,452 +1237,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
         int clampedX = Math.Clamp(x, work.X, work.X + Math.Max(0, work.Width - 120));
         int clampedY = Math.Clamp(y, work.Y, work.Y + Math.Max(0, work.Height - 80));
         move(clampedX, clampedY);
-    }
-
-    /// <summary>
-    /// 打开本地例题库窗口。窗口采用单实例：已创建（包括通过关闭按钮隐藏）时重新显示并置前，
-    /// 不重复创建，避免丢失当前筛选与选中状态。
-    /// </summary>
-    public void OpenExampleLibrary()
-    {
-        if (_exampleLibrary is not null)
-        {
-            _exampleLibrary.ShowWindow();
-            return;
-        }
-
-        var window = new ExampleLibraryWindow(Services.Settings, Services.Settings.Appearance.Theme);
-        _exampleLibrary = window;
-        window.Closed += (_, _) =>
-        {
-            if (ReferenceEquals(_exampleLibrary, window)) _exampleLibrary = null;
-        };
-        window.ShowWindow();
-    }
-
-    /// <summary>
-    /// 打开课堂资源包窗口。与例题库一致采用单实例：已创建（包括关闭按钮隐藏）时重新显示并置前，
-    /// 不重复创建，避免丢失当前文件列表与操作结果提示。打包受
-    /// <see cref="InkCanvas.Core.Settings.FeatureSettings.EnableResourceBundle"/> 控制。
-    /// </summary>
-    public void OpenResourceBundle()
-    {
-        if (_resourceBundle is not null)
-        {
-            _resourceBundle.ShowWindow();
-            return;
-        }
-
-        var window = new ResourceBundleWindow(Services.Settings.Features, Services.Settings.Appearance.Theme,
-            Core.Settings.ArchivePolicy.ResolveDirectory(Services.Settings.Archive.DefaultDirectory));
-        _resourceBundle = window;
-        window.Closed += (_, _) =>
-        {
-            if (ReferenceEquals(_resourceBundle, window)) _resourceBundle = null;
-        };
-        window.ShowWindow();
-    }
-
-    // ---- 课堂场景 / 分组积分 / 讲义导出 / 聚焦贴图 -----------------------
-
-    public void CyclePreset()
-    {
-        var presets = new List<ClassroomPreset>(ClassroomPresetLibrary.BuiltIns);
-        presets.AddRange(LoadCustomPresets());
-
-        int current = 0;
-        for (int i = 0; i < presets.Count; i++)
-        {
-            if (string.Equals(presets[i].Id, _preset?.Id, StringComparison.Ordinal))
-            {
-                current = i;
-                break;
-            }
-        }
-
-        ApplyPreset(presets[(current + 1) % presets.Count]);
-    }
-
-    public void OpenPresetEditor()
-    {
-        if (_presetWindow is not null)
-        {
-            _presetWindow.Activate();
-            return;
-        }
-
-        var window = new PresetWindow(_preset, Services.Settings.Appearance.Theme, AiAssistantAvailable);
-        window.Saved += preset =>
-        {
-            SaveCustomPreset(preset);
-            ApplyPreset(preset);
-        };
-        _presetWindow = window;
-        window.Closed += (_, _) =>
-        {
-            if (ReferenceEquals(_presetWindow, window)) _presetWindow = null;
-        };
-        window.Activate();
-    }
-
-    private IReadOnlyList<ClassroomPreset> LoadCustomPresets()
-        => ClassroomPresetLibrary.Deserialize(Services.Settings.Classroom.CustomPresets);
-
-    private void SaveCustomPreset(ClassroomPreset preset)
-    {
-        if (preset is null || preset.IsBuiltIn) return;
-
-        var presets = new List<ClassroomPreset>(LoadCustomPresets());
-        int index = presets.FindIndex(item =>
-            string.Equals(item.Id, preset.Id, StringComparison.Ordinal));
-        if (index >= 0) presets[index] = preset;
-        else presets.Add(preset);
-
-        Services.Settings.Classroom.CustomPresets =
-            ClassroomPresetLibrary.Serialize(presets);
-        Services.SaveSettings();
-    }
-
-    public void ApplyPreset(ClassroomPreset preset)
-    {
-        if (preset is null) return;
-
-        ClassroomPreset normalized = ClassroomPresetLibrary.Normalize(preset.Clone(), preset.Id);
-        _preset = normalized;
-        Services.Settings.Classroom.PresetId = normalized.Id;
-        Services.SaveSettings();
-
-        PresetAction action = ClassroomPresetLibrary.Plan(normalized);
-        foreach (ClassroomTool tool in action.Open) OpenClassroomTool(tool);
-        foreach (ClassroomTool tool in action.Close) CloseClassroomTool(tool);
-        if (action.CollapseToolkit && _toolkit is not null) _toolkit.SetCollapsed(true);
-
-        if (_teachingSession is not null)
-        {
-            _teachingSession.PresetId = normalized.Id;
-            _teachingSession.UpdatedAtMs = Environment.TickCount64;
-        }
-
-        if (!normalized.IsBuiltIn)
-        {
-            SaveCustomPreset(normalized);
-        }
-
-        _ = NotifyAsync("课堂场景", "已切换到「" + normalized.Name + "」。");
-    }
-
-    private void OpenClassroomTool(ClassroomTool tool)
-    {
-        switch (tool)
-        {
-            case ClassroomTool.SlideNavigator:
-                if (_slideNav?.IsVisible != true) ToggleSlideNavigator();
-                break;
-            case ClassroomTool.AiAssistant:
-            case ClassroomTool.AiStepGuide:
-                OpenAiAssistant();
-                break;
-            case ClassroomTool.Spotlight:
-                OpenSpotlight();
-                break;
-            case ClassroomTool.Magnifier:
-                OpenMagnifier();
-                break;
-            case ClassroomTool.Board:
-                if (_board is null) ToggleBoard();
-                break;
-            case ClassroomTool.Countdown:
-                OpenTimer();
-                break;
-            case ClassroomTool.GroupScore:
-                OpenGroupScore();
-                break;
-            case ClassroomTool.HandoutExport:
-                OpenHandout();
-                break;
-            case ClassroomTool.Toolkit:
-                OpenToolkit();
-                break;
-        }
-    }
-
-    private void CloseClassroomTool(ClassroomTool tool)
-    {
-        switch (tool)
-        {
-            case ClassroomTool.Countdown:
-                _countdown?.Close();
-                break;
-            case ClassroomTool.Spotlight:
-                _spotlight?.Close();
-                break;
-            case ClassroomTool.Magnifier:
-                _magnifier?.Close();
-                break;
-            case ClassroomTool.GroupScore:
-                _groupScoreWindow?.Close();
-                break;
-            case ClassroomTool.SlideNavigator:
-                _slideNav?.HidePanel();
-                break;
-        }
-    }
-
-    public void OpenGroupScore()
-    {
-        EnsureGroupScore();
-
-        if (_groupScoreWindow is not null)
-        {
-            _groupScoreWindow.Activate();
-            return;
-        }
-
-        var window = new GroupScoreWindow(
-            _groupScore,
-            LoadRosterNames(),
-            ParseGroupMode(Services.Settings.Classroom.GroupSplitMode),
-            Services.Settings.Classroom.GroupSplitValue,
-            Services.Settings.Appearance.Theme,
-            text => _ = PasteTextCardAsync("小组积分", text));
-        window.StateChanged += _ =>
-        {
-            Services.Settings.Classroom.GroupSplitMode =
-                window.Mode == GroupSplitMode.BySize ? "size" : "groupCount";
-            Services.Settings.Classroom.GroupSplitValue = window.SplitValue;
-            SaveGroupScore();
-            Services.SaveSettings();
-        };
-        window.Closed += (_, _) =>
-        {
-            SaveGroupScore();
-            if (ReferenceEquals(_groupScoreWindow, window)) _groupScoreWindow = null;
-        };
-
-        _groupScoreWindow = window;
-        WindowChrome.ApplyTheme(window, Services.Settings.Appearance.Theme);
-        window.Activate();
-    }
-
-    private void EnsureGroupScore()
-    {
-        if (_groupScore is not null) return;
-        _groupScore = GroupScoreService.Deserialize(TryRead(GroupScorePath()));
-    }
-
-    private static GroupSplitMode ParseGroupMode(string value)
-        => string.Equals(value, "size", StringComparison.OrdinalIgnoreCase)
-            ? GroupSplitMode.BySize
-            : GroupSplitMode.ByGroupCount;
-
-    private static string GroupScorePath() => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "InkCanvas", "groups.json");
-
-    private void SaveGroupScore()
-    {
-        try
-        {
-            if (_groupScore is null) return;
-            string path = GroupScorePath();
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, _groupScore.Serialize());
-        }
-        catch (Exception ex)
-        {
-            Core.Diagnostics.FileLog.WriteLogToFile(
-                $"分组积分保存失败：{ex.Message}", Core.Diagnostics.LogType.Error);
-        }
-    }
-
-    private IReadOnlyList<string> LoadRosterNames()
-    {
-        try
-        {
-            string path = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "InkCanvas", "roster.json");
-            if (!File.Exists(path)) return Array.Empty<string>();
-
-            var roster = new ClassroomRoster();
-            return roster.Load(path) ? roster.Names : Array.Empty<string>();
-        }
-        catch (Exception)
-        {
-            return Array.Empty<string>();
-        }
-    }
-
-    private static string TryRead(string path)
-    {
-        try
-        {
-            return File.Exists(path) ? File.ReadAllText(path) : "";
-        }
-        catch (Exception)
-        {
-            return "";
-        }
-    }
-
-    public void OpenHandout() => _ = ShowHandoutAsync();
-
-    private async Task ShowHandoutAsync()
-    {
-        SlideContentIndex index = EnsureSlideIndexForExport();
-        if (index is null || index.Count == 0)
-        {
-            await NotifyAsync("课后讲义", "请先在课件放映中翻几页，让页索引建立后再导出。");
-            return;
-        }
-
-        var mode = new RadioButtons();
-        mode.Items.Add("批注 + 教师解析");
-        mode.Items.Add("仅批注");
-        mode.SelectedIndex = 0;
-
-        var selectionOnly = new CheckBox { Content = "仅导出勾选页（默认全部）" };
-        var pageChecks = new List<(int SlideId, CheckBox Box)>();
-        var pageList = new StackPanel { Spacing = 2 };
-        foreach (SlideContentEntry entry in index.Slides)
-        {
-            var box = new CheckBox
-            {
-                Content = "第 " + entry.Index + " 页"
-                    + (entry.HasInk ? " · 有批注" : "")
-                    + (entry.Favorite ? " · 收藏" : "")
-                    + (entry.HasAi ? " · AI" : ""),
-                IsChecked = true,
-                MinHeight = 30,
-            };
-            pageChecks.Add((entry.SlideId, box));
-            pageList.Children.Add(box);
-        }
-
-        var preview = new Image
-        {
-            Height = 132,
-            Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform,
-        };
-        SlideContentEntry first = index.Slides[0];
-        if (!string.IsNullOrWhiteSpace(first.ThumbnailPath) && File.Exists(first.ThumbnailPath))
-        {
-            try { preview.Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(
-                new Uri(first.ThumbnailPath)); }
-            catch (Exception) { }
-        }
-
-        var content = new StackPanel { Spacing = 8 };
-        content.Children.Add(new TextBlock { Text = "导出前预览（第一页）", FontSize = 12, Opacity = 0.75 });
-        content.Children.Add(preview);
-        content.Children.Add(mode);
-        content.Children.Add(selectionOnly);
-        content.Children.Add(new ScrollViewer
-        {
-            Content = pageList,
-            Height = 170,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-        });
-
-        var dialog = new ContentDialog
-        {
-            Title = "导出课后讲义",
-            Content = content,
-            PrimaryButtonText = "导出",
-            CloseButtonText = "取消",
-            DefaultButton = ContentDialogButton.Primary,
-        };
-
-        if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary) return;
-
-        var options = new HandoutOptions
-        {
-            Content = mode.SelectedIndex == 1
-                ? HandoutContentMode.AnnotationsOnly
-                : HandoutContentMode.AnnotationsWithTeacherNotes,
-        };
-
-        if (selectionOnly.IsChecked == true)
-        {
-            options.SelectedSlideIds = pageChecks
-                .Where(pair => pair.Box.IsChecked == true)
-                .Select(pair => pair.SlideId)
-                .ToList();
-        }
-
-        string directory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
-            "InkCanvas",
-            "handout-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"));
-
-        HandoutExportResult result = await HandoutExportService.ExportAsync(
-            new HandoutRenderRequest { Index = index, Options = options }, directory);
-
-        if (!result.Success)
-        {
-            string reason = result.Warnings.Count > 0 ? string.Join("；", result.Warnings) : "没有生成任何页面。";
-            await NotifyAsync("讲义导出失败", reason + "（原课件未被修改）");
-            return;
-        }
-
-        _teachingSession?.RecordExport(result.PdfPath, Environment.TickCount64);
-        SaveTeachingSession();
-        await NotifyAsync("讲义已导出",
-            "共 " + result.Pages.Count + " 页，目录：" + directory
-            + (string.IsNullOrEmpty(result.PdfPath) ? "（仅 PNG）" : "（含 PDF）"));
-    }
-
-    private SlideContentIndex EnsureSlideIndexForExport()
-    {
-        if (_slideIndex is { Count: > 0 }) return _slideIndex;
-
-        PptSnapshot snapshot = _pptSession.Snapshot;
-        PptPresentationInfo presentation = snapshot?.Presentation;
-
-        try
-        {
-            if (presentation is not null)
-            {
-                SlideContentIndex sidecar = LoadSlideIndexSidecar(presentation);
-                if (sidecar is { Count: > 0 }) return _slideIndex = sidecar;
-            }
-
-            // 不在放映时仍允许导出最近一次课件的讲义（课后沉淀场景）。
-            SlideContentIndex latest = LoadLatestSlideIndexSidecar();
-            if (latest is not null) return _slideIndex = latest;
-            if (presentation is null) return _slideIndex;
-
-            PptPresentationDetails details = Services.Ppt.GetPresentationDetails();
-            if (details is null) return _slideIndex;
-
-            _slideIndex = SlideContentIndex.Build(
-                details, _pptSession.CreateArchive(), null,
-                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-
-            string directory = _pptStore.GetPresentationDirectory(presentation);
-            foreach (SlideContentEntry entry in _slideIndex.Slides)
-            {
-                if (entry.SlideId <= 0 || !string.IsNullOrEmpty(entry.ThumbnailPath)) continue;
-                string thumb = Path.Combine(directory, "thumb-" + entry.SlideId + ".png");
-                if (File.Exists(thumb)) entry.ThumbnailPath = thumb;
-            }
-
-            return _slideIndex;
-        }
-        catch (Exception ex)
-        {
-            Core.Diagnostics.FileLog.WriteLogToFile(
-                $"讲义导出索引失败：{ex.Message}", Core.Diagnostics.LogType.Error);
-            return _slideIndex;
-        }
-    }
-
-    private async Task<ContentDialogResult> ShowDialogAsync(ContentDialog dialog)
-    {
-        if (_bar?.Content is not FrameworkElement root || root.XamlRoot is null)
-            return ContentDialogResult.None;
-        dialog.XamlRoot = root.XamlRoot;
-        return await dialog.ShowAsync();
     }
 
     public void PasteSpotlightToBoard() => _ = CaptureFocusAsync(askAi: false);
@@ -1967,24 +1372,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
 
     private Task StartAssistantFromRegionAsync(ScreenRect rect) => Assistant?.OpenRegionAsync(rect) ?? Task.CompletedTask;
 
-    private async Task PasteTextCardAsync(string title, string text)
-    {
-        var lines = new List<string>();
-        foreach (string line in (text ?? "").Split('\n'))
-        {
-            string trimmed = line.Trim();
-            if (trimmed.Length > 0) lines.Add(trimmed);
-        }
-
-        if (lines.Count == 0) return;
-
-        var (width, height) = PasteCardLayout.Estimate(lines);
-        byte[] png = await PasteCardRenderer.RenderPngAsync(title, lines, width, height);
-        if (png.Length == 0) return;
-
-        await PasteImageCardAsync(title, png, width, height, text);
-    }
-
     private async Task PasteImageCardAsync(
         string title, byte[] png, int width, int height, string metadataText)
     {
@@ -2024,12 +1411,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
         });
 
         if (added && _board is null) ToggleBoard();
-        if (added)
-        {
-            _teachingSession?.Link(
-                "tool", Guid.NewGuid().ToString("N"), _pptSession.Snapshot?.Slide?.SlideId ?? 0, _pptSession.Snapshot?.Slide?.Index ?? 0,
-                Services.Board.CurrentIndex, title, Environment.TickCount64);
-        }
     }
 
     /// <summary>WPF 保存墨迹: save the active surface (board page or overlay) as .icink.</summary>
@@ -2167,19 +1548,23 @@ public sealed partial class ShellController : IShellActions, IDisposable
         }
     }
 
-    /// <summary>WPF 打开墨迹: replace the active surface's strokes from a .icink file (confirmed).</summary>
+    /// <summary>Opens the available document browser or the archive file picker.</summary>
     public void OpenStrokes() => _ = OpenStrokesAsync();
 
     private async Task OpenStrokesAsync()
     {
         try
         {
+            if (Services.Modules.GetExport<IBoardLibraryService>() is { } library)
+            {
+                library.Open();
+                return;
+            }
             var owner = (Window)_board ?? _bar;
             var store = _board is not null ? Services.Board : Services.ScreenImages;
             var extensions = new[] { ".icink" }.Concat(Services.Plugins.ImportExtensions).ToList();
             if (Services.Modules.HasExport<IPdfWorkspaceService>()) extensions.Add(".pdf");
-            var library = Services.Modules.GetExport<IBoardLibraryService>();
-            string path = library is not null ? await library.PickOpenAsync(extensions.Distinct().ToArray()) : await ImageFilePicker.OpenArchiveAsync(WindowChrome.GetWorkArea(owner),
+            string path = await ImageFilePicker.OpenArchiveAsync(WindowChrome.GetWorkArea(owner),
                 Core.Settings.ArchivePolicy.ResolveDirectory(Services.Settings.Archive.DefaultDirectory), extensions.Distinct().ToArray());
             if (path is null || _disposed) return;
             if (Path.GetExtension(path).Equals(".pdf", StringComparison.OrdinalIgnoreCase)) { await OpenPdfAsync(path); return; }
@@ -2218,15 +1603,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         WindowChrome.EnsureAbove(_replay);
     }
 
-    public void OpenGuide()
-    {
-        if (_guide is not null) { _guide.Activate(); return; }
-        _guide = InfoWindow.OpenGuide(EffectiveTheme);
-        NotifyWindowOpened(_guide);
-        _guide.Closed += (_, _) => _guide = null;
-        _guide.Activate();
-        WindowChrome.EnsureAbove(_guide);
-    }
+    public void OpenGuide() => OpenSettingsPage("操作指南");
 
     public void OpenPenPalette(bool highlighter)
     {
@@ -2249,7 +1626,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
         _paletteHighlighter = highlighter;
         var controller = ActiveController;
         _palette = new PenPaletteWindow(controller, highlighter, EffectiveTheme,
-            _board is not null ? Services.Settings.Appearance.BlackboardScale : Services.Settings.Appearance.FloatingBarScale)
+            _board is not null ? Services.Settings.Appearance.BlackboardScale : Services.Settings.Appearance.FloatingBarScale,
+            Services.Settings.Canvas)
         {
             HighlighterAlpha = Services.Settings.Canvas.InkAlpha,
             LightColorScheme = Services.Settings.Appearance.Theme == 1,
@@ -2258,8 +1636,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
                 if (highlighter) Services.Settings.Canvas.HighlighterWidth = width;
                 else if (controller.CurrentAttributes.TaperKind == Core.Ink.TaperKind.InkWash) Services.Settings.Canvas.InkWashWidth = width;
                 else Services.Settings.Canvas.InkWidth = width;
-                Services.ApplySettings();
-                Services.SaveSettings();
+                controller.ConfigurePenWidths((float)Services.Settings.Canvas.InkWidth,
+                    (float)(Services.Settings.Canvas.HighlighterWidth ?? Services.Settings.Canvas.InkWidth));
             },
             InkStyleChanged = style =>
             {
@@ -2276,10 +1654,10 @@ public sealed partial class ShellController : IShellActions, IDisposable
             InkAlphaChanged = alpha =>
             {
                 Services.Settings.Canvas.InkAlpha = alpha;
-                Services.ApplySettings();
-                Services.SaveSettings();
             },
             AttributesChanged = () => { Services.RememberToolOptions(controller); _bar?.Bar.RefreshSelection(); },
+            ColorPaletteChanged = () => { Services.ApplySettings(); Services.SaveSettings(); },
+            EditColorAsync = EditCustomColorAsync,
         };
         NotifyWindowOpened(_palette);
         ConfigurePaletteNibMode(_palette);
@@ -2298,6 +1676,24 @@ public sealed partial class ShellController : IShellActions, IDisposable
         }
         WindowChrome.ShowWithoutActivation(_palette);
         WindowChrome.EnsureAbove(_palette);
+    }
+
+    public async Task EditCustomColorAsync(FrameworkElement anchor, InkColor color, Action<InkColor> changed)
+    {
+        if (_colorEditor is not null) { _colorEditor.Activate(); return; }
+        var candidates = OpenWindows.Concat(_board?.ToolPanels.Cast<Window>() ?? Enumerable.Empty<Window>());
+        var owner = candidates.FirstOrDefault(window => window.Content is FrameworkElement root && ReferenceEquals(root.XamlRoot, anchor.XamlRoot));
+        if (owner is null) return;
+        var window = new ColorEditorWindow(owner, WindowChrome.GetScreenBounds(owner, anchor), color, EffectiveTheme, changed);
+        _colorEditor = window;
+        try
+        {
+            NotifyWindowOpened(window);
+            window.Activate();
+            WindowChrome.EnsureAbove(window);
+            await window.Completion;
+        }
+        finally { if (ReferenceEquals(_colorEditor, window)) _colorEditor = null; }
     }
 
     private void CloseDetachedPalettes()
@@ -2680,9 +2076,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
 
             if (current is not null) current.AnimationStep = animationStep;
 
-            _teachingSession?.SetCurrentSlide(
-                currentSlideId, snapshot.Slide?.Index ?? 0, animationStep, Environment.TickCount64);
-
             _slideNav?.Update(_slideIndex, currentSlideId);
         }
         catch (Exception ex)
@@ -2709,49 +2102,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
     }
 
     /// <summary>无放映时读取最近一次课件的 SlideIndex.json，并把缺失缩略图按同目录 thumb-{slideId}.png 回填。</summary>
-    private SlideContentIndex LoadLatestSlideIndexSidecar()
-    {
-        try
-        {
-            string root = Path.Combine(
-                Services.Settings.Automation.AutoSavedStrokesLocation,
-                "Auto Saved - Presentations");
-            if (!Directory.Exists(root)) return null;
-
-            var files = new DirectoryInfo(root)
-                .GetFiles("SlideIndex.json", SearchOption.AllDirectories)
-                .OrderByDescending(file => file.LastWriteTimeUtc)
-                .Take(3)
-                .ToList();
-
-            foreach (FileInfo file in files)
-            {
-                SlideContentIndex index = SlideContentIndex.Deserialize(File.ReadAllText(file.FullName));
-                if (index is null || index.Count == 0) continue;
-
-                string directory = file.DirectoryName ?? root;
-                foreach (SlideContentEntry entry in index.Slides)
-                {
-                    if (!string.IsNullOrEmpty(entry.ThumbnailPath) && File.Exists(entry.ThumbnailPath))
-                        continue;
-
-                    string thumb = Path.Combine(directory, "thumb-" + entry.SlideId + ".png");
-                    if (File.Exists(thumb)) entry.ThumbnailPath = thumb;
-                }
-
-                return index;
-            }
-
-            return null;
-        }
-        catch (Exception ex)
-        {
-            Core.Diagnostics.FileLog.WriteLogToFile(
-                $"读取最近课件索引失败：{ex.Message}", Core.Diagnostics.LogType.Info);
-            return null;
-        }
-    }
-
     private void SaveSlideIndex()
     {
         PptPresentationInfo presentation = _pptSession.Snapshot?.Presentation;
@@ -2825,109 +2175,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
         window?.SetPreviewOpen(!window.PreviewOpen);
     }
 
-    private void SaveTeachingSession()
-    {
-        if (_teachingSession is null || string.IsNullOrEmpty(_teachingSession.Id)) return;
-
-        try
-        {
-            string directory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "InkCanvas", "teaching");
-            Directory.CreateDirectory(directory);
-            File.WriteAllText(
-                Path.Combine(directory, "session-" + _teachingSession.Id + ".json"),
-                _teachingSession.Serialize());
-        }
-        catch (Exception ex)
-        {
-            Core.Diagnostics.FileLog.WriteLogToFile(
-                $"课堂会话保存失败：{ex.Message}", Core.Diagnostics.LogType.Error);
-        }
-    }
-
-
-    private async Task StartPracticeAsync(VariantQuestionDraft draft, bool startTimer)
-    {
-        if (_board is null) ToggleBoard();
-        if (_board is null)
-        {
-            await NotifyAsync("随堂练习", "画板未能打开，请稍后重试。");
-            return;
-        }
-
-        if (!Services.Board.InsertPageAfterCurrent())
-        {
-            await NotifyAsync("随堂练习", "无法新建画板页（可能已达页数上限）。");
-            return;
-        }
-
-        int pageIndex = Services.Board.CurrentIndex;
-        Services.Board.RenamePage(pageIndex, Services.Settings.Classroom.PracticePageName);
-
-        IReadOnlyList<string> lines = ExerciseFlowPolicy.BuildPasteLines(draft);
-        var (width, height) = PasteCardLayout.Estimate(lines);
-        byte[] png = await PasteCardRenderer.RenderPngAsync("随堂练习", lines, width, height);
-        if (png.Length == 0)
-        {
-            await NotifyAsync("随堂练习", "练习卡片渲染失败，已保留新页。");
-            return;
-        }
-
-        var work = ScreenService.WorkArea;
-        double dpi = CurrentDpi() > 0 ? CurrentDpi() : 1.0;
-        double left = Math.Clamp(
-            (work.Width / dpi) / 2.0 - width / 2.0, 8, Math.Max(8, work.Width / dpi - width - 8));
-        double top = Math.Clamp(
-            (work.Height / dpi) / 2.0 - height / 2.0, 8, Math.Max(8, work.Height / dpi - height - 8));
-
-        string metadata = new AiPasteMetadata
-        {
-            Kind = AiPasteKind.Steps,
-            Text = draft.Text,
-            Lines = new List<string>(lines),
-        }.Serialize();
-
-        bool added = Services.Board.AddImage(new BoardImageAsset
-        {
-            Name = "随堂练习",
-            Data = png,
-            ContentType = "image/png",
-            Left = (float)left,
-            Top = (float)top,
-            Width = width,
-            Height = height,
-            Metadata = metadata,
-        });
-
-        if (!added)
-        {
-            await NotifyAsync("随堂练习", "练习卡片贴入失败，已保留空的新页。");
-            return;
-        }
-
-        PracticePlan plan = ExerciseFlowPolicy.Plan(
-            draft, pageIndex, Services.Settings.Classroom.CountdownMinutes);
-        _activePractice = plan;
-
-        ApplyPreset(ClassroomPresetLibrary.ForId("practice"));
-        if (startTimer)
-        {
-            OpenTimer();
-            _countdown?.StartCountdown(TimeSpan.FromMinutes(plan.CountdownMinutes));
-        }
-
-        _teachingSession?.Link(
-            "exercise", draft.Id, draft.SlideId, draft.SlideIndex, pageIndex, draft.Text,
-            Environment.TickCount64);
-        SaveTeachingSession();
-
-        await NotifyAsync("随堂练习",
-            "已贴入第 " + (pageIndex + 1) + " 页"
-            + (startTimer ? "，倒计时已开始（" + plan.CountdownMinutes + " 分钟）。" : "。"));
-    }
-
-
     private string SafeSlideText(int slideId)
     {
         if (slideId <= 0) return "";
@@ -2982,6 +2229,11 @@ public sealed partial class ShellController : IShellActions, IDisposable
                 { await NotifyAsync("截图白板存档失败", captureError); return; }
             }
             if (_documentWorkspace is not null && !await _documentWorkspace.CloseAsync()) return;
+            if (!await SaveResumeAsync(force: true))
+            {
+                await NotifyAsync("续接进度保存失败", "请检查用户数据目录的可用空间和写入权限后重试。");
+                return;
+            }
             if (Services.Settings.Archive.SaveOnExit)
             {
                 try
@@ -3024,19 +2276,20 @@ public sealed partial class ShellController : IShellActions, IDisposable
     public void Dispose()
     {
         if (_disposed) return; _disposed = true;
+        Overlay.Window.InputBegan -= OnOverlayInputBegan;
+        _palette?.FlushSliderChanges();
+        foreach (var palette in _detachedPalettes.ToArray()) palette.FlushSliderChanges();
+        _bar?.GetOpenPanel(BarPanelKind.Eraser)?.FlushSettingsChanges();
+        _resumeTimer?.Stop();
+        foreach (var reminder in _resumeReminders.ToArray()) reminder.Close();
         _pptPreviewSource?.Dispose();
         _board?.CloseForShutdown();
         _cachedBoard?.CloseForShutdown();
         _cachedBoard = null;
         _documentAi?.Dispose();
+        _colorEditor?.Close();
         _spotlight?.Close();
         _magnifier?.Close();
-        _roster?.Close();
-        _toolkit?.Close();
-        _groupScoreWindow?.Close();
-        _exampleLibrary?.Close();
-        _resourceBundle?.Close();
-        _presetWindow?.Close();
         _slideNav?.Close();
         CloseBlackScreen();
         _pptSession.InkTransition -= OnPptInkTransition;
@@ -3078,6 +2331,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
         Services.Ppt.Dispose();
         Updater.Dispose();
         Overlay.Window.DisplaySettingsChanged -= QueueDisplayRefresh;
+        Overlay.Window.PowerStateChanged -= CancelWindowDrags;
         Overlay.Dispose();
         Services.Dispose();
     }

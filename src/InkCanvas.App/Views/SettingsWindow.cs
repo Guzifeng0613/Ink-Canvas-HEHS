@@ -131,13 +131,13 @@ public sealed partial class SettingsWindow : Window
 
     private void RebuildContent()
     {
-        string selected = _workspace?.SelectedPage ?? "常规";
+        var navigation = _workspace?.NavigationStack ?? new[] { "常规" };
         string searchText = _search?.Text ?? "";
         _theme = S.Appearance.Theme;
         _searchIndexed = false;
         _searchEntries.Clear();
         _moduleSettingsPages = _services.ModuleSettings.Pages;
-        _workspace = new WindowWorkspace { IsTitleBarAutoPaddingEnabled = false };
+        _workspace = new WindowWorkspace { IsTitleBarAutoPaddingEnabled = false, IsBackNavigationEnabled = true };
         _workspace.Resources["NavigationViewHeaderMargin"] = new Thickness(24, 24, 24, 12);
         _workspace.Resources["NavigationViewContentBackground"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
         _workspace.Resources["NavigationViewContentGridBorderBrush"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
@@ -150,6 +150,7 @@ public sealed partial class SettingsWindow : Window
                 _workspace.AddGroup(group);
             }
             _workspace.AddPage(page.Name, page.Glyph, () => BuildPage(page.Name));
+            if (page.Name == "关于与更新") AddGuidePages();
         }
         if (_moduleSettingsPages.Count > 0) _workspace.AddGroup("插件设置");
         foreach (var page in _moduleSettingsPages)
@@ -171,7 +172,8 @@ public sealed partial class SettingsWindow : Window
         root.Children.Add(_notification);
         WindowFrame.Attach(this, root).UseMica();
         WindowChrome.ApplyTheme(this, _theme);
-        _workspace.SelectPage(Categories.Contains(selected) ? selected : "模块与插件");
+        _workspace.RestoreNavigation(navigation.Where(Categories.Contains).ToArray());
+        if (_workspace.SelectedPage is null) _workspace.SelectPage("模块与插件");
     }
 
     private UIElement BuildPage(string category)
@@ -323,6 +325,9 @@ public sealed partial class SettingsWindow : Window
             case "保存与备份": BuildArchiveSettings(); break;
             case "存储与缓存": BuildStorageSettings(); break;
             case "关于与更新": BuildAboutSettings(); break;
+            case "操作指南": BuildGuide(); break;
+            case "快捷键": BuildShortcutGuide(); break;
+            case "书写与选择": BuildWritingGuide(); break;
             default:
                 if (_moduleSettingsPages.FirstOrDefault(page => page.Name == category) is { } page)
                     BuildModuleSettings(page);
@@ -467,11 +472,11 @@ public sealed partial class SettingsWindow : Window
     }
 
     private UIElement SliderRow(string header, Func<double> get, double min, double max,
-        Action<double> set, double step = 1, double[] presets = null, string presetsLabel = null, Func<double, string> formatPreset = null)
+        Action<double> set, double step = 1, double[] presets = null, string presetsLabel = null, Func<double, string> formatPreset = null, string unit = "")
     {
         var readout = new TextBlock
         {
-            Text = get().ToString("0.##"),
+            Text = get().ToString("0.##") + unit,
             MinWidth = 48,
             TextAlignment = TextAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
@@ -486,10 +491,10 @@ public sealed partial class SettingsWindow : Window
             MinWidth = 100,
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
-        Accessible(slider, header, $"范围 {min:0.##} 到 {max:0.##}，步长 {step:0.##}");
+        Accessible(slider, header, $"范围 {min:0.##}{unit} 到 {max:0.##}{unit}，步长 {step:0.##}{unit}");
         slider.ValueChanged += (_, e) =>
         {
-            readout.Text = e.NewValue.ToString("0.##");
+            readout.Text = e.NewValue.ToString("0.##") + unit;
             if (_building || _synchronizingControls || !slider.IsEnabled || Math.Abs(e.NewValue - get()) < .0001) return;
             set(e.NewValue);
             Commit();
@@ -497,7 +502,7 @@ public sealed partial class SettingsWindow : Window
         _refreshControls.Add(() =>
         {
             slider.Value = Math.Clamp(get(), min, max);
-            readout.Text = get().ToString("0.##");
+            readout.Text = get().ToString("0.##") + unit;
         });
         var row = new Grid();
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });

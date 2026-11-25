@@ -12,6 +12,7 @@ public sealed class ScreenTrackingModule : IApplicationModule
         _coordinator = new ScreenAnnotationCoordinator(host, context.Protect);
         context.RegisterCleanup(_coordinator.Dispose);
         context.Export<IScreenTrackingService>(_coordinator);
+        ScreenTrackingAssistantAdapter.Register(context, host, _coordinator);
         context.RegisterCleanup(context.GetService<IModuleSettingsRegistry>().Register(new(
             "inkcanvas.screen-tracking.settings", "屏幕内容跟随", "\uF6B3",
             "实验功能 实验性设置 Word PowerPoint Edge 屏幕内容跟随 页面记忆",

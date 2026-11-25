@@ -174,7 +174,7 @@ public sealed class PptNavigationWindow : Window
         int theme = _owner?.Bar.Settings?.Appearance.Theme ?? _theme;
         if (theme == 0) theme = _owner?.Bar.Theme ?? 1;
         WindowChrome.ApplyTheme(this, theme);
-        _card.Background = _owner?.Bar.ColorfulBackground == true ? PopupBrushes.FloatBarColorful() : PopupBrushes.FloatBarBackground(theme);
+        _card.Background = _owner?.Bar.ColorfulBackground == true ? PopupBrushes.FloatBarColorful(theme) : PopupBrushes.FloatBarBackground(theme);
         _card.BorderBrush = PopupBrushes.FloatBarBorder(theme);
         var foreground = PopupBrushes.FloatBarForeground(theme);
         _previousIcon.Foreground = _nextIcon.Foreground = _counterText.Foreground = foreground;

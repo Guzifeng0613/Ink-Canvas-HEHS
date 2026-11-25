@@ -19,34 +19,52 @@ public static class AssistantContext
         """;
 
     public static int Estimate(string text) => string.IsNullOrEmpty(text) ? 0
-        : (int)Math.Ceiling(text.Sum(character => character > 127 ? 1.1 : .28));
+        : (int)Math.Ceiling(text.Sum(character => character > 127 ? 1.5 : .4));
 
     public static string Describe(AssistantChatTurn turn) => turn.Question + string.Concat(turn.Attachments.Select(attachment =>
         "\n[附件 " + attachment.Name + (attachment.IsImage ? "，图片" : "，路径 " + attachment.Path) + "]"));
 
     public static int Cost(AssistantChatTurn turn) => Estimate(Describe(turn)) + Estimate(turn.Answer)
-        + turn.Attachments.Count(attachment => attachment.IsImage) * 1600
-        + turn.Tools.Sum(tool => Estimate(tool.Tool + tool.Result));
+        + turn.Attachments.Count(attachment => attachment.IsImage) * 4096
+        + Estimate(ToolContext(turn));
 
     public static int EstimatePayload(JsonNode node)
     {
         if (node is JsonArray array) return array.Sum(EstimatePayload);
-        if (node is JsonObject obj) return obj.Sum(property => property.Key is "image_url" or "inlineData" or "source"
-            ? 1600 : EstimatePayload(property.Value));
-        return Estimate(node?.ToJsonString());
+        if (node is JsonObject obj)
+        {
+            if (obj["type"]?.ToString() is "image" or "input_image" or "image_url" || obj.ContainsKey("inlineData")) return 4096;
+            return obj.Sum(property => Estimate(property.Key) + EstimatePayload(property.Value));
+        }
+        return Estimate(node is JsonValue value && value.TryGetValue<string>(out var text) ? text : node?.ToJsonString());
     }
 
-    public static int CompactionEnd(AssistantChat chat, int budget)
+    public static int CompactionEnd(AssistantChat chat, int budget, int triggerPercent = 80)
     {
         int available = Math.Max(4096, budget);
         int cost = Estimate(chat.Summary) + chat.Turns.Skip(chat.SummarizedTurns).Sum(Cost);
-        if (cost <= available) return chat.SummarizedTurns;
+        if (cost <= available * triggerPercent / 100) return chat.SummarizedTurns;
         int end = chat.SummarizedTurns;
         // Keep complete recent exchanges, including the new request, together.
-        while (end < chat.Turns.Count - 3 && cost > available / 2)
+        while (end < chat.Turns.Count - 3 && cost > available * .55)
             cost -= Cost(chat.Turns[end++]);
         return end;
     }
+
+    public static IEnumerable<string> HistorySegments(AssistantChat chat, int end)
+    {
+        foreach (var turn in chat.Turns.Skip(chat.SummarizedTurns).Take(end - chat.SummarizedTurns))
+        {
+            yield return "老师\n" + Describe(turn);
+            yield return "助手\n" + turn.Answer;
+            yield return ToolContext(turn);
+            if (!string.IsNullOrEmpty(turn.Error)) yield return "未完成状态\n" + turn.Error;
+        }
+    }
+
+    public static string ToolContext(AssistantChatTurn turn) => turn.ToolSummary
+        + string.Concat(turn.Tools.Skip(turn.SummarizedTools).Select(tool => "\n[" + tool.Tool + (tool.IsError ? " 失败" : " 已执行")
+            + "]\n参数\n" + tool.Arguments + "\n结果\n" + tool.Result));
 
     public static string SummaryPrompt(AssistantChat chat, int end)
     {
@@ -64,6 +82,6 @@ public static class AssistantContext
     public static IReadOnlyList<AssistantMessage> Messages(AssistantChat chat) => chat.Turns
         .Skip(chat.SummarizedTurns).SkipLast(1)
         .SelectMany(turn => new[] { new AssistantMessage("user", Describe(turn)), new AssistantMessage("assistant", turn.Answer
-            + (turn.Tools.Count > 0 ? "\n[已执行工具与真实结果]\n" + string.Join("\n", turn.Tools.Select(tool => tool.Tool + "\n" + tool.Result)) : "")) })
+            + (turn.Tools.Count > 0 ? "\n[已执行工具与真实结果]\n" + ToolContext(turn) : "")) })
         .Where(message => !string.IsNullOrWhiteSpace(message.Content)).ToArray();
 }

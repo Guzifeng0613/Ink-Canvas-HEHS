@@ -402,6 +402,8 @@ public sealed class FloatingBarWindow : Window
     private DependencyObject _tapSource;
     private Windows.Foundation.Point _tapPos;
 
+    internal void CancelTap() => _tapSource = null;
+
     private void AttachTapRouting()
     {
         _root.PointerPressed += (_, e) =>
@@ -419,6 +421,7 @@ public sealed class FloatingBarWindow : Window
                 _bar.TryHandleTap(source);
         };
         _root.PointerCanceled += (_, _) => _tapSource = null;
+        _root.PointerCaptureLost += (_, _) => _tapSource = null;
     }
 
     /// <summary>Use themed acrylic with an opaque card fallback when desktop composition is unavailable.</summary>

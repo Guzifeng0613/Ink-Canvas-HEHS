@@ -14,7 +14,7 @@ namespace InkCanvas.Modules.Library;
 
 internal enum LibraryMode { Browse, Open, Save }
 
-internal sealed class LibraryWindow : Window
+internal sealed partial class LibraryWindow : Window
 {
     private readonly IBoardLibraryHost _host;
     private readonly LibraryStore _store;
@@ -22,27 +22,29 @@ internal sealed class LibraryWindow : Window
     private readonly Grid _root = new();
     private readonly ListView _locations = new() { SelectionMode = ListViewSelectionMode.Single };
     private readonly GridView _files = new() { SelectionMode = ListViewSelectionMode.Single, IsItemClickEnabled = true };
-    private readonly AutoSuggestBox _search = new() { PlaceholderText = "搜索文稿和文件夹", MinWidth = 190 };
+    private readonly ListView _folders = new() { SelectionMode = ListViewSelectionMode.Single };
+    private readonly AutoSuggestBox _search = new() { PlaceholderText = "搜索文稿和文件夹", MinWidth = 0 };
     private readonly ToggleSwitch _recursive = new() { Header = "搜索子文件夹", IsOn = true };
-    private readonly ComboBox _sort = new() { ItemsSource = new[] { "最近修改", "名称", "文件大小" }, SelectedIndex = 0, MinWidth = 120 };
-    private readonly TextBlock _path = new() { TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+    private readonly ComboBox _sort = new() { ItemsSource = new[] { "最近修改", "名称 A–Z", "创建时间", "文件大小" }, SelectedIndex = 0, MinWidth = 0, Width = 124 };
+    private readonly BreadcrumbBar _path = new();
     private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBlock _previewTitle = new() { FontSize = 20, TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _previewDetails = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly Image _preview = new() { Stretch = Stretch.Uniform, Height = 220 };
+    private readonly Image _preview = new() { Stretch = Stretch.Uniform };
     private readonly TextBlock _pageText = new() { VerticalAlignment = VerticalAlignment.Center, Text = "页面预览" };
-    private readonly TextBox _name = new() { Header = "文稿名称", MinWidth = 240 };
+    private readonly TextBox _name = new() { Header = "文稿名称", MinWidth = 0 };
     private readonly Button _action = new() { MinWidth = 96, MinHeight = 44 };
     private readonly ProgressRing _busy = new() { Width = 20, Height = 20 };
     private readonly DispatcherTimer _debounce = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly CancellationTokenSource _lifetime = new();
-    private CancellationTokenSource _listing, _pageLoad;
+    private CancellationTokenSource _listing, _pageLoad, _aiLoad;
     private readonly Dictionary<SelectorItem, LibraryEntry> _containers = new();
     private readonly Dictionary<SelectorItem, CancellationTokenSource> _thumbnailLoads = new();
     private readonly IReadOnlyList<string> _extensions;
     private string _folder, _category = "文件夹";
     private int _page, _pageCount;
-    private bool _closed, _loading, _committing, _ready;
+    private bool _closed, _loading, _committing, _ready, _selectingLocation;
+    private LibraryEntry[] _entries = Array.Empty<LibraryEntry>();
     public LibraryMode Mode { get; }
     public Task<string> Result => _result.Task;
 
@@ -52,7 +54,7 @@ internal sealed class LibraryWindow : Window
         _store = store;
         Title = mode == LibraryMode.Save ? "保存到文稿库" : "文稿库";
         _name.Text = System.IO.Path.GetFileNameWithoutExtension(suggestedName ?? "白板");
-        _action.Content = mode == LibraryMode.Save ? "保存" : "打开";
+        _action.Content = mode == LibraryMode.Save ? "保存文稿" : "打开文稿";
         _action.IsEnabled = false;
         Build();
         Content = _root;
@@ -61,171 +63,11 @@ internal sealed class LibraryWindow : Window
         _root.Loaded += async (_, _) => await RunAsync(InitializeAsync);
         Closed += (_, _) =>
         {
-            _closed = true; _debounce.Stop(); _lifetime.Cancel(); _listing?.Cancel(); _pageLoad?.Cancel();
+            _closed = true; _debounce.Stop(); _lifetime.Cancel(); _listing?.Cancel(); _pageLoad?.Cancel(); _aiLoad?.Cancel();
+            _inspectorFlyout.Hide();
             foreach (var load in _thumbnailLoads.Values) load.Cancel();
             _thumbnailLoads.Clear(); _files.ItemsSource = null; _containers.Clear(); _preview.Source = null;
             _result.TrySetResult(null);
-        };
-    }
-
-    private static Button Button(string label, Func<Task> action)
-    {
-        var button = new Button { Content = label, MinHeight = 44, Padding = new Thickness(12, 6, 12, 6) };
-        button.Click += async (_, _) => await action();
-        return button;
-    }
-
-    private void Build()
-    {
-        _root.ColumnDefinitions.Add(new() { Width = new GridLength(208) });
-        _root.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-        _root.ColumnDefinitions.Add(new() { Width = new GridLength(280) });
-        _root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
-        _root.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        var sidebar = new Grid { Padding = new Thickness(12), RowSpacing = 12 };
-        sidebar.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        sidebar.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
-        sidebar.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        sidebar.Children.Add(new TextBlock { Text = "文稿", FontSize = 24, Margin = new Thickness(8) });
-        sidebar.Children.Add(_locations); Grid.SetRow(_locations, 1);
-        var add = Button("添加文件夹…", () => RunAsync(AddLocationAsync)); sidebar.Children.Add(add); Grid.SetRow(add, 2);
-        _locations.SelectionChanged += (_, _) =>
-        {
-            if (_loading || _locations.SelectedItem is not LibraryLocation location) return;
-            _category = location.Path is null ? location.Title : "文件夹";
-            if (_category == "文件夹") _folder = location.Path;
-            _ = RunAsync(RefreshAsync);
-        };
-        _locations.ItemTemplate = (DataTemplate)XamlReader.Load("""
-            <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
-              <Grid ColumnSpacing="10" ToolTipService.ToolTip="{Binding Path}">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                <FontIcon Glyph="{Binding Icon}" FontSize="16"/>
-                <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis"/>
-              </Grid>
-            </DataTemplate>
-            """);
-        _root.Children.Add(sidebar);
-        var center = new Grid { Padding = new Thickness(12), RowSpacing = 12 };
-        Grid.SetColumn(center, 1); _root.Children.Add(center);
-        center.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        center.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        center.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
-        var navigation = new Grid { ColumnSpacing = 8 };
-        navigation.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); navigation.ColumnDefinitions.Add(new()); navigation.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        navigation.Children.Add(Button("上一级", () => RunAsync(async () =>
-        {
-            var parent = Directory.GetParent(_folder); if (parent is null) return;
-            _folder = parent.FullName; _category = "文件夹"; await RefreshAsync();
-        })));
-        navigation.Children.Add(_path); Grid.SetColumn(_path, 1);
-        var refresh = Button("刷新", () => RunAsync(RefreshAsync)); navigation.Children.Add(refresh); Grid.SetColumn(refresh, 2);
-        center.Children.Add(navigation);
-        var filters = new Grid { ColumnSpacing = 8 };
-        filters.ColumnDefinitions.Add(new()); filters.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        filters.Children.Add(_search); filters.Children.Add(_sort); Grid.SetColumn(_sort, 1); Grid.SetRow(filters, 1); center.Children.Add(filters);
-        _search.TextChanged += (_, args) => { if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput) { _debounce.Stop(); _debounce.Start(); } };
-        _debounce.Tick += (_, _) => { _debounce.Stop(); _ = RunAsync(RefreshAsync); };
-        _sort.SelectionChanged += (_, _) => { if (!_loading && _folder is not null) _ = RunAsync(RefreshAsync); };
-        _files.ItemTemplate = (DataTemplate)XamlReader.Load("""
-            <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
-              <Grid Width="204" Margin="4,4,4,12" RowSpacing="7">
-                <Grid.RowDefinitions><RowDefinition Height="124"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                <Border CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                  <Grid><FontIcon Glyph="{Binding Icon}" FontSize="32" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/><Image Source="{Binding Preview}" Stretch="Uniform"/></Grid>
-                </Border>
-                <TextBlock Grid.Row="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold"/>
-                <TextBlock Grid.Row="2" Text="{Binding Details}" FontSize="12" TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-              </Grid>
-            </DataTemplate>
-            """);
-        _files.ContainerContentChanging += OnContainerChanged;
-        _files.SelectionChanged += async (_, _) => await RunAsync(async () =>
-        {
-            var item = _files.SelectedItem as LibraryEntry;
-            _action.IsEnabled = _ready && (Mode == LibraryMode.Save || item is { IsFolder: false });
-            _previewTitle.Text = item?.Name ?? "选择文稿以预览"; _previewDetails.Text = item?.Details ?? "";
-            _page = 0; _pageCount = 0; _preview.Source = null;
-            await LoadPageAsync();
-        });
-        _files.ItemClick += async (_, args) =>
-        {
-            if (args.ClickedItem is LibraryEntry { IsFolder: true } folder) await RunAsync(async () =>
-            { _folder = folder.Path; _category = "文件夹"; await RefreshAsync(); });
-        };
-        _files.DoubleTapped += async (_, _) => { if (Mode != LibraryMode.Save) await RunAsync(CommitAsync); };
-        Grid.SetRow(_files, 2); center.Children.Add(_files);
-        var details = new StackPanel { Padding = new Thickness(16), Spacing = 16 };
-        details.Children.Add(_previewTitle); details.Children.Add(_preview); details.Children.Add(_previewDetails);
-        var pages = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        pages.Children.Add(Button("‹", () => RunAsync(async () => { if (_page > 0) { _page--; await LoadPageAsync(); } })));
-        pages.Children.Add(_pageText);
-        pages.Children.Add(Button("›", () => RunAsync(async () => { if (_page + 1 < _pageCount) { _page++; await LoadPageAsync(); } })));
-        details.Children.Add(pages);
-        details.Children.Add(Button("收藏 / 取消收藏", () => RunAsync(async () =>
-        {
-            if (_files.SelectedItem is not LibraryEntry { IsFolder: false } entry) return;
-            if (!_store.State.Favorites.Remove(entry.Path)) _store.State.Favorites.Add(entry.Path);
-            await _store.SaveAsync(); _status.Text = "已更新收藏";
-            if (_category == "收藏") await RefreshAsync();
-        })));
-        details.Children.Add(Button("重命名…", () => RunAsync(RenameAsync)));
-        if (_host.DocumentAi?.Available == true) details.Children.Add(Button("AI 命名与描述", () => RunAsync(async () =>
-        {
-            if (_files.SelectedItem is not LibraryEntry { IsFolder: false } entry) return;
-            _status.Text = "正在生成图片并分析…";
-            var result = await _host.DocumentAi.DescribeAsync(new(entry.Path), _lifetime.Token);
-            _status.Text = "已命名为 " + result.Title;
-            _previewDetails.Text = result.Description;
-            RelocatePaths(result.OriginalPath, result.Path); await _store.SaveAsync(); await RefreshAsync();
-        })));
-        details.Children.Add(Button("移动到文件夹…", () => RunAsync(() => TransferAsync(false))));
-        details.Children.Add(Button("制作副本…", () => RunAsync(() => TransferAsync(true))));
-        details.Children.Add(Button("新建文件夹…", () => RunAsync(NewFolderAsync)));
-        details.Children.Add(_recursive);
-        _recursive.Toggled += (_, _) => { if (_folder is not null) _ = RunAsync(RefreshAsync); };
-        var detailScroll = new ScrollViewer { Content = details, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        bool detailsInDialog = false;
-        Grid.SetColumn(detailScroll, 2); _root.Children.Add(detailScroll);
-        navigation.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var previewButton = Button("详情", () => RunAsync(async () =>
-        {
-            if (detailsInDialog) return;
-            detailsInDialog = true; _root.Children.Remove(detailScroll); detailScroll.Visibility = Visibility.Visible;
-            var flyout = new Flyout { Content = detailScroll, Placement = FlyoutPlacementMode.BottomEdgeAlignedRight };
-            flyout.Closed += (_, _) =>
-            {
-                flyout.Content = null; detailsInDialog = false;
-                detailScroll.ClearValue(FrameworkElement.WidthProperty); detailScroll.MaxHeight = double.PositiveInfinity;
-                detailScroll.Visibility = _root.ActualWidth < 760 ? Visibility.Collapsed : Visibility.Visible;
-                if (!_closed) _root.Children.Add(detailScroll);
-            };
-            detailScroll.Width = 280; detailScroll.MaxHeight = Math.Max(240, _root.ActualHeight - 100);
-            flyout.ShowAt(navigation);
-            await Task.CompletedTask;
-        }));
-        navigation.Children.Add(previewButton); Grid.SetColumn(previewButton, 3);
-        var bottom = new Grid { Padding = new Thickness(16), ColumnSpacing = 12 };
-        bottom.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); bottom.ColumnDefinitions.Add(new()); bottom.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        bottom.Children.Add(_busy);
-        var status = new StackPanel { Spacing = 6 }; status.Children.Add(_status);
-        if (Mode == LibraryMode.Save) status.Children.Add(_name);
-        bottom.Children.Add(status); Grid.SetColumn(status, 1);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Bottom };
-        actions.Children.Add(Button(Mode == LibraryMode.Save ? "其他位置…" : "浏览文件…", () => RunAsync(SystemPickerAsync)));
-        if (Mode != LibraryMode.Browse) actions.Children.Add(Button("取消", () => { Close(); return Task.CompletedTask; }));
-        _action.Click += async (_, _) => await RunAsync(CommitAsync); actions.Children.Add(_action);
-        bottom.Children.Add(actions); Grid.SetColumn(actions, 2);
-        Grid.SetRow(bottom, 1); Grid.SetColumnSpan(bottom, 3); _root.Children.Add(bottom);
-        AutomationProperties.SetName(_files, "文稿与文件夹"); AutomationProperties.SetName(_locations, "文稿位置");
-        AutomationProperties.SetName(_preview, "所选白板的页面预览");
-        _root.SizeChanged += (_, _) =>
-        {
-            bool compact = _root.ActualWidth < 760;
-            _root.ColumnDefinitions[0].Width = new GridLength(_root.ActualWidth < 1100 ? 160 : 208);
-            _root.ColumnDefinitions[2].Width = compact ? new GridLength(0) : new GridLength(_root.ActualWidth < 1100 ? 240 : 280);
-            if (!detailsInDialog) detailScroll.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
-            previewButton.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
         };
     }
 
@@ -237,23 +79,30 @@ internal sealed class LibraryWindow : Window
         Directory.CreateDirectory(defaultFolder);
         if (!_store.State.Locations.Contains(defaultFolder, StringComparer.OrdinalIgnoreCase)) _store.State.Locations.Insert(0, defaultFolder);
         _folder = Directory.Exists(_store.State.LastFolder) ? _store.State.LastFolder : defaultFolder;
+        _sort.SelectedIndex = Math.Clamp(_store.State.Sort, 0, 3);
+        SetView(_store.State.ListView);
         UpdateLocations(); _loading = false; await RefreshAsync();
         _ready = true;
-        if (!_closed) _action.IsEnabled = Mode == LibraryMode.Save || _files.SelectedItem is LibraryEntry { IsFolder: false };
+        if (!_closed) UpdateSelection();
     }
 
-    private void UpdateLocations() => _locations.ItemsSource = new[]
+    private void UpdateLocations()
     {
-        new LibraryLocation("最近使用", null, "\uE81C"), new LibraryLocation("收藏", null, "\uE734"),
-    }.Concat(_store.State.Locations.Select(path => new LibraryLocation(
-        System.IO.Path.GetFileName(path.TrimEnd('\\', '/')) is { Length: > 0 } name ? name : path, path, "\uE8B7"))).ToArray();
+        _selectingLocation = true;
+        _locations.ItemsSource = new[] { new LibraryLocation("最近使用", null, "\uF486"), new LibraryLocation("收藏", null, "\uF719") };
+        _folders.ItemsSource = _store.State.Locations.Select(path => new LibraryLocation(
+            System.IO.Path.GetFileName(path.TrimEnd('\\', '/')) is { Length: > 0 } name ? name : path, path, "\uF41D")).ToArray();
+        _selectingLocation = false;
+        SelectLocation();
+    }
 
     private async Task RefreshAsync()
     {
         _listing?.Cancel();
         using var request = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         _listing = request;
-        _busy.IsActive = true; _path.Text = _category == "文件夹" ? _folder : _category;
+        _busy.IsActive = true; UpdateBreadcrumb();
+        string selectedPath = (_files.SelectedItem as LibraryEntry)?.Path;
         try
         {
             var selected = _category == "收藏" ? _store.State.Favorites : _category == "最近使用" ? _store.State.Recent : null;
@@ -262,13 +111,22 @@ internal sealed class LibraryWindow : Window
             IEnumerable<LibraryEntry> ordered = _sort.SelectedIndex switch
             {
                 1 => entries.OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase),
-                2 => entries.OrderByDescending(item => item.Length),
+                2 => entries.OrderByDescending(item => item.Created),
+                3 => entries.OrderByDescending(item => item.Length),
                 _ => _category == "最近使用" ? entries.OrderBy(item => _store.State.Recent.FindIndex(path => path.Equals(item.Path, StringComparison.OrdinalIgnoreCase)))
                     : entries.OrderByDescending(item => item.Modified),
             };
-            _files.ItemsSource = ordered.OrderByDescending(item => item.IsFolder).ToArray();
-            _status.Text = entries.Count == 0 ? "此处没有匹配的文稿，可更换文件夹或搜索条件。" : $"{entries.Count(item => !item.IsFolder)} 份文稿 · {entries.Count(item => item.IsFolder)} 个文件夹";
-            _store.State.LastFolder = _folder; await _store.SaveAsync();
+            _entries = ordered.OrderByDescending(item => item.IsFolder).ToArray();
+            foreach (var entry in _entries) entry.Favorite = _store.State.Favorites.Contains(entry.Path, StringComparer.OrdinalIgnoreCase);
+            _files.ItemsSource = _entries;
+            _files.SelectedItem = _entries.FirstOrDefault(entry => entry.Path.Equals(selectedPath, StringComparison.OrdinalIgnoreCase));
+            _empty.Visibility = entries.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            _files.Visibility = entries.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            _clearFilters.Visibility = string.IsNullOrWhiteSpace(_search.Text) ? Visibility.Collapsed : Visibility.Visible;
+            _status.Text = entries.Count == 0 ? "" : $"{entries.Count(item => !item.IsFolder)} 份文稿 · {entries.Count(item => item.IsFolder)} 个文件夹";
+            SelectLocation(); UpdateSelection();
+            _store.State.LastFolder = _folder; _store.State.Sort = _sort.SelectedIndex;
+            await _store.SaveAsync();
         }
         finally { if (ReferenceEquals(_listing, request)) { _listing = null; _busy.IsActive = false; } }
     }
@@ -276,9 +134,18 @@ internal sealed class LibraryWindow : Window
     private void OnContainerChanged(ListViewBase sender, ContainerContentChangingEventArgs args)
     {
         var container = args.ItemContainer;
+        container.ContextRequested -= OnEntryContextRequested;
+        container.ContextRequested += OnEntryContextRequested;
         if (_thumbnailLoads.Remove(container, out var oldLoad)) oldLoad.Cancel();
         if (_containers.Remove(args.ItemContainer, out var previous)) previous.Preview = null;
-        if (args.InRecycleQueue || args.Item is not LibraryEntry entry || entry.IsFolder) return;
+        if (args.InRecycleQueue || args.Item is not LibraryEntry entry) return;
+        if (container.ContentTemplateRoot is not FrameworkElement template)
+        { args.RegisterUpdateCallback(OnContainerChanged); return; }
+        if (template.FindName("FavoriteButton") is ButtonBase favorite)
+        { favorite.Click -= OnCardFavoriteClick; favorite.Click += OnCardFavoriteClick; }
+        if (template.FindName("CardPreview") is Border card)
+        { card.SizeChanged -= OnThumbnailSizeChanged; card.SizeChanged += OnThumbnailSizeChanged; SizeThumbnail(card); }
+        if (entry.IsFolder) return;
         _containers[container] = entry;
         var load = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         _thumbnailLoads[container] = load;
@@ -289,7 +156,7 @@ internal sealed class LibraryWindow : Window
                 var result = await _store.PreviewAsync(entry.Path, 0, load.Token);
                 if (_closed || load.IsCancellationRequested || !_containers.TryGetValue(container, out var current) || !ReferenceEquals(current, entry)) return;
                 var bitmap = await BitmapAsync(result.Png);
-                if (!load.IsCancellationRequested) entry.Preview = bitmap;
+                if (!load.IsCancellationRequested) { entry.Preview = bitmap; entry.Pages = result.Pages; }
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException)
             { /* A bad file must not interrupt scrolling. Selected preview reports the error. */ }
@@ -305,14 +172,18 @@ internal sealed class LibraryWindow : Window
         _pageLoad = request;
         try
         {
-            var result = await _store.PreviewAsync(entry.Path, _page, request.Token);
+            int page = _page;
+            var result = await _store.PreviewAsync(entry.Path, page, request.Token);
             var bitmap = await BitmapAsync(result.Png);
             if (request.IsCancellationRequested || _closed) return;
             _preview.Source = bitmap;
             var metadata = await InkCanvas.Features.Board.BoardService.ReadArchiveMetadataAsync(entry.Path, request.Token);
-            if (!request.IsCancellationRequested && !_closed && metadata?.Description is { Length: > 0 } description) _previewDetails.Text = entry.Details + "\n\n" + description;
+            if (request.IsCancellationRequested || _closed) return;
+            _description.Text = metadata?.Description ?? "";
+            _description.Visibility = string.IsNullOrWhiteSpace(_description.Text) ? Visibility.Collapsed : Visibility.Visible;
             if (result.Pages > 0) _pageCount = result.Pages;
             _pageText.Text = _pageCount > 0 ? $"{_page + 1} / {_pageCount}" : $"第 {_page + 1} 页";
+            entry.Pages = _pageCount; UpdatePageButtons();
         }
         finally { if (ReferenceEquals(_pageLoad, request)) _pageLoad = null; }
     }
@@ -339,9 +210,9 @@ internal sealed class LibraryWindow : Window
             if (_files.SelectedItem is not LibraryEntry { IsFolder: false } entry) return;
             path = entry.Path;
         }
-        _committing = true; _action.IsEnabled = false;
+        _committing = true; UpdateSelection();
         try { await CompleteAsync(path); }
-        finally { _committing = false; if (!_closed) _action.IsEnabled = true; }
+        finally { _committing = false; if (!_closed) UpdateSelection(); }
     }
 
     private async Task CompleteAsync(string path)
@@ -404,6 +275,7 @@ internal sealed class LibraryWindow : Window
         RelocatePaths(entry.Path, path);
         UpdateLocations();
         await RefreshAsync();
+        _files.SelectedItem = _entries.FirstOrDefault(entry => entry.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
     }
     private async Task TransferAsync(bool copy)
     {

@@ -11,11 +11,12 @@ public sealed class LibraryModule : IApplicationModule
         _service = new LibraryService(context.GetService<IBoardLibraryHost>());
         context.RegisterCleanup(_service.Dispose);
         context.Export<IBoardLibraryService>(_service);
+        _service.RegisterAssistant(context);
     }
     public void Stop() { _service?.Dispose(); _service = null; }
 }
 
-internal sealed class LibraryService(IBoardLibraryHost host) : IBoardLibraryService, IDisposable
+internal sealed partial class LibraryService(IBoardLibraryHost host) : IBoardLibraryService, IDisposable
 {
     private readonly LibraryStore _store = new(host.DataDirectory);
     public void Relocate(string previous, string path) => _ = RelocateAsync(previous, path);

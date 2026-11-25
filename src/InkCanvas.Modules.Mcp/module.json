@@ -1,0 +1,8 @@
+{
+  "Id": "inkcanvas.mcp",
+  "Name": "MCP 工具连接",
+  "Version": "1.0.0",
+  "ApiVersion": 1,
+  "EntryAssembly": "InkCanvas.Modules.Mcp.dll",
+  "EntryType": "InkCanvas.Modules.Mcp.McpModule"
+}

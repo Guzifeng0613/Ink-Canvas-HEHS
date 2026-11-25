@@ -11,6 +11,7 @@ public sealed class CloudSyncModule : IApplicationModule
         _service = new CloudSyncService(context.GetService<ICloudSyncHost>());
         context.RegisterCleanup(_service.Dispose);
         context.Export<ICloudSyncService>(_service);
+        _service.RegisterAssistant(context);
         context.RegisterCleanup(context.GetService<IModuleSettingsRegistry>().Register(new(
             "inkcanvas.cloud-sync.settings", "云同步", "\uE3C4", "云端 自动保存 备份 账号 登录 配置 同步 学校 部署",
             builder =>

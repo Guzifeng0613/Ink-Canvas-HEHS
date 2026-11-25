@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using InkCanvas.Platform.System;
 using Windows.Graphics;
 
 namespace InkCanvas.Modules.AiAssistant;
@@ -18,6 +19,9 @@ public sealed partial class AssistantWindow
     private bool _collapsed, _pinned = true, _dockedRight = true, _positioned;
     private bool _sizeConstraintQueued;
     private RectInt32 _expandedBounds;
+    private Func<ScreenRect?> _placementBounds;
+    public event Action<Window, bool> ConfigureEdgeHandle;
+    public void SetPlacementBounds(Func<ScreenRect?> placementBounds) => _placementBounds = placementBounds;
     private double Dpi => Math.Max(1, GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96d);
 
     public void UseNativeFrame()
@@ -61,11 +65,23 @@ public sealed partial class AssistantWindow
     {
         _dockedRight = right;
         var work = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Nearest).WorkArea;
+        var area = _placementBounds?.Invoke();
+        int left = work.X, top = work.Y, rightEdge = work.X + work.Width, bottomEdge = work.Y + work.Height;
+        if (area is { Width: > 0, Height: > 0 } bounds)
+        {
+            left = Math.Max(left, bounds.X); top = Math.Max(top, bounds.Y);
+            rightEdge = Math.Min(rightEdge, bounds.X + bounds.Width);
+            bottomEdge = Math.Min(bottomEdge, bounds.Y + bounds.Height);
+            if (rightEdge <= left || bottomEdge <= top)
+            { left = work.X; top = work.Y; rightEdge = work.X + work.Width; bottomEdge = work.Y + work.Height; }
+        }
         int margin = (int)(12 * Dpi);
-        margin = Math.Min(margin, Math.Min(work.Width, work.Height) / 20);
-        int width = Math.Min(work.Width - margin * 2, (int)(380 * Dpi)), height = work.Height - margin * 2;
-        AppWindow.MoveAndResize(new(right ? work.X + work.Width - width - margin : work.X + margin,
-            work.Y + Math.Max(0, (work.Height - height) / 2), width, height));
+        int areaWidth = rightEdge - left, areaHeight = bottomEdge - top;
+        margin = Math.Min(margin, Math.Min(areaWidth, areaHeight) / 20);
+        int width = Math.Min(Math.Max(1, areaWidth - margin * 2), (int)(380 * Dpi));
+        int height = Math.Max(1, areaHeight - margin * 2);
+        AppWindow.MoveAndResize(new(right ? rightEdge - width - margin : left + margin,
+            top + Math.Max(0, (areaHeight - height) / 2), width, height));
     }
 
     public void CollapseToEdge()
@@ -83,10 +99,21 @@ public sealed partial class AssistantWindow
         var presenter = (OverlappedPresenter)handle.AppWindow.Presenter;
         presenter.SetBorderAndTitleBar(false, false); presenter.IsAlwaysOnTop = _pinned; presenter.IsResizable = false;
         var work = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Nearest).WorkArea;
-        int width = (int)(52 * Dpi), height = (int)(80 * Dpi);
-        handle.AppWindow.MoveAndResize(new(_dockedRight ? work.X + work.Width - width : work.X,
-            Math.Clamp(_expandedBounds.Y + _expandedBounds.Height / 2 - height / 2, work.Y, work.Y + work.Height - height), width, height));
-        handle.Activate(); AppWindow.Hide();
+        var area = _placementBounds?.Invoke();
+        int left = work.X, right = work.X + work.Width, top = work.Y, bottom = work.Y + work.Height;
+        if (area is { Width: > 0, Height: > 0 } bounds)
+        {
+            left = Math.Max(left, bounds.X); right = Math.Min(right, bounds.X + bounds.Width);
+            top = Math.Max(top, bounds.Y); bottom = Math.Min(bottom, bounds.Y + bounds.Height);
+            if (right <= left || bottom <= top)
+            { left = work.X; right = work.X + work.Width; top = work.Y; bottom = work.Y + work.Height; }
+        }
+        int width = Math.Min((int)(52 * Dpi), right - left), height = Math.Min((int)(80 * Dpi), bottom - top);
+        int x = _dockedRight ? right - width : left;
+        int y = Math.Clamp(_expandedBounds.Y + _expandedBounds.Height / 2 - height / 2, top, Math.Max(top, bottom - height));
+        AppWindow.MoveAndResize(new(x, y, width, height));
+        ConfigureEdgeHandle?.Invoke(handle, _pinned);
+        AppWindow.Hide();
     }
 
     public void ShowPanel()

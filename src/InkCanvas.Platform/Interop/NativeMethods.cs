@@ -47,6 +47,7 @@ public static class NativeMethods
     public const int WM_POINTERCAPTURECHANGED = 0x024F;
     public const int WM_HOTKEY = 0x0312;
     public const int WM_DISPLAYCHANGE = 0x007E;
+    public const int WM_POWERBROADCAST = 0x0218;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct POINT { public int X, Y; }
@@ -154,6 +155,7 @@ public static class NativeMethods
     [DllImport("user32.dll")] public static extern bool ReleaseCapture();
     [DllImport("user32.dll")] public static extern IntPtr GetCapture();
     [DllImport("user32.dll")] public static extern short GetKeyState(int key);
+    [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int key);
     [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT pt);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr LoadCursorW(IntPtr instance, IntPtr cursorName);
     [DllImport("user32.dll")] public static extern IntPtr SetCursor(IntPtr cursor);

@@ -1,7 +1,6 @@
 using InkCanvas.Core.AiAssistant;
 using InkCanvas.Core.Settings;
 using InkCanvas.Features.Board;
-using InkCanvas.Features.Classroom;
 using InkCanvas.Ink;
 using InkCanvas.Platform.System;
 using Microsoft.UI.Xaml;
@@ -19,15 +18,15 @@ public interface IAiAssistantHost
     bool BoardOpen { get; }
     double DpiScale { get; }
     ScreenRect OverlayBounds { get; }
+    ScreenRect? AssistantPlacementBounds => null;
     AssistantSource Source { get; }
     bool IsClassroomPresentation { get; }
     IAssistantToolRegistry Tools => null;
     SlideContext GetSlideContext(int slideId, int slideIndex);
     void ConfigureWindow(Window window);
+    void ConfigureEdgeHandle(Window window, bool topmost) { }
     void SaveSettings();
     void ShowBoard();
-    void RecordExplanation(AssistantSession session, int slideId, int slideIndex);
-    Task StartPracticeAsync(VariantQuestionDraft draft, bool startTimer);
     Task NotifyAsync(string title, string message);
 }
 

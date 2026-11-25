@@ -50,10 +50,12 @@ public sealed class AppServices : IDisposable
         AutoSave = new AutoSaveService(Settings.Automation);
         Lottery = new LotteryService();
         LotteryMemory = new LotteryMemoryStore(Lottery, Store.Directory);
+        BoardResume = new BoardResumeService(Board, Store.Directory, () => Settings.Resume.Whiteboard);
         ApplySettings();
     }
 
     public SettingsStore Store { get; }
+    public BoardResumeService BoardResume { get; }
     public UpdateCache UpdateCache { get; }
     public ExtensionInstallStore ExtensionInstalls { get; }
     public ExtensionUpdateCoordinator ExtensionUpdates { get; }
@@ -68,14 +70,6 @@ public sealed class AppServices : IDisposable
     {
         if (Path.GetExtension(path).Equals(".icink", StringComparison.OrdinalIgnoreCase))
         {
-            // 新格式课堂录制文件：插件在位则路由给时光机模块，否则给出中文守卫提示。
-            if (ClassroomRecordingProbe.IsClassroomRecording(path))
-            {
-                var service = Modules.GetExport<ITimeMachineService>();
-                if (service is null) throw new InvalidDataException(ClassroomRecordingProbe.PluginRequiredMessage);
-                await service.OpenFileAsync(path);
-                return () => { };
-            }
             return await target.PrepareOpenAsync(path, entireBoard);
         }
 
@@ -95,7 +89,7 @@ public sealed class AppServices : IDisposable
     public ExtensionPreferencesStore ExtensionStore { get; }
     public ExtensionPreferences ExtensionPreferences { get; }
     private bool _modulesStarted;
-    public void StartModules(IScreenTrackingHost host, IDocumentWorkspaceHost documents = null, ICanvasToolsHost canvasTools = null, IAiAssistantHost assistant = null, IBoardLibraryHost library = null, ITimeMachineHost timeMachine = null, IAiDocumentHost documentAi = null)
+    public void StartModules(IScreenTrackingHost host, IDocumentWorkspaceHost documents = null, ICanvasToolsHost canvasTools = null, IAiAssistantHost assistant = null, IBoardLibraryHost library = null, IAiDocumentHost documentAi = null, IStylusInputHost stylus = null)
     {
         if (_modulesStarted) return; _modulesStarted = true;
         Modules.AddService<IModuleSettingsRegistry>(ModuleSettings);
@@ -105,16 +99,16 @@ public sealed class AppServices : IDisposable
         if (documents is not null) Modules.AddService(documents);
         if (canvasTools is not null) Modules.AddService(canvasTools);
         if (assistant is not null) Modules.AddService(assistant);
-        if (timeMachine is not null) Modules.AddService(timeMachine);
         if (documentAi is not null) Modules.AddService(documentAi);
         if (library is not null) Modules.AddService(library);
+        if (stylus is not null) Modules.AddService(stylus);
+        if (stylus is not null) Modules.RegisterPackage("inkcanvas.stylus", "手写笔与数位板", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.stylus"));
         if (library is not null) Modules.RegisterPackage("inkcanvas.library", "文稿库", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.library"));
         Modules.RegisterPackage("inkcanvas.screen-tracking", "屏幕内容跟随", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.screen-tracking"));
         if (documents is not null) Modules.RegisterPackage("inkcanvas.pdf", "PDF 阅读与批注", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.pdf"));
         if (canvasTools is not null) Modules.RegisterPackage("inkcanvas.analytic-geometry", "解析几何", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.analytic-geometry"));
         if (assistant is not null) Modules.RegisterPackage("inkcanvas.ai-assistant", "AI 助手", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.ai-assistant"));
         Modules.RegisterPackage("inkcanvas.cloud-sync", "云同步", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.cloud-sync"));
-        if (timeMachine is not null) Modules.RegisterPackage("inkcanvas.time-machine", "板书时光机", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.time-machine"));
         Modules.Start(ExtensionPreferences.DisabledModules);
         Modules.Changed += UpdateModuleStatus;
         UpdateModuleStatus();
@@ -154,6 +148,9 @@ public sealed class AppServices : IDisposable
         Settings.Canvas.InkWashWidth = double.IsFinite(Settings.Canvas.InkWashWidth) ? Math.Clamp(Settings.Canvas.InkWashWidth, 1, 120) : 30;
         Settings.Storage ??= new();
         Settings.Archive ??= new();
+        Settings.Resume ??= new();
+        Settings.Resume.Whiteboard = ResumeStore.Normalize(Settings.Resume.Whiteboard);
+        Settings.Resume.Pdf = ResumeStore.Normalize(Settings.Resume.Pdf);
         Settings.Archive.AutoSaveMinutes = Math.Clamp(Settings.Archive.AutoSaveMinutes, 1, 120);
         Settings.Archive.AutomaticCopiesToKeep = Math.Clamp(Settings.Archive.AutomaticCopiesToKeep, 1, 200);
         Settings.Archive.ScreenCapture.IntervalMinutes = Math.Clamp(Settings.Archive.ScreenCapture.IntervalMinutes, 1, 120);
@@ -179,6 +176,7 @@ public sealed class AppServices : IDisposable
 
     public void ConfigureController(InkController controller)
     {
+        controller.SelectionMode = Enum.IsDefined(Settings.Canvas.SelectionMode) ? Settings.Canvas.SelectionMode : Core.Selection.InkSelectionMode.Rectangle;
         var taper = OriginalMenuCatalog.ToTaperKind(Settings.Canvas.InkStyle);
         controller.ConfigurePenWidths((float)Math.Clamp(Settings.Canvas.InkWidth, .5, 60),
             (float)Math.Clamp(Settings.Canvas.HighlighterWidth ?? Settings.Canvas.InkWidth, .5, 60));
@@ -190,9 +188,9 @@ public sealed class AppServices : IDisposable
         controller.InkWashWidth = (float)(double.IsFinite(Settings.Canvas.InkWashWidth) ? Math.Clamp(Settings.Canvas.InkWashWidth, 1, 120) : 30);
         controller.CurrentAttributes.InkWash = Settings.Canvas.InkWash.Normalize();
         controller.CurrentAttributes.Nib = Enum.IsDefined(Settings.Canvas.PenNib) ? Settings.Canvas.PenNib : PenNib.Round;
-        controller.CurrentAttributes.HighlighterAlpha = (byte)Math.Clamp(Settings.Canvas.InkAlpha, 20, 240);
+        controller.CurrentAttributes.HighlighterAlpha = (byte)Math.Clamp(Settings.Canvas.InkAlpha, 0, 255);
         controller.ShowPenCursor = Settings.Canvas.IsShowCursor;
-        controller.EraserRadius = OriginalMenuCatalog.ToEraserRadius(Settings.Canvas.EraserSize);
+        controller.EraserRadius = OriginalMenuCatalog.ToEraserRadius(Settings.Canvas);
         if (Settings.Canvas.EraserType == 1) controller.EraserMode = InkEraserMode.Area;
         else if (Settings.Canvas.EraserType == 2) controller.EraserMode = InkEraserMode.WholeStroke;
         else if (Settings.Canvas.EraserType == 3) controller.EraserMode = InkEraserMode.Lasso;
@@ -275,6 +273,7 @@ public sealed class AppServices : IDisposable
 
     public void Dispose()
     {
+        BoardResume.Dispose();
         ExtensionUpdates.Dispose();
         Archives.Dispose();
         ScreenArchives.Dispose();

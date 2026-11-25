@@ -35,7 +35,7 @@ internal sealed partial class AssistantService : IAiAssistantService, IAiConnect
     {
         _host = host; _canvasHost = canvasHost; _connections = connections;
         _preferencesPath = Path.Combine(directory, "assistant.json");
-        try { if (File.Exists(_preferencesPath)) _preferences = JsonSerializer.Deserialize<AssistantPreferences>(File.ReadAllBytes(_preferencesPath)) ?? new(); }
+        try { if (File.Exists(_preferencesPath)) _preferences = AssistantPreferences.Read(File.ReadAllBytes(_preferencesPath)); }
         catch (Exception exception) { Core.Diagnostics.FileLog.WriteLogToFile("助手设置读取失败 " + exception.Message); }
         _saveTimer = _dispatcher.CreateTimer(); _saveTimer.Interval = TimeSpan.FromMilliseconds(750); _saveTimer.IsRepeating = false;
         _saveTimer.Tick += (_, _) => Flush();
@@ -53,7 +53,9 @@ internal sealed partial class AssistantService : IAiAssistantService, IAiConnect
     {
         var view = new StackPanel { Spacing = 12 };
         var tools = new ToggleSwitch { Header = "允许工具调用", OnContent = "开启", OffContent = "关闭", IsOn = _preferences.ToolsEnabled };
-        var budget = new NumberBox { Header = "模型上下文窗口（Token）", Minimum = 8192, Maximum = 1048576, Value = _preferences.ContextTokens,
+        var budget = new NumberBox { Header = "模型上下文窗口（Token，默认 256k）", Minimum = 8192, Maximum = 1048576, Value = _preferences.ContextTokens,
+            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };
+        var threshold = new NumberBox { Header = "自动压缩触发比例（%）", Minimum = 50, Maximum = 95, Value = _preferences.CompactAtPercent,
             SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };
         var instructions = new TextBox { Header = "教师偏好与补充指令", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap,
             MinHeight = 100, MaxHeight = 240, Text = _preferences.Instructions };
@@ -63,7 +65,8 @@ internal sealed partial class AssistantService : IAiAssistantService, IAiConnect
             try
             {
                 _preferences.ToolsEnabled = tools.IsOn;
-                _preferences.ContextTokens = double.IsFinite(budget.Value) ? Math.Clamp((int)budget.Value, 8192, 1048576) : 32768;
+                _preferences.ContextTokens = double.IsFinite(budget.Value) ? Math.Clamp((int)budget.Value, 8192, 1048576) : AssistantPreferences.DefaultContextTokens;
+                _preferences.CompactAtPercent = double.IsFinite(threshold.Value) ? Math.Clamp((int)threshold.Value, 50, 95) : 80;
                 _preferences.Instructions = instructions.Text;
                 Directory.CreateDirectory(Path.GetDirectoryName(_preferencesPath)!);
                 string temporary = _preferencesPath + ".tmp";
@@ -73,8 +76,8 @@ internal sealed partial class AssistantService : IAiAssistantService, IAiConnect
             catch (Exception exception) { error.Text = exception.Message; }
         }
         tools.Toggled += (_, _) => { if (!tools.IsOn) CancelActive(); Save(); };
-        budget.ValueChanged += (_, _) => Save(); instructions.LostFocus += (_, _) => Save();
-        view.Children.Add(tools); view.Children.Add(budget); view.Children.Add(instructions); view.Children.Add(error); return view;
+        budget.ValueChanged += (_, _) => Save(); threshold.ValueChanged += (_, _) => Save(); instructions.LostFocus += (_, _) => Save();
+        view.Children.Add(tools); view.Children.Add(budget); view.Children.Add(threshold); view.Children.Add(instructions); view.Children.Add(error); return view;
     }
 
     public void Open()
@@ -83,6 +86,8 @@ internal sealed partial class AssistantService : IAiAssistantService, IAiConnect
         if (_window is not null) { _window.ShowPanel(); return; }
         EnsureWorkspace();
         var window = new AssistantWindow(_host.Settings.Appearance.Theme); _window = window;
+        window.SetPlacementBounds(() => _host.AssistantPlacementBounds);
+        window.ConfigureEdgeHandle += (handle, topmost) => _host.ConfigureEdgeHandle(handle, topmost);
         window.SetWorkspace(_workspace);
         window.SetModel(_connections?.Active is { } connection ? connection.Name + " · " + connection.Model : "请在插件设置中配置 AI 连接");
         window.Changed += MarkDirty; window.StopRequested += CancelActive; window.ConversationChanging += CancelActive;
