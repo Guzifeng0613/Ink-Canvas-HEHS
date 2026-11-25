@@ -5,6 +5,7 @@
 [Rr]elease/
 artifacts/
 publish/
+deliverables/product-demo/
 *.user
 *.suo
 .vs/
