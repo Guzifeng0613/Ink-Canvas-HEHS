@@ -19,13 +19,15 @@ namespace InkCanvas.App.Views;
 
 internal sealed class PptPageThumbnail(PptSlideInfo slide) : INotifyPropertyChanged
 {
-    public PptSlideInfo Slide { get; } = slide;
+    public PptSlideInfo Slide { get; set; } = slide;
     public string Title => $"第 {Slide.Index} 页";
     private ImageSource _preview;
     private string _status = "正在载入…";
     public ImageSource Preview { get => _preview; set { _preview = value; Notify(nameof(Preview)); } }
     public string Status { get => _status; set { _status = value; Notify(nameof(Status)); } }
     public bool Dirty = true;
+    public bool Failed;
+    public bool NeedsPreview => !Failed && (Dirty || Preview is null);
     public int Revision;
     public long LastUsed;
     public event PropertyChangedEventHandler PropertyChanged;
@@ -35,19 +37,29 @@ internal sealed class PptPageThumbnail(PptSlideInfo slide) : INotifyPropertyChan
 /// <summary>Virtualizes slide thumbnails and composites saved/current ink into each visible preview.</summary>
 internal sealed class PptPageNavigator : UserControl, IDisposable
 {
+    private static readonly SemaphoreSlim CompositionGate = new(2, 2);
     private readonly PptPreviewContext _context;
     private readonly PptSlidePreviewSource _images;
     private readonly ObservableCollection<PptPageThumbnail> _items = new();
     private readonly ListView _list = new();
     private readonly GridView _grid = new();
-    private readonly TouchIconButton _overviewButton = new() { Label = "总览", Glyph = Glyphs.Tools, Width = 56, Height = 48,
-        IconSize = 20, IconAreaHeight = 24, LabelFontSize = 11 };
+    private readonly TouchIconButton _overviewButton = new()
+    {
+        Label = "总览",
+        Glyph = Glyphs.Tools,
+        Width = 56,
+        Height = 48,
+        IconSize = 20,
+        IconAreaHeight = 24,
+        LabelFontSize = 11
+    };
     private readonly Dictionary<SelectorItem, PptPageThumbnail> _containers = new();
     private readonly HashSet<ScrollViewer> _scrolls = new();
     private readonly PopupHeader _header;
     private readonly TextBlock _status = new() { Margin = new Thickness(12), TextWrapping = TextWrapping.Wrap };
     private readonly DispatcherQueueTimer _refresh;
     private CancellationTokenSource _loading;
+    private CancellationTokenSource _viewportLoading;
     private PptSnapshot _snapshot;
     private Matrix3x2 _lastView;
     private bool _open, _disposed, _syncing, _rendering;
@@ -60,6 +72,8 @@ internal sealed class PptPageNavigator : UserControl, IDisposable
     internal int CachedThumbnailCount => _items.Count(item => item.Preview is not null);
     internal int ItemCount => _items.Count;
     internal int ExportCount => _images.ExportCount;
+    internal int CachedSourceCount => _images.CachedCount;
+    internal long CachedSourceBytes => _images.CachedBytes;
 
     public PptPageNavigator(PptPreviewContext context, int theme)
     {
@@ -127,13 +141,13 @@ internal sealed class PptPageNavigator : UserControl, IDisposable
             view.ItemClick += (_, args) =>
             {
                 if (!_open || _syncing || args.ClickedItem is not PptPageThumbnail item || _snapshot?.Presentation is null) return;
-                if (_context.Navigate(_snapshot.Presentation, item.Slide.SlideId)) CloseRequested?.Invoke();
+                if (_context.Navigate(_snapshot.Presentation, item.Slide)) CloseRequested?.Invoke();
             };
             view.SelectionChanged += (_, _) =>
             {
                 if (!_open || _syncing || view.SelectedItem is not PptPageThumbnail item
-                    || _snapshot?.Presentation is null || _snapshot.Slide?.SlideId == item.Slide.SlideId) return;
-                if (_context.Navigate(_snapshot.Presentation, item.Slide.SlideId)) CloseRequested?.Invoke();
+                    || _snapshot?.Presentation is null || _snapshot.Slide?.Index == item.Slide.Index) return;
+                if (_context.Navigate(_snapshot.Presentation, item.Slide)) CloseRequested?.Invoke();
             };
         }
         Grid.SetRow(_list, 2); root.Children.Add(_list);
@@ -164,6 +178,7 @@ internal sealed class PptPageNavigator : UserControl, IDisposable
         _overviewButton.Glyph = overview ? Glyphs.SlideList : Glyphs.Tools;
         _list.Visibility = overview ? Visibility.Collapsed : Visibility.Visible;
         _grid.Visibility = overview ? Visibility.Visible : Visibility.Collapsed;
+        CancelViewport();
         ViewModeChanged?.Invoke();
         SelectCurrent(); Schedule();
     }
@@ -171,6 +186,7 @@ internal sealed class PptPageNavigator : UserControl, IDisposable
     public void SetOpen(bool open, PptSnapshot snapshot)
     {
         _open = open;
+        CancelViewport();
         _loading?.Cancel();
         _loading?.Dispose();
         _loading = null;
@@ -182,24 +198,15 @@ internal sealed class PptPageNavigator : UserControl, IDisposable
         }
         _snapshot = snapshot;
         _loading = new CancellationTokenSource();
-        _ = LoadSlidesAsync(snapshot, _loading.Token);
-    }
-
-    private async Task LoadSlidesAsync(PptSnapshot snapshot, CancellationToken token)
-    {
-        _status.Text = "正在读取幻灯片…";
         _items.Clear(); _containers.Clear();
-        try
+        for (int index = 1; index <= snapshot.Presentation.SlideCount; index++)
         {
-            var slides = await _images.GetSlidesAsync(snapshot.Presentation, token);
-            token.ThrowIfCancellationRequested();
-            foreach (var slide in slides) _items.Add(new(slide));
-            _status.Text = $"共 {_items.Count} 页";
-            SelectCurrent();
-            Schedule();
+            var slide = snapshot.Slide?.Index == index ? snapshot.Slide : new PptSlideInfo(0, index, "", null, null, null);
+            _items.Add(new(slide));
         }
-        catch (OperationCanceledException) { }
-        catch (Exception ex) { if (_open && !token.IsCancellationRequested) _status.Text = ex.Message; }
+        _status.Text = $"共 {_items.Count} 页";
+        SelectCurrent();
+        Schedule();
     }
 
     public void Update(PptSnapshot snapshot)
@@ -222,7 +229,7 @@ internal sealed class PptPageNavigator : UserControl, IDisposable
         _syncing = true;
         try
         {
-            _list.SelectedItem = _grid.SelectedItem = _items.FirstOrDefault(item => item.Slide.SlideId == _snapshot?.Slide?.SlideId);
+            _list.SelectedItem = _grid.SelectedItem = _items.FirstOrDefault(item => item.Slide.Index == _snapshot?.Slide?.Index);
             if (ActiveView.SelectedItem is not null) ActiveView.ScrollIntoView(ActiveView.SelectedItem);
         }
         finally { _syncing = false; }
@@ -256,22 +263,32 @@ internal sealed class PptPageNavigator : UserControl, IDisposable
         if (_disposed || !_open || _rendering || _loading is null) return;
         if (_context.Controller.HasActiveInteraction) { Schedule(); return; }
         _rendering = true;
-        var token = _loading.Token;
+        _viewportLoading = CancellationTokenSource.CreateLinkedTokenSource(_loading.Token);
+        var viewport = _viewportLoading;
+        var token = viewport.Token;
         var presentation = _snapshot.Presentation;
         try
         {
             foreach (var item in VisibleItems().OrderBy(item => Math.Abs(item.Slide.Index - (_snapshot.Slide?.Index ?? 1))).ToArray())
             {
                 token.ThrowIfCancellationRequested();
-                if (!item.Dirty && item.Preview is not null) continue;
+                if (!item.NeedsPreview) continue;
                 int revision = item.Revision;
                 try
                 {
-                    byte[] data = await _images.GetImageAsync(presentation, item.Slide.SlideId, token);
+                    var page = await _images.GetPageAsync(presentation, item.Slide.Index, token);
                     token.ThrowIfCancellationRequested();
                     if (!VisibleItems().Contains(item)) continue;
-                    var ink = _context.CaptureInk(presentation, item.Slide.SlideId);
-                    var bitmap = await RenderThumbnailAsync(presentation, data, ink, token);
+                    item.Slide = page.Slide;
+                    using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    deadline.CancelAfter(TimeSpan.FromMilliseconds(1500));
+                    BitmapImage bitmap;
+                    try
+                    {
+                        var ink = await _context.CaptureInk(presentation, item.Slide.SlideId, deadline.Token).WaitAsync(deadline.Token);
+                        bitmap = await RenderThumbnailAsync(presentation, page.Image, ink, deadline.Token).WaitAsync(deadline.Token);
+                    }
+                    catch (OperationCanceledException) when (!token.IsCancellationRequested) { throw new TimeoutException(); }
                     token.ThrowIfCancellationRequested();
                     if (item.Revision != revision || !VisibleItems().Contains(item)) continue;
                     item.Preview = bitmap; item.Status = ""; item.Dirty = false; item.LastUsed = ++_clock;
@@ -280,7 +297,8 @@ internal sealed class PptPageNavigator : UserControl, IDisposable
                         expired.Preview = null;
                 }
                 catch (OperationCanceledException) { throw; }
-                catch { item.Status = "预览暂不可用"; item.Dirty = false; }
+                catch (TimeoutException) { item.Status = "预览超时，已跳过"; item.Dirty = false; item.Failed = true; }
+                catch { item.Status = "预览暂不可用"; item.Dirty = false; item.Failed = true; }
                 await Task.Delay(8, token);
             }
         }
@@ -288,7 +306,9 @@ internal sealed class PptPageNavigator : UserControl, IDisposable
         finally
         {
             _rendering = false;
-            if (_open && VisibleItems().Any(item => item.Dirty)) Schedule();
+            if (ReferenceEquals(_viewportLoading, viewport)) _viewportLoading = null;
+            viewport.Dispose();
+            if (_open && VisibleItems().Any(item => item.NeedsPreview)) Schedule();
         }
     }
 
@@ -297,34 +317,39 @@ internal sealed class PptPageNavigator : UserControl, IDisposable
     {
         byte[] pixels = await Task.Run(async () =>
         {
-            using var memory = new MemoryStream(source, writable: false);
-            using var stream = memory.AsRandomAccessStream();
-            using var image = await CanvasBitmap.LoadAsync(CanvasDevice.GetSharedDevice(), stream).AsTask(token);
-            using var target = new CanvasRenderTarget(image.Device, 384, 216, 96);
-            float slideWidth = presentation.SlideWidth > 0 ? (float)presentation.SlideWidth : (float)image.Size.Width;
-            float slideHeight = presentation.SlideHeight > 0 ? (float)presentation.SlideHeight : (float)image.Size.Height;
-            float scale = MathF.Min(384 / slideWidth, 216 / slideHeight);
-            float width = slideWidth * scale, height = slideHeight * scale;
-            float left = (384 - width) / 2, top = (216 - height) / 2;
-            using (var drawing = target.CreateDrawingSession())
+            await CompositionGate.WaitAsync(token);
+            try
             {
-                drawing.Clear(Microsoft.UI.Colors.Transparent);
-                drawing.DrawImage(image, new Windows.Foundation.Rect(left, top, width, height));
-                using var clip = drawing.CreateLayer(1, new Windows.Foundation.Rect(left, top, width, height));
-                using var strokes = new StrokeRenderer();
-                var transform = ink.WorldToSlide * Matrix3x2.CreateScale(scale) * Matrix3x2.CreateTranslation(left, top);
-                foreach (var stroke in ink.Strokes.OrderBy(stroke => stroke.LayerOrder ?? long.MaxValue))
+                using var memory = new MemoryStream(source, writable: false);
+                using var stream = memory.AsRandomAccessStream();
+                using var image = await CanvasBitmap.LoadAsync(CanvasDevice.GetSharedDevice(), stream).AsTask(token);
+                using var target = new CanvasRenderTarget(image.Device, 384, 216, 96);
+                float slideWidth = presentation.SlideWidth > 0 ? (float)presentation.SlideWidth : (float)image.Size.Width;
+                float slideHeight = presentation.SlideHeight > 0 ? (float)presentation.SlideHeight : (float)image.Size.Height;
+                float scale = MathF.Min(384 / slideWidth, 216 / slideHeight);
+                float width = slideWidth * scale, height = slideHeight * scale;
+                float left = (384 - width) / 2, top = (216 - height) / 2;
+                using (var drawing = target.CreateDrawingSession())
                 {
-                    token.ThrowIfCancellationRequested();
-                    strokes.Draw(drawing, stroke, transform);
+                    drawing.Clear(Microsoft.UI.Colors.Transparent);
+                    drawing.DrawImage(image, new Windows.Foundation.Rect(left, top, width, height));
+                    using var clip = drawing.CreateLayer(1, new Windows.Foundation.Rect(left, top, width, height));
+                    using var strokes = new StrokeRenderer();
+                    var transform = ink.WorldToSlide * Matrix3x2.CreateScale(scale) * Matrix3x2.CreateTranslation(left, top);
+                    foreach (var stroke in ink.Strokes.OrderBy(stroke => stroke.LayerOrder ?? long.MaxValue))
+                    {
+                        token.ThrowIfCancellationRequested();
+                        strokes.Draw(drawing, stroke, transform);
+                    }
                 }
+                using var output = new InMemoryRandomAccessStream();
+                await target.SaveAsync(output, CanvasBitmapFileFormat.Png).AsTask(token); output.Seek(0);
+                var data = new byte[checked((int)output.Size)];
+                using var reader = new DataReader(output);
+                await reader.LoadAsync((uint)data.Length).AsTask(token); reader.ReadBytes(data);
+                return data;
             }
-            using var output = new InMemoryRandomAccessStream();
-            await target.SaveAsync(output, CanvasBitmapFileFormat.Png).AsTask(token); output.Seek(0);
-            var data = new byte[checked((int)output.Size)];
-            using var reader = new DataReader(output);
-            await reader.LoadAsync((uint)data.Length).AsTask(token); reader.ReadBytes(data);
-            return data;
+            finally { CompositionGate.Release(); }
         }, token);
         token.ThrowIfCancellationRequested();
         using var encoded = new MemoryStream(pixels, writable: false);
@@ -347,7 +372,13 @@ internal sealed class PptPageNavigator : UserControl, IDisposable
         }
     }
 
-    private void OnScrollChanged(object sender, ScrollViewerViewChangedEventArgs args) => Schedule();
+    private void CancelViewport() => _viewportLoading?.Cancel();
+
+    private void OnScrollChanged(object sender, ScrollViewerViewChangedEventArgs args)
+    {
+        CancelViewport();
+        Schedule();
+    }
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
     {

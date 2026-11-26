@@ -29,7 +29,8 @@ public sealed class AssistantWorkspace
         {
             if (chat is null || chat.Turns is null || chat.DraftAttachments is null || chat.Title is null
                 || chat.Draft is null || chat.Summary is null || chat.SummarizedTurns < 0 || chat.SummarizedTurns > chat.Turns.Count
-                || chat.Turns.Any(turn => turn is null || turn.Attachments is null || turn.Tools is null || turn.Question is null || turn.Answer is null))
+                || chat.Turns.Any(turn => turn is null || turn.Attachments is null || turn.Tools is null || turn.Question is null || turn.Answer is null
+                    || turn.SummarizedTools < 0 || turn.SummarizedTools > turn.Tools.Count))
                 throw new InvalidDataException("对话记录不完整。");
             foreach (var turn in chat.Turns.Where(turn => turn.State == "running")) turn.State = "stopped";
         }

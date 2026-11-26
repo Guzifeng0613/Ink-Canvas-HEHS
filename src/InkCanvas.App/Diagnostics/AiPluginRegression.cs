@@ -135,17 +135,30 @@ internal static class AiPluginRegression
             for (int index = 0; index < 300; index++)
             {
                 var turn = Activator.CreateInstance(turnType); turnType.GetProperty("Question").SetValue(turn, "课堂讨论 " + index);
-                turnType.GetProperty("Answer").SetValue(turn, string.Concat(Enumerable.Repeat("围绕目标设计活动，并记录课堂反馈。", 12))); turnType.GetProperty("State").SetValue(turn, "done"); turns.Add(turn);
+                turnType.GetProperty("Answer").SetValue(turn, string.Concat(Enumerable.Repeat("围绕目标设计活动，并记录课堂反馈。", 36))); turnType.GetProperty("State").SetValue(turn, "done"); turns.Add(turn);
             }
             window.GetType().GetMethod("SetWorkspace").Invoke(window, new[] { workspace }); await Task.Delay(250);
             var list = Descendants(frame).OfType<ListView>().Single();
             Check("long history realizes a bounded number of cards", list.Items.Count > 300 && Descendants(list).Count(item => item.GetType().Name == "AssistantChatCard") < 50);
             list.ScrollIntoView(list.Items[0]); await Task.Delay(100); list.ScrollIntoView(list.Items[^1]); await Task.Delay(100);
             Check("recycled cards display the latest record", Descendants(list).OfType<TextBlock>().Any(text => text.Text == "课堂讨论 299"));
+            behavior.Children.OfType<ToggleSwitch>().Single().IsOn = true;
             int before = turns.Count;
             input.Text = "依据历史安排下一节课"; Invoke(FindButton(frame, "发送 (Enter)")); await Wait(() => State(window) == "done");
             Check("automatic compaction preserves full visible history", (int)chat.GetType().GetProperty("SummarizedTurns").GetValue(chat) > 0
                 && turns.Count == before + 1 && server.Compactions > 0);
+            using (var toolRegistration = services.AssistantTools.Register(new("diagnostic_context_data", "读取诊断上下文资料", AssistantPlugin.EmptyParameters)
+                { ReadOnly = true }, (_, token) => { token.ThrowIfCancellationRequested(); return Task.FromResult(new AssistantToolResult(new string('文', 14000))); }))
+            {
+                server.ToolLoopRemaining = 28;
+                input.Text = "读取多批资料并继续完成教学计划"; Invoke(FindButton(frame, "发送 (Enter)")); await Wait(() => State(window) == "done");
+                var toolTurn = LastTurn(window);
+                var toolRecords = (System.Collections.IList)toolTurn.GetType().GetProperty("Tools").GetValue(toolTurn);
+                Check("running agent compacts completed tool exchanges and continues", toolRecords.Count == 28
+                    && (int)toolTurn.GetType().GetProperty("SummarizedTools").GetValue(toolTurn) > 0
+                    && !string.IsNullOrEmpty((string)toolTurn.GetType().GetProperty("ToolSummary").GetValue(toolTurn)));
+                Check("tool compaction retains original results", toolRecords.Cast<object>().All(record => ((string)record.GetType().GetProperty("Result").GetValue(record)).Length == 14000));
+            }
             window.Close();
             services.Modules.Invoke<IAiAssistantService>(_ => throw new InvalidOperationException("diagnostic stop"));
             var withoutPlugin = new Features.Board.BoardService();
@@ -198,7 +211,7 @@ internal static class AiPluginRegression
     {
         private readonly HttpListener _listener = new();
         public string Address { get; }
-        public int Posts, ToolResults, Fallbacks, Compactions;
+        public int Posts, ToolResults, Fallbacks, Compactions, ToolLoopRemaining;
         public bool TeacherPrompt, ImageReceived, FileTextReceived, RejectExtendedNext, DelayNext, LastHadTools;
         public FixtureServer()
         {
@@ -238,6 +251,12 @@ internal static class AiPluginRegression
                     bool tool = Posts == 1;
                     string packet = tool ? """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"board_page","arguments":"{\"action\":\"add\"}"}}]}}]}"""
                         : """{"choices":[{"delta":{"content":"## 备课建议\n结合课程目标安排小组讨论，并记录课堂反馈。"}}]}""";
+                    if (ToolLoopRemaining > 0)
+                    {
+                        ToolLoopRemaining--;
+                        packet = JsonSerializer.Serialize(new { choices = new[] { new { delta = new { tool_calls = new[] { new
+                        { index = 0, id = "context_" + ToolLoopRemaining, type = "function", function = new { name = "diagnostic_context_data", arguments = "{}" } } } } } } });
+                    }
                     byte[] bytes = Encoding.UTF8.GetBytes("data: " + packet + "\n\ndata: [DONE]\n\n");
                     context.Response.ContentType = "text/event-stream"; context.Response.ContentLength64 = bytes.Length;
                     try { await context.Response.OutputStream.WriteAsync(bytes); context.Response.Close(); }

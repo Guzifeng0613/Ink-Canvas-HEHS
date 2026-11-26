@@ -11,8 +11,8 @@ internal sealed record PptSlidePreviewInk(IReadOnlyList<InkStroke> Strokes, Matr
 
 internal sealed record PptPreviewContext(
     Func<PptSlidePreviewSource> Images,
-    Func<PptPresentationInfo, int, PptSlidePreviewInk> CaptureInk,
-    Func<PptPresentationInfo, int, bool> Navigate,
+    Func<PptPresentationInfo, int, CancellationToken, Task<PptSlidePreviewInk>> CaptureInk,
+    Func<PptPresentationInfo, PptSlideInfo, bool> Navigate,
     Action<PptNavigationWindow> Opening,
     InkCanvas.Ink.InkController Controller);
 
@@ -28,7 +28,7 @@ public sealed partial class ShellController
                 if (!ReferenceEquals(window, current)) window.SetPreviewOpen(false);
         }, Services.OverlayInk);
 
-    private PptSlidePreviewInk CapturePptPreviewInk(PptPresentationInfo presentation, int slideId)
+    private async Task<PptSlidePreviewInk> CapturePptPreviewInk(PptPresentationInfo presentation, int slideId, CancellationToken token)
     {
         var snapshot = _pptSession.Snapshot;
         if (snapshot.Presentation?.Identity != presentation.Identity)
@@ -46,10 +46,10 @@ public sealed partial class ShellController
         float top = (float)(area.Y + (area.Height - presentation.SlideHeight * scale) / 2);
         var worldToSlide = Services.OverlayInk.ViewTransform * Matrix3x2.CreateScale((float)Overlay.Window.DpiScale)
             * Matrix3x2.CreateTranslation(Overlay.Window.X - left, Overlay.Window.Y - top) * Matrix3x2.CreateScale((float)(1 / scale));
-        return new(_pptSession.CaptureSlideInk(slideId), worldToSlide);
+        return new(await _pptSession.CaptureSlideInkAsync(slideId, token), worldToSlide);
     }
 
-    private bool NavigatePptPreview(PptPresentationInfo presentation, int slideId)
+    private bool NavigatePptPreview(PptPresentationInfo presentation, PptSlideInfo slide)
     {
         if (!_lastSlideShowState || Services.OverlayInk.HasActiveInteraction
             || _pptSession.Snapshot.Presentation?.Identity != presentation.Identity) return false;
@@ -60,7 +60,7 @@ public sealed partial class ShellController
             _pptCaptureGeneration = _pptGate.NextGeneration();
             _pptCaptureSession = _pptGate.Session;
             _ = SaveScreenArchiveAsync("PPT 翻页前存档");
-            bool moved = _pptSession.GoToSlideId(slideId);
+            bool moved = slide.SlideId > 0 ? _pptSession.GoToSlideId(slide.SlideId) : _pptSession.GoToSlide(slide.Index);
             if (moved) _pptGuard.SuppressExternal(now);
             QueuePresentationRefresh();
             return moved;

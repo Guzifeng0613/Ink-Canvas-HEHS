@@ -55,3 +55,8 @@ Ink Canvas 从 `QiXinia/Ink-Canvas-HEHS` 的 GitHub Releases 获取公开稳定�
 以 GitHub 仓库发布的 `v3.5.0` 真实 ZIP 在隔离目录执行了完整流程，涵盖版本列表识别、GitHub 下载和 SHA256 校验、GitHub 断连后的镜像列表及 ZIP 下载、ZIP 暂存、外部辅助进程替换、用户插件和 `.icink` 保留，以及更新后程序启动。镜像访问在部分轮次返回 403 或出现 TLS/连接超时，成功轮次的真实包已通过 SHA256 校验。
 
 2026-11-20 更换镜像后的验收使用仓库 `v3.7.1` 的真实更新包，大小为 42,431,373 字节。GitHub 官方源下载及屏蔽 GitHub 直连后的 `ghfile.geekertao.top` 镜像下载均通过 SHA256 校验，校验值为 `2f5c28a052d39bf6d1f4c83625f25e511abfe9f20f8ebdf3499cdcca57b85d7a`。屏蔽直连时，版本 API 在前两个镜像失败后继续从 `gh-proxy.com` 获取列表。单元测试共 775 项通过，覆盖默认源顺序、API 与页面回退、仅附件镜像、主动取消，以及底层流不响应取消时的超时切源。
+
+
+## MSI 安装版更新
+
+从 3.10.0 起，Release 同时提供 MSI 和 ZIP。程序检测安装目录的 .inkcanvas-msi 标记，安装版仅选择匹配版本的 MSI，便携版选择 ZIP。MSI 在下载及暂存时核对 SHA256，并校验产品名称、稳定 UpgradeCode、安装范围和版本。退出前保存画布，辅助进程等待主程序结束后调用 Windows Installer 执行无重启升级。Windows Installer 的事务处理负责文件回滚，结果和日志写入当前更新暂存目录。安装说明见 INSTALLATION.md。

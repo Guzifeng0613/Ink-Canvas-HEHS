@@ -14,7 +14,8 @@ public static partial class ExtensionFeed
     public static readonly IReadOnlyDictionary<string, (string Name, string Description, RepositoryExtensionKind Kind)> Known =
         new Dictionary<string, (string, string, RepositoryExtensionKind)>(StringComparer.Ordinal)
         {
-            ["inkcanvas.ai-assistant"] = ("AI 助教", "选区识别、分步讲解与画布联动", RepositoryExtensionKind.Module),
+            ["inkcanvas.ai-assistant"] = ("AI 助手", "教师通用助手、附件、多会话与工具调用", RepositoryExtensionKind.Module),
+            ["inkcanvas.mcp"] = ("MCP 工具连接", "连接外部 MCP 服务并共享应用与插件工具", RepositoryExtensionKind.Module),
             ["inkcanvas.cloud-sync"] = ("云同步", "账号登录、白板云端备份和个人偏好同步", RepositoryExtensionKind.Module),
             ["inkcanvas.pdf"] = ("PDF 阅读与批注", "原生 PDF 阅读、搜索与墨迹保存", RepositoryExtensionKind.Module),
             ["inkcanvas.analytic-geometry"] = ("解析几何", "代数计算与二维、三维几何作图", RepositoryExtensionKind.Module),

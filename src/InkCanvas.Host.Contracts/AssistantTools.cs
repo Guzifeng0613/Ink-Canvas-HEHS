@@ -12,7 +12,9 @@ public sealed record AssistantToolDefinition(string Name, string Description, st
 public sealed record AssistantToolResult(string Text, byte[] Image = null)
 {
     public bool IsError { get; init; }
+    public IReadOnlyList<AssistantToolImage> Images { get; init; } = Array.Empty<AssistantToolImage>();
 }
+public sealed record AssistantToolImage(byte[] Data, string MimeType = "image/png");
 public sealed record AssistantContextSection(string Owner, string Text);
 
 /// <summary>Native capabilities available to the assistant. Plugins can contribute tools through this registry.</summary>

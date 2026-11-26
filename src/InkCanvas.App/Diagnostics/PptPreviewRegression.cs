@@ -25,10 +25,12 @@ internal static class PptPreviewRegression
     {
         Directory.CreateDirectory(directory);
         var checks = new List<object>();
+        string pagesArgument = Environment.GetCommandLineArgs().FirstOrDefault(arg => arg.StartsWith("--pptpreviewpages=", StringComparison.Ordinal));
+        int pageCount = pagesArgument is null ? 48 : int.Parse(pagesArgument["--pptpreviewpages=".Length..]);
         using var services = new AppServices(Path.Combine(directory, "settings"));
         services.Settings.Startup.IsAutoUpdate = false;
         services.Settings.PowerPoint.PowerPointSupport = false;
-        services.Settings.PowerPoint.IsNotifyHiddenPage = false;
+        services.Settings.PowerPoint.IsNotifyHiddenPage = pageCount > 200;
         services.Settings.PowerPoint.IsNotifyPreviousPage = false;
         services.Settings.PowerPoint.IsNotifyAutoPlayPresentation = false;
         services.Settings.PowerPoint.IsAutoSaveScreenShotInPowerPoint = false;
@@ -50,7 +52,8 @@ internal static class PptPreviewRegression
             presentation = Own((object)presentations.Add(-1));
             dynamic document = presentation;
             dynamic slides = Own((object)document.Slides);
-            for (int index = 1; index <= 48; index++)
+            var creation = Stopwatch.StartNew();
+            for (int index = 1; index <= pageCount; index++)
             {
                 dynamic slide = Own((object)slides.Add(index, 12));
                 dynamic shapes = Own((object)slide.Shapes);
@@ -58,7 +61,13 @@ internal static class PptPreviewRegression
                 dynamic fill = Own((object)box.Fill);
                 dynamic color = Own((object)fill.ForeColor);
                 color.RGB = index % 2 == 0 ? 0xDDBB77 : 0x77BBDD;
+                if (index % 100 == 0)
+                {
+                    File.AppendAllText(Path.Combine(directory, "progress.log"), $"Created {index}/{pageCount} slides{Environment.NewLine}");
+                    await Task.Delay(1);
+                }
             }
+            Check("large deck created", (int)slides.Count == pageCount, new { pageCount, elapsedMs = creation.ElapsedMilliseconds });
             document.SaveAs(Path.Combine(Path.GetFullPath(directory), "preview-test.pptx"), 24);
             dynamic settings = Own((object)document.SlideShowSettings);
             settings.AdvanceMode = 1;
@@ -118,7 +127,7 @@ internal static class PptPreviewRegression
                     Invoke(counter);
                     double openMs = opening.Elapsed.TotalMilliseconds;
                     await Until(() => navigation.Preview?.CachedThumbnailCount >= 2);
-                    Check("counter opens own bounded slide preview", navigation.PreviewOpen && navigation.Preview.ItemCount == 48
+                    Check("counter opens own bounded slide preview", navigation.PreviewOpen && navigation.Preview.ItemCount == pageCount
                         && navigation.Preview.CachedThumbnailCount <= 24 && Math.Abs(navigation.PreviewSurface.ActualWidth - BoardPageNavigator.SidebarWidth) <= 1,
                         new { showType, navigation.Placement, openMs, cached = navigation.Preview.CachedThumbnailCount });
                     Check("preview export preserves current slide and ink", services.Ppt.Snapshot.Slide.Index == 2 && live.Document.Count == 1,
@@ -142,6 +151,25 @@ internal static class PptPreviewRegression
                             new { overviewBounds, area });
                         await BoardWindowRegression.SaveVisual((FrameworkElement)navigation.Content, Path.Combine(directory, $"overview-{showType}.png"));
                         navigation.Preview.SetOverview(false);
+                        if (pageCount > 200)
+                        {
+                            int exportsBeforeScroll = navigation.Preview.ExportCount;
+                            for (int step = 1; step <= 12; step++)
+                            {
+                                int index = (pageCount - 1) * step / 12;
+                                navigation.Preview.List.ScrollIntoView(navigation.Preview.List.Items[index]);
+                                await Task.Delay(30);
+                            }
+                            var last = (PptPageThumbnail)navigation.Preview.List.Items[pageCount - 1];
+                            await Until(() => last.Preview is not null);
+                            Check("rapid scrolling loads final visible page on demand", last.Slide.Index == pageCount && last.Slide.SlideId > 0
+                                && navigation.Preview.ExportCount - exportsBeforeScroll < 24,
+                                new { pageCount, exports = navigation.Preview.ExportCount - exportsBeforeScroll });
+                            Check("large preview caches stay bounded", navigation.Preview.CachedSourceCount <= 32
+                                && navigation.Preview.CachedSourceBytes <= 16 * 1024 * 1024 && navigation.Preview.CachedThumbnailCount <= 24,
+                                new { navigation.Preview.CachedSourceCount, navigation.Preview.CachedSourceBytes, navigation.Preview.CachedThumbnailCount });
+                            Check("far page preview preserves active slide and ink", services.Ppt.Snapshot.Slide.Index == 2 && live.Document.Count == 1);
+                        }
                     }
                     Invoke(counter);
                     await Task.Delay(300);
@@ -214,12 +242,17 @@ internal static class PptPreviewRegression
     private static async Task<bool> HasRedPixels(FrameworkElement root, ImageSource source)
     {
         var image = Descendants(root).OfType<Image>().Single(item => ReferenceEquals(item.Source, source));
-        var bitmap = new RenderTargetBitmap(); await bitmap.RenderAsync(image);
-        var buffer = await bitmap.GetPixelsAsync();
-        using var reader = DataReader.FromBuffer(buffer);
-        var pixels = new byte[buffer.Length]; reader.ReadBytes(pixels);
-        for (int index = 0; index < pixels.Length; index += 4)
-            if (pixels[index + 2] > 170 && pixels[index + 1] < 80 && pixels[index] < 80) return true;
+        for (int attempt = 0; attempt < 25; attempt++)
+        {
+            // ImageSource assignment can precede the frame that uploads its decoded pixels.
+            await Task.Delay(40);
+            var bitmap = new RenderTargetBitmap(); await bitmap.RenderAsync(image);
+            var buffer = await bitmap.GetPixelsAsync();
+            using var reader = DataReader.FromBuffer(buffer);
+            var pixels = new byte[buffer.Length]; reader.ReadBytes(pixels);
+            for (int index = 0; index < pixels.Length; index += 4)
+                if (pixels[index + 2] > 170 && pixels[index + 1] < 80 && pixels[index] < 80) return true;
+        }
         return false;
     }
 

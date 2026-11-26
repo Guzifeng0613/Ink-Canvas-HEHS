@@ -2037,10 +2037,33 @@ public sealed partial class ShellController : IShellActions, IDisposable
         if (entry is not null) Assistant?.Review(slideId, entry.Index, entry.AnimationStep, entry.Text);
     }
 
-    /// <summary>每 2 秒按当前页序重建索引；收藏/AI 标记从 sidecar 与内存保留。</summary>
+    /// <summary>Keep the current slide current, reading a full inventory only while the legacy index is visible.</summary>
     private void RefreshSlideIndex(PptSnapshot snapshot)
     {
         if (snapshot?.IsSlideShowRunning != true || snapshot.Presentation is null) return;
+
+        if (_slideIndex?.Identity != snapshot.Presentation.Identity)
+        {
+            _slideIndex = LoadSlideIndexSidecar(snapshot.Presentation) ?? new SlideContentIndex();
+            _slideIndex.Identity = snapshot.Presentation.Identity;
+            _slideIndex.Name = snapshot.Presentation.Name;
+        }
+        int currentSlideId = snapshot.Slide?.SlideId ?? 0;
+        int animationStep = Services.Ppt.GetAnimationStep();
+        if (snapshot.Slide is { } activeSlide)
+        {
+            var active = _slideIndex.Find(activeSlide.SlideId);
+            if (active is null)
+            {
+                active = new SlideContentEntry { SlideId = activeSlide.SlideId, Index = activeSlide.Index, Name = activeSlide.Name };
+                _slideIndex.Slides.Add(active);
+            }
+            active.Index = activeSlide.Index;
+            active.HasInk = Services.OverlayInk.Document.Count > 0;
+            active.InkStrokeCount = Services.OverlayInk.Document.Count;
+            active.AnimationStep = animationStep;
+        }
+        if (_slideNav?.IsVisible != true) return;
 
         DateTime now = DateTime.UtcNow;
         if (now - _lastSlideIndexRefreshUtc < TimeSpan.FromSeconds(2)) return;
@@ -2054,7 +2077,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
             SlideContentIndex sidecar = LoadSlideIndexSidecar(details.Presentation);
             SlideContentIndex previous = sidecar ?? _slideIndex;
             _slideIndex = SlideContentIndex.Build(
-                details, _pptSession.CreateArchive(), previous,
+                details, _pptSession.CreateIndexArchive(), previous,
                 DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
 
             string directory = _pptStore.GetPresentationDirectory(details.Presentation);
@@ -2065,8 +2088,6 @@ public sealed partial class ShellController : IShellActions, IDisposable
                 if (File.Exists(thumb)) entry.ThumbnailPath = thumb;
             }
 
-            int currentSlideId = snapshot.Slide?.SlideId ?? 0;
-            int animationStep = Services.Ppt.GetAnimationStep();
             SlideContentEntry current = _slideIndex.Find(currentSlideId);
             if (current is not null && string.IsNullOrEmpty(current.Text))
             {
