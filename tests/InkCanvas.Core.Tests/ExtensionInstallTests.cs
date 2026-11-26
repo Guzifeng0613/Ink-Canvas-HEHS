@@ -154,17 +154,21 @@ public sealed class ExtensionInstallTests : IDisposable
         Assert.Empty(restarted.Pending); Assert.True(Assert.Single(restarted.Results).Success);
     }
 
-    [Fact]
-    public void CatalogPicksHighestPluginVersionAndSkipsDraftsAndForeignLinks()
+    [Theory]
+    [InlineData(Id, RepositoryExtensionKind.Module)]
+    [InlineData("inkcanvas.stylus", RepositoryExtensionKind.Module)]
+    public void CatalogPicksHighestPluginVersionAndSkipsDraftsAndForeignLinks(string id, RepositoryExtensionKind kind)
     {
         object Item(string tag, string version, bool draft = false, string origin = "github.com") => new
         {
-            tag_name = tag, draft, prerelease = false, assets = new[] { new { name = $"{Id}-{version}.zip",
-                browser_download_url = $"https://{origin}/{Repo}/releases/download/{tag}/{Id}-{version}.zip", size = 12, digest = "sha256:" + new string('a',64) } },
+            tag_name = tag, draft, prerelease = false, assets = new[] { new { name = $"{id}-{version}.zip",
+                browser_download_url = $"https://{origin}/{Repo}/releases/download/{tag}/{id}-{version}.zip", size = 12, digest = "sha256:" + new string('a',64) } },
         };
         string json = JsonSerializer.Serialize(new[] { Item("v3.7.0", "1.0.0"), Item("v3.8.0", "1.2.0"),
             Item("v3.9.0", "9.0.0", true), Item("v3.9.0", "8.0.0", origin: "example.com") });
         var release = Assert.Single(ExtensionFeed.Parse(json, Repo));
+        Assert.Equal(id, release.Id);
+        Assert.Equal(kind, release.Kind);
         Assert.Equal("1.2.0", release.Version); Assert.Equal("v3.8.0", release.ReleaseTag);
     }
 
