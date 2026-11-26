@@ -16,7 +16,7 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>false</SelfContained>
     <ApplicationIcon>Assets\InkCanvas.ico</ApplicationIcon>
-    <Version>3.15.0</Version>
+    <Version>3.16.0</Version>
     <Product>Ink Canvas (WinUI 3)</Product>
     <IncludeScreenTrackingModule Condition="'$(IncludeScreenTrackingModule)' == ''">true</IncludeScreenTrackingModule>
     <IncludeAiAssistantModule Condition="'$(IncludeAiAssistantModule)' == ''">true</IncludeAiAssistantModule>
@@ -25,6 +25,7 @@
     <IncludeAnalyticGeometryModule Condition="'$(IncludeAnalyticGeometryModule)' == ''">true</IncludeAnalyticGeometryModule>
     <IncludeCloudSyncModule Condition="'$(IncludeCloudSyncModule)' == ''">true</IncludeCloudSyncModule>
     <IncludeStylusModule Condition="'$(IncludeStylusModule)' == ''">true</IncludeStylusModule>
+    <IncludeMcpModule Condition="'$(IncludeMcpModule)' == ''">true</IncludeMcpModule>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\InkCanvas.UpdateHost\InkCanvas.UpdateHost.csproj" ReferenceOutputAssembly="false" Private="false" />
@@ -52,6 +53,8 @@
     <ProjectReference Include="..\InkCanvas.Modules.CloudSync\InkCanvas.Modules.CloudSync.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeCloudSyncModule)' == 'true'" />
     <ProjectReference Include="..\InkCanvas.Modules.Stylus\InkCanvas.Modules.Stylus.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeStylusModule)' == 'true'" />
     <ProjectReference Include="..\InkCanvas.PluginHost\InkCanvas.PluginHost.csproj" ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\InkCanvas.Modules.Mcp\InkCanvas.Modules.Mcp.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeMcpModule)' == 'true'" />
+    <ProjectReference Include="..\InkCanvas.McpHost\InkCanvas.McpHost.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeMcpModule)' == 'true'" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Assets\**\*.*" Exclude="Assets\FluentSystemIcons*.ttf;Assets\SegoeMDL2Assets.ttf" CopyToOutputDirectory="PreserveNewest" />
@@ -94,6 +97,12 @@
     </ItemGroup>
     <Copy SourceFiles="@(_StylusFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.stylus\" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_StylusFiles)" DestinationFolder="$(PublishDir)Modules\inkcanvas.stylus\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
+    <ItemGroup Condition="'$(IncludeMcpModule)' == 'true'">
+      <_McpFiles Include="..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\InkCanvas.Modules.Mcp.dll;..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\InkCanvas.Modules.Mcp.deps.json;..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\ModelContextProtocol.Core.dll;..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\Microsoft.Extensions.AI.Abstractions.dll;..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\Microsoft.Extensions.Logging.Abstractions.dll;..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\Microsoft.Extensions.DependencyInjection.Abstractions.dll;..\InkCanvas.Modules.Mcp\module.json" />
+      <_McpFiles Include="..\InkCanvas.McpHost\bin\$(Platform)\$(Configuration)\net10.0\$(RuntimeIdentifier)\InkCanvas.McpHost.*" Exclude="..\InkCanvas.McpHost\bin\$(Platform)\$(Configuration)\net10.0\$(RuntimeIdentifier)\*.pdb" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_McpFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.mcp\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_McpFiles)" DestinationFolder="$(PublishDir)Modules\inkcanvas.mcp\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
     <ItemGroup Condition="'$(IncludeCloudSyncModule)' == 'true'">
       <_CloudSyncFiles Include="..\InkCanvas.Modules.CloudSync\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\InkCanvas.Modules.CloudSync.dll;..\InkCanvas.Modules.CloudSync\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\InkCanvas.Modules.CloudSync.deps.json;..\InkCanvas.Modules.CloudSync\module.json" />
     </ItemGroup>
