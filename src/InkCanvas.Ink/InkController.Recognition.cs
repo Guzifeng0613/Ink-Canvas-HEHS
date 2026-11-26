@@ -170,10 +170,12 @@ public sealed partial class InkController
     {
         if (!RecognitionOptions.AutoAlign) return end;
         var delta = end - start;
-        float angle = MathF.Atan2(delta.Y, delta.X);
+        var screenDelta = Vector2.TransformNormal(delta, ViewTransform);
+        float angle = MathF.Atan2(screenDelta.Y, screenDelta.X);
         float aligned = MathF.Round(angle / (MathF.PI / 4)) * MathF.PI / 4;
         if (MathF.Abs(angle - aligned) > Math.Clamp(RecognitionOptions.AlignmentAngle, 1, 12) * MathF.PI / 180) return end;
-        return start + new Vector2(MathF.Cos(aligned), MathF.Sin(aligned)) * delta.Length();
+        var snapped = new Vector2(MathF.Cos(aligned), MathF.Sin(aligned)) * screenDelta.Length();
+        return Matrix3x2.Invert(ViewTransform, out var inverse) ? start + Vector2.TransformNormal(snapped, inverse) : end;
     }
 
     private List<InkStroke> GenerateRecognized(RecognitionResult result, StrokeAttributes attrs)

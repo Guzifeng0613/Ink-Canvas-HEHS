@@ -413,7 +413,7 @@ public sealed class InkToShapeSettings
 {
     [JsonPropertyName("isInkToShapeEnabled")] public bool IsInkToShapeEnabled { get; set; } = true;
     public int HoldMilliseconds { get; set; } = 450;
-    public bool AutoAlign { get; set; } = true;
+    public bool AutoAlign { get; set; }
     public double AlignmentAngle { get; set; } = 5;
     public bool RecognizePolygons { get; set; } = true;
     public bool RecognizeRoundShapes { get; set; } = true;

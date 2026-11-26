@@ -38,6 +38,8 @@ public sealed partial class InkController : IDisposable
     public bool BeginPlayback()
     {
         EndPlayback();
+        CommitViewportFrame();
+        StopViewportMotion();
         FinishDotAnimations();
         HideEraserPreview();
         if (_live.Count > 0 || IsLassoErasing || _erasing) return false;
@@ -114,6 +116,8 @@ public sealed partial class InkController : IDisposable
     private readonly PalmRejector _palm = new();
     private readonly List<InkStroke> _recentForRecognition = new();
     private readonly Dictionary<uint, Vector2> _shapeDragStart = new();
+    private Matrix3x2 _worldToShape = Matrix3x2.Identity;
+    private Matrix3x2 _shapeToWorld = Matrix3x2.Identity;
     private List<InkStroke> _shapePreview = new();
 
     // Two-step shape state (Cuboid / Hyperbola, upstream drawMultiStepShape* / CuboidFrontRect*).
@@ -162,6 +166,8 @@ public sealed partial class InkController : IDisposable
         {
             EndPlayback();
             if (_tool == value) return;
+            CommitViewportFrame();
+            ResetViewportContacts();
             var previous = _tool;
             HideEraserPreview();
             _tool = value;
@@ -422,10 +428,18 @@ public sealed partial class InkController : IDisposable
         get => _viewTransform;
         set
         {
-            if (value.Equals(_viewTransform)) return;
-            _viewTransform = value;
-            ViewChanged?.Invoke(value);
+            _pendingViewport = null;
+            _viewportFramePending = false;
+            StopViewportMotion();
+            SetViewport(value);
         }
+    }
+
+    private void SetViewport(Matrix3x2 value)
+    {
+        if (value == _viewTransform) return;
+        _viewTransform = value;
+        ViewChanged?.Invoke(value);
     }
 
     /// <summary>视图缩放 / 平移变化（参数为最新的 <see cref="ViewTransform"/>），供板书录制使用。</summary>
@@ -464,9 +478,9 @@ public sealed partial class InkController : IDisposable
         _manipulator.MinScale = minimum;
         _manipulator.MaxScale = maximum;
     }
-    public bool IsViewManipulating => _panPointerId is not null
-        || TouchGesturesEnabled && PanZoomEnabled && Tool == InkTool.Pan && TryGetTouchPair(out _, out _)
-        || TouchGesturesEnabled && !_selectionGesture && !MultiTouchEnabled && TryGetTouchPair(out _, out _) && Tool is not (InkTool.Select or InkTool.Eraser);
+    public bool IsViewManipulating => _panPointerId is not null || IsTouchViewManipulating || IsViewportSettling
+        || TouchGesturesEnabled && !_selectionGesture && !MultiTouchEnabled
+            && TryGetTouchPair(out _, out _) && Tool is not (InkTool.Select or InkTool.Eraser);
 
     public Vector2 ViewCenter { get; set; } = new(960, 540);
 
@@ -616,6 +630,7 @@ public sealed partial class InkController : IDisposable
         Selection.Clear(); SelectedElements.Clear();
         IsMarqueeSelecting = false; MarqueeBounds = Rect.Empty;
         _marqueeInitialStrokes = null; _marqueeInitialElements = null;
+        ResetViewportContacts();
         _touches.Clear();
         SelectionChanged?.Invoke(); Invalidated?.Invoke();
     }
@@ -654,6 +669,8 @@ public sealed partial class InkController : IDisposable
     private void OnPointerDownCore(in OverlayPointer p)
     {
         if (Playback is not null) return;
+        CommitViewportFrame();
+        StopViewportMotion();
         if (_shapeEditPointer is not null) return;
         if (Tool == InkTool.Select && BeginShapeControlDrag(p)) return;
         _palm.OnDown(p);
@@ -663,6 +680,7 @@ public sealed partial class InkController : IDisposable
             foreach (var touch in _touches.Values)
                 if (touch.InputSurface == p.InputSurface) _suppressedTouches.Add(touch.Id);
             foreach (var id in _suppressedTouches) _touches.Remove(id);
+            ResetViewportContacts();
             _manipulator.Reset();
             if (_erasing && _palm.ActivePalms.Contains(_eraserPointerId)) EndErase();
         }
@@ -674,12 +692,14 @@ public sealed partial class InkController : IDisposable
             if (TouchGesturesEnabled && PanZoomEnabled && p.Kind == OverlayPointerKind.Touch)
             {
                 _touches[p.Id] = p;
-                if (_touches.Count >= 2 && TryGetTouchPair(out var a, out var b, p.InputSurface))
-                {
-                    _panPointerId = null;
-                    _manipulator.Begin(new(a.X, a.Y), new(b.X, b.Y));
-                    return;
-                }
+                if (BeginViewportPair(p.InputSurface, p.TimeMs) || _viewportGesture) return;
+                _viewportGesture = true;
+                _viewportSurface = p.InputSurface;
+                _viewportRemaining = p.Id;
+                _panPointerId = null;
+                _viewportAnchor = Position(p);
+                ResetViewportSamples(p.TimeMs);
+                return;
             }
             if (_panPointerId is null)
             {
@@ -773,10 +793,14 @@ public sealed partial class InkController : IDisposable
             if (TouchGesturesEnabled && !MultiTouchEnabled && TryGetTouchPair(out var a, out var b, p.InputSurface))
             {
                 CancelTouchInk(p.InputSurface);
-                _manipulator.Begin(new Vector2(a.X, a.Y), new Vector2(b.X, b.Y));
+                if (GesturesTargetSelection && Selection.Count > 0)
+                    _manipulator.Begin(ToWorld(a), ToWorld(b));
+                else
+                    BeginViewportPair(p.InputSurface, p.TimeMs);
                 Invalidated?.Invoke();
                 return;
             }
+            if (IsViewportSurface(p.InputSurface)) return;
         }
 
         switch (Tool)
@@ -790,11 +814,14 @@ public sealed partial class InkController : IDisposable
                 break;
 
             case InkTool.Shape:
-                // Hyperbola step 2 keeps iniP locked at the center (NeedUpdateIniP,
-                // upstream MW_ShapeDrawing.cs:1646-1653); the cuboid depth drag only uses endP.
-                _shapeDragStart[p.Id] = _shapeStep == 1 && ShapeGenerator.IsHyperbola(ShapeKind)
-                    ? _stepAnchor
-                    : world;
+                if (_shapeStep == 0 && _shapeDragStart.Count == 0)
+                {
+                    var view = ViewTransform;
+                    float angle = MathF.Atan2(view.M12, view.M11);
+                    _worldToShape = Matrix3x2.CreateRotation(angle);
+                    _shapeToWorld = Matrix3x2.CreateRotation(-angle);
+                }
+                _shapeDragStart[p.Id] = Vector2.Transform(world, _worldToShape);
                 break;
 
             default:
@@ -806,6 +833,13 @@ public sealed partial class InkController : IDisposable
     private void OnPointerMoveCore(in OverlayPointer p)
     {
         if (Playback is not null) return;
+        if (_touches.TryGetValue(p.Id, out var viewportPrevious)
+            && IsViewportContact(p.Id) && (Tool == InkTool.Pan || !MultiTouchEnabled))
+        {
+            _touches[p.Id] = p;
+            MoveViewportContact(p, viewportPrevious);
+            return;
+        }
         if (_shapeEditPointer is not null) { UpdateShapeControlDrag(p, false); return; }
         if (_suppressedTouches.Contains(p.Id)) return;
         _palm.OnMove(p);
@@ -919,7 +953,7 @@ public sealed partial class InkController : IDisposable
 
         if (Tool == InkTool.Shape && _shapeDragStart.TryGetValue(p.Id, out var start))
         {
-            _shapePreview = GenerateShapePreview(start, world);
+            _shapePreview = GenerateShapePreview(start, Vector2.Transform(world, _worldToShape));
             Invalidated?.Invoke();
             return;
         }
@@ -945,6 +979,7 @@ public sealed partial class InkController : IDisposable
     private void OnPointerUpCore(in OverlayPointer p, bool canceled)
     {
         if (Playback is not null) return;
+        if (ReleaseViewportContact(p, canceled)) { _palm.OnUp(p); return; }
         if (_shapeEditPointer is not null) { UpdateShapeControlDrag(p, true, canceled); return; }
         if (_suppressedTouches.Remove(p.Id)) { _palm.OnUp(p); return; }
         if (p.Kind == OverlayPointerKind.Touch) HideEraserPreview(p.Id);
@@ -1034,7 +1069,7 @@ public sealed partial class InkController : IDisposable
 
         if (Tool == InkTool.Shape && _shapeDragStart.Remove(p.Id, out var start))
         {
-            CommitShapeDrag(start, world);
+            CommitShapeDrag(start, Vector2.Transform(world, _worldToShape));
             return;
         }
 
@@ -1165,19 +1200,34 @@ public sealed partial class InkController : IDisposable
             if (ShapeGenerator.IsTwoStepSolid(ShapeKind))
             {
                 var offset = SolidOffset(start, end);
-                var screenOffset = Vector2.TransformNormal(offset, ViewTransform);
+                var screenOffset = Vector2.TransformNormal(offset, _shapeToWorld * ViewTransform);
                 return screenOffset.LengthSquared() < 9 ? new List<InkStroke>(_stepPending)
-                    : ShapeGenerator.GenerateSolid(ShapeKind, _stepAnchor, _stepSecond, offset, ShapeAttributes());
+                    : PlaceShape(ShapeGenerator.GenerateSolid(ShapeKind, _stepAnchor, _stepSecond, offset, ShapeAttributes()));
             }
             if (ShapeGenerator.IsHyperbola(ShapeKind))
             {
                 return _stepPending
-                    .Concat(ShapeGenerator.GenerateHyperbolaBranches(_stepAnchor, _stepK, end,
-                        ShapeGenerator.HasHyperbolaFoci(ShapeKind), ShapeAttributes()))
+                    .Concat(PlaceShape(ShapeGenerator.GenerateHyperbolaBranches(_stepAnchor, _stepK, end,
+                        ShapeGenerator.HasHyperbolaFoci(ShapeKind), ShapeAttributes())))
                     .ToList();
             }
         }
-        return ShapeGenerator.Generate(ShapeKind, start, end, ShapeAttributes());
+        return PlaceShape(ShapeGenerator.Generate(ShapeKind, start, end, ShapeAttributes()));
+    }
+
+    private List<InkStroke> PlaceShape(List<InkStroke> strokes)
+    {
+        if (_shapeToWorld.IsIdentity || strokes.Count == 0) return strokes;
+        var source = strokes[0].ShapeSource;
+        if (source?.Geometry is { } geometry)
+            source = ShapeSource.FromGeometry(source.GroupId, geometry.Transformed(_shapeToWorld));
+        foreach (var stroke in strokes)
+        {
+            stroke.ShapeSource = null;
+            stroke.Transform(_shapeToWorld, scaleWidth: false);
+            stroke.ShapeSource = source;
+        }
+        return strokes;
     }
 
     private Vector2 SolidOffset(Vector2 start, Vector2 end)
@@ -1199,7 +1249,7 @@ public sealed partial class InkController : IDisposable
                     _shapePreview.Clear(); Invalidated?.Invoke(); return;
                 }
                 // Hold the first face as preview until the signed depth/apex drag commits.
-                _stepPending = ShapeGenerator.Generate(kind, start, end, attrs);
+                _stepPending = PlaceShape(ShapeGenerator.Generate(kind, start, end, attrs));
                 _stepAnchor = new Vector2(MathF.Min(start.X, end.X), MathF.Min(start.Y, end.Y));
                 _stepSecond = new Vector2(MathF.Max(start.X, end.X), MathF.Max(start.Y, end.Y));
                 _shapeStep = 1;
@@ -1209,11 +1259,11 @@ public sealed partial class InkController : IDisposable
             }
             // The signed second drag places the opposite face. Commit all edges in one undo unit.
             var offset = SolidOffset(start, end);
-            if (Vector2.TransformNormal(offset, ViewTransform).LengthSquared() < 9)
+            if (Vector2.TransformNormal(offset, _shapeToWorld * ViewTransform).LengthSquared() < 9)
             {
                 _shapePreview = new List<InkStroke>(_stepPending); Invalidated?.Invoke(); return;
             }
-            var solid = ShapeGenerator.GenerateSolid(kind, _stepAnchor, _stepSecond, offset, attrs);
+            var solid = PlaceShape(ShapeGenerator.GenerateSolid(kind, _stepAnchor, _stepSecond, offset, attrs));
             if (solid.Count == 0) return;
             _stepPending = new List<InkStroke>();
             _shapeStep = 0;
@@ -1230,7 +1280,7 @@ public sealed partial class InkController : IDisposable
                 // Step 1: dashed asymptotes lock k=|dy/dx| (upstream:894-902,1550-1555).
                 var asymptotes = ShapeGenerator.Generate(kind, start, end, attrs);
                 if (asymptotes.Count == 0) { Invalidated?.Invoke(); return; } // degenerate drag: retry
-                _stepPending = asymptotes;
+                _stepPending = PlaceShape(asymptotes);
                 _stepK = MathF.Abs((end.Y - start.Y) / (end.X - start.X));
                 _stepAnchor = start;
                 _stepSecond = end;
@@ -1242,19 +1292,21 @@ public sealed partial class InkController : IDisposable
             var branches = ShapeGenerator.GenerateHyperbolaBranches(_stepAnchor, _stepK, end,
                 ShapeGenerator.HasHyperbolaFoci(kind), attrs);
             if (branches.Count == 0) { Invalidated?.Invoke(); return; }
+            PlaceShape(branches);
             var kept = _stepPending;
             _stepPending = new List<InkStroke>();
             _shapeStep = 0;
             _shapePreview.Clear();
             var hyperbola = ShapeGenerator.HasHyperbolaAsymptotes(kind) ? kept.Concat(branches).ToList() : branches;
             ShapeDefinition.Attach(hyperbola, new ShapeDefinition { Kind = kind, Construction = ShapeConstruction.Hyperbola,
+                Transform = ShapeDefinition.Write(_shapeToWorld),
                 Parameters = new[] { _stepAnchor.X, _stepAnchor.Y, _stepSecond.X, _stepSecond.Y, end.X, end.Y } });
             if (hyperbola.Count > 0) CommitStrokes(hyperbola, "shape");
             if (!StickyShape) Tool = InkTool.Pen;
             return;
         }
 
-        var shapes = ShapeGenerator.Generate(kind, start, end, attrs);
+        var shapes = PlaceShape(ShapeGenerator.Generate(kind, start, end, attrs));
         _shapePreview = new List<InkStroke>();
         if (shapes.Count > 0) CommitStrokes(shapes, "shape");
         Invalidated?.Invoke();
@@ -1995,6 +2047,12 @@ public sealed partial class InkController : IDisposable
     {
         EndPlayback(); Document.Changed -= OnPlaybackDocumentChanged;
         _panPointerId = null;
+        _pendingViewport = null;
+        _viewportFramePending = false;
+        _viewportVelocity = Vector2.Zero;
+        _springOffset = 0;
+        _viewportPair = null;
+        _viewportRemaining = null;
         _lassoPath.Clear(); IsLassoErasing = IsLassoSelecting = IsMarqueeSelecting = false;
         _live.Clear();
         ClearShapeHolds();

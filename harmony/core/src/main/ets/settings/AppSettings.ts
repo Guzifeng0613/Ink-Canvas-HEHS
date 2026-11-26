@@ -338,7 +338,7 @@ export function createDefaultSettings(): AppSettings {
     inkToShape: {
       isInkToShapeEnabled: true,
       HoldMilliseconds: 450,
-      AutoAlign: true,
+      AutoAlign: false,
       AlignmentAngle: 5,
       RecognizePolygons: true,
       RecognizeRoundShapes: true,

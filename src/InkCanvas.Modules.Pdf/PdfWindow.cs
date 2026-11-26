@@ -82,6 +82,7 @@ public sealed partial class PdfWindow : Window, IDocumentWorkspace
         Func<Task> open, Func<Task> import)
     {
         _host = host; _file = file; _rasterizer = rasterizer; _targetPath = file.SourcePath;
+        _ink.ViewportReleaseMotionEnabled = false;
         _paper.CustomDevice = rasterizer.Device;
         _layout = new PdfContinuousLayout(file.Pages);
         _pageRotations = new int[file.Pages.Count];

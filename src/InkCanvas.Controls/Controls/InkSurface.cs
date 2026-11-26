@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using InkCanvas.Ink;
 using InkCanvas.Ink.Rendering;
 using InkCanvas.Platform.Windows;
 using Microsoft.Graphics.Canvas.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 
 namespace InkCanvas.Controls.Controls;
 
@@ -27,6 +29,9 @@ public sealed class InkSurface : UserControl, IDisposable
     private bool _disposed;
     public bool IsRenderingSuspended { get; private set; }
     private bool _presentationPaused;
+    private bool _viewportFrameQueued;
+    private long _viewportFrameTime;
+    public bool ViewportReleaseMotionEnabled { get; set; } = true;
     /// <summary>Lets a document move a cached composition surface while retaining input and ink caches.</summary>
     public void PausePresentation(bool paused)
     {
@@ -76,6 +81,9 @@ public sealed class InkSurface : UserControl, IDisposable
             // board rebind never leaves the previous document driving redraws of this surface.
             if (_controller is not null)
             {
+                _controller.ViewportFrameRequested -= ScheduleViewportFrame;
+                CompositionTarget.Rendering -= RenderViewportFrame;
+                _viewportFrameQueued = false;
                 _dotClock?.Dispose();
                 _dotClock = null;
                 foreach (var sample in _activePointers.Values) _controller.OnPointerCanceled(sample);
@@ -93,6 +101,8 @@ public sealed class InkSurface : UserControl, IDisposable
             if (_controller is not null)
             {
                 _dotClock = new DotAnimationClock(_controller, OnInvalidated);
+                _controller.ViewportReleaseMotionEnabled = ViewportReleaseMotionEnabled;
+                _controller.ViewportFrameRequested += ScheduleViewportFrame;
                 _controller.Invalidated += OnInvalidated;
                 _controller.EraserPreviewChanged += OnInvalidated;
                 _controller.Document.Changed += OnDocumentChanged;
@@ -124,6 +134,24 @@ public sealed class InkSurface : UserControl, IDisposable
     // no dispatcher hop, no timer, and no redraw of an unchanged scene: CanvasControl only draws
     // when invalidated, never on a free-running loop.
     private void OnInvalidated() { if (!IsRenderingSuspended && !_presentationPaused) _canvas.Invalidate(); }
+
+    private void ScheduleViewportFrame()
+    {
+        if (_viewportFrameQueued || _disposed) return;
+        _viewportFrameQueued = true;
+        _viewportFrameTime = Stopwatch.GetTimestamp();
+        CompositionTarget.Rendering += RenderViewportFrame;
+    }
+
+    private void RenderViewportFrame(object sender, object args)
+    {
+        CompositionTarget.Rendering -= RenderViewportFrame;
+        _viewportFrameQueued = false;
+        if (_controller is null || _disposed) return;
+        long now = Stopwatch.GetTimestamp();
+        float elapsed = (float)Math.Clamp(Stopwatch.GetElapsedTime(_viewportFrameTime, now).TotalSeconds, 0, .05);
+        if (_controller.AdvanceViewportFrame(elapsed)) ScheduleViewportFrame();
+    }
 
     public void SuspendRendering()
     {
@@ -282,6 +310,8 @@ public sealed class InkSurface : UserControl, IDisposable
         _dotClock = null;
         if (_controller is not null)
         {
+            _controller.ViewportFrameRequested -= ScheduleViewportFrame;
+            CompositionTarget.Rendering -= RenderViewportFrame;
             foreach (var sample in _activePointers.Values) _controller.OnPointerCanceled(sample);
             _controller.HideEraserPreview();
             _controller.Invalidated -= OnInvalidated;

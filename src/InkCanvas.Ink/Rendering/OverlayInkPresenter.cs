@@ -4,6 +4,7 @@ using InkCanvas.Core.ScreenTracking;
 using InkCanvas.Core.Ink;
 using Microsoft.Graphics.Canvas;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml.Media;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices.WindowsRuntime;
@@ -61,6 +62,8 @@ public sealed class OverlayInkPresenter : IDisposable
     private bool _rendering;
     private bool _pending;
     private bool _attached;
+    private bool _viewportFrameQueued;
+    private long _viewportFrameTime;
     private ScreenInkClip _trackingClip;
     private bool _trackingSuppressed;
     private int _sceneUpdateDepth;
@@ -200,6 +203,8 @@ public sealed class OverlayInkPresenter : IDisposable
         _trackingTimer.Interval = TimeSpan.FromMilliseconds(16);
         _trackingTimer.Tick += OnScreenTrackingFrame;
         _dotClock = new DotAnimationClock(_controller, RequestRender);
+        _controller.ViewportReleaseMotionEnabled = true;
+        _controller.ViewportFrameRequested += ScheduleViewportFrame;
         _window.PointerDown += OnDown;
         _window.PointerMove += OnMove;
         _window.PointerUp += OnUp;
@@ -227,6 +232,9 @@ public sealed class OverlayInkPresenter : IDisposable
         _trackingTimer = null;
         _dotClock?.Dispose();
         _dotClock = null;
+        _controller.ViewportFrameRequested -= ScheduleViewportFrame;
+        CompositionTarget.Rendering -= RenderViewportFrame;
+        _viewportFrameQueued = false;
         _window.PointerDown -= OnDown;
         _window.PointerMove -= OnMove;
         _window.PointerUp -= OnUp;
@@ -241,6 +249,24 @@ public sealed class OverlayInkPresenter : IDisposable
         _controller.PlaybackChanged -= InvalidateCommitted;
         _controller.ElementsChanged -= OnElementsChanged;
         Scene.Images.Changed -= InvalidateImageContent;
+    }
+
+    private void ScheduleViewportFrame()
+    {
+        if (_viewportFrameQueued || !_attached) return;
+        _viewportFrameQueued = true;
+        _viewportFrameTime = Stopwatch.GetTimestamp();
+        CompositionTarget.Rendering += RenderViewportFrame;
+    }
+
+    private void RenderViewportFrame(object sender, object args)
+    {
+        CompositionTarget.Rendering -= RenderViewportFrame;
+        _viewportFrameQueued = false;
+        if (!_attached) return;
+        long now = Stopwatch.GetTimestamp();
+        float elapsed = (float)Math.Clamp(Stopwatch.GetElapsedTime(_viewportFrameTime, now).TotalSeconds, 0, .05);
+        if (_controller.AdvanceViewportFrame(elapsed)) ScheduleViewportFrame();
     }
 
     private void OnDown(OverlayPointer p)
