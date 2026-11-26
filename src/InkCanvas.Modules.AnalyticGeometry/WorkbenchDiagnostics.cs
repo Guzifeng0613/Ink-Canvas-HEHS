@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Text.Json;
 using InkCanvas.AnalyticGeometry.Algebra;
 using InkCanvas.AnalyticGeometry.Construction;
@@ -51,7 +52,7 @@ public static class WorkbenchDiagnostics
             Check("workbench fraction template selects its numerator", window.FormulaInput.Text == "h(x)=(□)/(□)" && window.FormulaInput.SelectedText == "□");
             window.Keyboard.SendKey("x"); window.Keyboard.SendKey("x²"); window.Keyboard.SendKey("⇥"); window.Keyboard.SendKey("2");
             await Task.Delay(200);
-            Check("workbench keyboard fills and navigates structural placeholders", window.FormulaInput.Text == "h(x)=(x^2)/(2)");
+            Check("workbench keyboard fills and navigates structural placeholders", window.FormulaInput.Text == "h(x)=(x^2)/(2)", window.FormulaInput.Text);
             Check("main plugin entry displays MathML before creating a shape", window.FormulaMathML?.Contains("mfrac", StringComparison.Ordinal) == true,
                 new { nativeRichEdit = window.FormulaUsesRichEdit });
             window.Execute(window.FormulaInput.Text); await window.CalculateAsync();
@@ -165,6 +166,24 @@ public static class WorkbenchDiagnostics
             }
             GeometryWorkbenchWindow.ExportPdf(Path.Combine(directory, "construction.pdf"), window.Document.State, window.Evaluation);
             Check("native vector PDF export", new FileInfo(Path.Combine(directory, "construction.pdf")).Length > 300);
+            await File.WriteAllTextAsync(Path.Combine(directory, "construction-pstricks.tex"),
+                ConstructionExport.Pstricks(window.Document.State, window.Evaluation));
+            var animation = window.Document.State with
+            {
+                Objects = window.Document.State.Objects.Select(item => item.Label == "a" ? item with { Animate = true } : item).ToList(),
+            };
+            string gifPath = Path.Combine(directory, "construction.gif");
+            await window.WriteAnimatedGifAsync(gifPath, animation);
+            using (var gif = File.OpenRead(gifPath).AsRandomAccessStream())
+            {
+                var decoder = await BitmapDecoder.CreateAsync(BitmapDecoder.GifDecoderId, gif);
+                var first = await decoder.GetFrameAsync(0);
+                var later = await decoder.GetFrameAsync(16);
+                var firstPixels = (await first.GetPixelDataAsync()).DetachPixelData();
+                var laterPixels = (await later.GetPixelDataAsync()).DetachPixelData();
+                Check("animated GIF contains 64 changing frames", decoder.FrameCount == 64
+                    && decoder.PixelWidth == 480 && decoder.PixelHeight == 360 && !firstPixels.SequenceEqual(laterPixels));
+            }
             await ScreenshotAsync(window, Path.Combine(directory, "workbench-2d.png"));
             window.Document.Load(new() { ThreeDimensional = true });
             window.Execute("g=Cube((-2,-2,-2),4);p=Plane((0,0,0),Vector((1,1,1)));c=Intersect(p,g)");
@@ -172,6 +191,71 @@ public static class WorkbenchDiagnostics
             Check("3D view renders solid and section", window.Evaluation.Values["c"].Paths.Count > 0);
             Check("3D mode button follows loaded construction", Descendants(window.Content).OfType<Controls.Controls.SegmentedSelector>().Any(selector => selector.SelectedIndex == 1));
             await ScreenshotAsync(window, Path.Combine(directory, "workbench-3d.png"));
+            window.Document.SetView(window.Document.State with { Perspective = true, Anaglyph = true });
+            await ScreenshotAsync(window, Path.Combine(directory, "workbench-anaglyph.png"));
+            window.Document.SetView(window.Document.State with { AnaglyphBlue = true });
+            await ScreenshotAsync(window, Path.Combine(directory, "workbench-anaglyph-blue.png"));
+            window.Document.Load(new());
+            window.Execute("a=0;A=(0,0);B=(2,0);M=Midpoint(A,B)");
+            await window.CalculateAsync();
+            window.Document.RegisterEvent("*", "OnRename", "js: if (eventTarget === 'P' && previousEventTarget === 'A') ggbApplet.setValue('a', 7);");
+            window.Execute("Rename(A,P)");
+            for (int attempt = 0; attempt < 20 && window.Document.State.Objects.First(item => item.Label == "a").Definition != "7"; attempt++)
+                await Task.Delay(20);
+            await window.CalculateAsync();
+            Check("construction event registration preserves rename context and dependent geometry",
+                window.Evaluation.Values["a"].Number == 7 && window.Evaluation.Values["M"].Origin.X == 1);
+
+            string geoGebra = Path.Combine(directory, "applet.ggb");
+            using (var file = File.Create(geoGebra))
+            using (var ggb = new ZipArchive(file, ZipArchiveMode.Create))
+            {
+                using (var xml = new StreamWriter(ggb.CreateEntry("geogebra.xml").Open()))
+                    xml.Write("""
+                        <geogebra><construction>
+                          <element type="numeric" label="n"><value val="0"/></element>
+                          <element type="numeric" label="mode"><value val="0"/></element>
+                          <element type="button" label="next"><caption val="Next"/><listener type="objectClick" val="nextStep"/></element>
+                        </construction></geogebra>
+                        """);
+                using var js = new StreamWriter(ggb.CreateEntry("geogebra_javascript.js").Open());
+                js.Write("""
+                    function ggbOnInit() {
+                        ggbApplet.setValue('n', 1);
+                        ggbApplet.registerClientListener(onClient);
+                    }
+                    function onClient(event) {
+                        if (event.type === 'setMode') ggbApplet.setValue('mode', Number(event.argument));
+                    }
+                    function nextStep() { ggbApplet.setValue('n', ggbApplet.getValue('n') + 1); }
+                    """);
+            }
+            await window.OpenConstructionAsync(geoGebra);
+            Check("GeoGebra opens through the workbench and runs applet initialization", window.Evaluation.Values["n"].Number == 1);
+            var next = Descendants(window.Content).OfType<Button>().First(button => Equals(button.Content, "Next"));
+            ((IInvokeProvider)new ButtonAutomationPeer(next).GetPattern(PatternInterface.Invoke)).Invoke();
+            for (int attempt = 0; attempt < 30 && window.Document.State.Objects.First(item => item.Label == "n").Definition != "2"; attempt++)
+                await Task.Delay(20);
+            await window.CalculateAsync();
+            Check("imported GeoGebra control dispatches its object listener", window.Evaluation.Values["n"].Number == 2);
+            tabs.SelectedIndex = 3;
+            await Task.Delay(100);
+            var attachmentTool = Descendants(window.Content).OfType<Button>()
+                .Single(button => AutomationProperties.GetName(button) == "几何工具 附着 / 脱离");
+            ((IInvokeProvider)new ButtonAutomationPeer(attachmentTool).GetPattern(PatternInterface.Invoke)).Invoke();
+            for (int attempt = 0; attempt < 30 && window.Document.State.Objects.First(item => item.Label == "mode").Definition != "67"; attempt++)
+                await Task.Delay(20);
+            await window.CalculateAsync();
+            Check("selecting attachment tool emits the GeoGebra mode number", window.Evaluation.Values["mode"].Number == 67);
+            tabs.SelectedIndex = 0;
+
+            window.Document.Load(new() { Objects = Enumerable.Range(1, 1000).Select(index => new ConstructionObject
+                { Label = "P" + index, Definition = $"({index % 20},{index % 10})" }).ToList() });
+            await window.CalculateAsync();
+            await Task.Delay(150);
+            var algebraList = Descendants(window.Content).OfType<ListView>().First(list => list.Items.Count == 1000);
+            var visibleRows = Descendants(algebraList).OfType<ListViewItem>().Count(row => row.Tag is string);
+            Check("large imported constructions only realize visible algebra rows", visibleRows is > 0 and < 100, visibleRows);
             window.Close(); window = null;
             Check("closing workbench releases canvas preview", target.Controller.ExtensionPreview.Count == 0);
             window = new(host); window.Activate(); await window.CalculateAsync();

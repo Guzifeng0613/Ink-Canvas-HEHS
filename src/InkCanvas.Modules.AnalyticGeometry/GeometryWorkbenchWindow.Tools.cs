@@ -11,26 +11,28 @@ namespace InkCanvas.Modules.AnalyticGeometry;
 
 public sealed partial class GeometryWorkbenchWindow
 {
-    private sealed record DrawingTool(string Category, string Name, string Command, int Points, string Help, string Icon);
+    private const string AttachDetachTool = "AttachDetachPoint";
+    private sealed record DrawingTool(string Category, string Name, string Command, int Points, string Help, string Icon, int GeoGebraMode);
 
     private static readonly DrawingTool[] DrawingTools =
     {
-        new("基本工具", "移动 / 选择", "", 0, "拖动自由点可更新关联对象。拖动空白处平移，双指捏合缩放。3D 中拖动空白处旋转视图。", "move"),
-        new("基本工具", "点", "Point", 1, "点击视图放置自由点。", "point"),
-        new("基本工具", "线段", "Segment", 2, "依次选择两个点，或点击视图建立点。", "segment"),
-        new("基本工具", "直线", "Line", 2, "依次选择两个点。", "line"),
-        new("基本工具", "多边形", "Polygon", -1, "依次选择顶点，再点第一个顶点完成多边形。", "polygon"),
-        new("基本工具", "圆", "Circle", 2, "依次选择圆心与圆上一点。", "circle"),
-        new("构造", "中点", "Midpoint", 2, "依次选择两个点。", "midpoint"),
-        new("构造", "垂直平分线", "PerpendicularBisector", 2, "依次选择线段的两个端点。", "perpbisector"),
-        new("构造", "角平分线", "AngleBisector", 3, "依次选择角的起点、顶点与终点。", "anglebisector"),
-        new("构造", "三点圆", "Circumcircle", 3, "依次选择圆上的三个点。", "circumcircle"),
-        new("曲线与立体", "射线", "Ray", 2, "依次选择端点与方向点。", "ray"),
-        new("曲线与立体", "向量", "Vector", 2, "依次选择起点与终点。", "vector"),
-        new("曲线与立体", "圆弧", "Arc", 3, "依次选择圆心、起点、终点，沿逆时针方向作弧。", "arc"),
-        new("曲线与立体", "扇形", "Sector", 3, "依次选择圆心、起点和终点。", "sector"),
-        new("曲线与立体", "半圆", "Semicircle", 2, "依次选择直径的两个端点。", "semicircle"),
-        new("曲线与立体", "三点平面", "Plane", 3, "依次选择三个空间点。空间坐标可在输入栏中指定。", "plane"),
+        new("基本工具", "移动 / 选择", "", 0, "拖动自由点可更新关联对象。拖动空白处平移，双指捏合缩放。3D 中拖动空白处旋转视图。", "move", 0),
+        new("基本工具", "点", "Point", 1, "点击视图放置自由点。", "point", 1),
+        new("基本工具", "线段", "Segment", 2, "依次选择两个点，或点击视图建立点。", "segment", 15),
+        new("基本工具", "直线", "Line", 2, "依次选择两个点。", "line", 2),
+        new("基本工具", "多边形", "Polygon", -1, "依次选择顶点，再点第一个顶点完成多边形。", "polygon", 16),
+        new("基本工具", "圆", "Circle", 2, "依次选择圆心与圆上一点。", "circle", 10),
+        new("构造", "中点", "Midpoint", 2, "依次选择两个点。", "midpoint", 19),
+        new("构造", "附着 / 脱离", AttachDetachTool, 0, "选择自由点以附着，或选择已附着的点以脱离。", "attachpoint", 67),
+        new("构造", "垂直平分线", "PerpendicularBisector", 2, "依次选择线段的两个端点。", "perpbisector", 8),
+        new("构造", "角平分线", "AngleBisector", 3, "依次选择角的起点、顶点与终点。", "anglebisector", 9),
+        new("构造", "三点圆", "Circumcircle", 3, "依次选择圆上的三个点。", "circumcircle", 11),
+        new("曲线与立体", "射线", "Ray", 2, "依次选择端点与方向点。", "ray", 18),
+        new("曲线与立体", "向量", "Vector", 2, "依次选择起点与终点。", "vector", 7),
+        new("曲线与立体", "圆弧", "Arc", 3, "依次选择圆心、起点、终点，沿逆时针方向作弧。", "arc", 20),
+        new("曲线与立体", "扇形", "Sector", 3, "依次选择圆心、起点和终点。", "sector", 21),
+        new("曲线与立体", "半圆", "Semicircle", 2, "依次选择直径的两个端点。", "semicircle", 24),
+        new("曲线与立体", "三点平面", "Plane", 3, "依次选择三个空间点。空间坐标可在输入栏中指定。", "plane", 510),
     };
 
     private readonly List<TouchIconButton> _toolButtons = new();
@@ -92,9 +94,11 @@ public sealed partial class GeometryWorkbenchWindow
 
     private void SelectTool(int index)
     {
+        int previous = _activeToolIndex;
         _activeToolIndex = Math.Clamp(index, 0, DrawingTools.Length - 1);
         _toolPoints.Clear();
         _view.ConstructionToolActive = _activeToolIndex > 0;
+        _view.PickingAttachmentTarget = false;
         for (int i = 0; i < _toolButtons.Count; i++)
             if (_toolButtons[i] is not null) _toolButtons[i].IsSelected = i == _activeToolIndex;
 
@@ -105,6 +109,8 @@ public sealed partial class GeometryWorkbenchWindow
             _toolBannerText.Text = $"{tool.Name}：{tool.Help}";
         }
         SetStatus(tool.Help);
+        if (previous != _activeToolIndex)
+            DispatchEvent("", "OnSetMode", tool.GeoGebraMode.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
     private static UIElement CreateToolGlyph(string kind)
@@ -131,6 +137,9 @@ public sealed partial class GeometryWorkbenchWindow
                 break;
             case "point":
                 Dot(14, 14);
+                break;
+            case "attachpoint":
+                Seg(4, 20, 24, 20); Seg(14, 8, 14, 20, accent); Dot(14, 8); Dot(14, 20, line);
                 break;
             case "segment":
                 Seg(6, 22, 22, 6); Dot(6, 22); Dot(22, 6);
@@ -189,17 +198,22 @@ public sealed partial class GeometryWorkbenchWindow
         return canvas;
     }
 
-    private void GraphClicked(GeoVector point, string hit)
+    private void GraphClicked(GeoVector point, string hit, bool inside)
     {
         if (_activeToolIndex <= 0)
         {
-            if (hit is not null && _rows.TryGetValue(hit, out var row)) _objects.SelectedItem = row.Item;
-            if (hit is not null) RunEventScript(Document.State.Objects.First(item => item.Label == hit).OnClick);
+            if (hit is not null) SelectAlgebraItem(hit);
+            if (hit is not null) DispatchObjectEvent(hit, "OnClick");
             return;
         }
         Guard(() =>
         {
             var tool = DrawingTools[_activeToolIndex];
+            if (tool.Command == AttachDetachTool)
+            {
+                PickAttachment(hit, inside);
+                return;
+            }
             Document.BeginGesture();
             string label;
             if (hit is not null && Evaluation?.Values.TryGetValue(hit, out var value) == true && value.Kind == GeometryKind.Point) label = hit;
@@ -208,7 +222,7 @@ public sealed partial class GeometryWorkbenchWindow
                 label = ConstructionDocument.NextLabel(Document.State.Objects, "P");
                 Document.Execute(label + "=" + Coordinates(point));
             }
-            if (tool.Command == "Point") { Document.EndGesture(); return; }
+            if (tool.Command == "Point") { EndViewGesture(); return; }
             if (tool.Points == -1 && _toolPoints.Count >= 3 && label == _toolPoints[0])
             {
                 Document.Execute("Polygon(" + string.Join(',', _toolPoints) + ")"); _toolPoints.Clear();
@@ -221,11 +235,40 @@ public sealed partial class GeometryWorkbenchWindow
                     Document.Execute(tool.Command + "(" + string.Join(',', _toolPoints) + ")"); _toolPoints.Clear();
                 }
             }
-            Document.EndGesture();
+            EndViewGesture();
             string progress = _toolPoints.Count > 0 ? $" · 已选择 {_toolPoints.Count} 个点" : "";
             if (_toolBannerText is not null) _toolBannerText.Text = $"{tool.Name}：{tool.Help}{progress}";
             SetStatus(tool.Help + progress);
         });
+    }
+
+    private void PickAttachment(string hit, bool inside)
+    {
+        if (Evaluation is null || _renderedRevision != Document.EvaluationRevision)
+            throw new InvalidOperationException("构造正在更新，请稍后重试。");
+        if (_toolPoints.Count > 0)
+        {
+            if (hit is null) throw new FormatException("请选择对象的路径或区域内部。");
+            Document.AttachPoint(Evaluation, _toolPoints[0], hit, inside);
+            SelectTool(_activeToolIndex);
+            return;
+        }
+
+        var item = Document.State.Objects.FirstOrDefault(candidate => candidate.Label == hit);
+        if (item is null || item.Fixed || !Evaluation.Values.TryGetValue(hit, out var value)
+            || !value.Defined || value.Kind != GeometryKind.Point)
+            throw new FormatException("请选择可移动的自由点或附着点。");
+        if (ConstructionDocument.AttachedPath(item, value) is not null)
+        {
+            Document.DetachPoint(Evaluation, hit);
+            return;
+        }
+        if (!ConstructionDocument.IsFreePoint(item)) throw new FormatException("请选择可移动的自由点。");
+
+        _toolPoints.Add(hit);
+        _view.PickingAttachmentTarget = true;
+        _toolBannerText.Text = $"已选择 {hit}，点击对象的路径或区域内部。";
+        SetStatus(_toolBannerText.Text);
     }
 
     private static readonly (string Group, string Name, string Input)[] Examples =

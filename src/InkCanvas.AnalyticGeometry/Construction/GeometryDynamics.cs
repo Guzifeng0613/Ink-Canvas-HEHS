@@ -5,6 +5,53 @@ namespace InkCanvas.AnalyticGeometry.Construction;
 
 internal sealed partial class GeometryEvaluator
 {
+    private GeometryValue AggregateList(GeometryValue input, GeometryValue options, bool mean)
+    {
+        if (input.Kind != GeometryKind.List) throw new FormatException("此指令需要列表。");
+        var items = input.Items;
+        int count = items.Count;
+        if (!mean && options?.Kind == GeometryKind.Scalar)
+        {
+            double limit = options.Number;
+            if (!double.IsFinite(limit) || limit != Math.Truncate(limit) || limit < 0 || limit > count)
+                throw new FormatException("求和项数超出列表范围。");
+            count = (int)limit;
+            options = null;
+        }
+        if (options is not null && (options.Kind != GeometryKind.List || options.Items.Count != count
+            || options.Items.Any(item => item.Kind != GeometryKind.Scalar || !double.IsFinite(item.Number) || item.Number < 0)))
+            throw new FormatException("频数列表必须与数据等长，且包含非负数。");
+        double Weight(int index) => options is null ? 1 : options.Items[index].Number;
+        double totalWeight = options is null ? count : options.Items.Sum(item => item.Number);
+        if (mean && totalWeight <= 0) throw new FormatException("平均值需要至少一个有效数据项。");
+        if (count == 0) return GeometryValue.Scalar(0);
+        var kind = items[0].Kind;
+        if (items.Take(count).Any(item => item.Kind != kind)) throw new FormatException("列表中的数据类型须一致。");
+        if (kind == GeometryKind.Scalar)
+            return GeometryValue.Scalar(Enumerable.Range(0, count).Sum(index => items[index].Number * Weight(index))
+                / (mean ? totalWeight : 1));
+        if (mean) throw new FormatException("平均值需要数值列表。");
+        if (kind is GeometryKind.Point or GeometryKind.Vector)
+        {
+            var result = new GeoVector();
+            for (int index = 0; index < count; index++) result += items[index].Origin * Weight(index);
+            return kind == GeometryKind.Point ? GeometryValue.Point(result) : Vector(result);
+        }
+        if (kind == GeometryKind.Text && options is null)
+            return new() { Kind = GeometryKind.Text, Display = string.Concat(items.Take(count).Select(item => item.Display)) };
+        if (kind == GeometryKind.Function)
+        {
+            string expression = string.Join("+", Enumerable.Range(0, count).Select(index =>
+            {
+                var item = items[index];
+                string body = Regex.Replace(item.Expression, @"\b" + Regex.Escape(item.Variable) + @"\b", "x");
+                return $"({ComputerAlgebra.Number(Weight(index))})*({body})";
+            }));
+            return Function(expression);
+        }
+        throw new FormatException("此类型的列表无法求和。");
+    }
+
     private static List<GeoTriangle> Triangulate(GeoVector[] points)
     {
         var normal = new GeoVector();
@@ -78,12 +125,13 @@ internal sealed partial class GeometryEvaluator
         var kernel = new ConstructionKernel();
         // The trace objects themselves are excluded from the sampled dependency graph.
         var sampledObjects = view.Objects.Where(item => !Regex.IsMatch(item.Definition, @"\b(Locus|Envelope)\s*\(", RegexOptions.IgnoreCase)).ToList();
-        for (int i = 0; i <= 96; i++)
+        int sampleCount = _curveSamples < 512 ? 32 : 96;
+        for (int i = 0; i <= sampleCount; i++)
         {
             Sample();
-            string number = ComputerAlgebra.Number(start + (end - start) * i / 96);
+            string number = ComputerAlgebra.Number(start + (end - start) * i / sampleCount);
             var state = view with { Objects = sampledObjects.Select(item => item.Label == parameter ? item with { Definition = number } : item).ToList() };
-            var evaluation = kernel.Evaluate(state, token);
+            var evaluation = kernel.Evaluate(state, token, interactive: _curveSamples < 512);
             if (!evaluation.Values.TryGetValue(label, out var value) || !value.Defined) continue;
             if (!envelope && value.Kind == GeometryKind.Point) points.Add(value.Origin);
             else if (envelope && previous is not null)
@@ -106,14 +154,15 @@ internal sealed partial class GeometryEvaluator
         foreach (var path in curve.Paths)
         {
             var sampled = path.Where((_, i) => i % Math.Max(1, path.Length / 96) == 0).ToArray();
-            var rows = new GeoVector[49][];
-            for (int i = 0; i <= 48; i++)
+            int ringCount = _curveSamples < 512 ? 12 : 48;
+            var rows = new GeoVector[ringCount + 1][];
+            for (int i = 0; i <= ringCount; i++)
             {
                 Sample();
-                rows[i] = sampled.Select(point => axis.Origin + Rotate(point - axis.Origin, axis.Direction, angle * i / 48)).ToArray();
-                if (i % 4 == 0) paths.Add(rows[i]);
+                rows[i] = sampled.Select(point => axis.Origin + Rotate(point - axis.Origin, axis.Direction, angle * i / ringCount)).ToArray();
+                if (i % Math.Max(1, ringCount / 12) == 0) paths.Add(rows[i]);
             }
-            for (int i = 0; i < 48; i++)
+            for (int i = 0; i < ringCount; i++)
             for (int j = 0; j < sampled.Length - 1; j++)
             {
                 faces.Add(new(rows[i][j], rows[i + 1][j], rows[i + 1][j + 1]));

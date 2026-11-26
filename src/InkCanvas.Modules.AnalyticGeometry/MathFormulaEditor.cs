@@ -20,6 +20,7 @@ internal sealed class MathFormulaEditor : UserControl
     private RichEditBox _editor;
     private bool _nativeUnavailable;
     private bool _syncing;
+    private string _programmaticMarkup;
 
     public string MathML { get; private set; }
     public bool UsesRichEdit => _editor is not null && !_nativeUnavailable;
@@ -87,6 +88,8 @@ internal sealed class MathFormulaEditor : UserControl
         try
         {
             _editor.TextDocument.GetMathML(out string markup);
+            if (string.Equals(markup, _programmaticMarkup, StringComparison.Ordinal)) return;
+            _programmaticMarkup = null;
             if (string.IsNullOrWhiteSpace(markup))
             {
                 MathML = null;
@@ -136,6 +139,7 @@ internal sealed class MathFormulaEditor : UserControl
                 {
                     _editor.TextDocument.SetMathML(markup);
                     _editor.TextDocument.GetMathML(out string nativeMarkup);
+                    _programmaticMarkup = nativeMarkup;
                     MathML = string.IsNullOrWhiteSpace(nativeMarkup) ? markup : nativeMarkup;
                     _editor.Visibility = Visibility.Visible;
                     _fallback.Visibility = Visibility.Collapsed;
@@ -162,7 +166,11 @@ internal sealed class MathFormulaEditor : UserControl
         if (_editor is not null && !_nativeUnavailable)
         {
             _syncing = true;
-            try { _editor.TextDocument.SetText(TextSetOptions.None, ""); }
+            try
+            {
+                _editor.TextDocument.SetText(TextSetOptions.None, "");
+                _editor.TextDocument.GetMathML(out _programmaticMarkup);
+            }
             catch (Exception) { }
             finally { _syncing = false; }
         }

@@ -12,6 +12,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Markup;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using Windows.ApplicationModel.DataTransfer;
@@ -25,7 +26,6 @@ public sealed partial class GeometryWorkbenchWindow : Window
     private sealed class AlgebraRow
     {
         public ListViewItem Item { get; init; }
-        public Button VisibilityButton { get; init; }
         public Ellipse VisibilityDot { get; init; }
         public MathFormulaView FormulaView { get; init; }
         public TextBlock FallbackTitle { get; init; }
@@ -35,6 +35,14 @@ public sealed partial class GeometryWorkbenchWindow : Window
         public TextBlock SliderRange { get; init; }
         public TouchIconButton PlayButton { get; init; }
         public bool SyncingSlider { get; set; }
+        public string Definition { get; set; }
+        public GeometryValue Value { get; set; }
+        public uint Color { get; set; }
+        public bool Visible { get; set; }
+        public bool FormulaDeferred { get; set; }
+        public double SliderMin { get; set; } = double.NaN;
+        public double SliderMax { get; set; } = double.NaN;
+        public double SliderStep { get; set; } = double.NaN;
     }
 
     private readonly ICanvasToolsHost _host;
@@ -46,6 +54,9 @@ public sealed partial class GeometryWorkbenchWindow : Window
     private readonly ConstructionView _view = new();
     private readonly ListView _objects = new() { SelectionMode = ListViewSelectionMode.Single, HorizontalContentAlignment = HorizontalAlignment.Stretch };
     private readonly Dictionary<string, AlgebraRow> _rows = new();
+    private Dictionary<string, ConstructionObject> _algebraObjects = new(StringComparer.Ordinal);
+    private string[] _algebraLabels = [];
+    private List<ConstructionObject> _algebraSnapshot;
     private readonly StackPanel _properties = new() { Spacing = 8, Padding = new Thickness(12) };
     private readonly StackPanel _casHistory = new() { Spacing = 10, Padding = new Thickness(12) };
     private readonly TextBox _input = FormulaBox("输入表达式或指令，例如 A=(1,2)、f(x)=a*x^2、Solve(x^2=2,x)");
@@ -72,6 +83,9 @@ public sealed partial class GeometryWorkbenchWindow : Window
     private Task _pending = Task.CompletedTask;
     private bool _closed, _updatingRows, _casBusy, _playing;
     private int _renderedRevision = -1;
+    private int _viewDependencyRevision = -1;
+    private bool _hasViewDependentObjects;
+    private ElementTheme _rowsTheme = (ElementTheme)(-1);
     private int _protocolStep = int.MaxValue;
     private int _suppressScriptsRevision = -1;
     private DateTime _animationTime;
@@ -98,7 +112,7 @@ public sealed partial class GeometryWorkbenchWindow : Window
         _mathDebounce.Tick += (_, _) => UpdateMathPreview();
         _debounce = DispatcherQueue.CreateTimer();
         _debounce.IsRepeating = false;
-        _debounce.Interval = TimeSpan.FromMilliseconds(28);
+        _debounce.Interval = TimeSpan.FromMilliseconds(14);
         _debounce.Tick += (_, _) => _pending = CalculateCoreAsync();
         _animation = DispatcherQueue.CreateTimer();
         _animation.Interval = TimeSpan.FromMilliseconds(40);
@@ -107,15 +121,29 @@ public sealed partial class GeometryWorkbenchWindow : Window
         Content = _root;
         host.ConfigureWindow(this, 1380, 940);
         WindowFrame.Attach(this, _root).UseMica();
-        Document.Changed += QueueCalculation;
+        Document.EvaluationChanged += QueueCalculation;
+        Document.ObjectsChanged += ObjectsChanged;
+        Document.ViewChanged += ViewChanged;
+        Document.Changed += DispatchConstructionChanges;
+        Document.UndoPointStored += DispatchUndoPointStored;
+        Document.HistoryRestored += DispatchHistoryRestored;
         _view.GestureStarted += Document.BeginGesture;
-        _view.GestureEnded += Document.EndGesture;
+        _view.GestureEnded += EndViewGesture;
         _view.ViewChanged += Document.SetView;
         _view.PointMoved += (label, point) => Document.Update(label, item => item with { Definition = Coordinates(point) });
         _view.Clicked += GraphClicked;
-        _view.ControlChanged += (label, definition) => Guard(() => Document.Update(label, item => item with { Definition = definition }));
-        _view.ControlClicked += label => RunEventScript(Document.State.Objects.First(item => item.Label == label).OnClick);
-        _objects.SelectionChanged += (_, _) => SelectObject((_objects.SelectedItem as ListViewItem)?.Tag as string);
+        _view.ControlChanged += HandleControlChange;
+        _view.ControlClicked += label => DispatchObjectEvent(label, "OnClick");
+        _view.SelectionRequested += SelectAlgebraItem;
+        _view.ObjectEventTriggered += DispatchObjectEvent;
+        _view.ClientEventTriggered += (label, name, fields) => DispatchEvent(label, name, fields: fields);
+        _objects.ItemTemplate = (DataTemplate)XamlReader.Load("""
+            <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+                <ContentControl HorizontalContentAlignment="Stretch" />
+            </DataTemplate>
+            """);
+        _objects.ContainerContentChanging += AlgebraContainerChanging;
+        _objects.SelectionChanged += (_, _) => { if (!_updatingRows) SelectObject(_objects.SelectedItem as string); };
         _root.ActualThemeChanged += (_, _) => { if (Evaluation is not null) RefreshObjects(); };
         _host.TargetChanged += TargetChanged;
         Closed += (_, _) => DisposeWorkbench();
@@ -153,17 +181,21 @@ public sealed partial class GeometryWorkbenchWindow : Window
             fileMenu.Items.Add(item);
         }
         AddMenuItem("新建构造", () => { StopAnimation(); _protocolStep = int.MaxValue; _view.SelectedLabel = null; Document.Load(new()); _editing = Array.Empty<InkStroke>(); _insert.Content = "插入画布"; });
-        AddMenuItem("打开 (.icgeo)…", () => RunFileAction(OpenAsync));
+        AddMenuItem("打开 (.icgeo / .ggb)…", () => RunFileAction(OpenAsync));
         AddMenuItem("保存 (.icgeo)…", () => RunFileAction(SaveAsync));
         fileMenu.Items.Add(new MenuFlyoutSeparator());
         var exportSub = new MenuFlyoutSubItem { Text = "导出" };
-        foreach (string format in new[] { "SVG", "PNG", "PDF", "TikZ", "STL" })
+        foreach (string format in new[] { "SVG", "PNG", "PDF", "TikZ", "PSTricks", "STL" })
         {
             string value = format;
             var sub = new MenuFlyoutItem { Text = value };
             sub.Click += (_, _) => RunFileAction(() => ExportAsync(value));
             exportSub.Items.Add(sub);
         }
+        exportSub.Items.Add(new MenuFlyoutSeparator());
+        var animatedGif = new MenuFlyoutItem { Text = "动态 GIF…" };
+        animatedGif.Click += (_, _) => RunFileAction(ExportGifAsync);
+        exportSub.Items.Add(animatedGif);
         fileMenu.Items.Add(exportSub);
         fileMenu.Items.Add(new MenuFlyoutSeparator());
         AddMenuItem("使用当前画布 / 所选构造", CaptureTarget);
@@ -283,6 +315,8 @@ public sealed partial class GeometryWorkbenchWindow : Window
             casScroll.Visibility = idx == 2 ? Visibility.Visible : Visibility.Collapsed;
             toolsPanel.Visibility = idx == 3 ? Visibility.Visible : Visibility.Collapsed;
             for (int r = 0; r < railButtons.Length; r++) railButtons[r].IsSelected = railToTab[r] == idx;
+            if (idx == 0) DispatchObjectEvent("", "OnAlgebraPanelSelected");
+            if (idx == 3) DispatchObjectEvent("", "OnToolsPanelSelected");
         };
         _sidebarTabs.SelectedIndex = 0;
         _properties.Children.Add(new TextBlock { Text = "在画布或代数列表中选择一个对象以编辑定义、颜色、线宽与参数。", TextWrapping = TextWrapping.Wrap, Opacity = 0.72 });
@@ -574,8 +608,21 @@ public sealed partial class GeometryWorkbenchWindow : Window
         ViewOption("显示 / 隐藏坐标轴", state => state with { Axes = !state.Axes });
         ViewOption("极坐标 / 直角坐标网格", state => state with { PolarGrid = !state.PolarGrid });
         viewMenu.Items.Add(new MenuFlyoutSeparator());
-        ViewOption("透视 / 正交投影", state => state with { Perspective = !state.Perspective, Oblique = false });
-        ViewOption("倾斜投影", state => state with { Oblique = !state.Oblique, Perspective = false });
+        ViewOption("透视 / 正交投影", state => state with { Perspective = !state.Perspective, Oblique = false, Anaglyph = false });
+        ViewOption("倾斜投影", state => state with { Oblique = !state.Oblique, Perspective = false, Anaglyph = false });
+        void StereoOption(string label, bool blue)
+        {
+            var stereo = new ToggleMenuFlyoutItem { Text = label };
+            viewMenu.Opening += (_, _) => stereo.IsChecked = Document.State.ThreeDimensional && Document.State.Anaglyph
+                && Document.State.AnaglyphBlue == blue;
+            stereo.Click += (_, _) => Document.SetView(Document.State with
+            {
+                ThreeDimensional = true, Anaglyph = stereo.IsChecked, AnaglyphBlue = blue, Perspective = true, Oblique = false,
+            });
+            viewMenu.Items.Add(stereo);
+        }
+        StereoOption("红青立体", false);
+        StereoOption("红蓝立体", true);
         var dragZ = new ToggleMenuFlyoutItem { Text = "3D 拖点沿 Z 轴移动" };
         dragZ.Click += (_, _) => _view.MoveAlongZAxis = dragZ.IsChecked;
         viewMenu.Items.Add(dragZ);
@@ -606,6 +653,7 @@ public sealed partial class GeometryWorkbenchWindow : Window
         _sidebarCollapsed = !_sidebarCollapsed;
         _sidebarContainer.Visibility = _sidebarCollapsed ? Visibility.Collapsed : Visibility.Visible;
         _sidebarColumn.Width = _sidebarCollapsed ? new GridLength(0) : new GridLength(Math.Clamp(_root.ActualWidth * 0.30, 300, 420));
+        DispatchObjectEvent("", _sidebarCollapsed ? "OnSidePanelClosed" : "OnSidePanelOpened");
     }
 
     private void ApplyHandwritingFormula(string expression, string mathMl)
@@ -650,15 +698,36 @@ public sealed partial class GeometryWorkbenchWindow : Window
     {
         Guard(() =>
         {
-            string label = Document.Execute(_input.Text);
-            _view.SelectedLabel = label;
+            string label = Execute(_input.Text);
+            if (label.Length > 0) _view.SelectedLabel = label;
             _input.Text = "";
             _formulaEditor.Clear();
             _inputMath.Visibility = Visibility.Collapsed;
         });
     }
 
-    public string Execute(string input) => Document.Execute(input);
+    public string Execute(string input)
+    {
+        if (!MathSyntax.Call(input, out string command, out _) || !command.Equals("SetEvent", StringComparison.OrdinalIgnoreCase))
+            return Document.Execute(input);
+        Document.RunScript(input);
+        return "";
+    }
+
+    private void HandleControlChange(string label, string definition)
+    {
+        Guard(() =>
+        {
+            if (MathSyntax.Call(definition, out string command, out var arguments)
+                && command.Equals("SetControlPosition", StringComparison.OrdinalIgnoreCase) && arguments.Length == 2)
+            {
+                double x = ComputerAlgebra.Real(arguments[0]), y = ComputerAlgebra.Real(arguments[1]);
+                Document.Update(label, item => item with { ControlPositionSet = true, ControlX = x, ControlY = y });
+                return;
+            }
+            Document.Update(label, item => item with { Definition = definition });
+        });
+    }
 
     private void QueueCalculation()
     {
@@ -666,9 +735,81 @@ public sealed partial class GeometryWorkbenchWindow : Window
         _syncingView = true;
         _mode.SelectedIndex = Document.State.ThreeDimensional ? 1 : 0;
         _syncingView = false;
-        _calculation?.Cancel();
         _insert.IsEnabled = false;
+        if (Document.IsGestureActive)
+        {
+            _gestureEvaluationPending = true;
+            _interactiveCalculationQueued = true;
+            if (_calculation is null && !_debounce.IsRunning) _debounce.Start();
+            return;
+        }
+        _interactiveCalculationQueued = false;
+        _calculation?.Cancel();
         _debounce.Stop(); _debounce.Start();
+    }
+
+    private bool _viewCalculationPending;
+    private bool _viewChangedDuringGesture;
+    private bool _gestureEvaluationPending;
+    private bool _interactiveCalculationQueued;
+    private ConstructionEvaluation _settledEvaluation;
+    private int _settledRevision = -1;
+    private string _selectedObjectLabel;
+    private void ObjectsChanged()
+    {
+        if (_closed || Evaluation is null || _renderedRevision != Document.EvaluationRevision) return;
+        RefreshObjects();
+        RenderView();
+        _insert.IsEnabled = CanInsert();
+        PreviewCanvas();
+    }
+
+    private void ViewChanged()
+    {
+        if (_closed) return;
+        _syncingView = true;
+        _mode.SelectedIndex = Document.State.ThreeDimensional ? 1 : 0;
+        _syncingView = false;
+        if (Document.IsGestureActive) _viewChangedDuringGesture = true;
+        else DispatchClientViewChanged();
+        if (Evaluation is null) return;
+        RenderView();
+        if (HasViewDependentObjects())
+        {
+            if (Document.IsGestureActive)
+            {
+                _viewCalculationPending = true;
+                _insert.IsEnabled = false;
+                _target?.Controller.ClearExtensionPreview(_previewOwner);
+            }
+            else QueueCalculation();
+        }
+        else PreviewCanvas();
+    }
+
+    private bool HasViewDependentObjects()
+    {
+        if (_viewDependencyRevision != Document.EvaluationRevision)
+        {
+            _hasViewDependentObjects = ConstructionKernel.HasViewDependentObjects(Document.State);
+            _viewDependencyRevision = Document.EvaluationRevision;
+        }
+        return _hasViewDependentObjects;
+    }
+
+    private void EndViewGesture()
+    {
+        Document.EndGesture();
+        if (_viewChangedDuringGesture)
+        {
+            _viewChangedDuringGesture = false;
+            DispatchClientViewChanged();
+        }
+        DrainEventScripts();
+        if (!_viewCalculationPending && !_gestureEvaluationPending) return;
+        _viewCalculationPending = false;
+        _gestureEvaluationPending = false;
+        QueueCalculation();
     }
 
     public async Task CalculateAsync()
@@ -693,7 +834,9 @@ public sealed partial class GeometryWorkbenchWindow : Window
         var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         cancellation.CancelAfter(TimeSpan.FromSeconds(8));
         _calculation = cancellation;
-        int revision = Document.Revision;
+        int revision = Document.EvaluationRevision;
+        bool interactive = Document.IsGestureActive;
+        _interactiveCalculationQueued = false;
         var snapshot = Document.State;
         var previous = _worker;
         try
@@ -702,35 +845,59 @@ public sealed partial class GeometryWorkbenchWindow : Window
             {
                 try { await previous; } catch (Exception) { }
                 cancellation.Token.ThrowIfCancellationRequested();
-                return _kernel.Evaluate(snapshot, cancellation.Token);
+                return _kernel.Evaluate(snapshot, cancellation.Token, interactive);
             }, cancellation.Token);
             _worker = operation;
             var result = await operation;
-            if (_closed || cancellation.IsCancellationRequested || revision != Document.Revision) return;
-            var previousEvaluation = Evaluation;
-            Evaluation = result; _renderedRevision = revision;
+            if (_closed || cancellation.IsCancellationRequested) return;
+            var state = Document.State;
+            bool sameRange = snapshot.XMin == state.XMin && snapshot.XMax == state.XMax
+                && snapshot.YMin == state.YMin && snapshot.YMax == state.YMax;
+            bool current = revision == Document.EvaluationRevision && (sameRange || !HasViewDependentObjects());
+            if (!current && !(interactive && Document.IsGestureActive && _interactiveCalculationQueued
+                && state.Objects.Count == result.Values.Count
+                && state.Objects.All(item => result.Values.ContainsKey(item.Label)))) return;
+            Evaluation = result; _renderedRevision = current ? revision : -1;
             RefreshObjects(); RenderView();
             _insert.IsEnabled = CanInsert();
-            PreviewCanvas();
+            if (current) PreviewCanvas();
             int errors = result.Values.Count(pair => !pair.Value.Defined);
             SetStatus($"{snapshot.Objects.Count} 个对象 · 重算 {result.EvaluatedObjects} 个 · {result.Elapsed.TotalMilliseconds:F0} ms" + (errors > 0 ? $" · {errors} 个定义需修改" : ""));
-            if (previousEvaluation is not null && revision != _suppressScriptsRevision)
+            if (!interactive)
             {
-                var scripts = snapshot.Objects.Where(item => item.OnUpdate.Length > 0
-                    && previousEvaluation.Values.TryGetValue(item.Label, out var before)
-                    && result.Values.TryGetValue(item.Label, out var after) && after.Defined && !ReferenceEquals(before, after))
-                    .Select(item => item.OnUpdate).ToArray();
-                if (scripts.Length > 0) RunEventScripts(scripts);
+                var previousEvaluation = _settledEvaluation;
+                bool runScripts = previousEvaluation is not null && revision != _settledRevision && revision != _suppressScriptsRevision;
+                _settledEvaluation = result;
+                _settledRevision = revision;
+                if (runScripts)
+                {
+                    var scripts = new List<ScriptInvocation>();
+                    foreach (var item in state.Objects)
+                    {
+                        if (!previousEvaluation.Values.TryGetValue(item.Label, out var before)
+                            || !result.Values.TryGetValue(item.Label, out var after) || ReferenceEquals(before, after)) continue;
+                        AddEventScripts(scripts, state, "OnUpdate", item.Label, item.OnUpdate);
+                        if (before.Kind != after.Kind || before.Defined != after.Defined || before.Display != after.Display
+                            || before.Origin != after.Origin || before.Number != after.Number)
+                            AddEventScripts(scripts, state, "OnChange", item.Label, item.OnChange);
+                    }
+                    RunEventScripts(scripts);
+                }
             }
         }
         catch (OperationCanceledException)
         {
-            if (!_closed && revision == Document.Revision) SetStatus("计算已取消或达到时间上限，请简化表达式或缩小范围。");
+            if (!_closed && revision == Document.EvaluationRevision) SetStatus("计算已取消或达到时间上限，请简化表达式或缩小范围。");
         }
-        catch (Exception ex) { if (!_closed && revision == Document.Revision) SetStatus(ex.GetBaseException().Message); }
+        catch (Exception ex) { if (!_closed && revision == Document.EvaluationRevision) SetStatus(ex.GetBaseException().Message); }
         finally
         {
-            if (ReferenceEquals(_calculation, cancellation)) _calculation = null;
+            if (ReferenceEquals(_calculation, cancellation))
+            {
+                _calculation = null;
+                if (!_closed && Document.IsGestureActive && _interactiveCalculationQueued && !_debounce.IsRunning)
+                    _debounce.Start();
+            }
             cancellation.Dispose();
         }
     }
@@ -747,70 +914,127 @@ public sealed partial class GeometryWorkbenchWindow : Window
     private void RefreshObjects()
     {
         _updatingRows = true;
+        bool themeChanged = _rowsTheme != _root.ActualTheme;
+        _rowsTheme = _root.ActualTheme;
         try
         {
-            var names = Document.State.Objects.Select(item => item.Label).ToHashSet();
-            foreach (string name in _rows.Keys.Where(name => !names.Contains(name)).ToArray())
-            { _objects.Items.Remove(_rows[name].Item); _rows.Remove(name); }
-
-            foreach (var item in Document.State.Objects)
+            if (!ReferenceEquals(_algebraSnapshot, Document.State.Objects))
             {
-                if (!_rows.TryGetValue(item.Label, out var row))
+                _algebraSnapshot = Document.State.Objects;
+                _algebraObjects = _algebraSnapshot.ToDictionary(item => item.Label, StringComparer.Ordinal);
+                if (!_algebraLabels.SequenceEqual(_algebraObjects.Keys, StringComparer.Ordinal))
                 {
-                    row = CreateAlgebraRow(item.Label);
-                    _objects.Items.Add(row.Item);
-                    _rows[item.Label] = row;
+                    _algebraLabels = _algebraSnapshot.Select(item => item.Label).ToArray();
+                    _objects.ItemsSource = _algebraLabels;
                 }
+            }
 
-                var evaluated = Evaluation.Values[item.Label];
-                var objColor = Color.FromArgb(255, (byte)(item.Color >> 16), (byte)(item.Color >> 8), (byte)item.Color);
-                var brush = new SolidColorBrush(objColor);
-                row.VisibilityDot.Stroke = brush;
-                row.VisibilityDot.Fill = item.Visible ? brush : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            foreach (var entry in _rows)
+                if (_algebraObjects.TryGetValue(entry.Key, out var item) && Evaluation.Values.TryGetValue(entry.Key, out var value))
+                    RefreshAlgebraRow(entry.Value, item, value, themeChanged);
 
-                // Render formula in WYSIWYG MathML (GeoGebra Algebra card style!)
+            if (_view.SelectedLabel is string selected && _algebraObjects.ContainsKey(selected))
+                _objects.SelectedItem = selected;
+        }
+        finally { _updatingRows = false; }
+        if (_selectedObjectLabel is not null && !_algebraObjects.ContainsKey(_selectedObjectLabel))
+            SelectObject(null);
+        else if (_objects.SelectedItem is string selected && selected != _selectedObjectLabel)
+            SelectObject(selected);
+    }
+
+    private void SelectAlgebraItem(string label)
+    {
+        if (_algebraObjects.ContainsKey(label)) _objects.SelectedItem = label;
+    }
+
+    private void AlgebraContainerChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        if (args.ItemContainer is not ListViewItem container) return;
+        if (container.Tag is string previous && _rows.TryGetValue(previous, out var existing) && existing.Item == container)
+            _rows.Remove(previous);
+        container.Tag = null;
+        if (container.ContentTemplateRoot is not ContentControl content) return;
+        content.Content = null;
+        if (args.InRecycleQueue || args.Item is not string label || !_algebraObjects.TryGetValue(label, out var item)
+            || Evaluation is null || !Evaluation.Values.TryGetValue(label, out var value)) return;
+        var row = CreateAlgebraRow(label, container, content);
+        _rows[label] = row;
+        RefreshAlgebraRow(row, item, value, true);
+        args.Handled = true;
+    }
+
+    private void RefreshAlgebraRow(AlgebraRow row, ConstructionObject item, GeometryValue evaluated, bool themeChanged)
+    {
+        bool definitionChanged = row.Definition != item.Definition;
+        bool valueChanged = !ReferenceEquals(row.Value, evaluated);
+        bool visible = Evaluation.IsVisible(item);
+        if (themeChanged || row.Color != item.Color || row.Visible != visible)
+        {
+            var brush = new SolidColorBrush(Color.FromArgb(255, (byte)(item.Color >> 16), (byte)(item.Color >> 8), (byte)item.Color));
+            row.VisibilityDot.Stroke = brush;
+            row.VisibilityDot.Fill = visible ? brush : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            row.Color = item.Color;
+            row.Visible = visible;
+        }
+
+        bool deferPointFormula = _view.IsDraggingPoint && evaluated.Kind == GeometryKind.Point;
+        if (themeChanged || definitionChanged || valueChanged || row.FormulaDeferred != deferPointFormula)
+        {
+            row.FormulaDeferred = deferPointFormula;
+            if (deferPointFormula)
+            {
+                row.FormulaView.Visibility = Visibility.Collapsed;
+                row.FallbackTitle.Visibility = Visibility.Visible;
+                row.FallbackTitle.Text = item.Label + " = " + item.Definition;
+            }
+            else
+            {
                 string expressionForMath = item.Label + "=" + item.Definition;
                 bool hasMath = evaluated.Defined && row.FormulaView.SetExpression(expressionForMath);
                 row.FormulaView.Visibility = hasMath ? Visibility.Visible : Visibility.Collapsed;
                 row.FallbackTitle.Visibility = hasMath ? Visibility.Collapsed : Visibility.Visible;
                 row.FallbackTitle.Text = item.Label + " = " + item.Definition;
-
-                row.ValueText.Text = evaluated.Defined
-                    ? (string.Equals(evaluated.Display, item.Definition, StringComparison.Ordinal) ? "" : "→ " + evaluated.Display)
-                    : evaluated.Error;
-                row.ValueText.Visibility = string.IsNullOrEmpty(row.ValueText.Text) ? Visibility.Collapsed : Visibility.Visible;
-                row.ValueText.Foreground = new SolidColorBrush(evaluated.Defined
-                    ? _root.ActualTheme == ElementTheme.Dark ? Color.FromArgb(210, 214, 222, 234) : Color.FromArgb(210, 71, 85, 105)
-                    : Microsoft.UI.Colors.Firebrick);
-
-                // GeoGebra inline slider for free scalar parameters!
-                bool isFreeScalar = evaluated.Defined && evaluated.Kind == GeometryKind.Scalar
-                    && double.TryParse(item.Definition, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
-                row.SliderPanel.Visibility = isFreeScalar ? Visibility.Visible : Visibility.Collapsed;
-                if (isFreeScalar)
-                {
-                    row.SyncingSlider = true;
-                    try
-                    {
-                        row.Slider.Minimum = item.SliderMin;
-                        row.Slider.Maximum = item.SliderMax;
-                        row.Slider.StepFrequency = item.SliderStep;
-                        row.Slider.Value = Math.Clamp(evaluated.Number, item.SliderMin, item.SliderMax);
-                        row.SliderRange.Text = $"{item.SliderMin:G3} .. {item.SliderMax:G3}";
-                        row.PlayButton.Glyph = _playing && item.Animate ? Glyphs.Pause : Glyphs.Play;
-                    }
-                    finally { row.SyncingSlider = false; }
-                }
-
-                ToolTipService.SetToolTip(row.Item, item.Label + " = " + item.Definition);
             }
-            if (_view.SelectedLabel is string selected && _rows.TryGetValue(selected, out var selectedRow))
-                _objects.SelectedItem = selectedRow.Item;
+
+            row.ValueText.Text = evaluated.Defined
+                ? (string.Equals(evaluated.Display, item.Definition, StringComparison.Ordinal) ? "" : "→ " + evaluated.Display)
+                : evaluated.Error;
+            row.ValueText.Visibility = string.IsNullOrEmpty(row.ValueText.Text) ? Visibility.Collapsed : Visibility.Visible;
+            row.ValueText.Foreground = new SolidColorBrush(evaluated.Defined
+                ? _root.ActualTheme == ElementTheme.Dark ? Color.FromArgb(210, 214, 222, 234) : Color.FromArgb(210, 71, 85, 105)
+                : Microsoft.UI.Colors.Firebrick);
+            row.Definition = item.Definition;
+            row.Value = evaluated;
         }
-        finally { _updatingRows = false; }
+
+        // GeoGebra inline slider for free scalar parameters!
+        bool isFreeScalar = evaluated.Defined && evaluated.Kind == GeometryKind.Scalar
+            && double.TryParse(item.Definition, NumberStyles.Float, CultureInfo.InvariantCulture, out _);
+        row.SliderPanel.Visibility = isFreeScalar ? Visibility.Visible : Visibility.Collapsed;
+        if (isFreeScalar && (valueChanged || row.SliderMin != item.SliderMin
+            || row.SliderMax != item.SliderMax || row.SliderStep != item.SliderStep))
+        {
+            row.SyncingSlider = true;
+            try
+            {
+                row.Slider.Minimum = item.SliderMin;
+                row.Slider.Maximum = item.SliderMax;
+                row.Slider.StepFrequency = item.SliderStep;
+                if (!row.Slider.IsAdjusting) row.Slider.Value = Math.Clamp(evaluated.Number, item.SliderMin, item.SliderMax);
+                row.SliderRange.Text = $"{item.SliderMin:G3} .. {item.SliderMax:G3}";
+            }
+            finally { row.SyncingSlider = false; }
+            row.SliderMin = item.SliderMin;
+            row.SliderMax = item.SliderMax;
+            row.SliderStep = item.SliderStep;
+        }
+        if (isFreeScalar) row.PlayButton.Glyph = _playing && item.Animate ? Glyphs.Pause : Glyphs.Play;
+
+        if (definitionChanged) ToolTipService.SetToolTip(row.Item, item.Label + " = " + item.Definition);
     }
 
-    private AlgebraRow CreateAlgebraRow(string label)
+    private AlgebraRow CreateAlgebraRow(string label, ListViewItem listItem, ContentControl content)
     {
         var dot = new Ellipse { Width = 18, Height = 18, StrokeThickness = 2.2 };
         var visBtn = new Button
@@ -900,18 +1124,14 @@ public sealed partial class GeometryWorkbenchWindow : Window
             BorderThickness = new Thickness(0, 0, 0, 1),
             BorderBrush = new SolidColorBrush(Color.FromArgb(24, 128, 128, 128)),
         };
-        var listItem = new ListViewItem
-        {
-            Content = card,
-            Tag = label,
-            Padding = new Thickness(2),
-            HorizontalContentAlignment = HorizontalAlignment.Stretch,
-        };
+        content.Content = card;
+        listItem.Tag = label;
+        listItem.Padding = new Thickness(2);
+        listItem.HorizontalContentAlignment = HorizontalAlignment.Stretch;
 
         var row = new AlgebraRow
         {
             Item = listItem,
-            VisibilityButton = visBtn,
             VisibilityDot = dot,
             FormulaView = formulaView,
             FallbackTitle = fallbackTitle,
@@ -928,8 +1148,8 @@ public sealed partial class GeometryWorkbenchWindow : Window
             Document.Update(label, current => current with { Definition = ComputerAlgebra.Number(slider.Value) });
         };
         slider.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler((_, _) => Document.BeginGesture()), true);
-        slider.AddHandler(UIElement.PointerReleasedEvent, new PointerEventHandler((_, _) => Document.EndGesture()), true);
-        slider.AddHandler(UIElement.PointerCaptureLostEvent, new PointerEventHandler((_, _) => Document.EndGesture()), true);
+        slider.AddHandler(UIElement.PointerReleasedEvent, new PointerEventHandler((_, _) => EndViewGesture()), true);
+        slider.AddHandler(UIElement.PointerCaptureLostEvent, new PointerEventHandler((_, _) => EndViewGesture()), true);
         playBtn.Click += (_, _) =>
         {
             Document.Update(label, current => current with { Animate = true });
@@ -941,6 +1161,12 @@ public sealed partial class GeometryWorkbenchWindow : Window
 
     private void SelectObject(string label)
     {
+        if (_selectedObjectLabel != label)
+        {
+            if (_selectedObjectLabel is not null) DispatchObjectEvent(_selectedObjectLabel, "OnDeselect");
+            _selectedObjectLabel = label;
+            if (label is not null) DispatchObjectEvent(label, "OnSelect");
+        }
         _view.SelectedLabel = label; _view.InvalidateGeometry();
         _focused = _input;
         _properties.Children.Clear();
@@ -969,6 +1195,41 @@ public sealed partial class GeometryWorkbenchWindow : Window
         Check("显示标签", item.ShowLabel, (current, value) => current with { ShowLabel = value });
         Check("跟踪点轨迹", item.Trace, (current, value) => current with { Trace = value });
 
+        if (!item.Fixed && Evaluation?.Values.TryGetValue(label, out var selectedValue) == true
+            && selectedValue.Kind == GeometryKind.Point)
+        {
+            string attachedPath = ConstructionDocument.AttachedPath(item, selectedValue);
+            if (attachedPath is not null)
+            {
+                var detach = new Button { Content = "脱离对象约束", MinHeight = 40 };
+                detach.Click += async (_, _) =>
+                {
+                    await CalculateAsync();
+                    if (!_closed && Evaluation is not null && _renderedRevision == Document.EvaluationRevision)
+                        Guard(() => Document.DetachPoint(Evaluation, label));
+                };
+                _properties.Children.Add(detach);
+            }
+            else if (ConstructionDocument.IsFreePoint(item))
+            {
+                var pathName = new TextBox { Header = "附着对象", PlaceholderText = "输入对象标签" };
+                var attach = new Button { Content = "附着到路径", MinHeight = 40 };
+                var attachInside = new Button { Content = "附着到区域内部", MinHeight = 40 };
+                async Task AttachAsync(bool inside)
+                {
+                    string target = pathName.Text.Trim();
+                    await CalculateAsync();
+                    if (!_closed && Evaluation is not null && _renderedRevision == Document.EvaluationRevision)
+                        Guard(() => Document.AttachPoint(Evaluation, label, target, inside));
+                }
+                attach.Click += async (_, _) => await AttachAsync(false);
+                attachInside.Click += async (_, _) => await AttachAsync(true);
+                _properties.Children.Add(pathName);
+                _properties.Children.Add(attach);
+                _properties.Children.Add(attachInside);
+            }
+        }
+
         var colors = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         foreach (uint color in new uint[] { 0xFF2269DE, 0xFFBA3847, 0xFF15936F, 0xFF8E4CBD, 0xFFCE7918, 0xFF333333 })
         {
@@ -994,6 +1255,7 @@ public sealed partial class GeometryWorkbenchWindow : Window
             AddPropertySlider("参数值", item.SliderMin, item.SliderMax, item.SliderStep, evaluated.Number,
                 value => Document.Update(label, current => current with { Definition = ComputerAlgebra.Number(value) }));
             Check("播放时驱动此参数", item.Animate, (current, value) => current with { Animate = value });
+            Check("在视图中显示滑动条", item.ShowSlider, (current, value) => current with { ShowSlider = value });
             var range = new StackPanel { Spacing = 6 };
             foreach (var option in new[] { ("最小值", item.SliderMin), ("最大值", item.SliderMax), ("步长", item.SliderStep) })
             {
@@ -1017,12 +1279,19 @@ public sealed partial class GeometryWorkbenchWindow : Window
             Check("复选框值", boolean.Number != 0, (current, value) => current with { Definition = "Checkbox(" + (value ? "1" : "0") + ")" });
 
         var scriptsPanel = new StackPanel { Spacing = 8 };
-        foreach (var script in new[] { ("点击时", item.OnClick), ("更新时", item.OnUpdate) })
+        foreach (var script in new[]
         {
-            string eventName = script.Item1;
+            ("点击时", item.OnClick, "OnClick"), ("更新时", item.OnUpdate, "OnUpdate"),
+            ("值改变时", item.OnChange, "OnChange"), ("指针进入时", item.OnMouseOver, "OnMouseOver"),
+            ("指针离开时", item.OnMouseOut, "OnMouseOut"), ("选中时", item.OnSelect, "OnSelect"),
+            ("取消选中时", item.OnDeselect, "OnDeselect"), ("拖动开始时", item.OnDragStart, "OnDragStart"),
+            ("拖动结束时", item.OnDragEnd, "OnDragEnd")
+        })
+        {
+            string eventName = script.Item3;
             var box = new TextBox
             {
-                Header = eventName,
+                Header = script.Item1,
                 Text = script.Item2,
                 AcceptsReturn = true,
                 TextWrapping = TextWrapping.Wrap,
@@ -1030,12 +1299,11 @@ public sealed partial class GeometryWorkbenchWindow : Window
                 MaxLength = 4096,
                 PlaceholderText = "例如 SetValue(a,a+1); SetVisible(g,true)",
             };
-            box.LostFocus += (_, _) => Document.Update(label, current => eventName == "点击时"
-                ? current with { OnClick = box.Text } : current with { OnUpdate = box.Text });
+            box.LostFocus += (_, _) => { if (box.Text != script.Item2) Guard(() => Document.RegisterEvent(label, eventName, box.Text)); };
             scriptsPanel.Children.Add(box);
         }
         var run = new Button { Content = "运行点击事件", MinHeight = 40 };
-        run.Click += (_, _) => RunEventScript(Document.State.Objects.First(current => current.Label == label).OnClick);
+        run.Click += (_, _) => DispatchObjectEvent(label, "OnClick");
         scriptsPanel.Children.Add(run);
         _properties.Children.Add(new Expander { Header = "构造事件脚本", Content = scriptsPanel, HorizontalAlignment = HorizontalAlignment.Stretch });
         var remove = new Button { Content = "删除对象", MinHeight = 40 };
@@ -1043,13 +1311,143 @@ public sealed partial class GeometryWorkbenchWindow : Window
         _properties.Children.Add(remove);
     }
 
+    private void DispatchObjectEvent(string label, string eventName) => DispatchEvent(label, eventName);
+
+    private void DispatchEvent(string label, string eventName, string argument = null, IReadOnlyDictionary<string, double> fields = null)
+    {
+        var state = Document.State;
+        if (_committingEventScript || (state.EventScripts.Count == 0 && state.AppletListeners.Count == 0 && string.IsNullOrEmpty(label))) return;
+        var item = state.Objects.FirstOrDefault(candidate => candidate.Label == label);
+        string script = eventName switch
+        {
+            "OnClick" => item?.OnClick,
+            "OnUpdate" => item?.OnUpdate,
+            "OnChange" => item?.OnChange,
+            "OnMouseOver" => item?.OnMouseOver,
+            "OnMouseOut" => item?.OnMouseOut,
+            "OnSelect" => item?.OnSelect,
+            "OnDeselect" => item?.OnDeselect,
+            "OnDragStart" => item?.OnDragStart,
+            "OnDragEnd" => item?.OnDragEnd,
+            _ => "",
+        };
+        var scripts = new List<ScriptInvocation>();
+        AddEventScripts(scripts, state, eventName, label ?? "", script, argument: argument, fields: fields);
+        RunEventScripts(scripts);
+    }
+
+    private ConstructionSnapshot _observedConstruction;
+
+    private void DispatchConstructionChanges()
+    {
+        var previous = _observedConstruction;
+        var current = Document.State;
+        _observedConstruction = current;
+        _view.TrackClientPointer = current.AppletListeners.Any(listener => listener.EventName == "OnClient")
+            || current.EventScripts.ContainsKey("onclient") || current.EventScripts.ContainsKey("onmousedown");
+        if (previous is null || _committingEventScript
+            || previous.EventScripts.Count + current.EventScripts.Count + previous.AppletListeners.Count + current.AppletListeners.Count == 0)
+            return;
+        var scripts = new List<ScriptInvocation>();
+        if (!ReferenceEquals(previous.Tools, current.Tools) && !previous.Tools.SequenceEqual(current.Tools))
+        {
+            var oldNames = previous.Tools.Select(tool => tool.Name).ToHashSet(StringComparer.Ordinal);
+            var newNames = current.Tools.Select(tool => tool.Name).ToHashSet(StringComparer.Ordinal);
+            foreach (var tool in current.Tools)
+                if (!oldNames.Contains(tool.Name)) AddEventScripts(scripts, current, "OnAddMacro", "", argument: tool.Name);
+            foreach (var tool in previous.Tools)
+                if (!newNames.Contains(tool.Name)) AddEventScripts(scripts, current, "OnRemoveMacro", "", argument: tool.Name);
+        }
+        if (ReferenceEquals(previous.Objects, current.Objects)) { RunEventScripts(scripts); return; }
+        if (current.Objects.Count == 0 && previous.Objects.Count > 0)
+            AddEventScripts(scripts, previous, "OnClear", "");
+        else
+        {
+            var oldObjects = previous.Objects.ToDictionary(item => item.Label, StringComparer.Ordinal);
+            var currentLabels = current.Objects.Select(item => item.Label).ToHashSet(StringComparer.Ordinal);
+            var currentIds = current.Objects.Select(item => item.Id).ToHashSet();
+            var removed = previous.Objects.Where(item => !currentLabels.Contains(item.Label))
+                .GroupBy(item => item.Id).ToDictionary(group => group.Key, group => group.First().Label);
+            foreach (var item in previous.Objects)
+                if (!currentLabels.Contains(item.Label) && !currentIds.Contains(item.Id))
+                    AddEventScripts(scripts, previous, "OnRemove", item.Label);
+            foreach (var item in current.Objects)
+            {
+                if (oldObjects.TryGetValue(item.Label, out var oldObject))
+                {
+                    if (item.Color != oldObject.Color || item.LineWidth != oldObject.LineWidth || item.Opacity != oldObject.Opacity
+                        || item.Visible != oldObject.Visible || item.ShowLabel != oldObject.ShowLabel
+                        || item.Fixed != oldObject.Fixed || item.Trace != oldObject.Trace)
+                        AddEventScripts(scripts, current, "OnUpdateStyle", item.Label);
+                    continue;
+                }
+                if (removed.TryGetValue(item.Id, out string oldLabel))
+                    AddEventScripts(scripts, current, "OnRename", item.Label, previousTarget: oldLabel);
+                else AddEventScripts(scripts, current, "OnAdd", item.Label);
+            }
+        }
+        RunEventScripts(scripts);
+    }
+
+    private void DispatchUndoPointStored() => DispatchObjectEvent("", "OnStoreUndo");
+    private void DispatchHistoryRestored(string eventName) => DispatchObjectEvent("", eventName);
+    private void DispatchClientViewChanged()
+    {
+        var state = Document.State;
+        if (!state.AppletListeners.Any(listener => listener.EventName == "OnClient"))
+        {
+            DispatchObjectEvent("", "OnViewChanged");
+            return;
+        }
+
+        var projection = new GeometryProjection(state, Math.Max(1, _view.ActualWidth), Math.Max(1, _view.ActualHeight));
+        var origin = projection.Project(default);
+        var fields = new Dictionary<string, double>
+        {
+            ["xZero"] = origin.X,
+            ["yZero"] = origin.Y,
+            ["yscale"] = projection.Scale,
+            ["viewNo"] = state.ThreeDimensional ? 512 : 1,
+        };
+        if (state.ThreeDimensional)
+        {
+            fields["scale"] = projection.Scale;
+            fields["zscale"] = projection.Scale;
+            fields["zZero"] = 0;
+            fields["xAngle"] = state.Pitch * 180 / Math.PI;
+            fields["zAngle"] = state.Yaw * 180 / Math.PI;
+        }
+        else fields["xscale"] = projection.Scale;
+        DispatchEvent("", "OnViewChanged", fields: fields);
+    }
+
+    private void DispatchExportStarted(string format)
+        => DispatchEvent("", "OnExport", System.Text.Json.JsonSerializer.Serialize(new[] { format.ToLowerInvariant() }));
+
+    private sealed record ScriptInvocation(string Code, string EventName, string Target, string PreviousTarget,
+        string Argument = null, IReadOnlyDictionary<string, double> Fields = null);
+
+    private static void AddEventScripts(List<ScriptInvocation> scripts, ConstructionSnapshot state,
+        string eventName, string target, string objectScript = null, string previousTarget = "", string argument = null,
+        IReadOnlyDictionary<string, double> fields = null)
+    {
+        if (!string.IsNullOrWhiteSpace(objectScript)) scripts.Add(new(objectScript, eventName, target, previousTarget, argument));
+        if (state.AppletListeners.Any(listener => listener.EventName == eventName || listener.EventName == "OnClient"))
+            scripts.Add(new(null, eventName, target, previousTarget, argument, fields));
+        if (state.EventScripts.Count == 0) return;
+        if (state.EventScripts.TryGetValue(eventName.ToLowerInvariant(), out string globalScript))
+            scripts.Add(new(globalScript, eventName, target, previousTarget, argument));
+        if (state.EventScripts.TryGetValue("onclient", out string clientScript))
+            scripts.Add(new(clientScript, eventName, target, previousTarget, argument));
+    }
+
     private void AddPropertySlider(string title, double min, double max, double step, double value, Action<double> changed)
     {
         var slider = new PointerSlider { Header = title, Minimum = min, Maximum = max, StepFrequency = step, Value = Math.Clamp(value, min, max), MinHeight = 44 };
         slider.ValueChanged += (_, _) => changed(slider.Value);
         slider.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler((_, _) => Document.BeginGesture()), true);
-        slider.AddHandler(UIElement.PointerReleasedEvent, new PointerEventHandler((_, _) => Document.EndGesture()), true);
-        slider.AddHandler(UIElement.PointerCaptureLostEvent, new PointerEventHandler((_, _) => Document.EndGesture()), true);
+        slider.AddHandler(UIElement.PointerReleasedEvent, new PointerEventHandler((_, _) => EndViewGesture()), true);
+        slider.AddHandler(UIElement.PointerCaptureLostEvent, new PointerEventHandler((_, _) => EndViewGesture()), true);
         _properties.Children.Add(slider);
     }
 
@@ -1105,17 +1503,18 @@ public sealed partial class GeometryWorkbenchWindow : Window
 
     private void ToggleAnimation()
     {
-        if (_playing) { StopAnimation(); return; }
+        if (_playing) { StopAnimation(); RefreshObjects(); return; }
         if (!Document.State.Objects.Any(item => item.Animate))
         {
             SetStatus("在数值对象的属性中勾选“播放时驱动此参数”，或点击代数列表中滑动条左侧的播放按钮。"); return;
         }
         Document.BeginGesture(); _playing = true; _animationTime = DateTime.UtcNow; _animation.Start();
+        RefreshObjects();
     }
 
     private void Animate()
     {
-        if (!_playing || _renderedRevision != Document.Revision) return;
+        if (!_playing || _renderedRevision != Document.EvaluationRevision) return;
         double elapsed = Math.Clamp((DateTime.UtcNow - _animationTime).TotalSeconds, 0, .3);
         _animationTime = DateTime.UtcNow;
         foreach (var item in Document.State.Objects.Where(item => item.Animate).ToArray())
@@ -1127,31 +1526,72 @@ public sealed partial class GeometryWorkbenchWindow : Window
         }
     }
 
-    private void StopAnimation() { _animation.Stop(); if (_playing) Document.EndGesture(); _playing = false; }
-    private void RunEventScript(string script)
+    private void StopAnimation()
     {
-        if (!string.IsNullOrWhiteSpace(script)) RunEventScripts(new[] { script });
+        _animation.Stop();
+        if (!_playing) return;
+        Document.EndGesture();
+        _playing = false;
+        DrainEventScripts();
+        if (!_gestureEvaluationPending) return;
+        _gestureEvaluationPending = false;
+        QueueCalculation();
     }
+    private readonly Queue<IReadOnlyList<ScriptInvocation>> _scriptQueue = new();
     private bool _scriptsBusy;
-    private async void RunEventScripts(IReadOnlyList<string> scripts)
+    private bool _committingEventScript;
+    private void RunEventScripts(IReadOnlyList<ScriptInvocation> scripts)
     {
-        if (_scriptsBusy || _closed) return;
+        if (_closed || scripts.Count == 0) return;
+        _scriptQueue.Enqueue(scripts);
+        DrainEventScripts();
+    }
+
+    private async void DrainEventScripts()
+    {
+        if (_scriptsBusy || _closed || Document.IsGestureActive) return;
         _scriptsBusy = true;
-        var snapshot = Document.State;
-        int revision = Document.Revision;
         try
         {
-            var updated = await Task.Run(() =>
+            while (!_closed && !Document.IsGestureActive && _scriptQueue.TryPeek(out var scripts))
             {
-                var transaction = new ConstructionDocument(); transaction.Load(snapshot);
-                foreach (string script in scripts) { _lifetime.Token.ThrowIfCancellationRequested(); transaction.RunScript(script); }
-                return transaction.State;
-            }, _lifetime.Token);
-            if (_closed || Document.Revision != revision) return;
-            Document.Load(updated); _suppressScriptsRevision = Document.Revision;
+                var snapshot = Document.State;
+                try
+                {
+                    var updated = await Task.Run(() =>
+                    {
+                        var transaction = new ConstructionDocument();
+                        transaction.Load(snapshot);
+                        foreach (var script in scripts)
+                        {
+                            _lifetime.Token.ThrowIfCancellationRequested();
+                            if (script.Code is null) transaction.RunAppletEvent(script.EventName, script.Target, script.PreviousTarget, script.Argument, script.Fields);
+                            else transaction.RunScript(script.Code, script.EventName, script.Target, script.PreviousTarget, script.Argument);
+                        }
+                        return transaction.State;
+                    }, _lifetime.Token);
+                    if (_closed) return;
+                    if (!_scriptQueue.TryPeek(out var pending) || !ReferenceEquals(pending, scripts)) continue;
+                    if (Document.IsGestureActive) break;
+                    if (!ReferenceEquals(snapshot, Document.State)) continue;
+                    _scriptQueue.Dequeue();
+                    if (!ReferenceEquals(snapshot, updated))
+                    {
+                        _committingEventScript = true;
+                        try { Document.ApplyEventResult(updated); }
+                        finally { _committingEventScript = false; }
+                        _suppressScriptsRevision = Document.EvaluationRevision;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    if (!_scriptQueue.TryPeek(out var pending) || !ReferenceEquals(pending, scripts)) continue;
+                    _scriptQueue.Dequeue();
+                    SetStatus(ex.GetBaseException().Message);
+                }
+            }
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { SetStatus(ex.GetBaseException().Message); }
         finally { _scriptsBusy = false; }
     }
     private static string Coordinates(GeoVector p) => "(" + ComputerAlgebra.Number(p.X) + "," + ComputerAlgebra.Number(p.Y) + (p.Z == 0 ? ")" : "," + ComputerAlgebra.Number(p.Z) + ")");
@@ -1166,15 +1606,14 @@ public sealed partial class GeometryWorkbenchWindow : Window
             int from = box.SelectionStart + box.SelectionLength;
             int next = box.Text.IndexOf('□', from);
             if (next < 0) next = box.Text.IndexOf('□');
-            if (next >= 0) { box.SelectionStart = next; box.SelectionLength = 1; }
+            if (next >= 0) box.Select(next, 1);
             return;
         }
         Guard(() =>
         {
             var edit = FormulaEditing.Apply(box.Text, box.SelectionStart, box.SelectionLength, key);
             box.Text = edit.Text;
-            box.SelectionStart = edit.SelectionStart;
-            box.SelectionLength = edit.SelectionLength;
+            box.Select(edit.SelectionStart, edit.SelectionLength);
         });
     }
 
@@ -1196,7 +1635,14 @@ public sealed partial class GeometryWorkbenchWindow : Window
     {
         if (_closed) return;
         _closed = true; StopAnimation(); _lifetime.Cancel(); _calculation?.Cancel(); _debounce.Stop(); _mathDebounce.Stop();
-        Document.Changed -= QueueCalculation; _host.TargetChanged -= TargetChanged;
+        _scriptQueue.Clear();
+        Document.EvaluationChanged -= QueueCalculation;
+        Document.ObjectsChanged -= ObjectsChanged;
+        Document.ViewChanged -= ViewChanged;
+        Document.Changed -= DispatchConstructionChanges;
+        Document.UndoPointStored -= DispatchUndoPointStored;
+        Document.HistoryRestored -= DispatchHistoryRestored;
+        _host.TargetChanged -= TargetChanged;
         _target?.Controller.ClearExtensionPreview(_previewOwner);
         _view.Dispose(); Handwriting.Dispose();
     }

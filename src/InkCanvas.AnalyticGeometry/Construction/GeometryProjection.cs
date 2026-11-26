@@ -3,9 +3,10 @@ using System.Numerics;
 namespace InkCanvas.AnalyticGeometry.Construction;
 
 /// <summary>One projection shared by the native view, vector exports and canvas insertion.</summary>
-public sealed class GeometryProjection(ConstructionSnapshot view, double width, double height)
+public sealed class GeometryProjection(ConstructionSnapshot view, double width, double height, int stereoEye = 0)
 {
     private readonly double _scale = Math.Min(width / (view.XMax - view.XMin), height / (view.YMax - view.YMin));
+    public double Scale => _scale;
     public Vector2 Project(GeoVector point)
     {
         double x = point.X, y = point.Y;
@@ -20,7 +21,9 @@ public sealed class GeometryProjection(ConstructionSnapshot view, double width, 
             {
                 double distance = (view.XMax - view.XMin) * 2;
                 double scale = distance / Math.Max(distance * .15, distance - Depth(point));
-                x *= scale;
+                // Parallel cameras with a shared convergence plane at zero depth.
+                double eye = stereoEye * (view.XMax - view.XMin) * .045;
+                x = x * scale + eye * (1 - scale);
                 y *= scale;
             }
         }

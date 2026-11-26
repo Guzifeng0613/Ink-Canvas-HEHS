@@ -161,7 +161,6 @@ public sealed class HandwritingInput : UserControl, IDisposable
 
         SetPadMode(PadMode.Write);
         _status.Text = "内置 2D 数学公式手写引擎已就绪 · 手写自动识别，点击“更正”可点选单个符号修改候选。";
-        Loaded += (_, _) => TryInitializeWindowsRecognizer();
         ActualThemeChanged += (_, _) => ApplyTheme(previewCard, padBorder);
         ApplyTheme(previewCard, padBorder);
     }
@@ -297,11 +296,14 @@ public sealed class HandwritingInput : UserControl, IDisposable
             var allCandidates = new List<string>(builtIn.Candidates);
 
             // Optional secondary candidates from Windows offline ink recognizer if installed.
+            TryInitializeWindowsRecognizer();
             if (_windowsRecognizer is not null && _windowsRecognizers.Count > 0)
             {
+                var recognizer = _windowsRecognizer;
+                InkStrokeContainer container = null;
                 try
                 {
-                    var container = new InkStrokeContainer();
+                    container = new InkStrokeContainer();
                     var builder = new InkStrokeBuilder();
                     foreach (var stroke in _controller.Document.Strokes)
                     {
@@ -309,8 +311,8 @@ public sealed class HandwritingInput : UserControl, IDisposable
                         if (points.Count == 1) points.Add(new(points[0].X + .1, points[0].Y));
                         if (points.Count > 1) container.AddStroke(builder.CreateStroke(points));
                     }
-                    _windowsRecognizer.SetDefaultRecognizer(_windowsRecognizers[0]);
-                    var winResults = await _windowsRecognizer.RecognizeAsync(container, InkRecognitionTarget.All).AsTask(_lifetime.Token);
+                    recognizer.SetDefaultRecognizer(_windowsRecognizers[0]);
+                    var winResults = await recognizer.RecognizeAsync(container, InkRecognitionTarget.All);
                     if (!_disposed && _version == version && winResults.Count > 0)
                     {
                         var ordered = winResults.OrderBy(item => item.BoundingRect.Y / Math.Max(20, item.BoundingRect.Height))
@@ -321,6 +323,12 @@ public sealed class HandwritingInput : UserControl, IDisposable
                     }
                 }
                 catch (Exception) { /* Built-in engine already succeeded; ignore OS recognizer errors. */ }
+                finally
+                {
+                    // The non-agile stroke container stays alive until the native operation completes on this apartment.
+                    GC.KeepAlive(container);
+                    GC.KeepAlive(recognizer);
+                }
             }
 
             if (_disposed || _version != version) return;
@@ -452,5 +460,6 @@ public sealed class HandwritingInput : UserControl, IDisposable
         _surface.Dispose();
         _controller.Dispose();
         _windowsRecognizer = null;
+        _windowsRecognizers = Array.Empty<InkRecognizer>();
     }
 }
