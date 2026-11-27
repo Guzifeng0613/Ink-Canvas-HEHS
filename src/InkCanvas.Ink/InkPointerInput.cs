@@ -10,7 +10,11 @@ public sealed partial class InkController
     /// <summary>Optional input extensions run on the owning UI thread before ink is routed and after contact ends.</summary>
     public static event Action<InkPointerInput> PointerInput;
     public static event Action<InkController> InputContextChanging;
-    public void NotifyInputContextChanging() => InputContextChanging?.Invoke(this);
+    public void NotifyInputContextChanging()
+    {
+        CancelAdvancedSelection();
+        InputContextChanging?.Invoke(this);
+    }
 
     public void OnPointerDown(in OverlayPointer pointer)
     {

@@ -43,9 +43,11 @@ internal static class ShapeToolsRegression
                 await Task.Delay(350);
                 var preview = Descendants(window.Content).OfType<ShapePreview>().Single();
                 var controller = boardMode ? services.Board.Current : services.OverlayInk;
-                var catalog = ShapeMenuCatalog.Rows.SelectMany(row => row).ToArray();
+                var catalog = ShapeMenuCatalog.Rows.SelectMany(row => row)
+                    .Concat(ShapeMenuCatalog.ExpansionItems.Where(item => controller.CanDrawShape(item.Kind))).ToArray();
                 Check("shape categories cover every choice " + boardMode, catalog.All(item => item.LongPress)
-                    && preview.ShapeCount == Enum.GetValues<ShapeKind>().Length && ShapeMenuCatalog.Categories.Length == 4
+                    && preview.ShapeCount == Enum.GetValues<ShapeKind>().Count(kind => kind != ShapeKind.Polygon && controller.CanDrawShape(kind))
+                    && ShapeMenuCatalog.Categories.Length == 4
                     && catalog.Select(item => item.Kind).Distinct().Count() == catalog.Length
                     && ShapeMenuCatalog.Categories.All(category => category.Rows.SelectMany(row => row).Any()));
                 Check("line and coordinate tools share one category " + boardMode,
@@ -97,7 +99,7 @@ internal static class ShapeToolsRegression
                     && controller.Document.Strokes[^1].Points[0].Position == new Vector2(120, 180)
                     && controller.Document.Strokes[^1].Points[1].Position == new Vector2(120, 60)
                     && controller.StickyShape && controller.Tool == InkTool.Shape);
-                foreach (var kind in Enum.GetValues<ShapeKind>().Where(kind => kind is >= ShapeKind.Cube and <= ShapeKind.ConeFrustum))
+                foreach (var kind in Enum.GetValues<ShapeKind>().Where(IsSampleSolid))
                 {
                     int index = Array.FindIndex(catalog, item => item.Kind == kind);
                     preview.SelectItem(index, sticky: true);
@@ -165,7 +167,7 @@ internal static class ShapeToolsRegression
 
     private static async Task SaveSolids(string directory)
     {
-        var kinds = Enum.GetValues<ShapeKind>().Where(kind => kind is >= ShapeKind.Cube and <= ShapeKind.ConeFrustum).ToArray();
+        var kinds = Enum.GetValues<ShapeKind>().Where(IsSampleSolid).ToArray();
         using var controller = new InkController();
         for (int i = 0; i < kinds.Length; i++)
         {
@@ -176,7 +178,7 @@ internal static class ShapeToolsRegression
                 : ShapeGenerator.Generate(kinds[i], origin, origin + new Vector2(200, 180), attributes);
             controller.Document.AddRange(strokes);
         }
-        using var target = new CanvasRenderTarget(CanvasDevice.GetSharedDevice(), 1250, 650, 96);
+        using var target = new CanvasRenderTarget(CanvasDevice.GetSharedDevice(), 1250, ((kinds.Length + 3) / 4) * 300 + 50, 96);
         using var renderer = new InkSceneRenderer { ShowSelectionOutline = false };
         using (var drawing = target.CreateDrawingSession())
         {
@@ -187,6 +189,9 @@ internal static class ShapeToolsRegression
         }
         await target.SaveAsync(Path.Combine(directory, "solid-shapes.png"), CanvasBitmapFileFormat.Png);
     }
+
+    private static bool IsSampleSolid(ShapeKind kind)
+        => kind is >= ShapeKind.Cube and <= ShapeKind.ConeFrustum || ShapeGenerator.IsPolygonalFrustum(kind);
 
     private static async Task<(bool? Passed, string Status)> Hold(Window window, FrameworkElement cell, bool jitter, Func<bool> selected)
     {

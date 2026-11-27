@@ -6,6 +6,7 @@ using InkCanvas.Host.Contracts;
 using InkCanvas.Pdf;
 using Microsoft.Graphics.Canvas;
 using PdfSharp.Drawing;
+using PdfSharp.Pdf;
 using Windows.Foundation;
 using Windows.Storage.Streams;
 
@@ -127,6 +128,7 @@ public static class PdfRasterizerDiagnostics
             host.Attach(window); window.Activate();
             await Task.Delay(80);
             Check("window closes with pending page rendering", await window.CloseAsync());
+            await MeasureComplexOpenAsync(host, directory, Check);
         }
         catch (Exception exception) { Check("native PDF lifetime exception", false, exception.ToString()); }
         finally
@@ -135,6 +137,92 @@ public static class PdfRasterizerDiagnostics
                 new JsonSerializerOptions { WriteIndented = true }));
         }
         void Check(string check, bool passed, object detail = null) => checks.Add(new { check, passed, detail });
+    }
+
+    private static async Task MeasureComplexOpenAsync(IDocumentWorkspaceHost host, string directory, Action<string, bool, object> check)
+    {
+        string source = Path.Combine(directory, "complex-open.pdf");
+        string annotated = Path.Combine(directory, "complex-open-ink.pdf");
+        const int pageCount = 160;
+        if (!File.Exists(source) || !File.Exists(annotated))
+        {
+            using (var document = new PdfDocument())
+            {
+                var scan = new PdfDictionary(document);
+                scan.Elements.SetName("/Type", "/XObject");
+                scan.Elements.SetName("/Subtype", "/Image");
+                scan.Elements.SetName("/ColorSpace", "/DeviceRGB");
+                scan.Elements.SetInteger("/BitsPerComponent", 8);
+                scan.Elements.SetInteger("/Width", 2400);
+                scan.Elements.SetInteger("/Height", 3200);
+                var pixels = new byte[2400 * 3200 * 3];
+                var random = new Random(117);
+                random.NextBytes(pixels);
+                scan.CreateStream(pixels);
+                document.Internals.AddObject(scan);
+                for (int i = 0; i < pageCount; i++)
+                {
+                    var page = document.AddPage();
+                    page.Width = XUnit.FromPoint(600); page.Height = XUnit.FromPoint(800);
+                    var objects = new PdfDictionary(document);
+                    objects.Elements["/Scan"] = scan.Reference;
+                    var resources = new PdfDictionary(document);
+                    resources.Elements["/XObject"] = objects;
+                    page.Elements["/Resources"] = resources;
+                    var vectors = new System.Text.StringBuilder("q 600 0 0 800 0 0 cm /Scan Do Q\n0 0 1 RG .25 w\n");
+                    for (int item = 0; item < (i == 0 ? 35000 : 1200); item++)
+                        vectors.Append(random.Next(570)).Append(' ').Append(random.Next(780)).Append(" m ")
+                            .Append(random.Next(570)).Append(' ').Append(random.Next(780)).Append(" l S\n");
+                    var content = new PdfDictionary(document);
+                    content.CreateStream(System.Text.Encoding.ASCII.GetBytes(vectors.ToString()));
+                    document.Internals.AddObject(content);
+                    page.Elements["/Contents"] = content.Reference;
+                }
+                document.Save(source);
+            }
+            using var file = await PdfAnnotationFile.OpenAsync(source);
+            var ink = new Dictionary<int, IReadOnlyList<InkCanvas.Core.Ink.InkStroke>>();
+            for (int i = 0; i < pageCount; i++)
+            {
+                var strokes = new List<InkCanvas.Core.Ink.InkStroke>();
+                for (int row = 0; row < 16; row++)
+                {
+                    var stroke = new InkCanvas.Core.Ink.InkStroke(new() { TaperKind = InkCanvas.Core.Ink.TaperKind.None });
+                    for (int point = 0; point < 256; point++)
+                        stroke.AddPoint(150 + point, 125 + row * 25 + MathF.Sin(point * .04f) * 9);
+                    stroke.Complete();
+                    strokes.Add(stroke);
+                }
+                ink[i] = strokes;
+            }
+            await file.SaveAsync(annotated, ink);
+        }
+
+        foreach (string path in new[] { source, annotated })
+        {
+            var runs = new List<object>();
+            for (int iteration = 0; iteration < 3; iteration++)
+            {
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                var file = await PdfAnnotationFile.OpenAsync(path);
+                long metadata = clock.ElapsedMilliseconds;
+                var renderer = await PdfRasterizer.OpenAsync(file, CancellationToken.None);
+                long native = clock.ElapsedMilliseconds;
+                var window = new PdfWindow(host, file, renderer, () => Task.CompletedTask, () => Task.CompletedTask);
+                try
+                {
+                    host.Attach(window);
+                    window.Activate();
+                    while (!window.CachedPages.Contains(0) && clock.ElapsedMilliseconds < 15000) await Task.Delay(10);
+                    long firstPreview = clock.ElapsedMilliseconds;
+                    runs.Add(new { metadata, native, firstPreview, window.RealizedThumbnailCount });
+                    if (!window.CachedPages.Contains(0)) throw new TimeoutException("Complex PDF did not present the first page.");
+                }
+                finally { window.ForceClose(); await window.Cleanup; }
+            }
+            check("complex PDF opens and renders the first page", true,
+                new { file = Path.GetFileName(path), bytes = new FileInfo(path).Length, pages = pageCount, runs });
+        }
     }
 
     private static int Width(byte[] png) => BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(16, 4));

@@ -15,7 +15,9 @@ public sealed class SelectionPalette : UserControl
     private readonly TouchIconButton _rectangle, _lasso;
     public event Action<InkSelectionMode> ModePicked;
 
-    public SelectionPalette(Func<InkController> controller, int theme)
+    public SelectionPalette(Func<InkController> controller, int theme) : this(controller, theme, null) { }
+
+    public SelectionPalette(Func<InkController> controller, int theme, UIElement extension)
     {
         _controller = controller;
         var modes = new Grid { ColumnSpacing = 8 };
@@ -37,7 +39,9 @@ public sealed class SelectionPalette : UserControl
         actions.Children.Add(Button("全选", Glyphs.Select, () => _controller().SelectAll()));
         var invert = Button("反选", Glyphs.LRSwitch, () => _controller().InvertSelection());
         Grid.SetColumn(invert, 1); actions.Children.Add(invert);
-        Content = new StackPanel { Width = 224, Padding = new Thickness(12), Spacing = 8, Children = { modes, actions } };
+        var layout = new StackPanel { Width = 224, Padding = new Thickness(12), Spacing = 8, Children = { modes, actions } };
+        if (extension is not null) layout.Children.Add(extension);
+        Content = layout;
         Refresh();
 
         TouchIconButton Button(string label, string glyph, Action click)

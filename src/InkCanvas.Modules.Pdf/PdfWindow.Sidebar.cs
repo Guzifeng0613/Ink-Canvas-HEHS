@@ -12,7 +12,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Markup;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
-using Windows.Storage.Streams;
+using System.Runtime.InteropServices.WindowsRuntime;
 
 namespace InkCanvas.Modules.Pdf;
 
@@ -35,6 +35,7 @@ public sealed partial class PdfWindow
         HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
     private TouchIconButton _previousSearch, _nextSearch;
     private double _thumbnailScale;
+    private ThumbnailItem[] _sidebarItems;
     private readonly Dictionary<int, ThumbnailItem> _realizedThumbnails = new();
     private bool _sidebarUserSet;
     private TouchIconButton _sidebarToggle;
@@ -44,20 +45,28 @@ public sealed partial class PdfWindow
     public int SearchResultCount => _hits.Count;
     public int RealizedThumbnailCount => _realizedThumbnails.Values.Count(item => item.Preview is not null);
 
-    private sealed class ThumbnailItem(int index, PdfPageGeometry geometry, double scale, Brush frameBrush) : INotifyPropertyChanged
+    private sealed class ThumbnailItem(int index, PdfPageGeometry geometry, double scale, Brush frameBrush,
+        double maxWidth = double.PositiveInfinity, double maxHeight = double.PositiveInfinity) : INotifyPropertyChanged
     {
         private PdfPageGeometry _geometry = geometry;
         public int Index => index;
-        public string Title => "第 " + (index + 1) + " 页";
-        public string PageNumber => (index + 1).ToString();
+        public string PageNumber { get; private set; } = (index + 1).ToString();
+        public void SetPosition(int position)
+        {
+            string number = (position + 1).ToString();
+            if (PageNumber == number) return;
+            PageNumber = number;
+            PropertyChanged?.Invoke(this, new(nameof(PageNumber)));
+        }
         private Brush _frameBrush = frameBrush;
         public Brush FrameBrush
         {
             get => _frameBrush;
             set { if (ReferenceEquals(_frameBrush, value)) return; _frameBrush = value; PropertyChanged?.Invoke(this, new(nameof(FrameBrush))); }
         }
-        public double Width => _geometry.DipWidth * scale;
-        public double Height => _geometry.DipHeight * scale;
+        private double Scale => Math.Min(scale, Math.Min(maxWidth / _geometry.DipWidth, maxHeight / _geometry.DipHeight));
+        public double Width => _geometry.DipWidth * Scale;
+        public double Height => _geometry.DipHeight * Scale;
         public void SetGeometry(PdfPageGeometry value)
         {
             if (_geometry == value) return;
@@ -79,7 +88,9 @@ public sealed partial class PdfWindow
         // One document scale preserves both page aspect and relative physical page sizes.
         // Page-local annotation extents do not participate in thumbnail sizing.
         _thumbnailScale = 156 / _file.Pages.Max(page => Math.Max(page.DipWidth, page.DipHeight));
-        _pages.ItemsSource = Enumerable.Range(0, _file.Pages.Count).Select(index => new ThumbnailItem(index, _file.Pages[index], _thumbnailScale, _thumbnailBorder)).ToArray();
+        _sidebarItems = Enumerable.Range(0, _file.Pages.Count).Select(index => new ThumbnailItem(index,
+            DisplayGeometry(index) with { Rotation = _file.Pages[index].Rotation + _pageRotations[index] }, _thumbnailScale, _thumbnailBorder)).ToArray();
+        _pages.ItemsSource = _sidebarItems;
         _pages.ItemTemplate = (DataTemplate)XamlReader.Load("""
             <DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
                 <StackPanel Width="176" Spacing="6" Margin="0,8" UseLayoutRounding="False">
@@ -184,8 +195,7 @@ public sealed partial class PdfWindow
 
     private void UpdateThumbnailSelection()
     {
-        if (_pages.Items.Count == 0) return;
-        var current = (ThumbnailItem)_pages.Items[_pageIndex];
+        var current = _sidebarItems[_pageIndex];
         if (ReferenceEquals(current, _highlightedThumbnail)) return;
         if (_highlightedThumbnail is not null) _highlightedThumbnail.FrameBrush = _thumbnailBorder;
         current.FrameBrush = _thumbnailAccent;
@@ -199,51 +209,21 @@ public sealed partial class PdfWindow
 
     private void RefreshThumbnails()
     {
-        if (!_split.IsPaneOpen || _idleResources?.IsActive != true) return;
-        foreach (var item in _realizedThumbnails.Values) _ = LoadThumbnailAsync(item);
+        if (!_readerPreviewReady || _organizerOpen || !_split.IsPaneOpen || NavigationIndex != 0 || _idleResources?.IsActive != true) return;
+        foreach (var item in _realizedThumbnails.Values)
+            if (item.Preview is null && item.Cancellation is null) _ = LoadThumbnailAsync(item);
     }
 
     private async Task LoadThumbnailAsync(ThumbnailItem item)
     {
-        if (_closed || !_split.IsPaneOpen || _idleResources?.IsActive != true) return;
+        if (_closed || !_readerPreviewReady || _organizerOpen || !_split.IsPaneOpen || NavigationIndex != 0 || _idleResources?.IsActive != true) return;
         item.Cancellation?.Cancel();
         var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_thumbnailCancellation.Token);
         item.Cancellation = cancellation;
         try
         {
             await Task.Delay(80, cancellation.Token);
-            var geometry = _file.Pages[item.Index];
-            double scale = _thumbnailScale;
-            var bytes = await _rasterizer.RenderAsync(item.Index, geometry, new(0, 0, geometry.DipWidth, geometry.DipHeight), scale, cancellation.Token);
-            cancellation.Token.ThrowIfCancellationRequested();
-            var strokes = _controllers.TryGetValue(item.Index, out var controller) ? controller.Document.Strokes : _file.GetInk(item.Index);
-            using var stream = new InMemoryRandomAccessStream();
-            if (strokes.Count > 0 || _pageRotations[item.Index] != 0)
-            {
-                using var bitmap = await LoadBitmapAsync(bytes, cancellation.Token);
-                var display = geometry with { Rotation = geometry.Rotation + _pageRotations[item.Index] };
-                using var target = new CanvasRenderTarget(bitmap.Device, Math.Max(1, display.DipWidth * (float)scale),
-                    Math.Max(1, display.DipHeight * (float)scale), 96);
-                using var scene = new InkSceneRenderer();
-                using (var draw = target.CreateDrawingSession())
-                {
-                    draw.Clear(Microsoft.UI.Colors.White);
-                    var transform = geometry.TransformTo(display) * Matrix3x2.CreateScale((float)scale);
-                    draw.Transform = transform;
-                    draw.DrawImage(bitmap, new Windows.Foundation.Rect(0, 0, geometry.DipWidth, geometry.DipHeight), bitmap.Bounds);
-                    draw.Transform = Matrix3x2.Identity;
-                    foreach (var stroke in strokes) scene.Strokes.Draw(draw, stroke, transform);
-                }
-                await target.SaveAsync(stream, CanvasBitmapFileFormat.Png).AsTask(cancellation.Token);
-            }
-            else
-            {
-                using var writer = new DataWriter(stream.GetOutputStreamAt(0));
-                writer.WriteBytes(bytes); await writer.StoreAsync().AsTask(cancellation.Token); writer.DetachStream();
-            }
-            stream.Seek(0);
-            var image = new BitmapImage();
-            await image.SetSourceAsync(stream).AsTask(cancellation.Token);
+            var image = await RenderThumbnailAsync(item.Index, _thumbnailScale, cancellation.Token);
             if (!_closed && !cancellation.IsCancellationRequested) item.Preview = image;
         }
         catch (OperationCanceledException) { }
@@ -253,6 +233,85 @@ public sealed partial class PdfWindow
             if (ReferenceEquals(item.Cancellation, cancellation)) item.Cancellation = null;
             cancellation.Dispose();
         }
+    }
+
+    private async Task<WriteableBitmap> RenderThumbnailAsync(int index, double scale, CancellationToken token)
+    {
+        var geometry = _file.Pages[index];
+        var expanded = DisplayGeometry(index);
+        var display = expanded with { Rotation = geometry.Rotation + _pageRotations[index] };
+        scale = Math.Min(scale, 512 / Math.Max(display.DipWidth, display.DipHeight));
+        var source = new Windows.Foundation.Rect(0, 0, geometry.DipWidth, geometry.DipHeight);
+        using var raster = await RenderThumbnailBackgroundAsync(index, geometry, source, scale, token);
+        token.ThrowIfCancellationRequested();
+        if (PageInk(index).Count > 0 || display != geometry)
+        {
+            using var target = new CanvasRenderTarget(raster.Device,
+                (float)Math.Max(1, Math.Ceiling(display.DipWidth * scale)), (float)Math.Max(1, Math.Ceiling(display.DipHeight * scale)), 96);
+            using var renderer = new StrokeRenderer();
+            using (var draw = target.CreateDrawingSession())
+            {
+                draw.Clear(Microsoft.UI.Colors.White);
+                var transform = expanded.TransformTo(display) * Matrix3x2.CreateScale((float)scale);
+                draw.Transform = transform;
+                DrawSpacingBitmap(draw, raster, source, geometry, SpacingLanes(index));
+                draw.Transform = Matrix3x2.Identity;
+                foreach (var stroke in InkStroke.InDrawingOrder(PageInk(index))) renderer.Draw(draw, stroke, transform);
+            }
+            return CopyThumbnailPixels(target);
+        }
+        return CopyThumbnailPixels(raster);
+    }
+
+    private async Task<CanvasBitmap> RenderThumbnailBackgroundAsync(int index, PdfPageGeometry geometry,
+        Windows.Foundation.Rect source, double scale, CancellationToken token)
+    {
+        if (_pagePreviews.TryGetValue(index, out var preview))
+        {
+            var pixels = preview.Bitmap.SizeInPixels;
+            if (pixels.Width >= Math.Ceiling(source.Width * scale) && pixels.Height >= Math.Ceiling(source.Height * scale))
+            {
+                var target = new CanvasRenderTarget(preview.Bitmap.Device, (float)Math.Ceiling(source.Width * scale),
+                    (float)Math.Ceiling(source.Height * scale), 96);
+                try
+                {
+                    using var draw = target.CreateDrawingSession();
+                    draw.DrawImage(preview.Bitmap, target.Bounds);
+                    return target;
+                }
+                catch { target.Dispose(); throw; }
+            }
+        }
+        return await _rasterizer.RenderBitmapAsync(index, geometry, source, scale, token);
+    }
+
+    private static WriteableBitmap CopyThumbnailPixels(CanvasBitmap raster)
+    {
+        var size = raster.SizeInPixels;
+        var thumbnail = new WriteableBitmap((int)size.Width, (int)size.Height);
+        using var buffer = thumbnail.PixelBuffer.AsStream();
+        buffer.Write(raster.GetPixelBytes());
+        thumbnail.Invalidate();
+        return thumbnail;
+    }
+
+    private void UpdateThumbnailGeometry(int page)
+    {
+        var geometry = ThumbnailGeometry(page);
+        _sidebarItems[page].SetGeometry(geometry);
+        _organizerItems?[page].SetGeometry(geometry);
+        if (_realizedThumbnails.TryGetValue(page, out var item)) _ = LoadThumbnailAsync(item);
+        InvalidateOrganizerThumbnail(page);
+    }
+
+    private PdfPageGeometry ThumbnailGeometry(int page) => DisplayGeometry(page) with
+        { Rotation = _file.Pages[page].Rotation + _pageRotations[page] };
+
+    private void RefreshBookmarks()
+    {
+        _bookmarks.ItemsSource = _file.Bookmarks.Where(bookmark => _layout.PositionOf(bookmark.PageIndex) >= 0)
+            .Select(bookmark => new BookmarkItem(bookmark)).ToArray();
+        UpdateSidebarView();
     }
 
     private void ClearSearch()
@@ -280,10 +339,11 @@ public sealed partial class PdfWindow
     {
         if (Controller.HasActiveInteraction) return;
         _searchIndex = _hits.ToList().IndexOf(hit);
-        GoToPage(hit.PageIndex);
+        if (_layout.PositionOf(hit.PageIndex) < 0 || _organizerOpen) return;
+        OpenSourcePage(hit.PageIndex);
         if (hit.Bounds is { Count: > 0 })
         {
-            var center = hit.Bounds[0].Center;
+            var center = PageSpacing(hit.PageIndex).MapSource(_file.Pages[hit.PageIndex], hit.Bounds[0].Center);
             var point = Vector2.Transform(center, Controller.ViewTransform);
             Controller.ViewTransform *= Matrix3x2.CreateTranslation((float)_viewport.ActualWidth / 2 - point.X, (float)_viewport.ActualHeight / 2 - point.Y);
             _fitMode = FitMode.Free;
@@ -293,13 +353,14 @@ public sealed partial class PdfWindow
         _paper.Invalidate();
     }
 
-    private void DrawSearchHighlights(CanvasDrawingSession draw, int page)
+    private void DrawSearchHighlights(CanvasDrawingSession draw, int page, IReadOnlyList<PdfSpacingLane> lanes)
     {
         foreach (var hit in _hits.Where(hit => hit.PageIndex == page))
         foreach (var bounds in hit.Bounds ?? Array.Empty<Core.Ink.Rect>())
         {
             bool selected = _searchIndex >= 0 && ReferenceEquals(_hits[_searchIndex], hit);
-            draw.FillRectangle(bounds.Left, bounds.Top, bounds.Width, bounds.Height,
+            var lane = lanes.FirstOrDefault(lane => bounds.Center.X < lane.Right) ?? lanes[^1];
+            draw.FillRectangle(bounds.Left, bounds.Top + lane.OffsetAt(bounds.Center.Y), bounds.Width, bounds.Height,
                 selected ? Windows.UI.Color.FromArgb(140, 255, 150, 0) : Windows.UI.Color.FromArgb(100, 255, 225, 0));
         }
     }

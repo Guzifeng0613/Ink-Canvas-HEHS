@@ -26,7 +26,7 @@ public sealed partial class AssistantWindow
 
     public void UseNativeFrame()
     {
-        _frame = WindowFrame.Attach(this, _root).UseAcrylic();
+        _frame = WindowFrame.Attach(this, _root).UseMica();
         _frame.Header.IconSource = null;
         Activated += (_, args) =>
         {

@@ -35,6 +35,7 @@ public interface IShellActions
     void InsertVideo() { }
     Task ScreenshotAsync();
     bool ClearCanvas() => false;
+    bool ClearHandwriting() => false;
     void ToggleFold();
     void ToggleClickThrough();
     void PptNext();
@@ -250,6 +251,7 @@ public sealed class FloatingBar : UserControl
     public int Theme => _theme;
 
     public bool ColorfulBackground => Cfg.Appearance.IsColorfulViewboxFloatingBar;
+    public bool ShouldAutoDismissPanel(BarPanelKind kind) => kind == BarPanelKind.More || Cfg.Appearance.AutoDismissAnnotationToolPanels;
 
     /// <summary>The 更多设置 rows, hosted by <see cref="BarPanelKind.More"/> popup window.</summary>
     public UIElement CreateMorePanelContent() => _moreScroll;
@@ -257,9 +259,11 @@ public sealed class FloatingBar : UserControl
     /// <summary>The 手势选项 rows, hosted by <see cref="BarPanelKind.Gesture"/> popup window.</summary>
     public UIElement CreateGesturePanelContent() => _gestureRows;
 
+    public Func<Func<InkController>, int, UIElement> SelectionExtension { get; set; }
+
     public UIElement CreateSelectionPanelContent()
     {
-        var palette = new SelectionPalette(() => Controller, Theme);
+        var palette = new SelectionPalette(() => Controller, Theme, SelectionExtension?.Invoke(() => Controller, Theme));
         palette.ModePicked += mode =>
         {
             Cfg.Canvas.SelectionMode = mode;
@@ -283,7 +287,7 @@ public sealed class FloatingBar : UserControl
             Controller.EraserRadius = OriginalMenuCatalog.ToEraserRadius(Cfg.Canvas);
             SettingsEdited?.Invoke();
             SetTool(InkTool.Eraser);
-            PanelRequested?.Invoke(BarPanelKind.Eraser, false);
+            if (ShouldAutoDismissPanel(BarPanelKind.Eraser)) PanelRequested?.Invoke(BarPanelKind.Eraser, false);
         };
         palette.DiameterChanged += diameter =>
         {
@@ -458,7 +462,13 @@ public sealed class FloatingBar : UserControl
             if (active) Shell?.OpenPenPalette(true);
         });
         _highlighterButton.IconFont = IconFontStyle.Family;
-        _clearButton = AddPrimary(Glyphs.Delete, "清空", "清空（有选中时删除选中墨迹）— 快捷键 Ctrl+E", ClearOrDeleteSelection);
+        _clearButton = AddPrimary(_primary, Glyphs.Delete, "清空", "单击清屏，长按仅清除手写墨迹 · Ctrl+E", () =>
+        {
+            if (Shell?.ClearCanvas() != true) Controller?.Clear();
+        }, () =>
+        {
+            if (Shell?.ClearHandwriting() != true) Controller?.ClearHandwriting();
+        });
 
         _aiButton = AddPrimary(Glyphs.Ai, "AI 助手", "打开通用 AI 助手", () => Shell?.OpenAiAssistant());
         _aiButton.Visibility = Shell?.AiAssistantAvailable == true ? Visibility.Visible : Visibility.Collapsed;
@@ -546,11 +556,16 @@ public sealed class FloatingBar : UserControl
     private TouchIconButton AddPrimary(string glyph, string label, string tooltip, Action onClick)
         => AddPrimary(_primary, glyph, label, tooltip, onClick);
 
-    private TouchIconButton AddPrimary(StackPanel host, string glyph, string label, string tooltip, Action onClick)
+    private TouchIconButton AddPrimary(StackPanel host, string glyph, string label, string tooltip, Action onClick, Action onHold = null)
     {
         var button = new TouchIconButton { Glyph = glyph, Label = label };
         ConfigureBarButton(button, more: false);
-        Wire(button, tooltip, onClick);
+        if (onHold is null) Wire(button, tooltip, onClick);
+        else
+        {
+            ToolTipService.SetToolTip(button, tooltip);
+            ButtonHoldAction.Attach(button, onClick, onHold);
+        }
         host.Children.Add(button);
         _captioned.Add(button);
         return button;

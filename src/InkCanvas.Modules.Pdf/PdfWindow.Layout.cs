@@ -1,4 +1,5 @@
 using System.Numerics;
+using InkCanvas.Core.History;
 using InkCanvas.Pdf;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -14,7 +15,7 @@ public sealed partial class PdfWindow
     internal bool SeparateCover => _separateCover;
     internal PdfContinuousLayout PageLayout => _layout;
 
-    private void NavigatePage(int direction) => GoToPage(_layout.AdjacentPage(_pageIndex, direction));
+    private void NavigatePage(int direction) => OpenSourcePage(_layout.AdjacentPage(_pageIndex, direction));
 
     private void PositionPage(Matrix3x2 document)
     {
@@ -30,7 +31,7 @@ public sealed partial class PdfWindow
 
     internal void SetPageLayout(bool doublePages, bool separateCover)
     {
-        if (Controller.HasActiveInteraction)
+        if (Controller.HasActiveInteraction || _spacingDrag is not null)
         {
             UpdateLayoutMenu();
             return;
@@ -56,36 +57,58 @@ public sealed partial class PdfWindow
         _coverLayout.IsEnabled = _doublePages;
     }
 
-    internal void RotatePage(int degrees)
+    internal void RotatePage(int degrees) => RotatePages([_pageIndex], degrees);
+
+    private void RotatePages(int[] pages, int degrees)
     {
-        if (Controller.HasActiveInteraction || degrees % 90 != 0) return;
+        if (_saving || Controller.HasActiveInteraction || _spacingDrag is not null || degrees % 90 != 0
+            || degrees % 360 == 0 || pages.Length == 0) return;
         NormalizeCrossPageInk();
-        var document = DocumentView;
-        _pageRotations[_pageIndex] = (_pageRotations[_pageIndex] + degrees + 360) % 360;
-        if (!_file.ReadOnly) { _version++; UpdateTitle(); }
-        RebuildLayout(document);
+        var before = pages.Select(page => _pageRotations[page]).ToArray();
+        var after = before.Select(turn => (turn + degrees % 360 + 360) % 360).ToArray();
+        Apply(after);
+        if (CanEdit) _inkHistory.Push(new DelegateAction("旋转 PDF 页面", () => Apply(after), () => Apply(before)));
+
+        void Apply(int[] rotations)
+        {
+            var document = DocumentView;
+            for (int i = 0; i < pages.Length; i++)
+            {
+                _pageRotations[pages[i]] = rotations[i];
+                UpdateThumbnailGeometry(pages[i]);
+            }
+            RebuildLayout(document);
+            if (CanEdit) { _version++; UpdateTitle(); }
+        }
     }
 
-    private void RebuildLayout(Matrix3x2 document)
+    private void RebuildLayout(Matrix3x2 document, int? activePage = null)
     {
         StopScrollMotion();
         ReleaseNavigationPicture();
         Controller.ClearSelection();
-        _layout = new PdfContinuousLayout(_file.Pages, doublePages: _doublePages, separateCover: _separateCover, rotations: _pageRotations);
+        ClearSpacingSelection();
+        _layout = CreatePageLayout();
+        if (activePage is { } page && page != _pageIndex) ActivatePage(page, preserveView: true, document);
         _generation++;
         _detailCancellation?.Cancel();
         _detail?.Dispose(); _detail = null;
         _pageChanging = true;
-        try { PositionPage(document); }
+        try
+        {
+            if (_organizerOpen)
+            {
+                Controller.ViewTransform = _layout.PageView(_pageIndex, document);
+                _organizerNeedsPosition = true;
+            }
+            else PositionPage(document);
+        }
         finally { _pageChanging = false; }
         _lastView = Controller.ViewTransform;
         _navigationPictureDirty = true;
         _paper.Invalidate();
         UpdateScrollbar();
         QueuePageRendering();
-        foreach (var item in ((System.Collections.IEnumerable)_pages.ItemsSource).Cast<ThumbnailItem>())
-            item.SetGeometry(_file.Pages[item.Index] with { Rotation = _file.Pages[item.Index].Rotation + _pageRotations[item.Index] });
-        RefreshThumbnails();
     }
 
     private MenuFlyout CreateLayoutMenu()
@@ -98,6 +121,7 @@ public sealed partial class PdfWindow
         _doubleLayout.Click += (_, _) => SetPageLayout(true, _separateCover);
         _coverLayout.Click += (_, _) => SetPageLayout(_doublePages, _coverLayout.IsChecked);
         menu.Items.Add(_singleLayout); menu.Items.Add(_doubleLayout); menu.Items.Add(_coverLayout);
+        menu.Items.Add(MenuCommand("页面管理", Symbol.ViewAll, () => SetOrganizerOpen(true)));
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(MenuCommand("顺时针旋转当前页", Symbol.Rotate, () => RotatePage(90)));
         menu.Items.Add(MenuCommand("逆时针旋转当前页", Symbol.Rotate, () => RotatePage(-90)));

@@ -336,7 +336,7 @@ internal sealed class PptPageNavigator : UserControl, IDisposable
                     using var clip = drawing.CreateLayer(1, new Windows.Foundation.Rect(left, top, width, height));
                     using var strokes = new StrokeRenderer();
                     var transform = ink.WorldToSlide * Matrix3x2.CreateScale(scale) * Matrix3x2.CreateTranslation(left, top);
-                    foreach (var stroke in ink.Strokes.OrderBy(stroke => stroke.LayerOrder ?? long.MaxValue))
+                    foreach (var stroke in InkCanvas.Core.Ink.InkStroke.InDrawingOrder(ink.Strokes))
                     {
                         token.ThrowIfCancellationRequested();
                         strokes.Draw(drawing, stroke, transform);

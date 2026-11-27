@@ -1,4 +1,5 @@
 using System.Text.Json;
+using InkCanvas.Core.Ink;
 using InkCanvas.Extensibility;
 using InkCanvas.Host.Contracts;
 
@@ -56,33 +57,42 @@ internal sealed partial class PdfWorkspaceService
 
 public sealed partial class PdfWindow
 {
-    internal string AssistantState() => JsonSerializer.Serialize(new { file = FilePath, page = PageIndex + 1, pages = _file.Pages.Count, editable = CanEdit, unsaved = IsDirty });
-    internal Task<string> AssistantReadPageAsync(int index, CancellationToken token) => _file.ReadPageTextAsync(index, token);
+    internal string AssistantState() => JsonSerializer.Serialize(new { file = FilePath, page = PageIndex + 1, pages = _layout.Count, editable = CanEdit, unsaved = IsDirty });
+    internal Task<string> AssistantReadPageAsync(int index, CancellationToken token) => _file.ReadPageTextAsync(SourcePage(index), token);
     internal async Task<string> AssistantSearchAsync(string query, CancellationToken token)
-        => JsonSerializer.Serialize((await _file.SearchAsync(query, token)).Select(hit => new { page = hit.PageIndex + 1, hit.Preview }).Take(80));
+        => JsonSerializer.Serialize((await _file.SearchAsync(query, token, _pageOrder))
+            .Select(hit => new { page = _layout.PositionOf(hit.PageIndex) + 1, hit.Preview })
+            .Where(hit => hit.page > 0).OrderBy(hit => hit.page).Take(80));
     internal void AssistantGoToPage(int index)
     {
-        if (_closed || index < 0 || index >= _file.Pages.Count) throw new ArgumentOutOfRangeException(nameof(index), "PDF 页码不存在。");
         if (Controller.HasActiveInteraction) throw new InvalidOperationException("请结束当前书写后再翻页。");
-        ActivatePage(index, false);
+        OpenSourcePage(SourcePage(index));
     }
+    private int SourcePage(int position) => !_closed && (uint)position < (uint)_layout.Count
+        ? _layout.PageAt(position) : throw new ArgumentOutOfRangeException(nameof(position), "PDF 页码不存在。");
+
     internal async Task<byte[]> AssistantCaptureAsync(int index, CancellationToken token)
     {
-        if (_closed || index < 0 || index >= _file.Pages.Count) throw new ArgumentOutOfRangeException(nameof(index), "PDF 页码不存在。");
+        index = SourcePage(index);
         var page = _file.Pages[index];
-        double scale = Math.Min(1.5, 2048d / Math.Max(page.DipWidth, page.DipHeight));
+        var expanded = DisplayGeometry(index);
+        var display = expanded with { Rotation = expanded.Rotation + _pageRotations[index] };
+        var lanes = SpacingLanes(index);
+        double scale = Math.Min(1.5, 2048d / Math.Max(display.DipWidth, display.DipHeight));
         byte[] png = await _rasterizer.RenderAsync(index, page, new(0, 0, page.DipWidth, page.DipHeight), scale, token);
         token.ThrowIfCancellationRequested();
         var strokes = _controllers.TryGetValue(index, out var controller) ? controller.Document.Strokes : _file.GetInk(index);
-        if (strokes.Count == 0) return png;
+        if (strokes.Count == 0 && page == display) return png;
         using var bitmap = await LoadBitmapAsync(png, token);
-        using var target = new Microsoft.Graphics.Canvas.CanvasRenderTarget(bitmap.Device, (float)bitmap.Size.Width, (float)bitmap.Size.Height, 96);
+        using var target = new Microsoft.Graphics.Canvas.CanvasRenderTarget(bitmap.Device, (float)(display.DipWidth * scale), (float)(display.DipHeight * scale), 96);
         using var scene = new InkCanvas.Ink.Rendering.InkSceneRenderer();
         using (var draw = target.CreateDrawingSession())
         {
-            draw.Clear(Microsoft.UI.Colors.White); draw.DrawImage(bitmap);
-            var transform = System.Numerics.Matrix3x2.CreateScale((float)bitmap.Size.Width / page.DipWidth, (float)bitmap.Size.Height / page.DipHeight);
-            foreach (var stroke in strokes) scene.Strokes.Draw(draw, stroke, transform);
+            draw.Clear(Microsoft.UI.Colors.White);
+            var transform = expanded.TransformTo(display) * System.Numerics.Matrix3x2.CreateScale((float)scale);
+            draw.Transform = transform;
+            DrawSpacingBitmap(draw, bitmap, new(0, 0, page.DipWidth, page.DipHeight), page, lanes);
+            foreach (var stroke in InkStroke.InDrawingOrder(strokes)) scene.Strokes.Draw(draw, stroke, transform);
         }
         using var output = new Windows.Storage.Streams.InMemoryRandomAccessStream();
         await target.SaveAsync(output, Microsoft.Graphics.Canvas.CanvasBitmapFileFormat.Png).AsTask(token);

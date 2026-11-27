@@ -76,6 +76,12 @@ internal static class BoardPopupRegression
             window.CurrentController.Undo();
             checks.Add(new { check = "toolbar clear can be undone",
                 passed = window.CurrentController.Document.Strokes.Single().Points.SequenceEqual(original) });
+            var shape = Core.Shapes.ShapeGenerator.Generate(Core.Shapes.ShapeKind.Rectangle,
+                new(200, 200), new(300, 260), new StrokeAttributes());
+            window.CurrentController.Document.AddRange(shape);
+            bool? held = await PenOptionsRegression.TryPointer(window, clearButton, drag: false, pressMilliseconds: 680);
+            checks.Add(new { check = "holding clear preserves shape and suppresses the release click", available = held.HasValue,
+                passed = held.HasValue ? (bool?)(window.CurrentController.Document.Strokes.SequenceEqual(shape)) : null });
             window.CurrentController.Document.Clear();
             window.CurrentController.History.Clear();
             foreach (var background in new[] { BoardBackground.White, BoardBackground.Black })

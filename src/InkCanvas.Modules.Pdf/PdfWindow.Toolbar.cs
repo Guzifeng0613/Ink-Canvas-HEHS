@@ -64,6 +64,7 @@ public sealed partial class PdfWindow
         _commandHost.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         _commandHost.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         _fileCommands.HorizontalAlignment = HorizontalAlignment.Left;
+        _readingCommands.HorizontalAlignment = HorizontalAlignment.Center;
         _documentCommands.HorizontalAlignment = HorizontalAlignment.Right;
         _commandHost.Children.Add(_fileCommands);
         Grid.SetColumn(_readingCommands, 1); _commandHost.Children.Add(_readingCommands);
@@ -72,6 +73,8 @@ public sealed partial class PdfWindow
         AutomationProperties.SetName(_commandHost, "PDF 阅读工具栏");
 
         _sidebarToggle = Command("显示或隐藏 PDF 侧栏", Symbol.List, () => SetSidebarOpen(!_split.IsPaneOpen));
+        _organizerToggle = Command("页面视图", Symbol.ViewAll, () => SetOrganizerOpen(!_organizerOpen));
+        ToolTipService.SetToolTip(_organizerToggle, "页面视图 · 管理 PDF 页面");
         _openButton = Command("打开", Symbol.OpenFile, async () => await open());
         ToolTipService.SetToolTip(_openButton, "打开 PDF (Ctrl+O)");
         var saveMenu = new MenuFlyout();
@@ -85,7 +88,7 @@ public sealed partial class PdfWindow
         AutomationProperties.SetName(_saveButton, "保存 PDF");
         ToolTipService.SetToolTip(_saveButton, _file.ReadOnly ? "此 PDF 只允许查看" : "保存 PDF (Ctrl+S)，展开可另存为");
         _saveButton.Click += async (_, _) => await SaveAsync();
-        _fileCommands.Children.Add(_sidebarToggle); _fileCommands.Children.Add(Divider());
+        _fileCommands.Children.Add(_sidebarToggle); _fileCommands.Children.Add(_organizerToggle); _fileCommands.Children.Add(Divider());
         _fileCommands.Children.Add(_openButton); _fileCommands.Children.Add(_saveButton);
 
         _previousPage = Command("上一页", Symbol.Back, () => NavigatePage(-1));
@@ -125,12 +128,33 @@ public sealed partial class PdfWindow
         var more = Command("更多 PDF 操作", Symbol.More, () => { });
         var moreMenu = new MenuFlyout();
         moreMenu.Items.Add(MenuCommand("打开 PDF (Ctrl+O)", Symbol.OpenFile, async () => await open()));
+        moreMenu.Items.Add(MenuCommand("页面管理", Symbol.ViewAll, () => SetOrganizerOpen(true)));
         moreMenu.Items.Add(MenuCommand("搜索文档 (Ctrl+F)", Symbol.Find, OpenSearch));
         _readMenuItem = new ToggleMenuFlyoutItem { Text = "阅读模式" };
         _readMenuItem.Click += (_, _) => ToggleReadMode();
         moreMenu.Items.Add(_readMenuItem);
         moreMenu.Items.Add(MenuCommand("适合页宽", Symbol.FullScreen, () => Fit(FitMode.Width)));
         moreMenu.Items.Add(MenuCommand("适合整页", Symbol.FullScreen, () => Fit(FitMode.Page)));
+        _spacingButton = Command("页面空白与分栏", "\uE8A9", () => { });
+        _spacingButton.IsEnabled = CanEdit;
+        _spacingButton.Visibility = CanEdit ? Visibility.Visible : Visibility.Collapsed;
+        var spacingMenu = new MenuFlyout();
+        _insertSpacingItem = new ToggleMenuFlyoutItem { Text = "插入纵向空白" };
+        _guideItem = new ToggleMenuFlyoutItem { Text = "绘制分栏辅助线" };
+        _insertSpacingItem.Click += (_, _) => SetSpacingTool(_spacingTool == SpacingTool.Insert ? SpacingTool.None : SpacingTool.Insert);
+        _guideItem.Click += (_, _) => SetSpacingTool(_spacingTool == SpacingTool.Guide ? SpacingTool.None : SpacingTool.Guide);
+        spacingMenu.Items.Add(_insertSpacingItem);
+        spacingMenu.Items.Add(_guideItem);
+        spacingMenu.Items.Add(MenuCommand("退出页面空白工具 (Esc)", Symbol.Cancel, () => SetSpacingTool(SpacingTool.None)));
+        _spacingButton.Flyout = spacingMenu;
+        if (CanEdit)
+        {
+            moreMenu.Items.Add(MenuCommand("插入纵向空白", Symbol.Add, () => SetSpacingTool(SpacingTool.Insert)));
+            moreMenu.Items.Add(MenuCommand("绘制分栏辅助线", Symbol.Edit, () => SetSpacingTool(SpacingTool.Guide)));
+            moreMenu.Items.Add(new MenuFlyoutSeparator());
+            moreMenu.Items.Add(MenuCommand("清屏", Symbol.Delete, () => ClearCanvas(inkOnly: false)));
+            moreMenu.Items.Add(MenuCommand("仅清除手写墨迹", Symbol.Remove, () => ClearCanvas(inkOnly: true)));
+        }
         more.Flyout = moreMenu;
         _importLabel = new TextBlock { Text = "导入画板", FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
         var importContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
@@ -143,7 +167,7 @@ public sealed partial class PdfWindow
         AutomationProperties.SetName(_importButton, "导入画板");
         ToolTipService.SetToolTip(_importButton, "将 PDF 页面与批注导入白板");
         _importButton.Click += async (_, _) => await import();
-        foreach (var control in new UIElement[] { _searchButton, _readButton, more, _importButton }) _documentCommands.Children.Add(control);
+        foreach (var control in new UIElement[] { _searchButton, _readButton, _spacingButton, more, _importButton }) _documentCommands.Children.Add(control);
         DeferredLayout.Observe(_root, UpdateToolbarLayout);
     }
 
@@ -152,10 +176,20 @@ public sealed partial class PdfWindow
         if (_closed) return;
         double width = _root.XamlRoot?.Size.Width ?? _root.ActualWidth;
         if (width <= 0) return;
-        _zoomIn.Visibility = _zoomOut.Visibility = width >= 1040 ? Visibility.Visible : Visibility.Collapsed;
+        bool compact = width < 700;
+        if (_commandHost.ColumnDefinitions[0].Width.IsAuto != compact)
+        {
+            var star = new GridLength(1, GridUnitType.Star);
+            _commandHost.ColumnDefinitions[0].Width = _commandHost.ColumnDefinitions[2].Width = compact ? GridLength.Auto : star;
+            _commandHost.ColumnDefinitions[1].Width = compact ? star : GridLength.Auto;
+        }
+        _sidebarToggle.Visibility = _organizerOpen ? Visibility.Collapsed : Visibility.Visible;
+        _documentCommands.Visibility = _organizerOpen ? Visibility.Collapsed : Visibility.Visible;
+        _zoomIn.Visibility = _zoomOut.Visibility = width >= 1120 ? Visibility.Visible : Visibility.Collapsed;
         _searchButton.Visibility = _readButton.Visibility = width >= 920 ? Visibility.Visible : Visibility.Collapsed;
         _openButton.Visibility = width >= 820 ? Visibility.Visible : Visibility.Collapsed;
         _fitToggle.Visibility = width >= 700 ? Visibility.Visible : Visibility.Collapsed;
+        _spacingButton.Visibility = CanEdit && width >= 840 ? Visibility.Visible : Visibility.Collapsed;
         _importLabel.Visibility = width >= 600 ? Visibility.Visible : Visibility.Collapsed;
         _importButton.Padding = new Thickness(width >= 600 ? 12 : 8, 4, width >= 600 ? 12 : 8, 4);
     }
@@ -163,13 +197,14 @@ public sealed partial class PdfWindow
     private void CommitPageNumber()
     {
         if (_closed || _pageChanging || Controller is null) return;
-        if (int.TryParse(_pageNumber.Text, out int page)) GoToPage(Math.Clamp(page, 1, _file.Pages.Count) - 1);
-        _pageNumber.Text = (_pageIndex + 1).ToString();
+        if (!_organizerOpen && int.TryParse(_pageNumber.Text, out int page)) GoToPage(Math.Clamp(page, 1, _layout.Count) - 1);
+        _pageNumber.Text = (PageIndex + 1).ToString();
     }
 
     private void ToggleReadMode()
     {
         if (Controller is null) return;
+        if (_spacingTool != SpacingTool.None) { SetSpacingTool(SpacingTool.None); return; }
         Controller.Tool = Controller.Tool == InkTool.Pan && !_file.ReadOnly ? _writingTool : InkTool.Pan;
         UpdateReadingControls();
     }

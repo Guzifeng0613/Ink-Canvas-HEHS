@@ -45,15 +45,14 @@ public sealed partial class PdfWindow
         var changes = new List<InkPageChange>();
         foreach (int page in _dirtyInkPages.ToArray())
         {
+            if (_layout.PositionOf(page) < 0) continue;
             var strokes = PageController(page).Document.Strokes;
             if (!_routedGeometry.TryGetValue(page, out var versions)) _routedGeometry[page] = versions = new();
             for (int index = 0; index < strokes.Count; index++)
             {
                 var stroke = strokes[index];
                 if (versions.TryGetValue(stroke, out long version) && version == stroke.GeometryVersion) continue;
-                var fragments = PdfInkSplitter.Split(stroke, page, _layout);
-                if (fragments.Count == 1 && fragments.TryGetValue(page, out var original)
-                    && original.Count == 1 && ReferenceEquals(original[0], stroke)) continue;
+                if (!PdfInkSplitter.TrySplit(stroke, page, _layout, out var fragments)) continue;
                 changes.Add(new(page, index, stroke, fragments));
             }
             versions.Clear();

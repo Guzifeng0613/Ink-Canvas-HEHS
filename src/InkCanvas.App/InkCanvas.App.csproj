@@ -16,7 +16,7 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>false</SelfContained>
     <ApplicationIcon>Assets\InkCanvas.ico</ApplicationIcon>
-    <Version>3.17.0</Version>
+    <Version>3.18.0</Version>
     <Product>Ink Canvas (WinUI 3)</Product>
     <IncludeScreenTrackingModule Condition="'$(IncludeScreenTrackingModule)' == ''">true</IncludeScreenTrackingModule>
     <IncludeAiAssistantModule Condition="'$(IncludeAiAssistantModule)' == ''">true</IncludeAiAssistantModule>
@@ -25,6 +25,8 @@
     <IncludeAnalyticGeometryModule Condition="'$(IncludeAnalyticGeometryModule)' == ''">true</IncludeAnalyticGeometryModule>
     <IncludeCloudSyncModule Condition="'$(IncludeCloudSyncModule)' == ''">true</IncludeCloudSyncModule>
     <IncludeStylusModule Condition="'$(IncludeStylusModule)' == ''">true</IncludeStylusModule>
+    <IncludeInkLayersModule Condition="'$(IncludeInkLayersModule)' == ''">true</IncludeInkLayersModule>
+    <IncludeShapeExpansionModule Condition="'$(IncludeShapeExpansionModule)' == ''">true</IncludeShapeExpansionModule>
     <IncludeMcpModule Condition="'$(IncludeMcpModule)' == ''">true</IncludeMcpModule>
   </PropertyGroup>
   <ItemGroup>
@@ -52,6 +54,8 @@
     <ProjectReference Include="..\InkCanvas.Modules.Library\InkCanvas.Modules.Library.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeLibraryModule)' == 'true'" />
     <ProjectReference Include="..\InkCanvas.Modules.CloudSync\InkCanvas.Modules.CloudSync.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeCloudSyncModule)' == 'true'" />
     <ProjectReference Include="..\InkCanvas.Modules.Stylus\InkCanvas.Modules.Stylus.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeStylusModule)' == 'true'" />
+    <ProjectReference Include="..\InkCanvas.Modules.InkLayers\InkCanvas.Modules.InkLayers.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeInkLayersModule)' == 'true'" />
+    <ProjectReference Include="..\InkCanvas.Modules.ShapeExpansion\InkCanvas.Modules.ShapeExpansion.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeShapeExpansionModule)' == 'true'" />
     <ProjectReference Include="..\InkCanvas.PluginHost\InkCanvas.PluginHost.csproj" ReferenceOutputAssembly="false" Private="false" />
     <ProjectReference Include="..\InkCanvas.Modules.Mcp\InkCanvas.Modules.Mcp.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeMcpModule)' == 'true'" />
     <ProjectReference Include="..\InkCanvas.McpHost\InkCanvas.McpHost.csproj" ReferenceOutputAssembly="false" Private="false" Condition="'$(IncludeMcpModule)' == 'true'" />
@@ -62,6 +66,8 @@
     <!-- MIT 开源图标字体（microsoft/fluentui-system-icons）：随构建与发布输出，跨 Win10/11 一致渲染。 -->
     <Content Include="Assets\FluentSystemIcons.ttf;Assets\FluentSystemIcons-Regular.ttf" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="..\..\CHANGELOG.md" Link="CHANGELOG.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\InkCanvas.Modules.Pdf\Licenses\Clipper2.txt" Link="Licenses\Clipper2.txt"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!--
@@ -97,6 +103,16 @@
     </ItemGroup>
     <Copy SourceFiles="@(_StylusFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.stylus\" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_StylusFiles)" DestinationFolder="$(PublishDir)Modules\inkcanvas.stylus\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
+    <ItemGroup Condition="'$(IncludeInkLayersModule)' == 'true'">
+      <_InkLayerFiles Include="..\InkCanvas.Modules.InkLayers\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\InkCanvas.Modules.InkLayers.dll;..\InkCanvas.Modules.InkLayers\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\InkCanvas.Modules.InkLayers.deps.json;..\InkCanvas.Modules.InkLayers\module.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_InkLayerFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.ink-layers\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_InkLayerFiles)" DestinationFolder="$(PublishDir)Modules\inkcanvas.ink-layers\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
+    <ItemGroup Condition="'$(IncludeShapeExpansionModule)' == 'true'">
+      <_ShapeExpansionFiles Include="..\InkCanvas.Modules.ShapeExpansion\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\InkCanvas.Modules.ShapeExpansion.dll;..\InkCanvas.Modules.ShapeExpansion\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\InkCanvas.Modules.ShapeExpansion.deps.json;..\InkCanvas.Modules.ShapeExpansion\module.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ShapeExpansionFiles)" DestinationFolder="$(OutDir)Modules\inkcanvas.shape-expansion\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_ShapeExpansionFiles)" DestinationFolder="$(PublishDir)Modules\inkcanvas.shape-expansion\" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
     <ItemGroup Condition="'$(IncludeMcpModule)' == 'true'">
       <_McpFiles Include="..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\InkCanvas.Modules.Mcp.dll;..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\InkCanvas.Modules.Mcp.deps.json;..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\ModelContextProtocol.Core.dll;..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\Microsoft.Extensions.AI.Abstractions.dll;..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\Microsoft.Extensions.Logging.Abstractions.dll;..\InkCanvas.Modules.Mcp\bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\Microsoft.Extensions.DependencyInjection.Abstractions.dll;..\InkCanvas.Modules.Mcp\module.json" />
       <_McpFiles Include="..\InkCanvas.McpHost\bin\$(Platform)\$(Configuration)\net10.0\$(RuntimeIdentifier)\InkCanvas.McpHost.*" Exclude="..\InkCanvas.McpHost\bin\$(Platform)\$(Configuration)\net10.0\$(RuntimeIdentifier)\*.pdb" />

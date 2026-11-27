@@ -98,7 +98,7 @@ public sealed partial class SettingsWindow
         _content.Children.Add(ToggleRow("识别圆与椭圆", () => S.InkToShape.RecognizeRoundShapes,
             v => S.InkToShape.RecognizeRoundShapes = v));
         _content.Children.Add(ToggleRow("识别三角形、矩形与平行四边形", () => S.InkToShape.RecognizePolygons,
-            v => S.InkToShape.RecognizePolygons = v));
+            v => S.InkToShape.RecognizePolygons = v, note: "启用图形拓展包后，此开关也控制复杂多边形的停笔识别。"));
         _content.Children.Add(ToggleRow("识别立方体线框", () => S.InkToShape.RecognizeCube,
             v => S.InkToShape.RecognizeCube = v));
         _content.Children.Add(ToggleRow("识别坐标轴", () => S.InkToShape.RecognizeAxes,
@@ -180,6 +180,9 @@ public sealed partial class SettingsWindow
             v => S.Appearance.IsEnableDisPlayFloatBarText = v));
         _content.Children.Add(ToggleRow("浮动工具栏背景色", () => S.Appearance.IsColorfulViewboxFloatingBar,
             v => S.Appearance.IsColorfulViewboxFloatingBar = v));
+        _content.Children.Add(ToggleRow("批注工具面板自动收起", () => S.Appearance.AutoDismissAnnotationToolPanels,
+            v => S.Appearance.AutoDismissAnnotationToolPanels = v,
+            note: "开启后，选定笔色、橡皮类型或图形，或点击面板外部时，未固定的面板会收起。"));
         AddSection("大小与位置");
         _content.Children.Add(SliderRow("浮动工具栏底部边距 (像素)", () => S.Appearance.FloatingBarBottomMargin,
             0, 200, v => S.Appearance.FloatingBarBottomMargin = v, presets: new[] { 100d },

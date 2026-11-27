@@ -34,6 +34,13 @@ internal static class EraserOptionsRegression
         {
             shell.Start(); shell.StartInClickThrough();
             var bar = shell.OpenWindows.OfType<FloatingBarWindow>().Single();
+            Check("annotation panels stay open by default", !services.Settings.Appearance.AutoDismissAnnotationToolPanels);
+            shell.OpenPenPalette(false); await Task.Delay(80);
+            var penWindow = shell.OpenWindows.OfType<PenPaletteWindow>().Single();
+            var penPreview = Descendants(penWindow.Content).OfType<PenStrokePreview>().Single();
+            double penPreviewWidth = penPreview.ActualWidth, penPreviewHeight = penPreview.ActualHeight;
+            penWindow.Close();
+            services.OverlayInk.Tool = InkTool.Pan;
             foreach (int theme in new[] { 1, 2 })
             {
                 services.Settings.Appearance.Theme = theme;
@@ -50,14 +57,19 @@ internal static class EraserOptionsRegression
                 var palette = Descendants(window.Content).OfType<EraserPalette>().Single();
                 var slider = Descendants(palette).OfType<PointerSlider>().Single();
                 var preview = Descendants(palette).OfType<Ellipse>().Single(item => AutomationProperties.GetName(item) == "面积擦范围预览");
-                Check("slider restores legacy diameter " + theme, slider.Value == 90 && preview.Width == 90);
+                var previewBorder = (FrameworkElement)((FrameworkElement)preview.Parent).Parent;
+                var areaMode = Descendants(palette).OfType<TouchIconButton>().Single(button => button.Label == "面积擦");
+                Check("preview matches the pen footprint and sits above eraser modes " + theme,
+                    Math.Abs(previewBorder.ActualWidth - penPreviewWidth) <= 1 && Math.Abs(previewBorder.ActualHeight - penPreviewHeight) <= 1
+                    && previewBorder.ActualHeight == 60 && Top(previewBorder, palette) + previewBorder.ActualHeight <= Top(areaMode, palette));
+                Check("slider restores legacy diameter " + theme, slider.Value == 90 && Math.Abs(preview.Width - 52 * .45) < .01);
                 Check("size selector uses a nonactivating slider " + theme, !slider.AllowFocusOnInteraction
                     && !Descendants(palette).OfType<ComboBox>().Any());
                 int before = applications;
                 for (int i = 0; i < 600; i++) slider.Value = 10 + i % 191;
                 slider.Value = 200;
                 Check("live diameter and preview update without global work " + theme,
-                    applications == before && services.OverlayInk.EraserRadius == 100 && preview.Width == 200 && preview.Height == 200);
+                    applications == before && services.OverlayInk.EraserRadius == 100 && preview.Width == 52 && preview.Height == 52);
                 await Task.Delay(300);
                 Check("slider burst saves once " + theme, applications == before + 1 && services.Store.Load().Canvas.EraserDiameter == 200);
                 Check("largest preview stays inside its surface " + theme, Fits(preview, (FrameworkElement)preview.Parent)
@@ -70,14 +82,23 @@ internal static class EraserOptionsRegression
                 bool? dragged = await PenOptionsRegression.TryPointer(window, slider, drag: true);
                 checks.Add(new { check = "native inactive eraser slider drag " + theme, available = dragged.HasValue,
                     passed = dragged.HasValue ? (bool?)(dragged.Value && slider.Value < 200 && applications == before + 1
-                        && services.Store.Load().Canvas.EraserDiameter == slider.Value && preview.Width == slider.Value) : null });
+                        && services.Store.Load().Canvas.EraserDiameter == slider.Value && Math.Abs(preview.Width - 52 * slider.Value / 200) < .01) : null });
                 slider.Value = 117; window.Close();
                 Check("closing immediately preserves final diameter " + theme, services.Store.Load().Canvas.EraserDiameter == 117);
                 Invoke((Button)bar.Bar.GetToolButton(InkTool.Eraser)); await Task.Delay(70);
-                palette = Descendants(bar.GetOpenPanel(BarPanelKind.Eraser).Content).OfType<EraserPalette>().Single();
+                var reopened = bar.GetOpenPanel(BarPanelKind.Eraser);
+                palette = Descendants(reopened.Content).OfType<EraserPalette>().Single();
                 Check("reopening restores exact custom diameter " + theme, Descendants(palette).OfType<Slider>().Single().Value == 117);
                 Invoke(Descendants(palette).OfType<TouchIconButton>().Single(button => button.Label == "套索擦"));
                 Check("lasso remains selectable " + theme, services.OverlayInk.EraserMode == InkEraserMode.Lasso);
+                bar.DismissPanelsOnInput();
+                Check("choosing an eraser and testing it keeps the panel open by default " + theme,
+                    ReferenceEquals(bar.GetOpenPanel(BarPanelKind.Eraser), reopened));
+                services.Settings.Appearance.AutoDismissAnnotationToolPanels = true;
+                Invoke(Descendants(palette).OfType<TouchIconButton>().Single(button => button.Label == "面积擦"));
+                Check("auto-dismiss setting closes eraser panel and persists " + theme,
+                    bar.GetOpenPanel(BarPanelKind.Eraser) is null && services.Store.Load().Appearance.AutoDismissAnnotationToolPanels);
+                services.Settings.Appearance.AutoDismissAnnotationToolPanels = false;
             }
 
             shell.ToggleBoard(); await Task.Delay(100);
@@ -137,6 +158,9 @@ internal static class EraserOptionsRegression
         var rect = child.TransformToVisual(parent).TransformBounds(new Windows.Foundation.Rect(0, 0, child.ActualWidth, child.ActualHeight));
         return rect.Left >= -1 && rect.Top >= -1 && rect.Right <= parent.ActualWidth + 1 && rect.Bottom <= parent.ActualHeight + 1;
     }
+
+    private static double Top(FrameworkElement element, FrameworkElement root) =>
+        element.TransformToVisual(root).TransformPoint(new Windows.Foundation.Point(0, 0)).Y;
     private static void Invoke(Button button) => ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke();
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     {

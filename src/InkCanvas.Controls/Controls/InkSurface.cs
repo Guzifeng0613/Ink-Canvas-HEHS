@@ -43,11 +43,23 @@ public sealed class InkSurface : UserControl, IDisposable
     public event Action InputBegan;
     /// <summary>Lets a continuous document bind the touched page before its first sample.</summary>
     public event Action<OverlayPointer> InputStarting;
+    public Func<OverlayPointer, bool> InterceptPointerPressed { get; set; }
     public event Action InputEnded;
     public event Action InputCanceled;
     /// <summary>Signals that the current controller view has been drawn for a host presentation handover.</summary>
     public event Action FrameDrawn;
     public bool DrawCommitted { get; set; } = true;
+    private bool _showLiveInk = true;
+    public bool ShowLiveInk
+    {
+        get => _showLiveInk;
+        set
+        {
+            if (_showLiveInk == value) return;
+            _showLiveInk = value;
+            _canvas.Invalidate();
+        }
+    }
     /// <summary>Optional page extent in document coordinates. Null keeps an infinite canvas.</summary>
     public InkCanvas.Core.Ink.Rect? ContentBounds { get; set; }
 
@@ -182,8 +194,14 @@ public sealed class InkSurface : UserControl, IDisposable
         using (clip)
         {
         _scene.ShowSelectionOutline = ContentBounds is null;
-        if (DrawCommitted) _committed.Draw(args.DrawingSession, _scene, _controller, (float)ActualWidth, (float)ActualHeight, sender.Dpi);
-        _scene.DrawLive(args.DrawingSession, _controller);
+        if (DrawCommitted && InkSceneRenderer.NeedsLayeredLiveInk(_controller))
+            _scene.DrawWithLayeredLiveInk(args.DrawingSession, _controller, _controller.ViewTransform, new(0, 0, (float)ActualWidth, (float)ActualHeight));
+        else
+        {
+            if (DrawCommitted) _committed.Draw(args.DrawingSession, _scene, _controller, (float)ActualWidth, (float)ActualHeight, sender.Dpi);
+            if (ShowLiveInk) _scene.DrawLive(args.DrawingSession, _controller);
+            else _scene.DrawAdornments(args.DrawingSession, _controller, _controller.ViewTransform);
+        }
         }
         if (ContentBounds is not null) _scene.DrawSelectionOverlay(args.DrawingSession, _controller);
         FrameDrawn?.Invoke();
@@ -192,6 +210,12 @@ public sealed class InkSurface : UserControl, IDisposable
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
     {
         var sample = Translate(e);
+        if (_controller is not null && InterceptPointerPressed?.Invoke(sample) == true)
+        {
+            InputBegan?.Invoke();
+            e.Handled = true;
+            return;
+        }
         InputStarting?.Invoke(sample);
         if (_controller is null) return;
         InputBegan?.Invoke();

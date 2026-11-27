@@ -2,6 +2,7 @@ using InkCanvas.Controls.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Markup;
 using Windows.System;
 
 namespace InkCanvas.Modules.AiAssistant;
@@ -85,9 +86,11 @@ public sealed partial class AssistantWindow
         var send = new Grid(); send.Children.Add(_send); send.Children.Add(_stop); Grid.SetColumn(send, 1); row.Children.Add(send);
         _send.Click += (_, _) => Send(); _stop.Click += (_, _) => StopRequested?.Invoke(); _stop.Visibility = Visibility.Collapsed;
         input.Children.Add(row);
-        var border = new Border { Padding = new Thickness(8), CornerRadius = new CornerRadius(12), BorderThickness = new Thickness(1), Child = input };
-        border.Loaded += (_, _) => { border.Background = ThemeBrushes.Resolve(border, "IcSurfaceAltBrush"); border.BorderBrush = ThemeBrushes.Resolve(border, "IcStrokeBrush"); };
-        border.ActualThemeChanged += (_, _) => { border.Background = ThemeBrushes.Resolve(border, "IcSurfaceAltBrush"); border.BorderBrush = ThemeBrushes.Resolve(border, "IcStrokeBrush"); };
+        var border = (Border)XamlReader.Load("""
+            <Border xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    Style="{StaticResource IcModuleCardStyle}" Padding="8" CornerRadius="12" />
+            """);
+        border.Child = input;
         composer.Children.Add(border); composer.Children.Add(_model); Grid.SetRow(composer, 2); _root.Children.Add(composer);
         AutomationProperties.SetName(_input, "消息内容");
         _input.TextChanged += (_, _) => { if (_binding || _chat is null) return; _chat.Draft = _input.Text; Changed?.Invoke(); };

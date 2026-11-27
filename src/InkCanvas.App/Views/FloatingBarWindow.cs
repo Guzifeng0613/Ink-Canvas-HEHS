@@ -387,7 +387,8 @@ public sealed class FloatingBarWindow : Window
 
     internal void DismissPanelsOnInput()
     {
-        foreach (var panel in _panels.Values.ToArray()) panel.DismissOnInput();
+        foreach (var (kind, panel) in _panels.ToArray())
+            if (_bar.ShouldAutoDismissPanel(kind)) panel.DismissOnInput();
     }
 
     private void ReanchorPanels()

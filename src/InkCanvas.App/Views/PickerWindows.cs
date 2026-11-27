@@ -31,6 +31,8 @@ public sealed class PenPaletteWindow : Window
     public bool IsDetached { get; private set; }
     public bool IsPinned => _palette.Header.IsPinned;
     public bool IsHighlighter { get; }
+    internal Func<bool> AutoDismissEnabled { get => _palette.AutoDismissEnabled; set => _palette.AutoDismissEnabled = value; }
+    private bool CanAutoDismiss => AutoDismissEnabled?.Invoke() != false && !IsPinned && !_palette.IsEditingColor;
 
     public PenPaletteWindow(InkController controller, bool highlighter, int theme, double scalePercent = 100)
         : this(controller, highlighter, theme, scalePercent, null) { }
@@ -153,8 +155,12 @@ public sealed class PenPaletteWindow : Window
         }
     }
 
-    /// <summary>Shell overlay-input hook: WPF HideSubPanels always hides PenPalette on inking.</summary>
     public void DismissOnOverlayInput()
+    {
+        if (CanAutoDismiss) DismissIfUnpinned();
+    }
+
+    internal void DismissIfUnpinned()
     {
         if (!_closed && !_palette.Header.IsPinned && !_palette.IsEditingColor) Close();
     }
@@ -283,7 +289,7 @@ public sealed class PenPaletteWindow : Window
         {
             if (e.Key == Windows.System.VirtualKey.Escape) { e.Handled = true; if (!_closed) Close(); }
         };
-        TransientWindowDismissal.Attach(this, () => _ownerHwnd, () => !_palette.Header.IsPinned && !_palette.IsEditingColor,
+        TransientWindowDismissal.Attach(this, () => _ownerHwnd, () => CanAutoDismiss,
             () => _getAnchor?.Invoke() ?? default, () => _getInteractionRegion?.Invoke() ?? default);
         Closed += (_, _) => { _closed = true; _detachAnchor?.Invoke(); };
     }
@@ -307,6 +313,8 @@ public sealed class ShapePickerWindow : Window
     private bool _closed;
     private bool _designRefreshPending;
     public bool IsDetached { get; private set; }
+    internal Func<bool> AutoDismissEnabled { get; set; }
+    private bool CanAutoDismiss => AutoHide && AutoDismissEnabled?.Invoke() != false;
 
     public ShapePickerWindow(InkController controller, Action onPicked, int theme,
         double scalePercent = 100, bool boardMode = false)
@@ -318,7 +326,7 @@ public sealed class ShapePickerWindow : Window
         _preview.SelectionMade += (_, sticky) =>
         {
             onPicked?.Invoke();
-            if (_preview.AutoHide) Close();
+            if (CanAutoDismiss) Close();
         };
 
         // Natural design size measured while unrooted (a rooted measure is constrained by the
@@ -392,7 +400,7 @@ public sealed class ShapePickerWindow : Window
         }
     }
 
-    /// <summary>Pin state: true = auto-hide after a pick (WPF default), false = stay open.</summary>
+    /// <summary>Whether the panel is unpinned and eligible for automatic dismissal.</summary>
     public bool AutoHide
     {
         get => _preview.AutoHide;
@@ -418,11 +426,12 @@ public sealed class ShapePickerWindow : Window
         else ResizeAtCurrentPosition();
     }
 
-    /// <summary>
-    /// Shell overlay-input hook: HideSubPanels hides BorderDrawShape only while auto-hide is
-    /// armed; a pinned picker stays open while the teacher draws shapes.
-    /// </summary>
     public void DismissOnOverlayInput()
+    {
+        if (CanAutoDismiss) DismissIfUnpinned();
+    }
+
+    internal void DismissIfUnpinned()
     {
         if (!_closed && _preview.AutoHide) Close();
     }
@@ -507,7 +516,7 @@ public sealed class ShapePickerWindow : Window
         {
             if (e.Key == Windows.System.VirtualKey.Escape) { e.Handled = true; if (!_closed) Close(); }
         };
-        TransientWindowDismissal.Attach(this, () => _ownerHwnd, () => _preview.AutoHide,
+        TransientWindowDismissal.Attach(this, () => _ownerHwnd, () => CanAutoDismiss,
             () => _getAnchor?.Invoke() ?? default, () => _getInteractionRegion?.Invoke() ?? default);
         Closed += (_, _) => { _closed = true; _detachAnchor?.Invoke(); };
     }

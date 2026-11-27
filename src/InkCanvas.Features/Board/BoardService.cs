@@ -406,6 +406,7 @@ public sealed partial class BoardService
         target.EraserMode = source.EraserMode;
         target.EraserRadius = source.EraserRadius;
         target.ShapeKind = source.ShapeKind;
+        target.PolygonVertexCount = source.PolygonVertexCount;
         target.StickyShape = source.StickyShape;
         target.Tool = source.Tool;
     }
@@ -525,6 +526,7 @@ public sealed partial class BoardService
         CurrentIndex++;
         _images[CurrentIndex].AddRange(images); _media[CurrentIndex].AddRange(media);
         Current.Document.AddRange(strokes);
+        Current.Document.RestoreInkLayers(source.Document.InkLayerCount);
         CarryDrawingState(source, Current);
         Current.ViewTransform = source.ViewTransform;
         _papers[Current] = _papers[Current] with { Name = $"{PageName(CurrentIndex - 1)} 副本" };
@@ -775,6 +777,7 @@ public sealed partial class BoardService
             var controller = new InkController();
             controller.GetSelectableElements = () => GetSelectionElements(controller);
             controller.Document.AddRange(page.Strokes);
+            controller.Document.RestoreInkLayers(page.InkLayerCount);
             _pages.Add(controller);
             _papers.Add(controller, page.Paper with { Name = page.Paper.Name ?? $"页面 {_nextPageNumber}" });
             _nextPageNumber++;
@@ -793,6 +796,7 @@ public sealed partial class BoardService
     private sealed record PreparedPage(List<InkStroke> Strokes, List<BoardImageAsset> Images, List<BoardMediaAsset> Media, BoardPaper Paper, Matrix3x2 View)
     {
         public float[] Viewport { get; init; }
+        public int InkLayerCount { get; init; }
     }
 
     private static PreparedPage PreparePage(BoardPageFile page, BoardPaper fallback)
@@ -803,7 +807,7 @@ public sealed partial class BoardService
             (page.Media ?? new()).Where(IsValidMedia).ToList(),
             ReadPaper(page.Background, page.GridSpacing, fallback) with
             { Name = string.IsNullOrWhiteSpace(page.Name) ? null : page.Name.Trim() },
-            ReadViewTransform(page.ViewTransform)) { Viewport = page.Viewport };
+            ReadViewTransform(page.ViewTransform)) { Viewport = page.Viewport, InkLayerCount = page.InkLayerCount };
     }
 
     private static BoardPaper ReadPaper(string background, float? spacing, BoardPaper fallback) => new(
@@ -825,6 +829,8 @@ public sealed partial class BoardService
         controller.History.Clear();
         controller.ViewTransform = page.View;
         controller.Document.AddRange(page.Strokes);
+        controller.Document.RestoreInkLayers(page.InkLayerCount);
+        controller.TrySetActiveInkLayer(0);
         _images[index] = page.Images;
         _media[index] = page.Media;
         _papers[controller] = page.Paper with { Name = page.Paper.Name ?? PageName(index) };
@@ -881,6 +887,7 @@ public sealed partial class BoardService
         InkWash = stroke.Attributes.InkWash,
         InkWashSeed = stroke.Attributes.InkWashSeed,
         LayerOrder = stroke.LayerOrder,
+        InkLayerIndex = stroke.InkLayerIndex,
         Color = stroke.Attributes.Color.PackedArgb,
         Width = stroke.Attributes.BaseWidth,
         Highlighter = stroke.Attributes.IsHighlighter,
@@ -911,7 +918,8 @@ public sealed partial class BoardService
             InkWash = strokeFile.InkWash.Normalize(),
             InkWashSeed = strokeFile.InkWashSeed,
         };
-        var stroke = new InkStroke(attributes) { Id = strokeFile.Id ?? Guid.NewGuid(), IsRecognizedShape = strokeFile.Shape, LayerOrder = strokeFile.LayerOrder, ShapeSource = strokeFile.ShapeSource };
+        var stroke = new InkStroke(attributes) { Id = strokeFile.Id ?? Guid.NewGuid(), IsRecognizedShape = strokeFile.Shape,
+            InkLayerIndex = strokeFile.InkLayerIndex, LayerOrder = strokeFile.LayerOrder, ShapeSource = strokeFile.ShapeSource };
         stroke.RestorePoints((strokeFile.Points ?? new List<float[]>())
             .Where(row => row.Length >= 4)
             .Select(row => new InkPoint(row[0], row[1], row[2], row[3], row.Length > 4 ? row[4] : 0f,
@@ -938,6 +946,8 @@ public sealed partial class BoardService
 
     private sealed class BoardPageFile
     {
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+        public int InkLayerCount { get; set; }
         public float[] Viewport { get; set; }
         public string Name { get; set; }
         public float[] ViewTransform { get; set; }
@@ -950,6 +960,8 @@ public sealed partial class BoardService
 
     private sealed class StrokeFile
     {
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+        public int InkLayerIndex { get; set; }
         public Guid? Id { get; set; }
         public InkWashBrushOptions InkWash { get; set; } = InkWashBrushOptions.Default;
         public int InkWashSeed { get; set; }

@@ -86,9 +86,26 @@ internal static class OptionPanelsRegression
                 Check("closing dragged pen clears its pin " + highlight, closed.Contains(pinnedPen) && !header.IsPinned);
                 var reopenedPen = await Pen(highlight);
                 Check("reopened pen defaults to transient mode " + highlight, !reopenedPen.IsPinned && !reopenedPen.IsDetached);
+                var color = Descendants(reopenedPen.Content).OfType<Button>().First(button =>
+                    AutomationProperties.GetName(button) == (highlight ? "荧光笔黄色" : "红色"));
+                Invoke(color);
                 reopenedPen.DismissOnOverlayInput();
-                Check("reopened pen dismisses on canvas input " + highlight, closed.Contains(reopenedPen));
+                Check("selected pen color stays open on canvas input by default " + highlight, !closed.Contains(reopenedPen));
+                services.Settings.Appearance.AutoDismissAnnotationToolPanels = true;
+                Invoke(color);
+                Check("pen color selection closes the pane when enabled " + highlight, closed.Contains(reopenedPen));
+                services.Settings.Appearance.AutoDismissAnnotationToolPanels = false;
             }
+            shape = Shapes();
+            await Task.Delay(70);
+            var shapePreview = Descendants(shape.Content).OfType<ShapePreview>().Single();
+            shapePreview.SelectItem(0);
+            shape.DismissOnOverlayInput();
+            Check("selected shape stays open on canvas input by default", !closed.Contains(shape));
+            services.Settings.Appearance.AutoDismissAnnotationToolPanels = true;
+            shapePreview.SelectItem(0);
+            Check("shape selection closes the pane when enabled", closed.Contains(shape));
+            services.Settings.Appearance.AutoDismissAnnotationToolPanels = false;
             shape = Shapes();
             await Task.Delay(70);
             shape.Detach();
@@ -267,7 +284,7 @@ internal static class OptionPanelsRegression
                 var preview = Descendants(window.Content).OfType<ShapePreview>().Single();
                 var choices = Descendants(Descendants(preview).OfType<SegmentedSelector>().Single()).OfType<ToggleButton>().ToArray();
                 Check("all-shapes category is available " + boardMode,
-                    choices.Length == ShapeMenuCatalog.Categories.Length + 1 && choices[^1].Content?.ToString() == "全部");
+                    choices.Length == preview.AllCategoriesIndex + 1 && choices[^1].Content?.ToString() == "全部");
                 foreach (double scale in new[] { 50d, 100d, 150d })
                 {
                     window.ApplyScale(scale);
@@ -283,12 +300,12 @@ internal static class OptionPanelsRegression
                         Check($"category contains its own shapes {boardMode} {scale} {category}",
                             preview.VisibleCells.Count == ShapeMenuCatalog.Categories[category].Rows.Sum(row => row.Length));
                     }
-                    preview.SelectCategory(ShapePreview.AllCategoryIndex);
+                    preview.SelectCategory(preview.AllCategoriesIndex);
                     await Task.Delay(120);
                     var all = window.AppWindow.ClientSize;
                     Check($"all-shapes pane grows taller {boardMode} {scale}", all.Height > standard.Height + 12);
                     Check($"all shapes appear exactly once {boardMode} {scale}", preview.VisibleCells.Count == preview.ShapeCount
-                        && preview.VisibleCells.Select(cell => ((ShapeMenuItem)cell.Tag).Kind).Distinct().Count() == Enum.GetValues<ShapeKind>().Length);
+                        && preview.VisibleCells.Select(cell => ((ShapeMenuItem)cell.Tag).Kind).Distinct().Count() == Enum.GetValues<ShapeKind>().Count(kind => kind != ShapeKind.Polygon));
                     var root = (FrameworkElement)window.Content;
                     Check($"all-shapes cells fit the window {boardMode} {scale}", preview.VisibleCells.All(cell =>
                     {

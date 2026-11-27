@@ -72,7 +72,10 @@ public sealed partial class BoardService
             _pages[index].Document.Strokes.Select(stroke => stroke.Clone()).ToList(),
             _images[index].Select(image => image.Copy(copyData: false)).ToList(),
             _media[index].Select(media => media.Copy(copyData: false)).ToList(), _papers[_pages[index]], _pages[index].ViewTransform)
-            { Viewport = new[] { _pages[index].ViewCenter.X * 2, _pages[index].ViewCenter.Y * 2 } }).ToList(), metadata ?? ArchiveMetadata,
+            {
+                Viewport = new[] { _pages[index].ViewCenter.X * 2, _pages[index].ViewCenter.Y * 2 },
+                InkLayerCount = _pages[index].Document.InkLayerCount,
+            }).ToList(), metadata ?? ArchiveMetadata,
         new Dictionary<string, byte[]>(_extensions, StringComparer.Ordinal));
     }
 
@@ -93,6 +96,7 @@ public sealed partial class BoardService
                     Name = page.Paper.Name,
                     ViewTransform = new[] { page.View.M11, page.View.M12, page.View.M21, page.View.M22, page.View.M31, page.View.M32 },
                     Viewport = page.Viewport,
+                    InkLayerCount = page.InkLayerCount > 1 ? page.InkLayerCount : 0,
                     Strokes = page.Strokes.Select(ToStrokeFile).ToList(), Images = page.Images, Media = page.Media,
                 }).ToList(),
             };

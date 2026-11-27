@@ -86,7 +86,7 @@ internal sealed class BarPanelWindow : Window
         _bar.ThemeRefreshed += ApplyChrome;
         OptionPopupCoordinator.Attach(this, _title);
 
-        TransientWindowDismissal.Attach(this, () => WindowChrome.GetHwnd(_owner), () => !_title.IsPinned,
+        TransientWindowDismissal.Attach(this, () => WindowChrome.GetHwnd(_owner), () => !_title.IsPinned && _bar.ShouldAutoDismissPanel(_kind),
             () => WindowChrome.GetScreenBounds(_owner, _bar.GetPanelButton(_kind)),
             () => WindowChrome.GetScreenBounds(_owner, _bar));
         _host.KeyDown += (_, e) =>

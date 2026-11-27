@@ -19,9 +19,15 @@ public sealed class EraserPalette : UserControl
         Maximum = OriginalMenuCatalog.EraserDiameterMaximum,
         StepFrequency = 1, MinHeight = 32, AllowFocusOnInteraction = false,
     };
-    private readonly Ellipse _preview = new() { StrokeThickness = 1.5 };
+    private readonly Ellipse _preview = new()
+    {
+        StrokeThickness = 1.5, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+    };
     private readonly TextBlock _sizeLabel = new() { Text = "直径", FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
-    private readonly Border _previewBorder = new() { BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6) };
+    private readonly Border _previewBorder = new()
+    {
+        Height = PenStrokePreview.StandardHeight, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6),
+    };
     private readonly TextBlock _sizeValue = new() { MinWidth = 50, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center, FontSize = 12 };
     private readonly DeferredSettingsChange _sizeChanges;
     public event Action<InkEraserMode> ModePicked;
@@ -33,11 +39,14 @@ public sealed class EraserPalette : UserControl
         : this(controller, OriginalMenuCatalog.ToEraserRadius(size) * 2d, theme, includeClear) { }
 
     public EraserPalette(InkController controller, double diameter, int theme, bool includeClear = false)
+        : this(controller, diameter, theme, PenPalette.PreviewWidth, includeClear) { }
+
+    public EraserPalette(InkController controller, double diameter, int theme, double previewWidth, bool includeClear = false)
     {
         _sizeChanges = new DeferredSettingsChange(this, () => SettingsChanged?.Invoke(), () => _size.IsAdjusting);
         _size.AdjustmentCompleted += _sizeChanges.Flush;
         var foreground = PopupBrushes.FloatBarForeground(theme);
-        var modes = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        var modes = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center };
         foreach (var (mode, label, badge) in new[]
         {
             (InkEraserMode.Area, "面积擦", Glyphs.EraserOverlayCircle),
@@ -91,12 +100,12 @@ public sealed class EraserPalette : UserControl
         sizeRow.Children.Add(_sizeLabel);
         Grid.SetColumn(_size, 1); sizeRow.Children.Add(_size);
         Grid.SetColumn(_sizeValue, 2); sizeRow.Children.Add(_sizeValue);
-        var previewSurface = new Grid { Height = OriginalMenuCatalog.EraserDiameterMaximum + 8 };
+        var previewSurface = new Grid { IsHitTestVisible = false };
         previewSurface.Children.Add(_preview);
-        var panel = new StackPanel { Spacing = 10, Padding = new Thickness(12), Width = 240 };
-        panel.Children.Add(modes); panel.Children.Add(sizeRow);
+        var panel = new StackPanel { Spacing = 10, Padding = new Thickness(12), Width = previewWidth + 24 };
         _previewBorder.Child = previewSurface;
         panel.Children.Add(_previewBorder);
+        panel.Children.Add(modes); panel.Children.Add(sizeRow);
         if (includeClear)
         {
             var clear = new Button { Content = "清空画布…", HorizontalAlignment = HorizontalAlignment.Stretch, Foreground = foreground };
@@ -127,7 +136,8 @@ public sealed class EraserPalette : UserControl
 
     private void RefreshPreview()
     {
-        _preview.Width = _preview.Height = _size.Value;
+        // Use one display scale for the full slider range, leaving the actual diameter unchanged.
+        _preview.Width = _preview.Height = (_previewBorder.Height - 8) * _size.Value / _size.Maximum;
         _sizeValue.Text = _size.Value.ToString("0.#") + " px";
         AutomationProperties.SetHelpText(_preview, "擦除直径 " + _sizeValue.Text);
     }

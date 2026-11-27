@@ -11,6 +11,7 @@ namespace InkCanvas.Controls.Controls;
 /// <summary>A sample generated with the same width, taper and nib geometry as canvas ink.</summary>
 public sealed class PenStrokePreview : UserControl
 {
+    internal const double StandardHeight = 60;
     private readonly Canvas _surface = new() { Height = 80, IsHitTestVisible = false };
     private readonly Path _checks = new();
     private readonly List<Path> _ink = new();

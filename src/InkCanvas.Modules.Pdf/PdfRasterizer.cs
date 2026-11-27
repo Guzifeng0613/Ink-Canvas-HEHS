@@ -34,7 +34,7 @@ internal sealed class PdfRasterizer : IAsyncDisposable
         try
         {
             token.ThrowIfCancellationRequested();
-            renderer._document = await Windows.Data.Pdf.PdfDocument.LoadFromStreamAsync(renderer._stream, password ?? "").AsTask().ConfigureAwait(false);
+            renderer._document = await Windows.Data.Pdf.PdfDocument.LoadFromStreamAsync(renderer._stream, password ?? "").AsTask(token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
             renderer._renderer = new PdfNativeRenderer();
             return renderer;
@@ -91,7 +91,6 @@ internal sealed class PdfRasterizer : IAsyncDisposable
             (float)(source.Y * page.Size.Height / geometry.DipHeight),
             (float)((source.X + source.Width) * page.Size.Width / geometry.DipWidth),
             (float)((source.Y + source.Height) * page.Size.Height / geometry.DipHeight));
-        await page.PreparePageAsync().AsTask().ConfigureAwait(false);
         token.ThrowIfCancellationRequested();
         uint width = (uint)Math.Max(1, Math.Ceiling(source.Width * scale)), height = (uint)Math.Max(1, Math.Ceiling(source.Height * scale));
         return await render(page, rectangle, width, height, token).ConfigureAwait(false);

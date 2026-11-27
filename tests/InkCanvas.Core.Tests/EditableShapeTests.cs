@@ -177,7 +177,7 @@ public sealed class EditableShapeTests
         c.Document.AddRange(ShapeGenerator.Generate(ShapeKind.Rectangle, new(100, 100), new(300, 240), Attributes()));
         c.SelectAll(); c.SetShapeFill(InkColor.Opaque(200, 40, 40)); c.ClearSelection();
         c.OnPointerDown(Pointer(new(180, 160))); c.OnPointerUp(Pointer(new(180, 160))); Assert.Equal(2, c.Selection.Count);
-        c.Tool = InkTool.Eraser; c.EraserMode = InkEraserMode.Area;
+        c.Tool = InkTool.Eraser; c.EraserMode = InkEraserMode.WholeStroke;
         c.OnPointerDown(Pointer(new(180, 160))); c.OnPointerUp(Pointer(new(180, 160))); Assert.Empty(c.Document.Strokes);
         c.Undo(); Assert.Equal(2, c.Document.Count); Assert.All(c.Document.Strokes, s => Assert.NotNull(s.ShapeSource.Geometry));
     }

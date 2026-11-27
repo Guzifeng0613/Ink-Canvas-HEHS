@@ -10,56 +10,109 @@ public static class PdfInkSplitter
 {
     public static IReadOnlyDictionary<int, IReadOnlyList<InkStroke>> Split(InkStroke stroke, int sourcePage, PdfContinuousLayout layout)
     {
-        var original = new Dictionary<int, IReadOnlyList<InkStroke>> { [sourcePage] = new[] { stroke } };
-        if (stroke.Count == 0) return original;
+        if (!TrySplit(stroke, sourcePage, layout, out var fragments))
+            return new Dictionary<int, IReadOnlyList<InkStroke>> { [sourcePage] = new[] { stroke } };
+        return fragments;
+    }
+
+    public static bool TrySplit(InkStroke stroke, int sourcePage, PdfContinuousLayout layout,
+        out Dictionary<int, IReadOnlyList<InkStroke>> fragments)
+    {
+        fragments = null;
+        if (stroke.Count == 0) return false;
         var documentBounds = layout.ToDocumentBounds(sourcePage, stroke.Bounds);
-        var candidates = layout.VisiblePages(documentBounds.Top, documentBounds.Bottom).ToArray();
-        if (candidates.All(page => page == sourcePage)) return original;
-        var documentStroke = stroke.Clone();
-        documentStroke.Transform(layout.PageView(sourcePage, Matrix3x2.Identity), scaleWidth: false);
-        var result = new Dictionary<int, IReadOnlyList<InkStroke>>();
-        foreach (int page in candidates)
+        var sourceBounds = layout[sourcePage];
+        if (documentBounds.Left >= sourceBounds.Left && documentBounds.Right <= sourceBounds.Right
+            && documentBounds.Top >= sourceBounds.Top && documentBounds.Bottom <= sourceBounds.Bottom) return false;
+        InkStroke documentStroke = null;
+        foreach (int page in layout.VisiblePages(documentBounds.Top, documentBounds.Bottom))
         {
+            if (page == sourcePage || !layout[page].Intersects(documentBounds)) continue;
+            documentStroke ??= ToDocument();
             var clipped = Clip(documentStroke, layout[page]);
             if (clipped.Count == 0) continue;
+            ToPage(page, clipped);
+            (fragments ??= new())[page] = clipped;
+        }
+        if (fragments is null) return false;
+        var original = Clip(documentStroke, layout[sourcePage]);
+        if (original.Count > 0)
+        {
+            ToPage(sourcePage, original);
+            fragments[sourcePage] = original;
+        }
+        return true;
+
+        InkStroke ToDocument()
+        {
+            var copy = stroke.Clone();
+            copy.Transform(layout.PageView(sourcePage, Matrix3x2.Identity), scaleWidth: false);
+            return copy;
+        }
+
+        void ToPage(int page, List<InkStroke> clipped)
+        {
             Matrix3x2.Invert(layout.PageView(page, Matrix3x2.Identity), out var inverse);
             foreach (var fragment in clipped) fragment.Transform(inverse, scaleWidth: false);
-            result[page] = clipped;
         }
-        // Keep existing margin annotations when they do not reach another page.
-        return result.Keys.All(page => page == sourcePage) ? original : result;
     }
 
     public static Dictionary<int, IReadOnlyList<InkStroke>> Distribute(
-        IReadOnlyDictionary<int, IReadOnlyList<InkStroke>> pages, PdfContinuousLayout layout)
+        IReadOnlyDictionary<int, IReadOnlyList<InkStroke>> pages, PdfContinuousLayout layout, CancellationToken token = default)
     {
         var result = pages.Keys.ToDictionary(page => page, _ => new List<InkStroke>());
         foreach (var pair in pages)
         foreach (var stroke in pair.Value)
-        foreach (var part in Split(stroke, pair.Key, layout))
         {
-            if (!result.TryGetValue(part.Key, out var ink)) result[part.Key] = ink = new();
-            ink.AddRange(part.Value);
+            token.ThrowIfCancellationRequested();
+            if (!TrySplit(stroke, pair.Key, layout, out var parts))
+            {
+                result[pair.Key].Add(stroke);
+                continue;
+            }
+            foreach (var part in parts)
+            {
+                if (!result.TryGetValue(part.Key, out var ink)) result[part.Key] = ink = new();
+                ink.AddRange(part.Value);
+            }
         }
         return result.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<InkStroke>)pair.Value
-            .OrderBy(stroke => stroke.LayerOrder ?? long.MaxValue).ToArray());
+            .OrderBy(stroke => stroke.InkLayerIndex).ThenBy(stroke => stroke.LayerOrder ?? long.MaxValue).ToArray());
     }
 
-    private static List<InkStroke> Clip(InkStroke stroke, Rect bounds)
+    internal static List<InkStroke> Clip(InkStroke stroke, Rect bounds, bool freezeShape = false)
     {
         var result = new List<InkStroke>();
+        if (stroke.ShapeSource?.Geometry is { } shape)
+            freezeShape |= shape.Kind is ShapeKind.Polygon or ShapeKind.Sector or ShapeKind.ConeFrustum
+                || ShapeGenerator.IsPolygonalFrustum(shape.Kind) || ShapeGenerator.IsRoundedRectangle(shape.Kind)
+                || shape.FillContourLengths is { Length: > 1 };
+        if (freezeShape && stroke.ShapeSource?.Geometry is { Construction: ShapeConstruction.Connector,
+            LineStyle: ShapeLineStyle.Dashed or ShapeLineStyle.Dotted })
+        {
+            foreach (var contour in ShapeDefinition.RenderContours(stroke))
+            {
+                contour.InkLayerIndex = stroke.InkLayerIndex;
+                contour.LayerOrder = stroke.LayerOrder;
+                result.AddRange(Clip(contour, bounds, freezeShape: true));
+            }
+            return result;
+        }
         if (stroke.ShapeSource?.Geometry?.IsFill == true)
         {
             const double scale = 1000;
-            var subject = new Path64(stroke.Points.Select(point => new Point64(point.X * scale, point.Y * scale)));
+            var subject = FilledInkGeometry.ToPaths(stroke, scale);
             var rectangle = new Path64 { new(bounds.Left * scale, bounds.Top * scale), new(bounds.Right * scale, bounds.Top * scale),
                 new(bounds.Right * scale, bounds.Bottom * scale), new(bounds.Left * scale, bounds.Bottom * scale) };
-            foreach (var path in Clipper.Intersect(new Paths64 { subject }, new Paths64 { rectangle }, FillRule.NonZero))
+            var clipped = Clipper.Intersect(subject, new Paths64 { rectangle }, FillRule.NonZero);
+            if (clipped.Count == 0) return result;
+            if (!freezeShape && stroke.ShapeSource.Geometry.IsEditable)
             {
-                var points = path.Select(point => new InkPoint((float)(point.X / scale), (float)(point.Y / scale),
-                    stroke.Points[0].Pressure, stroke.Points[0].Width, stroke.Points[0].TimeMs)).ToArray();
-                if (points.Length >= 3) result.Add(Fragment(points));
+                var sample = stroke.Points[0];
+                foreach (var path in clipped)
+                    result.Add(Fragment(path.Select(point => sample with { X = (float)(point.X / scale), Y = (float)(point.Y / scale) }).ToArray()));
             }
+            else result.Add(FilledInkGeometry.FromPaths(stroke, clipped, scale));
             return result;
         }
         var current = new List<InkPoint>();
@@ -91,15 +144,16 @@ public static class PdfInkSplitter
         }
         InkStroke Fragment(IReadOnlyList<InkPoint> points)
         {
-            var fragment = new InkStroke(stroke.Attributes.Clone()) { LayerOrder = stroke.LayerOrder,
+            var fragment = new InkStroke(stroke.Attributes.Clone()) { InkLayerIndex = stroke.InkLayerIndex, LayerOrder = stroke.LayerOrder,
                 IsRecognizedShape = stroke.IsRecognizedShape, ShapeSource = stroke.ShapeSource };
             fragment.RestorePoints(points); fragment.Complete();
             if (stroke.ShapeSource?.Geometry is { } geometry)
             {
                 var extent = fragment.Bounds;
-                fragment.ShapeSource = ShapeSource.FromGeometry(stroke.ShapeSource.GroupId, geometry with
+                fragment.ShapeSource = ShapeSource.FromGeometry(stroke.ShapeSource.GroupId, freezeShape ? geometry.AsContours() : geometry with
                 {
-                    Construction = ShapeConstruction.Bounds, Parameters = new[] { extent.Left, extent.Top, extent.Right, extent.Bottom },
+                    Construction = geometry.IsEditable ? ShapeConstruction.Bounds : geometry.Construction,
+                    Parameters = new[] { extent.Left, extent.Top, extent.Right, extent.Bottom },
                     Vertices = points.SelectMany(point => new[] { point.X, point.Y }).ToArray(),
                     Transform = new float[] { 1, 0, 0, 1, 0, 0 }, StartNode = null, EndNode = null,
                 });

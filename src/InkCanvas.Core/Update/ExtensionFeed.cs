@@ -22,6 +22,8 @@ public static partial class ExtensionFeed
             ["inkcanvas.library"] = ("文稿库", "文件夹导航、预览与白板文稿管理", RepositoryExtensionKind.Module),
             ["inkcanvas.screen-tracking"] = ("屏幕内容跟随", "滚动、缩放和页面批注记忆", RepositoryExtensionKind.Module),
             ["inkcanvas.stylus"] = ("手写笔与数位板", "手写笔侧键、笔尾和数位板快捷键映射", RepositoryExtensionKind.Module),
+            ["inkcanvas.ink-layers"] = ("书写图层", "在选择工具中创建和切换独立的透明笔迹图层", RepositoryExtensionKind.Module),
+            ["inkcanvas.shape-expansion"] = ("图形拓展包", "识别和编辑多边形，绘制圆角图形，按指定中心或轴线变换选区", RepositoryExtensionKind.Module),
             ["inkcanvas.legacy-import"] = ("旧版文稿导入", "导入历史版本的笔迹文件", RepositoryExtensionKind.Plugin),
             ["sample.guide-lines"] = ("参考线示例", "在画布中插入参考线", RepositoryExtensionKind.Plugin),
             ["inkcanvas.shell-preview"] = ("资源管理器预览", "白板文件缩略图与资源管理器预览", RepositoryExtensionKind.Explorer),

@@ -147,7 +147,7 @@ internal sealed class AssistantChatCard : UserControl
     private void ApplyTheme()
     {
         _questionHost.Background = ThemeBrushes.Resolve(this, "IcAccentSoftBrush");
-        _status.Foreground = _fallback.Foreground = ThemeBrushes.Resolve(this, "IcTextSecondaryBrush");
-        _error.Foreground = ThemeBrushes.Resolve(this, "SystemFillColorCriticalBrush");
+        _status.Foreground = _fallback.Foreground = ThemeBrushes.Resolve(this, "IcModuleTextSecondaryBrush");
+        _error.Foreground = ThemeBrushes.Resolve(this, "IcModuleErrorBrush");
     }
 }

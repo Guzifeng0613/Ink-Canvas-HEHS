@@ -37,6 +37,7 @@ public sealed partial class InkController : IDisposable
     public event Action PlaybackChanged;
     public bool BeginPlayback()
     {
+        CancelAdvancedSelection();
         EndPlayback();
         CommitViewportFrame();
         StopViewportMotion();
@@ -60,6 +61,7 @@ public sealed partial class InkController : IDisposable
     }
     private void OnPlaybackDocumentChanged()
     {
+        CancelAdvancedSelection();
         RefreshShapeConnections();
         _drawingOrderDirty = true;
         _drawingObjects = Array.Empty<DrawingObject>();
@@ -137,17 +139,30 @@ public sealed partial class InkController : IDisposable
     public UndoStack History { get; }
 
     public bool HasActiveInteraction => _live.Count > 0 || _touches.Count > 0 || _erasing || IsLassoErasing || IsRegionSelecting
-        || _activeHandle != SelectionHandle.None || _selectionGesture || _panPointerId is not null || _shapeStep != 0 || _shapeEditPointer is not null;
+        || _activeHandle != SelectionHandle.None || _selectionGesture || _panPointerId is not null || _shapeStep != 0
+        || _shapeEditPointer is not null || _advancedDrag is not null;
 
     public bool RestoreScreenContext(IEnumerable<InkStroke> strokes, UndoHistoryState history, Matrix3x2 view)
     {
         if (HasActiveInteraction) return false;
         EndPlayback(); FinishDotAnimations(); ClearSelection(); HideEraserPreview();
         ViewTransform = view;
-        Document.ReplaceAll(strokes);
+        ReplacePageInk(strokes);
         History.Restore(history);
         NotifyElementsChanged();
         return true;
+    }
+
+    public void ReplacePageInk(IEnumerable<InkStroke> strokes)
+    {
+        _activeInkLayer = 0;
+        _recentForRecognition.Clear();
+        using (Document.DeferNotifications())
+        {
+            Document.ReplaceAll(strokes);
+            Document.RestoreInkLayers(1);
+        }
+        ActiveInkLayerChanged?.Invoke();
     }
 
     public StrokeAttributes CurrentAttributes { get; } = new()
@@ -279,7 +294,8 @@ public sealed partial class InkController : IDisposable
     {
         if (element is null || !element.IsPresent) return;
         Tool = InkTool.Select;
-        ClearSelection();
+        if (ActiveInkLayer == 0) ClearSelection();
+        else if (!TrySetActiveInkLayer(0)) return;
         SelectedElements.Add(element);
         SelectionChanged?.Invoke();
         Invalidated?.Invoke();
@@ -307,6 +323,7 @@ public sealed partial class InkController : IDisposable
     /// <summary>Menu selection entry point: pick a kind and whether it stays selected (long-press).</summary>
     public void SelectShape(ShapeKind kind, bool sticky = false)
     {
+        if (!CanDrawShape(kind)) return;
         ShapeKind = kind;
         StickyShape = sticky;
         Tool = InkTool.Shape;
@@ -523,10 +540,11 @@ public sealed partial class InkController : IDisposable
                 bounds = bounds.Union(Rect.FromLTRB(p.X - 12, p.Y - 12, p.X + 12, p.Y + 12));
             var rotate = frame.HandlePosition(SelectionHandle.Rotate, ViewTransform);
             bounds = bounds.Union(Rect.FromLTRB(rotate.X - 12, rotate.Y - 12, rotate.X + 75, rotate.Y + 40));
+            int padding = ShowPolygonAngles ? 128 : 15;
             foreach (var control in ShapeControlPoints)
             {
                 var p = Vector2.Transform(control, ViewTransform);
-                bounds = bounds.Union(Rect.FromLTRB(p.X - 15, p.Y - 15, p.X + 15, p.Y + 15));
+                bounds = bounds.Union(Rect.FromLTRB(p.X - padding, p.Y - padding, p.X + padding, p.Y + padding));
             }
             return bounds;
         }
@@ -621,6 +639,7 @@ public sealed partial class InkController : IDisposable
 
     public void ClearSelection()
     {
+        CancelAdvancedSelection();
         if (_shapeEditPointer is { } editPointer)
             UpdateShapeControlDrag(new OverlayPointer(editPointer, 0, 0, .5f, 0, 0, OverlayPointerKind.Mouse, 0), true, canceled: true);
         ShapeEditEnabled = false;
@@ -639,8 +658,9 @@ public sealed partial class InkController : IDisposable
     {
         Tool = InkTool.Select;
         ClearSelection();
-        Selection.AddRange(Document.Strokes);
-        if (GetSelectableElements is not null) SelectedElements.AddRange(GetSelectableElements().Where(e => e.IsPresent));
+        Selection.AddRange(Document.Strokes.Where(InActiveInkLayer));
+        if (ActiveInkLayer == 0 && GetSelectableElements is not null)
+            SelectedElements.AddRange(GetSelectableElements().Where(e => e.IsPresent));
         SelectionChanged?.Invoke(); Invalidated?.Invoke();
     }
 
@@ -686,6 +706,7 @@ public sealed partial class InkController : IDisposable
         }
         if (_palm.SuppressesTouch(p)) { _suppressedTouches.Add(p.Id); return; }
         if (p.Kind == OverlayPointerKind.Touch && _palm.ShouldErase(p) && Tool is InkTool.Pan or InkTool.Select) return;
+        if (AdvancedSelection is not null) { BeginAdvancedReference(p); return; }
         UpdateEraserPreview(p, notify: false);
         if (Tool == InkTool.Pan)
         {
@@ -843,6 +864,7 @@ public sealed partial class InkController : IDisposable
         if (_shapeEditPointer is not null) { UpdateShapeControlDrag(p, false); return; }
         if (_suppressedTouches.Contains(p.Id)) return;
         _palm.OnMove(p);
+        if (AdvancedSelection is not null) { MoveAdvancedReference(p); return; }
         if (p.Kind == OverlayPointerKind.Touch && PalmErases && _palm.ShouldErase(p)
             && Tool is InkTool.Pen or InkTool.Highlighter or InkTool.Shape && !_erasing)
         {
@@ -982,6 +1004,7 @@ public sealed partial class InkController : IDisposable
         if (ReleaseViewportContact(p, canceled)) { _palm.OnUp(p); return; }
         if (_shapeEditPointer is not null) { UpdateShapeControlDrag(p, true, canceled); return; }
         if (_suppressedTouches.Remove(p.Id)) { _palm.OnUp(p); return; }
+        if (AdvancedSelection is not null) { _palm.OnUp(p); FinishAdvancedReference(p, canceled); return; }
         if (p.Kind == OverlayPointerKind.Touch) HideEraserPreview(p.Id);
         else UpdateEraserPreview(p);
         if (Tool == InkTool.Pan)
@@ -1136,7 +1159,7 @@ public sealed partial class InkController : IDisposable
             foreach (var point in stroke.Points)
                 if (point.Width > targetWidth) { targetWidth = point.Width; dotPoint = point; }
         }
-        var dot = new InkStroke(stroke.Attributes.Clone());
+        var dot = new InkStroke(stroke.Attributes.Clone()) { InkLayerIndex = stroke.InkLayerIndex };
         dot.RestorePoints(new[] { new InkPoint(worldCenter.X, worldCenter.Y, dotPoint.Pressure, targetWidth, first.TimeMs,
             stroke.UsesHardwarePressure || dotPoint.HasPressure, dotPoint.TiltX, dotPoint.TiltY) });
         if (stroke.Count > 1 || Vector2.DistanceSquared(first.Position, worldCenter) > .001f
@@ -1151,7 +1174,7 @@ public sealed partial class InkController : IDisposable
     private void StartStroke(in OverlayPointer p, Vector2 world)
     {
         var attrs = GetDrawingAttributes(Tool == InkTool.Highlighter);
-        var stroke = new InkStroke(attrs);
+        var stroke = new InkStroke(attrs) { InkLayerIndex = ActiveInkLayer };
         bool relativeTime = attrs.EffectiveTaper is >= TaperKind.SmoothPen and <= TaperKind.InkWash
             || UseHardwarePressure && p.Kind == OverlayPointerKind.Pen && p.HasPressure;
         if (relativeTime) _strokeStartTimes[p.Id] = p.TimeMs;
@@ -1212,7 +1235,15 @@ public sealed partial class InkController : IDisposable
                     .ToList();
             }
         }
-        return PlaceShape(ShapeGenerator.Generate(ShapeKind, start, end, ShapeAttributes()));
+        return PlaceShape(GenerateSelectedShape(start, end, ShapeAttributes()));
+    }
+
+    private List<InkStroke> GenerateSelectedShape(Vector2 start, Vector2 end, StrokeAttributes attrs)
+    {
+        if (!CanDrawShape(ShapeKind)) return [];
+        return ShapeKind == ShapeKind.Polygon
+            ? ShapeGenerator.GeneratePolygon(PolygonVertexCount, start, end, attrs)
+            : ShapeGenerator.Generate(ShapeKind, start, end, attrs);
     }
 
     private List<InkStroke> PlaceShape(List<InkStroke> strokes)
@@ -1306,7 +1337,7 @@ public sealed partial class InkController : IDisposable
             return;
         }
 
-        var shapes = PlaceShape(ShapeGenerator.Generate(kind, start, end, attrs));
+        var shapes = PlaceShape(GenerateSelectedShape(start, end, attrs));
         _shapePreview = new List<InkStroke>();
         if (shapes.Count > 0) CommitStrokes(shapes, "shape");
         Invalidated?.Invoke();
@@ -1320,7 +1351,11 @@ public sealed partial class InkController : IDisposable
     private void CommitStrokes(List<InkStroke> strokes, string name, bool lineEndpointHeld = false, HeldShape heldShape = null)
     {
         long layer = NextLayerOrder();
-        foreach (var stroke in strokes) stroke.LayerOrder = layer++;
+        foreach (var stroke in strokes)
+        {
+            stroke.InkLayerIndex = ActiveInkLayer;
+            stroke.LayerOrder = layer++;
+        }
         foreach (var s in strokes) s.Complete();
         using (Document.DeferNotifications())
         {
@@ -1375,16 +1410,17 @@ public sealed partial class InkController : IDisposable
         if (lasso.IsValid)
         {
             var removed = Document.Strokes.Select((stroke, index) => (Index: index, Stroke: stroke))
-                .Where(item => lasso.IntersectsStroke(item.Stroke, view)).ToList();
+                .Where(item => InActiveInkLayer(item.Stroke) && lasso.IntersectsStroke(item.Stroke, view)).ToList();
             var shapeGroups = removed.Where(item => item.Stroke.ShapeSource?.Geometry is not null).Select(item => item.Stroke.ShapeSource.GroupId).ToHashSet();
             if (shapeGroups.Count > 0)
             {
                 var hits = removed.Select(item => item.Stroke).ToHashSet();
                 removed = Document.Strokes.Select((stroke, index) => (Index: index, Stroke: stroke))
-                    .Where(item => hits.Contains(item.Stroke) || item.Stroke.ShapeSource is { } source && shapeGroups.Contains(source.GroupId)).ToList();
+                    .Where(item => InActiveInkLayer(item.Stroke) &&
+                        (hits.Contains(item.Stroke) || item.Stroke.ShapeSource is { } source && shapeGroups.Contains(source.GroupId))).ToList();
             }
-            var elements = GetSelectableElements?.Invoke()
-                .Where(e => e.IsPresent && lasso.IntersectsFrame(e.Frame, view)).ToList() ?? new();
+            var elements = ActiveInkLayer == 0 ? GetSelectableElements?.Invoke()
+                .Where(e => e.IsPresent && lasso.IntersectsFrame(e.Frame, view)).ToList() ?? new() : new();
             if (removed.Count > 0 || elements.Count > 0)
             {
                 var strokes = removed.Select(item => item.Stroke).ToList();
@@ -1470,27 +1506,43 @@ public sealed partial class InkController : IDisposable
         for (int i = dist == 0 ? steps : 1; i <= steps; i++)
         {
             var p = Vector2.Lerp(from, to, steps == 0 ? 0 : (float)i / steps);
-            var shapeGroups = Document.Strokes.Where(s => s.ShapeSource?.Geometry is not null && s.Bounds.Inflate(radius).Contains(p)
-                && s.DistanceTo(p) <= radius + s.HitRadius).Select(s => s.ShapeSource.GroupId).ToHashSet();
-            if (shapeGroups.Count > 0)
-            {
-                var shapes = Document.Strokes.Where(s => s.ShapeSource is { } source && shapeGroups.Contains(source.GroupId)).ToList();
-                if (!_partialEraseGesture) _erasedThisGesture.AddRange(shapes);
-                Document.RemoveAll(shapes); any = true;
-            }
             if (_partialEraseGesture)
             {
-                var currentStrokes = Document.Strokes.Where(stroke => stroke.Bounds.Inflate(radius).Contains(p)).ToArray();
+                HashSet<Guid> cutGroups = null;
+                var currentStrokes = Document.Strokes.Where(stroke => InActiveInkLayer(stroke) && stroke.Bounds.Inflate(radius).Contains(p)).ToArray();
                 foreach (var stroke in currentStrokes)
                 {
                     if (!StrokeEraser.EraseDisc(stroke, p, radius, out var remaining)) continue;
+                    if (stroke.ShapeSource is { Geometry.IsEditable: true } source)
+                        (cutGroups ??= new()).Add(source.GroupId);
                     Document.Replace(stroke, remaining);
                     any = true;
+                }
+                if (cutGroups is not null)
+                {
+                    // Keep untouched parts in the same group without letting shape tools rebuild the cut.
+                    foreach (var stroke in Document.Strokes.Where(stroke => InActiveInkLayer(stroke)
+                        && stroke.ShapeSource is { Geometry.IsEditable: true } source && cutGroups.Contains(source.GroupId)).ToArray())
+                    {
+                        var copy = stroke.Clone();
+                        var source = stroke.ShapeSource;
+                        copy.ShapeSource = ShapeSource.FromGeometry(source.GroupId, source.Geometry.AsContours());
+                        Document.Replace(stroke, new[] { copy });
+                    }
                 }
             }
             else
             {
-                var hits = Document.EraseAt(p, radius);
+                var shapeGroups = Document.Strokes.Where(s => InActiveInkLayer(s) && s.ShapeSource?.Geometry is not null && s.Bounds.Inflate(radius).Contains(p)
+                    && s.DistanceTo(p) <= radius + s.HitRadius).Select(s => s.ShapeSource.GroupId).ToHashSet();
+                if (shapeGroups.Count > 0)
+                {
+                    var shapes = Document.Strokes.Where(s => InActiveInkLayer(s) && s.ShapeSource is { } source && shapeGroups.Contains(source.GroupId)).ToList();
+                    _erasedThisGesture.AddRange(shapes);
+                    Document.RemoveAll(shapes);
+                    any = true;
+                }
+                var hits = Document.EraseAt(p, radius, ActiveInkLayer);
                 if (hits.Count > 0)
                 {
                     _erasedThisGesture.AddRange(hits);
@@ -1589,7 +1641,7 @@ public sealed partial class InkController : IDisposable
         {
             _controlClickElement = SelectedElements.LastOrDefault(element => element.Frame.Contains(world, Matrix3x2.Identity));
             if (_controlClickElement is null)
-                _controlClickStroke = Document.HitTest(world, 6f / MathF.Max(.1f, MathF.Sqrt(MathF.Abs(ViewTransform.GetDeterminant()))))
+                _controlClickStroke = Document.HitTest(world, 6f / MathF.Max(.1f, MathF.Sqrt(MathF.Abs(ViewTransform.GetDeterminant()))), ActiveInkLayer)
                     .LastOrDefault(stroke => Selection.Contains(stroke));
         }
         else if (p.Control) handle = SelectionHandle.None;
@@ -1770,10 +1822,11 @@ public sealed partial class InkController : IDisposable
         if (Vector2.DistanceSquared(_dragFromView, viewPoint) >= 9)
         {
             Selection.Clear(); Selection.AddRange(_marqueeInitialStrokes);
-            foreach (var stroke in Document.HitTest(MarqueeBounds, ViewTransform)) if (!Selection.Contains(stroke)) Selection.Add(stroke);
+            foreach (var stroke in Document.HitTest(MarqueeBounds, ViewTransform, ActiveInkLayer))
+                if (!Selection.Contains(stroke)) Selection.Add(stroke);
             ExpandShapeSelection();
             SelectedElements.Clear(); SelectedElements.AddRange(_marqueeInitialElements);
-            if (GetSelectableElements is not null)
+            if (ActiveInkLayer == 0 && GetSelectableElements is not null)
                 foreach (var element in GetSelectableElements())
                     if (element.IsPresent && element.Frame.Intersects(MarqueeBounds, ViewTransform) && !SelectedElements.Contains(element)) SelectedElements.Add(element);
             SelectionChanged?.Invoke();
@@ -1887,6 +1940,7 @@ public sealed partial class InkController : IDisposable
 
     public void TransformSelection(Matrix3x2 m)
     {
+        CancelAdvancedSelection();
         if (Selection.Count == 0) return;
         InkDocument.Transform(Selection, m);
         Invalidated?.Invoke();
@@ -1894,6 +1948,7 @@ public sealed partial class InkController : IDisposable
 
     public void TransformSelectionUndoable(Matrix3x2 matrix, string name, bool scaleWidth = true)
     {
+        CancelAdvancedSelection();
         if (!HasSelection) return;
         var strokes = Selection.ToList();
         var elements = SelectedElements.ToList();
@@ -1970,6 +2025,7 @@ public sealed partial class InkController : IDisposable
 
     public void Undo()
     {
+        CancelAdvancedSelection();
         EndPlayback();
         CancelLassoErase();
         if (History.Undo()) { PruneSelection(); Invalidated?.Invoke(); }
@@ -1977,6 +2033,7 @@ public sealed partial class InkController : IDisposable
 
     public void Redo()
     {
+        CancelAdvancedSelection();
         EndPlayback();
         CancelLassoErase();
         if (History.Redo()) { PruneSelection(); Invalidated?.Invoke(); }
@@ -1987,6 +2044,19 @@ public sealed partial class InkController : IDisposable
         int removed = Selection.RemoveAll(s => !Document.Strokes.Contains(s));
         removed += SelectedElements.RemoveAll(e => !e.IsPresent);
         if (removed > 0) SelectionChanged?.Invoke();
+    }
+
+    public void ClearHandwriting()
+    {
+        CancelLassoErase();
+        ClearSelection();
+        var removed = Document.Strokes.Select((stroke, index) => (Index: index, Stroke: stroke))
+            .Where(item => !item.Stroke.IsRecognizedShape && item.Stroke.ShapeSource is null).ToArray();
+        if (removed.Length == 0) return;
+        var strokes = removed.Select(item => item.Stroke).ToArray();
+        Document.RemoveAll(strokes);
+        History.Push(new DelegateAction("clear handwriting", () => Document.RemoveAll(strokes), () => Document.InsertRange(removed)));
+        Invalidated?.Invoke();
     }
 
     public void Clear()
@@ -2045,6 +2115,8 @@ public sealed partial class InkController : IDisposable
 
     public void Dispose()
     {
+        _advancedDrag = null;
+        AdvancedSelection = null;
         EndPlayback(); Document.Changed -= OnPlaybackDocumentChanged;
         _panPointerId = null;
         _pendingViewport = null;

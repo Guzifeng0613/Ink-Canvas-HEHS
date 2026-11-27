@@ -410,7 +410,8 @@ public sealed class OverlayInkPresenter : IDisposable
             RestoreLiveRegion();
         }
 
-        bool incremental = _controller.Playback is null && _controller.PreviewStrokes is null
+        bool layeredLive = InkSceneRenderer.NeedsLayeredLiveInk(_controller);
+        bool incremental = !layeredLive && _controller.Playback is null && _controller.PreviewStrokes is null
             && !_controller.ShapePreview.Any() && _controller.RecognitionPreview.Count == 0
             && _controller.ExtensionPreview.Count == 0 && _controller.DotAnimations.Count == 0
             && !_controller.HasSelection && !_controller.IsRegionSelecting && !_controller.IsLassoErasing
@@ -419,7 +420,7 @@ public sealed class OverlayInkPresenter : IDisposable
         if (region.Width > 0 && region.Height > 0)
         {
             RestoreRegion(region.X, region.Y, region.Width, region.Height);
-            CompositeLiveRegion(region);
+            CompositeLiveRegion(region, layeredLive);
         }
         else ReleaseLiveBuffer();
 
@@ -530,7 +531,7 @@ public sealed class OverlayInkPresenter : IDisposable
         if (_controller.Playback is { } playback)
             foreach (var s in playback.VisibleStrokes) world = world.Union(s.Bounds);
         var adornment = _controller.SelectionVisualBounds.Union(_controller.LassoVisualBounds).Union(_controller.EraserVisualBounds)
-            .Union(_controller.PenCursorVisualBounds);
+            .Union(_controller.PenCursorVisualBounds).Union(_controller.AdvancedSelectionVisualBounds);
         if (!adornment.IsEmpty && Matrix3x2.Invert(_controller.ViewTransform, out var inverse))
         {
             foreach (var p in new[] { new Vector2(adornment.Left, adornment.Top), new Vector2(adornment.Right, adornment.Top),
@@ -579,7 +580,7 @@ public sealed class OverlayInkPresenter : IDisposable
         }
     }
 
-    private void CompositeLiveRegion((int X, int Y, int Width, int Height) region)
+    private void CompositeLiveRegion((int X, int Y, int Width, int Height) region, bool layeredLive)
     {
         // Reuse capacity while drawing; allocate only when the live box outgrows it.
         if (_liveTarget is null || region.Width > _liveCapacityWidth || region.Height > _liveCapacityHeight)
@@ -605,24 +606,26 @@ public sealed class OverlayInkPresenter : IDisposable
         // Render world-DIP geometry into a physical-pixel subregion.
         var transform = OverlayTransform() * Matrix3x2.CreateTranslation(-region.X, -region.Y);
 
+        bool replace = layeredLive || _controller.PreviewStrokes is not null;
         using (var session = _liveTarget.CreateDrawingSession())
         {
-            bool selectionPreview = _controller.PreviewStrokes is not null;
-            session.Clear(selectionPreview ? Windows.UI.Color.FromArgb(1, 1, 1, 1) : Windows.UI.Color.FromArgb(0, 0, 0, 0));
-            if (selectionPreview)
+            session.Clear(replace ? Windows.UI.Color.FromArgb(1, 1, 1, 1) : Windows.UI.Color.FromArgb(0, 0, 0, 0));
+            if (layeredLive)
+                Scene.DrawWithLayeredLiveInk(session, _controller, transform, new Rect(-2, -2, region.Width + 2, region.Height + 2));
+            else
             {
-                _historyTiles.Draw(session, Scene, _controller, region.Width, region.Height, transformOverride: transform);
+                if (replace) _historyTiles.Draw(session, Scene, _controller, region.Width, region.Height, transformOverride: transform);
+                Scene.DrawLive(session, _controller, transform);
             }
-            Scene.DrawLive(session, _controller, transform);
         }
 
         // Read back only the live box into the reused buffer (no per-frame allocation).
         _liveTarget.GetPixelBytes(_livePixelsBuffer, 0, 0, region.Width, region.Height);
         _trackingClip?.Apply(_livePixels.AsSpan(0, region.Width * region.Height * 4), region.Width, region.Height,
-            region.X, region.Y, background: _controller.PreviewStrokes is not null ? (byte)1 : (byte)0);
+            region.X, region.Y, background: replace ? (byte)1 : (byte)0);
         int liveBytes = region.Width * region.Height * 4;
         GpuReadbackBytes += liveBytes;
-        if (_controller.PreviewStrokes is not null)
+        if (replace)
         {
             // Replace the affected scene region, so old ink disappears and translucent
             // selected strokes keep their exact stacking against stationary strokes.

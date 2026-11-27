@@ -605,6 +605,46 @@ public static class PdfDiagnostics
         }
     }
 
+    internal static async Task<bool> TryViewportDrag(PdfWindow window, Vector2 start, Vector2 end, FrameworkElement surface = null)
+    {
+        if (!GetCursorPos(out var original)) return false;
+        surface ??= window.AnnotationSurface;
+        var transform = surface.TransformToVisual(null);
+        var origin = new Platform.Interop.NativeMethods.POINT();
+        nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
+        if (!ClientToScreen(hwnd, ref origin)) return false;
+        double dpi = surface.XamlRoot.RasterizationScale;
+        var a = ScreenPoint(start);
+        var b = ScreenPoint(end);
+        bool pressed = false;
+        try
+        {
+            if (!SetCursorPos(a.X, a.Y) || GetAncestor(WindowFromPoint(a), 2) != hwnd) return false;
+            MouseEvent(2, 0, 0, 0, UIntPtr.Zero);
+            pressed = true;
+            await Task.Delay(45);
+            for (int i = 1; i <= 4; i++)
+            {
+                if (!SetCursorPos(a.X + (b.X - a.X) * i / 4, a.Y + (b.Y - a.Y) * i / 4)) return false;
+                await Task.Delay(20);
+            }
+            MouseEvent(4, 0, 0, 0, UIntPtr.Zero);
+            pressed = false;
+            await Task.Delay(120);
+            return true;
+        }
+        finally
+        {
+            if (pressed) MouseEvent(4, 0, 0, 0, UIntPtr.Zero);
+            SetCursorPos(original.X, original.Y);
+        }
+        Platform.Interop.NativeMethods.POINT ScreenPoint(Vector2 point)
+        {
+            var view = transform.TransformPoint(new(point.X, point.Y));
+            return new() { X = origin.X + (int)Math.Round(view.X * dpi), Y = origin.Y + (int)Math.Round(view.Y * dpi) };
+        }
+    }
+
     [DllImport("user32.dll")] private static extern bool ClientToScreen(nint window, ref Platform.Interop.NativeMethods.POINT point);
     [DllImport("user32.dll")] private static extern nint WindowFromPoint(Platform.Interop.NativeMethods.POINT point);
     [DllImport("user32.dll")] private static extern nint GetAncestor(nint window, uint flags);

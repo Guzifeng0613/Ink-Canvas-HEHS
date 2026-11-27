@@ -113,6 +113,8 @@ public static class InkFileStore
         public InkWashBrushOptions InkWash { get; set; } = InkWashBrushOptions.Default;
         public int InkWashSeed { get; set; }
         public long? LayerOrder { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+        public int InkLayerIndex { get; set; }
         public uint Color { get; set; }
         public float Width { get; set; }
         public bool Highlighter { get; set; }
@@ -139,6 +141,7 @@ public static class InkFileStore
                 InkWash = s.Attributes.InkWash,
                 InkWashSeed = s.Attributes.InkWashSeed,
                 LayerOrder = s.LayerOrder,
+                InkLayerIndex = s.InkLayerIndex,
                 Color = s.Attributes.Color.PackedArgb,
                 Width = s.Attributes.BaseWidth,
                 Highlighter = s.Attributes.IsHighlighter,
@@ -193,7 +196,8 @@ public static class InkFileStore
                 InkWash = sm.InkWash.Normalize(),
                 InkWashSeed = sm.InkWashSeed,
             };
-var stroke = new InkStroke(attrs) { Id = sm.Id ?? Guid.NewGuid(), IsRecognizedShape = sm.Shape, LayerOrder = sm.LayerOrder, ShapeSource = sm.ShapeSource };
+            var stroke = new InkStroke(attrs) { Id = sm.Id ?? Guid.NewGuid(), IsRecognizedShape = sm.Shape,
+                InkLayerIndex = sm.InkLayerIndex, LayerOrder = sm.LayerOrder, ShapeSource = sm.ShapeSource };
             // Restore stored widths verbatim: re-running the taper here would change history.
             stroke.RestorePoints(sm.Points
                 .Where(r => r.Length >= 4)

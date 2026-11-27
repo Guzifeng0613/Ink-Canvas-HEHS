@@ -19,7 +19,8 @@ public sealed class BoardPenPalette : UserControl
     private readonly FrameworkElement _nibModeRow;
     private readonly ToggleSwitch _nibMode;
     private bool _refreshingNibMode;
-    private readonly PenStrokePreview _penPreview = new() { PreviewHeight = 60 };
+    public const double PreviewWidth = 268;
+    private readonly PenStrokePreview _penPreview = new() { PreviewHeight = PenStrokePreview.StandardHeight };
     private readonly PenStrokePreview _highlighterPreview = new() { PreviewHeight = 96 };
     private readonly PenStylePicker _styles = new();
     private readonly PointerSlider _width = new() { Minimum = 1, StepFrequency = 1, Width = 106, MinHeight = 0, Height = 28 };
@@ -49,7 +50,7 @@ public sealed class BoardPenPalette : UserControl
         _styles.Update(theme);
         _foreground = new(theme == 2 ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black);
         var columns = new Grid { ColumnSpacing = 12, Padding = new Thickness(12, 10, 12, 12) };
-        columns.ColumnDefinitions.Add(new() { Width = new GridLength(268) });
+        columns.ColumnDefinitions.Add(new() { Width = new GridLength(PreviewWidth) });
         columns.ColumnDefinitions.Add(new() { Width = new GridLength(176) });
         var pen = new StackPanel { Spacing = 6 };
         var options = new Grid { ColumnSpacing = 8, RowSpacing = 4 };

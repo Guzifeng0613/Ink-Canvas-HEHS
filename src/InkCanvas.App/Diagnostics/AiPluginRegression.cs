@@ -6,6 +6,7 @@ using System.Text.Json;
 using InkCanvas.App.Services;
 using InkCanvas.Controls.Controls;
 using InkCanvas.Host.Contracts;
+using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
@@ -47,7 +48,8 @@ internal static class AiPluginRegression
             await Task.Delay(150);
             var window = shell.OpenWindows.Single(window => window.GetType().Name == "AssistantWindow");
             var frame = (WindowFrame)window.Content;
-            Check("native assistant frame", window.Title == "AI 助手" && window.SystemBackdrop is DesktopAcrylicBackdrop);
+            var material = window.SystemBackdrop;
+            Check("native assistant frame uses Mica", window.Title == "AI 助手" && material is MicaBackdrop { Kind: MicaKind.Base });
             Check("empty chat makes no inference request", server.Posts == 0);
             Check("virtual list is the scroll owner", Descendants(frame).OfType<ListView>().Count() == 1);
             Check("removed solve controls and notices", !Descendants(frame).OfType<Button>().Any(button => new[] { "贴回白板", "讲解方式", "Agent 能力" }.Contains(AutomationProperties.GetName(button)))
@@ -81,9 +83,27 @@ internal static class AiPluginRegression
             Check("history includes multiple chats", chats.Items.Count == 2);
             chats.SelectedIndex = 1; await Task.Delay(60);
             Check("switching restores earlier chat", Descendants(frame).OfType<ListView>().Single().Items.Count == 2);
+            var composer = (Border)((FrameworkElement)input.Parent).Parent;
+            var model = Descendants(frame).OfType<TextBlock>().Single(text => text.Text == "本机验收 · fixture");
+            Windows.UI.Color? lightComposer = null;
             foreach (int theme in new[] { 1, 2 })
             {
-                WindowChrome.ApplyTheme(window, theme); await Task.Delay(70);
+                services.Settings.Appearance.Theme = theme;
+                services.ApplySettings(); await Task.Delay(70);
+                var expectedTheme = theme == 1 ? ElementTheme.Light : ElementTheme.Dark;
+                Check("open assistant follows settings without replacing Mica " + theme,
+                    ReferenceEquals(material, window.SystemBackdrop) && frame.ActualTheme == expectedTheme
+                    && frame.Header.ActualTheme == expectedTheme && input.ActualTheme == expectedTheme);
+                Check("title and conversation expose Mica " + theme, IsTransparent(frame.Background)
+                    && IsTransparent(frame.Header.Background) && IsTransparent(frame.Children.OfType<Grid>().Single().Background)
+                    && IsTransparent(Descendants(frame).OfType<ListView>().Single().Background));
+                var fill = (composer.Background as SolidColorBrush)?.Color;
+                if (theme == 1) lightComposer = fill;
+                Check("composer uses the theme card layer over Mica " + theme,
+                    fill is { A: > 0 and < 255 } && (theme == 1 || fill != lightComposer)
+                    && composer.BorderBrush is SolidColorBrush { Color.A: > 0 } && IsTransparent(input.Background));
+                Check("model text stays legible against Mica " + theme, model.Foreground is SolidColorBrush foreground
+                    && foreground.Color.A > 0 && (theme == 1 ? foreground.Color.R < 128 : foreground.Color.R > 128));
                 window.AppWindow.Resize(new((int)(380 * WindowChrome.GetDpiScale(window)), (int)(760 * WindowChrome.GetDpiScale(window))));
                 await Task.Delay(70);
                 var background = frame.Background; frame.Background = new SolidColorBrush(theme == 1 ? Microsoft.UI.Colors.WhiteSmoke : Windows.UI.Color.FromArgb(255, 32, 32, 32));
@@ -95,6 +115,10 @@ internal static class AiPluginRegression
                     return button.ActualWidth >= 39 && bounds.Left >= 0 && bounds.Right <= frame.ActualWidth + 1;
                 }));
             }
+            services.Settings.Appearance.Theme = 0;
+            services.ApplySettings(); await Task.Delay(70);
+            Check("assistant can return to following the system theme", frame.RequestedTheme == ElementTheme.Default
+                && frame.ActualTheme == (Application.Current.RequestedTheme == ApplicationTheme.Dark ? ElementTheme.Dark : ElementTheme.Light));
             string boardPath = Path.Combine(directory, "assistant.icink");
             await services.Board.SaveBoardAsync(boardPath);
             using (var json = JsonDocument.Parse(services.Board.ReadExtension("inkcanvas.ai-assistant")))
@@ -200,6 +224,7 @@ internal static class AiPluginRegression
     }
     private static Button FindButton(DependencyObject root, string name) => Descendants(root).OfType<Button>().Single(button => AutomationProperties.GetName(button) == name);
     private static void Invoke(Button button) => ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke();
+    private static bool IsTransparent(Brush brush) => brush is null or SolidColorBrush { Color.A: 0 };
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     {
         yield return root;

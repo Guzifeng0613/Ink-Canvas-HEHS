@@ -135,7 +135,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
                     controller.EndPlayback();
                     controller.FinishDotAnimations();
                     controller.ClearSelection();
-                    controller.Document.ReplaceAll(strokes);
+                    controller.ReplacePageInk(strokes);
                     controller.History.Clear();
                     _bar?.Bar.RefreshSelection();
                 }
@@ -305,6 +305,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
         _bar = new FloatingBarWindow();
         NotifyWindowOpened(_bar);
         _bar.Bar.Settings = Services.Settings;
+        _bar.Bar.SelectionExtension = (controller, theme) =>
+            Services.Modules.GetExport<ISelectionPaletteExtension>()?.CreateControls(controller, theme);
         _bar.Configure(Services.OverlayInk, this);
         _displayedExtensionCommands = ExtensionCommands.ToArray();
         Services.Plugins.Changed += OnExtensionCommandsChanged;
@@ -334,11 +336,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
             undo: () => ActiveController.Undo(),
             redo: () => ActiveController.Redo(),
             toggleEraser: () => { ActiveController.Tool = InkTool.Eraser; _bar.Bar.RefreshSelection(); },
-            clear: () =>
-            {
-                if (ActiveController.HasSelection) ActiveController.DeleteSelection();
-                else ClearCanvas();
-            },
+            clear: () => ClearCanvas(),
             togglePassThrough: ToggleClickThrough,
             toggleBoard: ToggleBoard,
             pptNext: () => HandlePresentationKey(PresentationKeyMap.VkPageDown),
@@ -1042,8 +1040,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
             {
                 if (_exiting) return;
                 _bar?.ClosePanels();
-                _palette?.DismissOnOverlayInput();
-                _shapePicker?.DismissOnOverlayInput();
+                _palette?.DismissIfUnpinned();
+                _shapePicker?.DismissIfUnpinned();
                 var window = new SettingsWindow(Services, Updater, this, RosterDirectory);
                 _settings = window;
                 ShowRequestedSettingsPage(window);
@@ -1629,6 +1627,7 @@ public sealed partial class ShellController : IShellActions, IDisposable
             _board is not null ? Services.Settings.Appearance.BlackboardScale : Services.Settings.Appearance.FloatingBarScale,
             Services.Settings.Canvas)
         {
+            AutoDismissEnabled = () => Services.Settings.Appearance.AutoDismissAnnotationToolPanels,
             HighlighterAlpha = Services.Settings.Canvas.InkAlpha,
             LightColorScheme = Services.Settings.Appearance.Theme == 1,
             InkWidthChanged = width =>
@@ -1709,10 +1708,14 @@ public sealed partial class ShellController : IShellActions, IDisposable
             else _shapePicker.Close();
             return;
         }
+        bool boardMode = _board is not null;
         _shapePicker = new ShapePickerWindow(ActiveController,
             () => { Services.RememberToolOptions(ActiveController); _bar?.Bar.RefreshSelection(); }, EffectiveTheme,
-            _board is not null ? Services.Settings.Appearance.BlackboardScale : Services.Settings.Appearance.FloatingBarScale,
-            boardMode: _board is not null);
+            boardMode ? Services.Settings.Appearance.BlackboardScale : Services.Settings.Appearance.FloatingBarScale,
+            boardMode)
+        {
+            AutoDismissEnabled = () => boardMode || Services.Settings.Appearance.AutoDismissAnnotationToolPanels,
+        };
         NotifyWindowOpened(_shapePicker);
         var openedPicker = _shapePicker;
         _shapePicker.Closed += (_, _) => { if (ReferenceEquals(_shapePicker, openedPicker)) _shapePicker = null; };
@@ -1754,7 +1757,10 @@ public sealed partial class ShellController : IShellActions, IDisposable
         }
     }
 
-    public bool ClearCanvas()
+    public bool ClearCanvas() => ClearCanvas(inkOnly: false);
+    public bool ClearHandwriting() => ClearCanvas(inkOnly: true);
+
+    private bool ClearCanvas(bool inkOnly)
     {
         var controller = ActiveController;
         if (Services.Settings.Archive.ScreenCapture.SaveOnClear) _ = SaveScreenArchiveAsync("清屏前存档");
@@ -1764,7 +1770,8 @@ public sealed partial class ShellController : IShellActions, IDisposable
             _ = Services.AutoSave.SaveSnapshotAsync(controller.Document.Strokes, "clear");
             _ = ScreenshotAsync();
         }
-        if (DocumentActive) controller.Clear();
+        if (DocumentActive) _documentWorkspace.ClearCanvas(inkOnly);
+        else if (inkOnly) controller.ClearHandwriting();
         else (_board is not null ? Services.Board : Services.ScreenImages).ClearCurrentPage();
         return true;
     }

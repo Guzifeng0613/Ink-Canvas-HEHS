@@ -6,6 +6,17 @@ namespace InkCanvas.Core.Tests;
 
 public sealed class EraserSizeSettingsTests
 {
+    [Fact]
+    public void LegacySettingsKeepAnnotationToolPanelsOpenAndTheOptInSurvivesReload()
+    {
+        var settings = JsonSerializer.Deserialize<AppSettings>("{\"appearance\":{}}");
+        Assert.False(settings.Appearance.AutoDismissAnnotationToolPanels);
+        settings.Appearance.AutoDismissAnnotationToolPanels = true;
+        Assert.True(settings.Clone().Appearance.AutoDismissAnnotationToolPanels);
+        settings.ResetToRecommendation();
+        Assert.False(settings.Appearance.AutoDismissAnnotationToolPanels);
+    }
+
     [Theory]
     [InlineData(0, 45)]
     [InlineData(1, 72)]

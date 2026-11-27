@@ -82,11 +82,30 @@ public sealed partial class ShellController
         public bool IsClassroomPresentation => shell._pptSession?.Snapshot?.IsSlideShowRunning == true || shell._board is not null;
         public IAssistantToolRegistry Tools => shell.Services.AssistantTools;
         public SlideContext GetSlideContext(int slideId, int slideIndex) => shell.BuildSlideContext(slideId, slideIndex);
-        public void ConfigureWindow(Window window) => new CanvasToolsHost(shell).ConfigureWindow(window, 380, 760);
+        public void ConfigureWindow(Window window)
+        {
+            new CanvasToolsHost(shell).ConfigureWindow(window, 380, 760);
+            TrackTheme(window);
+        }
         public void ConfigureEdgeHandle(Window window, bool topmost)
         {
             WindowChrome.MakeBorderless(window, topmost: topmost, noActivate: true);
+            TrackTheme(window);
             WindowChrome.ShowWithoutActivation(window);
+        }
+
+        private void TrackTheme(Window window)
+        {
+            int appliedTheme = Settings.Appearance.Theme;
+            void RefreshTheme()
+            {
+                int theme = Settings.Appearance.Theme;
+                if (theme == appliedTheme) return;
+                appliedTheme = theme;
+                WindowChrome.ApplyTheme(window, theme);
+            }
+            shell.Services.SettingsApplied += RefreshTheme;
+            window.Closed += (_, _) => shell.Services.SettingsApplied -= RefreshTheme;
         }
         public void SaveSettings() => shell.Services.SaveSettings();
         public void ShowBoard() { if (shell._board is null) shell.ToggleBoard(); }

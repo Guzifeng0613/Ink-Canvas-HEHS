@@ -17,6 +17,7 @@ public interface IDocumentWorkspace
     event Action ControllerChanged;
     event Action InputBegan;
     void ApplySettings();
+    void ClearCanvas(bool inkOnly) { if (inkOnly) Controller.ClearHandwriting(); else Controller.Clear(); }
     Task<bool> SaveAsync(bool saveAs = false);
     Task<bool> CloseAsync();
 }

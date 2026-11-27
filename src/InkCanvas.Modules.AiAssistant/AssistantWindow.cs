@@ -14,7 +14,8 @@ public sealed partial class AssistantWindow : Window
         IsItemClickEnabled = false, HorizontalContentAlignment = HorizontalAlignment.Stretch };
     private readonly ObservableCollection<AssistantChatTurn> _turns = new();
     private readonly TextBox _input = new() { PlaceholderText = "向 AI 助手提出任务…", AcceptsReturn = true,
-        TextWrapping = TextWrapping.Wrap, MinHeight = 76, MaxHeight = 180, BorderThickness = new Thickness(0) };
+        TextWrapping = TextWrapping.Wrap, MinHeight = 76, MaxHeight = 180, BorderThickness = new Thickness(0),
+        Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
     private readonly StackPanel _attachments = new() { Spacing = 4 };
     private readonly ComboBox _chats = new() { HorizontalAlignment = HorizontalAlignment.Stretch, MinWidth = 0 };
     private readonly ToggleSwitch _thinking = new() { Header = "思考", OnContent = "开启", OffContent = "关闭" };
@@ -162,9 +163,8 @@ public sealed partial class AssistantWindow : Window
     public void RefreshTurn(AssistantChatTurn turn) { turn.Refresh(); ScrollToEnd(); }
     private void RefreshTheme()
     {
-        _input.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-        _error.Foreground = ThemeBrushes.Resolve(_root, "SystemFillColorCriticalBrush");
-        _model.Foreground = ThemeBrushes.Resolve(_root, "IcTextSecondaryBrush");
+        _error.Foreground = ThemeBrushes.Resolve(_root, "IcModuleErrorBrush");
+        _model.Foreground = ThemeBrushes.Resolve(_root, "IcModuleTextSecondaryBrush");
     }
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     {

@@ -103,10 +103,12 @@ public sealed partial class InkController
             float ratio = Math.Clamp(Vector2.Distance(position, result.Center) / MathF.Max(1, original), .1f, 10);
             result = result with { RadiusX = result.RadiusX * ratio, RadiusY = result.RadiusY * ratio };
         }
-        else if (result.Shape == RecognizedShape.Triangle)
+        else if (result.Shape is RecognizedShape.Triangle or RecognizedShape.Polygon)
         {
             int nearest = Enumerable.Range(0, corners.Length).MinBy(i => Vector2.DistanceSquared(corners[i], held.Anchor));
-            corners[nearest] += offset; result = result with { Corners = corners };
+            corners[nearest] += offset;
+            if (result.Shape == RecognizedShape.Polygon && !PolygonGeometry.IsSimple(corners)) return;
+            result = result with { Corners = corners };
         }
         else if (result.Shape is RecognizedShape.Rectangle or RecognizedShape.Parallelogram)
         {
@@ -145,7 +147,7 @@ public sealed partial class InkController
         result = ShapeRecognizer.RecognizeHeld(sources);
         if (result.Shape is RecognizedShape.None or RecognizedShape.Line)
         {
-            var recent = _recentForRecognition.Where(s => Document.Strokes.Contains(s) && !s.IsRecognizedShape
+            var recent = _recentForRecognition.Where(s => s.InkLayerIndex == stroke.InkLayerIndex && Document.Strokes.Contains(s) && !s.IsRecognizedShape
                 && s.Attributes.EffectiveColor == stroke.Attributes.EffectiveColor).TakeLast(12).Append(stroke).ToList();
             for (int count = 2; count <= recent.Count; count++)
             {
@@ -155,16 +157,24 @@ public sealed partial class InkController
                 result = combined; sources = candidates; break;
             }
         }
+        if (result.Shape is RecognizedShape.None or RecognizedShape.Circle or RecognizedShape.Ellipse
+            && FindComplexPolygon(stroke) is { Length: >= 4 } polygon)
+        {
+            result = new(RecognizedShape.Polygon, Vector2.Zero, 0, 0, .9f, polygon);
+        }
         return result.Shape switch
         {
             RecognizedShape.Line => !stroke.Attributes.IsHighlighter,
             RecognizedShape.Circle or RecognizedShape.Ellipse => RecognitionOptions.RecognizeRoundShapes,
-            RecognizedShape.Triangle or RecognizedShape.Rectangle or RecognizedShape.Parallelogram => RecognitionOptions.RecognizePolygons,
+            RecognizedShape.Triangle or RecognizedShape.Rectangle or RecognizedShape.Parallelogram or RecognizedShape.Polygon => RecognitionOptions.RecognizePolygons,
             RecognizedShape.Cube => RecognitionOptions.RecognizeCube,
             RecognizedShape.CoordinateAxes => RecognitionOptions.RecognizeAxes,
             _ => false,
         };
     }
+
+    private Vector2[] FindComplexPolygon(InkStroke stroke) => RecognitionOptions.RecognizePolygons && !stroke.Attributes.IsHighlighter
+        ? PolygonExtension?.RecognizeClosedStroke(stroke, MathF.Sqrt(MathF.Abs(ViewTransform.GetDeterminant()))) : null;
 
     private Vector2 AlignDirection(Vector2 start, Vector2 end)
     {
@@ -216,13 +226,12 @@ public sealed partial class InkController
             shapes = new() { ShapeGenerator.Stroke(attrs, corners.Append(corners[0]).ToArray()) };
         }
         ShapeSource group;
-        if (result.Shape is RecognizedShape.Triangle or RecognizedShape.Rectangle or RecognizedShape.Parallelogram)
+        if (result.Shape is RecognizedShape.Triangle or RecognizedShape.Rectangle or RecognizedShape.Parallelogram or RecognizedShape.Polygon)
         {
             var kind = result.Shape == RecognizedShape.Triangle ? ShapeKind.Triangle
-                : result.Shape == RecognizedShape.Parallelogram ? ShapeKind.Parallelogram : ShapeKind.Rectangle;
-            group = ShapeSource.FromGeometry(Guid.NewGuid(), new ShapeDefinition { Kind = kind,
-                Parameters = new[] { corners[0].X, corners[0].Y, corners[2].X, corners[2].Y },
-                Vertices = corners.SelectMany(point => new[] { point.X, point.Y }).ToArray() });
+                : result.Shape == RecognizedShape.Parallelogram ? ShapeKind.Parallelogram
+                : result.Shape == RecognizedShape.Polygon ? ShapeKind.Polygon : ShapeKind.Rectangle;
+            group = ShapeSource.FromGeometry(Guid.NewGuid(), ShapeDefinition.FromPolygon(kind, corners));
         }
         else group = shapes.FirstOrDefault()?.ShapeSource?.Geometry is not null && shapes.Select(s => s.ShapeSource?.GroupId).Distinct().Count() == 1
             ? shapes[0].ShapeSource : new ShapeSource(Guid.NewGuid(), "ink-to-shape", result.Shape.ToString());
@@ -247,7 +256,7 @@ public sealed partial class InkController
             // Preserve the existing immediate recognition of closed round shapes.
             var round = ShapeRecognizer.Recognize(committed);
             bool enabled = RecognitionOptions.RecognizeRoundShapes && round.Shape is RecognizedShape.Circle or RecognizedShape.Ellipse;
-            if (enabled)
+            if (enabled && FindComplexPolygon(stroke) is not { Length: >= 4 })
             {
                 var attrs = stroke.Attributes.Clone(); attrs.TaperKind = TaperKind.None;
                 held = new(round, committed, stroke.Points[^1].Position, attrs, GenerateRecognized(round, attrs));
@@ -257,7 +266,11 @@ public sealed partial class InkController
         {
             var removed = held.Sources; var replacement = held.Preview;
             long layer = NextLayerOrder();
-            foreach (var shape in replacement) shape.LayerOrder = layer++;
+            foreach (var shape in replacement)
+            {
+                shape.InkLayerIndex = stroke.InkLayerIndex;
+                shape.LayerOrder = layer++;
+            }
             Replace(removed, replacement);
             History.Push(new DelegateAction("recognize",
                 () => Replace(removed, replacement), () => Replace(replacement, removed)));

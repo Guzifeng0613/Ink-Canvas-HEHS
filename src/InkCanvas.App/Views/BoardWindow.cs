@@ -331,12 +331,13 @@ public sealed partial class BoardWindow : Window
         _penCell = MakeCell(GlyphPen, "墨迹", () => ActivateToolOptions(InkTool.Pen, ShowPenPalette), 60, 22, midBorder);
         _eraserCell = MakeCell(GlyphEraser, "橡皮", () => ActivateToolOptions(InkTool.Eraser, ShowEraserPalette), 60, 22, midBorder);
         ToolTipService.SetToolTip(_eraserCell.Button, "选择面积擦、墨迹擦、套索擦和橡皮大小");
-        var clear = MakeCell(GlyphClear, "清屏", () =>
+        var clear = MakeCell(GlyphClear, "清屏", null, 60, 22, midBorder);
+        ButtonHoldAction.Attach(clear.Button, () =>
         {
             DismissBoardFlyout();
             ClearCurrentPage();
-        }, 60, 22, midBorder);
-        ToolTipService.SetToolTip(clear.Button, "清除当前页上的全部墨迹、图片和视频");
+        }, () => { DismissBoardFlyout(); ClearCurrentPage(inkOnly: true); });
+        ToolTipService.SetToolTip(clear.Button, "单击清除本页全部内容，长按仅清除手写墨迹");
         _shapeCell = MakeCell(GlyphShape, "图形", () => ActivateToolOptions(InkTool.Shape, () => _shell?.OpenShapePicker()), 60, 22, midBorder);
         var image = MakeCell(GlyphImage, "插入图片", async () => await InsertImageAsync(), 60, 22, midBorder);
         _undoCell = MakeCell(GlyphUndo, "撤销", () => _board.Current.Undo(), 60, 22, midBorder);
@@ -607,7 +608,8 @@ public sealed partial class BoardWindow : Window
         if (ShowDetachedPanel(_selectionFlyout)) return;
         if (_selectionFlyout is not null && ReferenceEquals(_activeBoardFlyout, _selectionFlyout)) { DismissBoardFlyout(); return; }
         CurrentController.SelectAll();
-        var palette = new SelectionPalette(() => CurrentController, _boardTheme);
+        var extension = _services.Modules.GetExport<InkCanvas.Host.Contracts.ISelectionPaletteExtension>();
+        var palette = new SelectionPalette(() => CurrentController, _boardTheme, extension?.CreateControls(() => CurrentController, _boardTheme));
         var header = new PopupHeader("选择选项", _boardTheme);
         palette.ModePicked += mode =>
         {
@@ -817,15 +819,18 @@ public sealed partial class BoardWindow : Window
         else if (control && key == Windows.System.VirtualKey.Y) CurrentController.Redo();
         else if (control && key == Windows.System.VirtualKey.E)
         {
-            if (CurrentController.HasSelection) DeleteSelection();
-            else if (_shell is not null) _shell.ClearCanvas();
-            else _board.ClearCurrentPage();
+            if (_shell is not null) _shell.ClearCanvas();
+            else ClearCurrentPage();
         }
         else if (control && key == Windows.System.VirtualKey.A) CurrentController.SelectAll();
         else if (!control && key == Windows.System.VirtualKey.Delete && CurrentController.HasSelection) DeleteSelection();
         else if (!control && key == Windows.System.VirtualKey.Escape)
         {
-            DismissBoardFlyout(); CurrentController.EndPlayback(); CurrentController.CancelLassoErase(); CurrentController.ClearSelection();
+            DismissBoardFlyout();
+            if (!CurrentController.CancelAdvancedSelection())
+            {
+                CurrentController.EndPlayback(); CurrentController.CancelLassoErase(); CurrentController.ClearSelection();
+            }
         }
         else return false;
         return true;
@@ -877,7 +882,8 @@ public sealed partial class BoardWindow : Window
         if (_eraserFlyout is not null && ReferenceEquals(_activeBoardFlyout, _eraserFlyout)) { DismissBoardFlyout(); return; }
         SetTool(InkTool.Eraser);
         ApplyEraserSize();
-        var palette = new EraserPalette(CurrentController, OriginalMenuCatalog.GetEraserDiameter(_services.Settings.Canvas), _boardTheme);
+        var palette = new EraserPalette(CurrentController, OriginalMenuCatalog.GetEraserDiameter(_services.Settings.Canvas), _boardTheme,
+            previewWidth: BoardPenPalette.PreviewWidth);
         var header = new PopupHeader("橡皮", _boardTheme);
         var flyout = new Flyout { Placement = FlyoutPlacementMode.Top };
         palette.ModePicked += mode =>
@@ -1255,6 +1261,7 @@ public sealed partial class BoardWindow : Window
         {
             _selectionPlacementPending = false;
             if (_selectionPanel.Visibility != Visibility.Visible || _contentRoot.ActualWidth <= 16 || _contentRoot.ActualHeight <= 16) return;
+            _selectionToolbar.RefreshAdvancedSelection();
             if (_selectionMeasureDirty)
             {
                 _selectionToolbar.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
@@ -1266,7 +1273,9 @@ public sealed partial class BoardWindow : Window
             float left = PagePaneOpen && !PageNavigator.IsOverview && !_pagePaneRight ? (float)_pagePane.ActualWidth + 16 : 8;
             var work = new Rect(left, 8, (float)_contentRoot.ActualWidth - 8, (float)_contentRoot.ActualHeight - 8);
             var dock = new Rect(0, (float)(_contentRoot.ActualHeight - _dock.ActualHeight), (float)_contentRoot.ActualWidth, (float)_contentRoot.ActualHeight);
-            var place = FloatingToolbarLayout.Place(work, CurrentController.SelectionVisualBounds, dock, new Vector2(width, height));
+            var (first, second) = CurrentController.AdvancedReferencePositions();
+            var place = FloatingToolbarLayout.Place(work, CurrentController.SelectionVisualBounds, dock, new Vector2(width, height),
+                firstReference: first, secondReference: second);
             var margin = new Thickness(Math.Round(place.Left), Math.Round(place.Top), 0, 0);
             if (_selectionPanel.Margin != margin) _selectionPanel.Margin = margin;
         });
@@ -1614,12 +1623,13 @@ public sealed partial class BoardWindow : Window
         UpdatePageNavigation();
     }
 
-    private void ClearCurrentPage()
+    private void ClearCurrentPage(bool inkOnly = false)
     {
         AutoSaveCurrentPage("board-clear");
         // WPF BoardSymbolIconDelete_Click switches back to the pen before clearing (MW_BoardIcons.cs:106-110).
         SetTool(InkTool.Pen);
-        _board.ClearCurrentPage();
+        if (inkOnly) CurrentController.ClearHandwriting();
+        else _board.ClearCurrentPage();
     }
 
     /// <summary>WPF auto-saves the outgoing page on next/add/clear/exit when the setting is on.</summary>
@@ -1814,6 +1824,7 @@ public sealed partial class BoardWindow : Window
             _boundController.ToolChanged -= OnToolChanged;
             _boundController.Document.Changed -= OnDrawingOrderChanged;
             _boundController.LayersChanged -= OnDrawingOrderChanged;
+            _boundController.ActiveInkLayerChanged -= OnDrawingOrderChanged;
         }
         _boundController = _board.Current;
         _boundController.SelectedElements.Clear();
@@ -1824,7 +1835,9 @@ public sealed partial class BoardWindow : Window
         _boundController.ToolChanged += OnToolChanged;
         _boundController.Document.Changed += OnDrawingOrderChanged;
         _boundController.LayersChanged += OnDrawingOrderChanged;
+        _boundController.ActiveInkLayerChanged += OnDrawingOrderChanged;
         _drawingLayers.UpdateOrder(_boundController);
+        _surface.ShowLiveInk = !_drawingLayers.DrawsLiveInk;
         if (!ReferenceEquals(_surface.Controller, _boundController))
             _surface.Controller = _boundController;
         _images.SetPage(_board);
@@ -1893,7 +1906,7 @@ public sealed partial class BoardWindow : Window
         UpdateSelectionActions();
     }
 
-    private void OnPlaybackChanged() { DismissBoardFlyout(); UpdateSelectionActions(); }
+    private void OnPlaybackChanged() { DismissBoardFlyout(); OnDrawingOrderChanged(); UpdateSelectionActions(); }
 
     private void OnImageSelectionChanged() => UpdateSelectionActions();
 
@@ -1911,6 +1924,7 @@ public sealed partial class BoardWindow : Window
     private void OnImagesChanged()
     {
         _drawingLayers.UpdateOrder(CurrentController);
+        _surface.ShowLiveInk = !_drawingLayers.DrawsLiveInk;
         _images.Refresh();
         _images.UpdateViewTransform(_board.Current.ViewTransform);
         _media.Refresh();
@@ -1921,6 +1935,7 @@ public sealed partial class BoardWindow : Window
     private void OnDrawingOrderChanged()
     {
         _drawingLayers.UpdateOrder(CurrentController);
+        _surface.ShowLiveInk = !_drawingLayers.DrawsLiveInk;
         _media.Refresh();
     }
 
@@ -1962,7 +1977,7 @@ public sealed partial class BoardWindow : Window
     {
         if (_board.Current.Tool != InkTool.Select) return;
         if (_selectionPointers.Remove(e.Pointer.PointerId, out var last))
-            _board.Current.OnPointerUp(last);
+            _board.Current.OnPointerCanceled(last);
     }
 
     /// <summary>
@@ -1971,7 +1986,7 @@ public sealed partial class BoardWindow : Window
     /// </summary>
     private void OnImageDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
-        if (_board.Current.Tool != InkTool.Select) return;
+        if (_board.Current.Tool != InkTool.Select || _board.Current.ActiveInkLayer != 0 || _board.Current.AdvancedSelection is not null) return;
         var tap = e.GetPosition(_surfaceHost);
         var point = new Vector2((float)tap.X, (float)tap.Y);
         var hit = _board.Current.DrawingObjects.Reverse().Select(item => item.Element)
@@ -2234,6 +2249,7 @@ public sealed partial class BoardWindow : Window
             _boundController.ToolChanged -= OnToolChanged;
             _boundController.Document.Changed -= OnDrawingOrderChanged;
             _boundController.LayersChanged -= OnDrawingOrderChanged;
+            _boundController.ActiveInkLayerChanged -= OnDrawingOrderChanged;
         }
     }
 

@@ -5,6 +5,9 @@ using InkCanvas.Controls.Controls;
 using InkCanvas.Core.Ink;
 using InkCanvas.Core.Selection;
 using InkCanvas.Host.Contracts;
+using InkCanvas.Ink.Rendering;
+using InkCanvas.Platform.Windows;
+using Microsoft.Graphics.Canvas;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
@@ -49,6 +52,7 @@ internal static class SelectionPaletteRegression
                 Check("second selection click opens options and selects all " + theme, popup is not null && services.OverlayInk.Selection.Count == 1);
                 var palette = Descendants(popup.Content).OfType<SelectionPalette>().Single();
                 CheckActions(palette, services.OverlayInk, "desktop " + theme);
+                CheckInkLayers(palette, services.OverlayInk, "desktop " + theme);
                 Invoke(Button(palette, "套索选择"));
                 Check("lasso preference saves and reaches controller " + theme, services.Store.Load().Canvas.SelectionMode == InkSelectionMode.Lasso
                     && services.OverlayInk.SelectionMode == InkSelectionMode.Lasso);
@@ -82,6 +86,7 @@ internal static class SelectionPaletteRegression
                 var boardPalette = board.ToolPanels.SelectMany(window => Descendants(window.Content)).OfType<SelectionPalette>().Single();
                 Check("board second click selects all and opens options " + theme, board.CurrentController.Selection.Count == 1);
                 CheckActions(boardPalette, board.CurrentController, "board " + theme);
+                CheckInkLayers(boardPalette, board.CurrentController, "board " + theme);
                 Invoke(Button(boardPalette, "矩形选择"));
                 Check("board rectangle preference saves " + theme, services.Store.Load().Canvas.SelectionMode == InkSelectionMode.Rectangle
                     && board.CurrentController.SelectionMode == InkSelectionMode.Rectangle);
@@ -93,6 +98,8 @@ internal static class SelectionPaletteRegression
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static).Invoke(null, new object[] { file, 2 });
             await shell.OpenPdfAsync(file); await Task.Delay(100);
             var workspace = shell.OpenWindows.OfType<IDocumentWorkspace>().Single();
+            workspace.Window.Activate();
+            shell.RefreshDocumentTarget(WindowChrome.GetHwnd(workspace.Window));
             workspace.Controller.Tool = Ink.InkTool.Pen;
             workspace.Controller.Document.Add(Stroke());
             Invoke((Button)bar.Bar.GetToolButton(Ink.InkTool.Select));
@@ -100,11 +107,13 @@ internal static class SelectionPaletteRegression
             var documentPalette = Descendants(bar.GetOpenPanel(BarPanelKind.Selection).Content).OfType<SelectionPalette>().Single();
             Check("PDF uses the selection options and automatic full selection", workspace.Controller.Selection.Count == 1);
             CheckActions(documentPalette, workspace.Controller, "PDF");
+            CheckInkLayers(documentPalette, workspace.Controller, "PDF");
             Invoke(Button(documentPalette, "套索选择"));
             Check("PDF receives the shared lasso preference", workspace.Controller.SelectionMode == InkSelectionMode.Lasso
                 && services.Store.Load().Canvas.SelectionMode == InkSelectionMode.Lasso);
             workspace.Controller.Document.Clear();
             workspace.Window.Close();
+            Check("live writing stays below the upper layer and the export keeps the same stacking", CheckStackedPixels());
         }
         catch (Exception error) { checks.Add(new { check = "selection palette exception", passed = false, error = error.ToString() }); }
         finally
@@ -121,6 +130,52 @@ internal static class SelectionPaletteRegression
             controller.ClearSelection(); Invoke(Button(palette, "全选"));
             Check("select all uses the current canvas " + name, controller.Selection.Count == 1);
         }
+        void CheckInkLayers(SelectionPalette palette, Ink.InkController controller, string name)
+        {
+            var selector = Descendants(palette).OfType<ComboBox>()
+                .Single(combo => AutomationProperties.GetName(combo) == "当前书写图层");
+            int count = controller.Document.InkLayerCount;
+            Invoke(Button(palette, "新建图层"));
+            Check("new layer switches without selecting ink below " + name,
+                controller.Document.InkLayerCount == count + 1 && controller.ActiveInkLayer == count
+                && selector.SelectedIndex == 0 && !controller.HasSelection);
+            selector.SelectedIndex = selector.Items.Count - 1;
+            Invoke(Button(palette, "全选"));
+            Check("switching to the base layer restores its selection scope " + name,
+                controller.ActiveInkLayer == 0 && controller.Selection.Count == 1);
+        }
+    }
+
+    private static bool CheckStackedPixels()
+    {
+        using var controller = new Ink.InkController { RecognizeShapes = false };
+        controller.CurrentAttributes.Color = InkColor.Opaque(255, 0, 0);
+        controller.CurrentAttributes.BaseWidth = 14;
+        var top = new InkStroke(new() { Color = new InkColor(255, 0, 0, 255), BaseWidth = 12, TaperKind = TaperKind.None })
+        { InkLayerIndex = 1 };
+        top.AddPoint(30, 20); top.AddPoint(30, 60); top.Complete();
+        controller.Document.Add(top);
+        using var scene = new InkSceneRenderer();
+        using var target = new CanvasRenderTarget(CanvasDevice.GetSharedDevice(), 128, 80, 96);
+        controller.OnPointerDown(Sample(5));
+        for (int x = 10; x <= 90; x += 5) controller.OnPointerMove(Sample(x));
+        using (var draw = target.CreateDrawingSession())
+        {
+            draw.Clear(Microsoft.UI.Colors.Transparent);
+            scene.Draw(draw, controller);
+        }
+        bool liveMatches = BlueOverRed(target.GetPixelColors());
+        controller.OnPointerUp(Sample(100));
+        using (var draw = target.CreateDrawingSession())
+        {
+            draw.Clear(Microsoft.UI.Colors.Transparent);
+            scene.DrawCommitted(draw, controller);
+        }
+        return liveMatches && BlueOverRed(target.GetPixelColors());
+
+        static OverlayPointer Sample(float x) => new(1, x, 40, .5f, 0, 0, OverlayPointerKind.Mouse, 0);
+        static bool BlueOverRed(Windows.UI.Color[] colors)
+            => colors[40 * 128 + 30].B > 220 && colors[40 * 128 + 65].R > 220;
     }
 
     private static InkStroke Stroke()

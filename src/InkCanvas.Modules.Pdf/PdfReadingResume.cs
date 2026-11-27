@@ -120,7 +120,7 @@ internal sealed partial class PdfWorkspaceService : IPdfResumeService
 
 public sealed partial class PdfWindow
 {
-    internal int PageCountForResume => _file.Pages.Count;
+    internal int PageCountForResume => _layout.Count;
     internal event Action ReadingProgressChanged;
     internal Func<Task> ClosingForResume { get; set; }
 }

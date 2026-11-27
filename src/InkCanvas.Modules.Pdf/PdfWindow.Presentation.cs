@@ -54,7 +54,7 @@ public sealed partial class PdfWindow
     {
         CompositionTarget.Rendering -= UpdateViewportFrame;
         _viewportUpdateQueued = false;
-        if (_closed || !_idleResources.IsActive) return;
+        if (_closed || _organizerOpen || !_idleResources.IsActive) return;
         ViewportUpdateCount++;
         UpdateNavigationPicture();
         if (!_navigationPictureActive) _paper.Invalidate();

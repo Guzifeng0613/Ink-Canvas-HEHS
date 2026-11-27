@@ -287,7 +287,7 @@ internal static class PenOptionsRegression
         }
     }
 
-    internal static async Task<bool?> TryPointer(Window window, FrameworkElement control, bool drag)
+    internal static async Task<bool?> TryPointer(Window window, FrameworkElement control, bool drag, int pressMilliseconds = 40)
     {
         if (!NativeMethods.GetCursorPos(out var original)) return null;
         var bounds = WindowChrome.GetScreenBounds(window, control);
@@ -301,7 +301,7 @@ internal static class PenOptionsRegression
             if (GetAncestor(WindowFromPoint(point), 2) != WindowChrome.GetHwnd(window)) return null;
             MouseEvent(2, 0, 0, 0, UIntPtr.Zero);
             down = true;
-            await Task.Delay(40);
+            await Task.Delay(pressMilliseconds);
             if (drag)
             {
                 for (int step = 1; step <= 10; step++)

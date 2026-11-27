@@ -33,9 +33,9 @@ public sealed partial class InkController
             .Select(stroke => stroke.ShapeSource.GroupId).ToHashSet();
         var elements = SelectedElements.Select(element => element.Id).ToHashSet();
         ClearSelection();
-        Selection.AddRange(Document.Strokes.Where(stroke => !selected.Contains(stroke)
+        Selection.AddRange(Document.Strokes.Where(stroke => InActiveInkLayer(stroke) && !selected.Contains(stroke)
             && (stroke.ShapeSource is null || !selectedGroups.Contains(stroke.ShapeSource.GroupId))));
-        if (GetSelectableElements is not null)
+        if (ActiveInkLayer == 0 && GetSelectableElements is not null)
             SelectedElements.AddRange(GetSelectableElements().Where(element => element.IsPresent && !elements.Contains(element.Id)));
         ExpandShapeSelection();
         SelectionChanged?.Invoke(); Invalidated?.Invoke();
@@ -80,10 +80,10 @@ public sealed partial class InkController
                 {
                     var selected = Selection.ToHashSet();
                     foreach (var stroke in Document.Strokes)
-                        if (!selected.Contains(stroke) && lasso.IntersectsStroke(stroke, _lassoViewAtStart)) Selection.Add(stroke);
+                        if (InActiveInkLayer(stroke) && !selected.Contains(stroke) && lasso.IntersectsStroke(stroke, _lassoViewAtStart)) Selection.Add(stroke);
                     ExpandShapeSelection();
                     var selectedElements = SelectedElements.Select(element => element.Id).ToHashSet();
-                    if (GetSelectableElements is not null)
+                    if (ActiveInkLayer == 0 && GetSelectableElements is not null)
                         foreach (var element in GetSelectableElements())
                             if (element.IsPresent && !selectedElements.Contains(element.Id) && lasso.IntersectsFrame(element.Frame, _lassoViewAtStart))
                                 SelectedElements.Add(element);

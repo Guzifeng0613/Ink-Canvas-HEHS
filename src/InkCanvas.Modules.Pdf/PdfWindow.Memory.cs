@@ -16,6 +16,7 @@ public sealed partial class PdfWindow
         _detail?.Dispose();
         _detail = null;
         SuspendThumbnails();
+        SuspendOrganizerThumbnails(clearCache: true);
         _ink.SuspendRendering();
     }
 
@@ -26,5 +27,6 @@ public sealed partial class PdfWindow
         _paper.Invalidate();
         QueuePageRendering();
         RefreshThumbnails();
+        QueueOrganizerThumbnails();
     }
 }

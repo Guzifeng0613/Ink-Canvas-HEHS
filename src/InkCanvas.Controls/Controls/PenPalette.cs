@@ -20,9 +20,11 @@ public sealed class PenPalette : UserControl
     private const double SwatchSize = 40;
     private const double SwatchCell = SwatchSize + 4;
     private const double RowHeight = 32;
+    private const double PenWidthDip = 248;
+    internal const double PreviewWidth = PenWidthDip - 2 - 24;
 
     private readonly bool _highlighter;
-    private readonly PenStrokePreview _preview = new() { PreviewHeight = 60 };
+    private readonly PenStrokePreview _preview = new() { PreviewHeight = PenStrokePreview.StandardHeight };
     private readonly PointerSlider _width = new()
     {
         Minimum = OriginalMenuCatalog.PenWidthMinimum,
@@ -77,7 +79,7 @@ public sealed class PenPalette : UserControl
             Controller.CurrentAttributes.Color = color;
             AttributesChanged?.Invoke();
             RefreshFromController();
-            if (!Header.IsPinned && !_colors.IsEditingColor) RequestClose?.Invoke();
+            if (AutoDismissEnabled?.Invoke() != false && !Header.IsPinned && !_colors.IsEditingColor) RequestClose?.Invoke();
         };
         if (!highlighter) _style = new PenStylePicker { HorizontalAlignment = HorizontalAlignment.Stretch };
         if (highlighter) _preview.PreviewHeight = 96;
@@ -208,7 +210,8 @@ public sealed class PenPalette : UserControl
     }
 
     /// <summary>Fixed design size (DIP) so the host window can size itself without a rooted measure.</summary>
-    public double DesignWidthDip => _highlighter ? 208 : 248;
+    public double DesignWidthDip => _highlighter ? 208 : PenWidthDip;
+    public Func<bool> AutoDismissEnabled { get; set; }
 
     /// <summary>
     /// Fallback height for the title, controls, shared preview, color grid and compact style choices.

@@ -35,6 +35,7 @@ public sealed partial class PdfWindow
 
     internal void NavigationInputStarting(OverlayPointer sample)
     {
+        if (Controller.AdvancedSelection is not null) { StopScrollMotion(); return; }
         NormalizeCrossPageInk();
         StopScrollMotion();
         _touchNavigating = false;
@@ -57,6 +58,7 @@ public sealed partial class PdfWindow
 
     internal void NavigationInputEnded()
     {
+        if (Controller.AdvancedSelection is not null) return;
         NormalizeCrossPageInk();
         UpdateActivePage();
         if (_touchNavigating && !_touchZoomed && Controller.Tool != InkTool.Pan && !Controller.HasActiveInteraction && _scrollInertia.Start(NavigationTime))

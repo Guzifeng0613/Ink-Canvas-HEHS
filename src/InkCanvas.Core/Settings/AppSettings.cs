@@ -78,6 +78,7 @@ public sealed class AppSettings
         Appearance.IsEnableDisPlayFloatBarText = false;
         Appearance.IsEnableDisPlayNibModeToggler = false;
         Appearance.IsColorfulViewboxFloatingBar = false;
+        Appearance.AutoDismissAnnotationToolPanels = false;
         Appearance.FloatingBarScale = 100.0;
         Appearance.BlackboardScale = 100.0;
         Appearance.FloatingBarBottomMargin = 100.0; // upstream constructor default
@@ -263,6 +264,8 @@ public sealed class CanvasSettings
     [JsonPropertyName("highlighterColor")] public uint? HighlighterColor { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     [JsonPropertyName("shapeKind")] public Shapes.ShapeKind? ShapeKind { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [JsonPropertyName("polygonVertexCount")] public int? PolygonVertexCount { get; set; }
 
     [JsonPropertyName("eraserSize")] public int EraserSize { get; set; } = 2;
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -321,6 +324,8 @@ public sealed class DisplaySettings
 
 public sealed class AppearanceSettings
 {
+    [JsonPropertyName("autoDismissAnnotationToolPanels"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool AutoDismissAnnotationToolPanels { get; set; }
     [JsonPropertyName("isEnableDisPlayFloatBarText")] public bool IsEnableDisPlayFloatBarText { get; set; }
     [JsonPropertyName("isEnableDisPlayNibModeToggler")] public bool IsEnableDisPlayNibModeToggler { get; set; } = true;
     [JsonPropertyName("isColorfulViewboxFloatingBar")] public bool IsColorfulViewboxFloatingBar { get; set; }

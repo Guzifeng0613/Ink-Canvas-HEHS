@@ -1,5 +1,6 @@
 using System.Numerics;
 using InkCanvas.Core.Ink;
+using InkCanvas.Core.Shapes;
 using InkCanvas.Pdf;
 using PdfSharp.Drawing;
 using PdfSharp.Pdf;
@@ -10,6 +11,22 @@ namespace InkCanvas.Core.Tests;
 public sealed class PdfPageEditingTests
 {
     private static PdfPageGeometry Page(int rotation = 0) => new(20, 30, 620, 830, rotation);
+
+    [Fact]
+    public void ReorderedLayoutUsesSourceIdentityForRenderingAndPositionForNavigation()
+    {
+        var layout = new PdfContinuousLayout(Enumerable.Repeat(Page(), 6).ToArray(),
+            doublePages: true, separateCover: true, pageOrder: [4, 1, 5, 2]);
+        Assert.Equal(4, layout.Count);
+        Assert.Equal(4, layout.PageAt(0));
+        Assert.Equal(-1, layout.PositionOf(0));
+        Assert.Equal(2, layout.PositionOf(5));
+        Assert.Equal(4, layout.AdjacentPage(1, -1));
+        Assert.Equal(2, layout.AdjacentPage(5, 1));
+        Assert.Equal(5, layout.HitTest(layout[5].Center));
+        Assert.Equal(new[] { 1, 5 }, layout.VisiblePages(layout[1].Top, layout[1].Bottom));
+        Assert.Equal(new[] { 1, 5, 2, 4 }, layout.PreviewPages(layout[1].Top, layout[1].Bottom, 1));
+    }
 
     [Theory]
     [InlineData(false, 0, 1)]
@@ -65,6 +82,25 @@ public sealed class PdfPageEditingTests
         Assert.Equal(stroke.Attributes.HighlighterAlpha, second.Attributes.HighlighterAlpha);
         Assert.Equal(stroke.LayerOrder, second.LayerOrder);
         Assert.Single(first.Points, point => point.TimeMs == 0);
+    }
+
+    [Fact]
+    public void ClippingARoundedRingAcrossFacingPagesPreservesTheHole()
+    {
+        var layout = new PdfContinuousLayout(new[] { Page(), Page() }, doublePages: true);
+        float right = layout[0].Width;
+        var construction = new ShapeDefinition
+        {
+            Kind = ShapeKind.RoundedRectangleRing, Parameters = [right - 110, 20, right + 50, 150, 28, 55],
+            FillColor = 0xFF369AFF,
+        };
+        var fill = Assert.Single(construction.Generate(new(), Guid.NewGuid()), stroke => stroke.ShapeSource.Geometry.IsFill);
+        var fragments = PdfInkSplitter.Split(fill, 0, layout);
+        Assert.Equal(2, fragments.Count);
+        var left = Assert.Single(fragments[0]);
+        Assert.Equal(2, left.FillContours().Count());
+        Assert.Equal(10, left.DistanceTo(new(right - 30, 85)), 3);
+        Assert.Equal(ShapeConstruction.Contours, left.ShapeSource.Geometry.Construction);
     }
 
     [Fact]

@@ -69,5 +69,6 @@ public sealed partial class PdfWindow
         _statusNotice.IsOpen = _statusMessage is not null && !_statusMessage.StartsWith("正在保存", StringComparison.Ordinal)
             && !_statusMessage.StartsWith("已保存", StringComparison.Ordinal) && !_statusMessage.StartsWith("找到", StringComparison.Ordinal);
         UpdateReadingControls();
+        UpdateOrganizerCommands();
     }
 }

@@ -48,6 +48,7 @@ public sealed partial class PdfWindow
         _documentBackgroundColor = color;
         _paper.ClearColor = color;
         _viewport.Background = new SolidColorBrush(color);
+        _organizer.Background = _viewport.Background;
         _sidebar.Background = new SolidColorBrush(_split.DisplayMode == Microsoft.UI.Xaml.Controls.SplitViewDisplayMode.Overlay
             ? color : Microsoft.UI.Colors.Transparent);
         _split.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);

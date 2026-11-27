@@ -20,8 +20,11 @@ namespace InkCanvas.App.Services;
 /// </summary>
 public sealed class AppServices : IDisposable
 {
+    private readonly Func<IPolygonExtension> _getPolygonExtension;
+
     public AppServices(string settingsDirectory = null)
     {
+        _getPolygonExtension = Modules.GetExport<IPolygonExtension>;
         Store = new SettingsStore(settingsDirectory);
         Settings = Store.Load();
         Settings.Storage ??= new();
@@ -108,10 +111,16 @@ public sealed class AppServices : IDisposable
         Modules.RegisterPackage("inkcanvas.screen-tracking", "屏幕内容跟随", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.screen-tracking"));
         if (documents is not null) Modules.RegisterPackage("inkcanvas.pdf", "PDF 阅读与批注", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.pdf"));
         if (canvasTools is not null) Modules.RegisterPackage("inkcanvas.analytic-geometry", "解析几何", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.analytic-geometry"));
+        if (canvasTools is not null) Modules.RegisterPackage("inkcanvas.ink-layers", "书写图层", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.ink-layers"));
+        Modules.RegisterPackage("inkcanvas.shape-expansion", "图形拓展包", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.shape-expansion"));
         if (assistant is not null) Modules.RegisterPackage("inkcanvas.ai-assistant", "AI 助手", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.ai-assistant"));
         Modules.RegisterPackage("inkcanvas.cloud-sync", "云同步", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.cloud-sync"));
         Modules.RegisterPackage("inkcanvas.mcp", "MCP 工具连接", ExtensionInstalls.ModuleManifest(AppContext.BaseDirectory, "inkcanvas.mcp"));
         Modules.Start(ExtensionPreferences.DisabledModules);
+        if (Settings.Canvas.ShapeKind is { } savedShape)
+            foreach (var controller in AllControllers())
+                if (controller.ShapeKind != savedShape && Enum.IsDefined(savedShape) && controller.CanDrawShape(savedShape))
+                    controller.ShapeKind = savedShape;
         Modules.Changed += UpdateModuleStatus;
         UpdateModuleStatus();
     }
@@ -178,14 +187,19 @@ public sealed class AppServices : IDisposable
 
     public void ConfigureController(InkController controller)
     {
+        controller.GetPolygonExtension = _getPolygonExtension;
         controller.SelectionMode = Enum.IsDefined(Settings.Canvas.SelectionMode) ? Settings.Canvas.SelectionMode : Core.Selection.InkSelectionMode.Rectangle;
         var taper = OriginalMenuCatalog.ToTaperKind(Settings.Canvas.InkStyle);
         controller.ConfigurePenWidths((float)Math.Clamp(Settings.Canvas.InkWidth, .5, 60),
             (float)Math.Clamp(Settings.Canvas.HighlighterWidth ?? Settings.Canvas.InkWidth, .5, 60));
         controller.ConfigurePenColors(Settings.Canvas.PenColor is uint pen ? InkColor.FromPackedArgb(pen) : DefaultPenColor(Settings.Appearance.Theme),
             Settings.Canvas.HighlighterColor is uint highlighter ? InkColor.FromPackedArgb(highlighter) : null);
-        if (Settings.Canvas.ShapeKind is { } shape && Enum.IsDefined(shape) && controller.ShapeKind != shape)
-            controller.ShapeKind = shape;
+        controller.PolygonVertexCount = Settings.Canvas.PolygonVertexCount ?? 5;
+        if (Settings.Canvas.ShapeKind is { } shape && Enum.IsDefined(shape))
+        {
+            if (!controller.CanDrawShape(shape)) shape = Core.Shapes.ShapeKind.Line;
+            if (controller.ShapeKind != shape) controller.ShapeKind = shape;
+        }
         controller.CurrentAttributes.TaperKind = taper;
         controller.InkWashWidth = (float)(double.IsFinite(Settings.Canvas.InkWashWidth) ? Math.Clamp(Settings.Canvas.InkWashWidth, 1, 120) : 30);
         controller.CurrentAttributes.InkWash = Settings.Canvas.InkWash.Normalize();
@@ -259,7 +273,11 @@ public sealed class AppServices : IDisposable
     {
         if (controller.Tool == InkTool.Highlighter) Settings.Canvas.HighlighterColor = controller.CurrentAttributes.Color.PackedArgb;
         else if (controller.Tool == InkTool.Pen) Settings.Canvas.PenColor = controller.CurrentAttributes.Color.PackedArgb;
-        if (controller.Tool == InkTool.Shape) Settings.Canvas.ShapeKind = controller.ShapeKind;
+        if (controller.Tool == InkTool.Shape)
+        {
+            Settings.Canvas.ShapeKind = controller.ShapeKind;
+            if (controller.ShapeKind == Core.Shapes.ShapeKind.Polygon) Settings.Canvas.PolygonVertexCount = controller.PolygonVertexCount;
+        }
         ApplySettings();
         SaveSettings();
     }
