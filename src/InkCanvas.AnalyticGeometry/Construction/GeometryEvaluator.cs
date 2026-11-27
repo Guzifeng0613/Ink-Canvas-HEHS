@@ -153,8 +153,12 @@ internal sealed partial class GeometryEvaluator
                 throw new FormatException("区域点需要圆、椭圆、多边形或平面。");
             case "midpoint":
             case "center":
-                if (args.Length == 2) return GeometryValue.Point((P(0) + P(1)) / 2);
-                var mid = G(0); return GeometryValue.Point(mid.Kind == GeometryKind.Segment ? mid.Origin + mid.Direction / 2 : mid.Origin);
+                return args.Length switch
+                {
+                    1 => GeometryValue.Point(Midpoint(G(0))),
+                    2 => GeometryValue.Point((P(0) + P(1)) / 2),
+                    _ => throw new FormatException("中点需要两个点、线段或有中心的圆锥曲线。"),
+                };
             case "pathparameter":
                 if (GeometryPath.TryGetParameter(G(0), P(1), out double parameter)) return GeometryValue.Scalar(parameter);
                 throw new FormatException("无法计算点在路径上的位置。");
@@ -171,7 +175,9 @@ internal sealed partial class GeometryEvaluator
                 };
                 return Line(start, direction, command == "segment" ? GeometryKind.Segment : command == "ray" ? GeometryKind.Ray : GeometryKind.Line);
             case "lineequation": return LineEquation(args[0]);
-            case "vector": return Vector(args.Length == 1 ? P(0) : P(1) - P(0));
+            case "vector":
+                var vectorOrigin = P(0);
+                return args.Length == 1 ? Vector(vectorOrigin) : Vector(P(1) - vectorOrigin, vectorOrigin);
             case "unitvector":
                 var unitSource = G(0);
                 return Vector((unitSource.Kind is GeometryKind.Line or GeometryKind.Ray or GeometryKind.Segment ? unitSource.Direction : Point(unitSource)).Unit());
@@ -190,6 +196,7 @@ internal sealed partial class GeometryEvaluator
                 var delta = last - first;
                 return Line((first + last) / 2, new(-delta.Y, delta.X));
             case "anglebisector":
+                if (args.Length == 2) return BisectLines(G(0), G(1));
                 var vertex = P(1); return Line(vertex, (P(0) - vertex).Unit() + (P(2) - vertex).Unit());
             case "polygon": return Polygon(args.Length == 1 && G(0) is { Kind: GeometryKind.List } vertices
                 ? vertices.Items.Select(Point).ToArray() : Points(args));
@@ -237,6 +244,11 @@ internal sealed partial class GeometryEvaluator
             case "polyline": return new() { Kind = GeometryKind.Curve, Paths = new[] { Points(args) }, Display = "折线" };
             case "rigidpolygon": return RigidPolygon(args);
             case "vectorpolygon": return VectorPolygon(args);
+            case "fitline": return FitLine(G(0));
+            case "vectorfrompoint":
+                var vectorStart = P(0); var copiedVector = G(1);
+                if (copiedVector.Kind != GeometryKind.Vector) throw new FormatException("请选择一个向量。");
+                return Vector(copiedVector.Direction, vectorStart);
             case "regularpolygon": return RegularPolygon(P(0), P(1), (int)D(2));
             case "circle": return EvaluateCircle(args);
             case "radius":
@@ -246,6 +258,11 @@ internal sealed partial class GeometryEvaluator
                 return GeometryValue.Scalar(radiusCircle.Radius);
             case "compass":
                 if (args.Length == 3) return Circle(P(2), (P(1) - P(0)).Length);
+                if (args.Length == 2 && G(0) is { } compassSource)
+                {
+                    if (compassSource.Kind == GeometryKind.Segment) return Circle(P(1), compassSource.Direction.Length);
+                    if (compassSource.Kind == GeometryKind.Circle) return Circle(P(1), compassSource.Radius);
+                }
                 return EvaluateCircle(args);
             case "circumcircle": return Circumcircle(P(0), P(1), P(2));
             case "semicircle":
@@ -263,8 +280,14 @@ internal sealed partial class GeometryEvaluator
                 return CircumArc(circum, P(0), P(1), P(2), command == "circumsector");
             case "intersect": case "intersectpath":
                 var intersection = Intersect(G(0), G(1));
-                if (args.Length == 3 && G(2) is { Kind: GeometryKind.Scalar } intersectionIndex)
-                    return ConstructionOutput(intersection, (int)intersectionIndex.Number);
+                if (args.Length == 3)
+                {
+                    var selector = G(2);
+                    if (selector.Kind == GeometryKind.Scalar) return ConstructionOutput(intersection, (int)selector.Number);
+                    if (intersection.Kind == GeometryKind.Point) return intersection;
+                    return intersection.Items.Where(item => item.Kind == GeometryKind.Point)
+                        .MinBy(item => (item.Origin - Point(selector)).Length) ?? throw new FormatException("两个对象没有可选交点。");
+                }
                 return intersection;
             case "constructionoutput": return ConstructionOutput(G(0), (int)D(1));
             case "geogebraunsupported": throw new FormatException("此 GeoGebra 构造需要映射 · " + args[0].Trim('"'));
@@ -293,21 +316,15 @@ internal sealed partial class GeometryEvaluator
                 var tangentTarget = G(1);
                 if (PlanarConic.FromGeometry(tangentInput) is not null && PlanarConic.FromGeometry(tangentTarget) is not null)
                     return CommonTangents(tangentInput, tangentTarget);
+                if (IsLinear(tangentInput)) return ParallelTangents(tangentInput, tangentTarget);
                 return Tangent(tangentInput.Kind == GeometryKind.Scalar ? new(tangentInput.Number, 0) : Point(tangentInput), tangentTarget);
             case "commontangents": return CommonTangents(G(0), G(1));
             case "istangent": return GeometryBoolean(IsTangent(G(0), G(1)));
             case "polar":
-                var polarPoint = P(0);
+            case "diameter":
+                var polarSource = G(0);
                 var polarTarget = G(1);
-                if (PlanarConic.FromGeometry(polarTarget) is { } conic)
-                {
-                    var polar = conic.Polar(polarPoint);
-                    return Line(new GeoVector(-polar.X * polar.Constant / Math.Max(1e-20, polar.X * polar.X + polar.Y * polar.Y),
-                        -polar.Y * polar.Constant / Math.Max(1e-20, polar.X * polar.X + polar.Y * polar.Y), polarPoint.Z),
-                        new GeoVector(-polar.Y, polar.X));
-                }
-                var circle = polarTarget; var diff = polarPoint - circle.Origin;
-                return Line(circle.Origin + diff * (circle.Radius * circle.Radius / diff.Dot(diff)), new(-diff.Y, diff.X));
+                return PolarLine(polarSource, polarTarget, command == "diameter");
             case "translate": return Transform(G(0), point => point + P(1));
             case "rotate":
                 var pivot = args.Length > 2 ? P(2) : default; double theta = D(1);
@@ -323,7 +340,7 @@ internal sealed partial class GeometryEvaluator
                 var reflected = Transform(G(0), point => mirror.Kind switch
                 {
                     GeometryKind.Point => mirror.Origin * 2 - point,
-                    GeometryKind.Line => mirror.Origin + mirror.Direction.Unit() * (2 * (point - mirror.Origin).Dot(mirror.Direction.Unit())) - (point - mirror.Origin),
+                    GeometryKind.Line or GeometryKind.Segment or GeometryKind.Ray => mirror.Origin + mirror.Direction.Unit() * (2 * (point - mirror.Origin).Dot(mirror.Direction.Unit())) - (point - mirror.Origin),
                     GeometryKind.Plane => point - mirror.Normal * (2 * (point - mirror.Origin).Dot(mirror.Normal)),
                     _ => throw new FormatException("对称对象需为点、直线、平面或圆。"),
                 });
@@ -362,8 +379,14 @@ internal sealed partial class GeometryEvaluator
                 }
                 return null;
             case "angle":
+                if (args.Length is 1 or 2 && G(0) is { Kind: GeometryKind.Polygon } anglePolygon)
+                {
+                    if (args.Length == 2) return PolygonAngle(anglePolygon, (int)D(1) - 1);
+                    return Collection(Enumerable.Range(0, anglePolygon.Points.Count).Select(index => PolygonAngle(anglePolygon, index)));
+                }
                 return GeometryValue.Scalar(Angle(args.Length == 3 ? P(0) - P(1) : G(0).Direction,
                 args.Length == 3 ? P(2) - P(1) : G(1).Direction));
+            case "measure": return Measure(G(0), G(1), G(2).Display);
             case "relation": return Relation(G(0), G(1), args.Length > 2 ? args[2].Trim('"') : "parallel");
             case "areparallel": return Relation(G(0), G(1), "parallel");
             case "areperpendicular": return Relation(G(0), G(1), "perpendicular");
@@ -748,12 +771,12 @@ internal sealed partial class GeometryEvaluator
         if (current.Count > 1) paths.Add(current.ToArray());
         return paths;
     }
-    private static GeometryValue Vector(GeoVector vector) => new()
+    private static GeometryValue Vector(GeoVector vector, GeoVector start = default) => new()
     {
         Kind = GeometryKind.Vector,
         Origin = vector,
         Direction = vector,
-        Paths = new[] { new[] { new GeoVector(), vector } },
+        Paths = new[] { new[] { start, start + vector } },
         Display = vector.ToString()
     };
     private static GeometryValue Line(GeoVector origin, GeoVector direction, GeometryKind kind = GeometryKind.Line)
@@ -848,6 +871,12 @@ internal sealed partial class GeometryEvaluator
     { var n = axis.Unit(); return vector * Math.Cos(angle) + n.Cross(vector) * Math.Sin(angle) + n * (n.Dot(vector) * (1 - Math.Cos(angle))); }
     private static GeometryValue Transform(GeometryValue value, Func<GeoVector, GeoVector> transform)
     {
+        if (value.Kind == GeometryKind.Vector && value.Paths.Count > 0)
+        {
+            var start = value.Paths[0][0];
+            var mapped = transform(start);
+            return Vector(transform(start + value.Direction) - mapped, mapped);
+        }
         var origin = transform(value.Origin);
         double scale = (transform(value.Origin + new GeoVector(1, 0, 0)) - origin).Length;
         return value with
@@ -887,6 +916,7 @@ internal sealed partial class GeometryEvaluator
     }
     private static double Angle(GeoVector a, GeoVector b) => Math.Acos(Math.Clamp(a.Unit().Dot(b.Unit()), -1, 1));
     private static double Area(GeometryValue value) => value.Kind == GeometryKind.Circle ? Math.PI * value.Radius * value.Radius
+        : value.Kind == GeometryKind.Conic && value.Expression == "ellipse" ? Math.PI * value.Radius * value.Number
         : value.Kind == GeometryKind.Region && value.Faces.Count == 0 ? Math.Abs(value.Number)
         : value.Faces.Sum(face => (face.B - face.A).Cross(face.C - face.A).Length / 2);
     private static double Distance(GeometryValue a, GeometryValue b)

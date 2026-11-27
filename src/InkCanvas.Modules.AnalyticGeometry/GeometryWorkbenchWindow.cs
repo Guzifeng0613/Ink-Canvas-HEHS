@@ -89,7 +89,6 @@ public sealed partial class GeometryWorkbenchWindow : Window
     private int _protocolStep = int.MaxValue;
     private int _suppressScriptsRevision = -1;
     private DateTime _animationTime;
-    private readonly List<string> _toolPoints = new();
 
     public ConstructionDocument Document { get; } = new();
     public ConstructionEvaluation Evaluation { get; private set; }
@@ -180,7 +179,7 @@ public sealed partial class GeometryWorkbenchWindow : Window
             item.Click += (_, _) => Guard(action);
             fileMenu.Items.Add(item);
         }
-        AddMenuItem("新建构造", () => { StopAnimation(); _protocolStep = int.MaxValue; _view.SelectedLabel = null; Document.Load(new()); _editing = Array.Empty<InkStroke>(); _insert.Content = "插入画布"; });
+        AddMenuItem("新建构造", () => { StopAnimation(); ClearToolSelection(); _protocolStep = int.MaxValue; _view.SelectedLabel = null; Document.Load(new()); _editing = Array.Empty<InkStroke>(); _insert.Content = "插入画布"; });
         AddMenuItem("打开 (.icgeo / .ggb)…", () => RunFileAction(OpenAsync));
         AddMenuItem("保存 (.icgeo)…", () => RunFileAction(SaveAsync));
         fileMenu.Items.Add(new MenuFlyoutSeparator());
@@ -348,11 +347,13 @@ public sealed partial class GeometryWorkbenchWindow : Window
         canvasHost.Children.Add(frame);
 
         // Floating Bottom-Center Active Tool Banner (GeoGebra style)
-        _toolBannerText = new TextBlock { FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(Microsoft.UI.Colors.White) };
+        _toolBannerText = new TextBlock { FontSize = 13, MaxWidth = 440, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(Microsoft.UI.Colors.White) };
+        _finishTool = new Button { Content = "完成", MinHeight = 36 };
+        _finishTool.Click += (_, _) => Guard(() => CompleteTool(DrawingTools[_activeToolIndex]));
         var cancelTool = new Button
         {
-            Content = "完成",
-            MinHeight = 30,
+            Content = "退出",
+            MinHeight = 36,
             Padding = new Thickness(10, 2, 10, 2),
             Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
             Background = new SolidColorBrush(Color.FromArgb(56, 255, 255, 255)),
@@ -367,7 +368,7 @@ public sealed partial class GeometryWorkbenchWindow : Window
             Padding = new Thickness(14, 6, 8, 6),
             CornerRadius = new CornerRadius(18),
             Background = new SolidColorBrush(Color.FromArgb(228, 30, 41, 59)),
-            Child = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { _toolBannerText, cancelTool } },
+            Child = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { _toolBannerText, _finishTool, cancelTool } },
         };
         canvasHost.Children.Add(_toolBanner);
 
@@ -1390,7 +1391,11 @@ public sealed partial class GeometryWorkbenchWindow : Window
     }
 
     private void DispatchUndoPointStored() => DispatchObjectEvent("", "OnStoreUndo");
-    private void DispatchHistoryRestored(string eventName) => DispatchObjectEvent("", eventName);
+    private void DispatchHistoryRestored(string eventName)
+    {
+        ClearToolSelection();
+        DispatchObjectEvent("", eventName);
+    }
     private void DispatchClientViewChanged()
     {
         var state = Document.State;
@@ -1635,6 +1640,7 @@ public sealed partial class GeometryWorkbenchWindow : Window
     {
         if (_closed) return;
         _closed = true; StopAnimation(); _lifetime.Cancel(); _calculation?.Cancel(); _debounce.Stop(); _mathDebounce.Stop();
+        _toolDialog?.Hide();
         _scriptQueue.Clear();
         Document.EvaluationChanged -= QueueCalculation;
         Document.ObjectsChanged -= ObjectsChanged;

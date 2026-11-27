@@ -9,6 +9,68 @@ namespace InkCanvas.Core.Tests;
 
 public sealed class ConstructionTests
 {
+    [Fact]
+    public void DrawingCommandsFollowTheirSourceObjects()
+    {
+        var document = new ConstructionDocument();
+        document.Execute("A=(0,0);B=(6,0);s=Segment(A,B);M=Midpoint(s);"
+            + "c=Compass(s,A);C=Center(c);q=PerpendicularBisector(s);L=Measure(Length(s),{s},\"长度\")");
+        var kernel = new ConstructionKernel();
+        var values = kernel.Evaluate(document.State).Values;
+        Assert.Equal(new GeoVector(3, 0), values["M"].Origin);
+        Assert.Equal(new GeoVector(0, 0), values["C"].Origin);
+        Assert.Equal(6, values["c"].Radius);
+        Assert.Equal(6, values["L"].Number);
+        Assert.Equal(values["M"].Origin, values["L"].TextAnchor);
+
+        document.Execute("B=(8,0)");
+        values = kernel.Evaluate(document.State).Values;
+        Assert.Equal(new GeoVector(4, 0), values["q"].Origin);
+        Assert.Equal(values["q"].Origin, values["M"].Origin);
+        Assert.Equal(8, values["c"].Radius);
+        Assert.Equal(values["M"].Origin, values["L"].TextAnchor);
+        document.Execute("p=Parabola((0,2),Line((-2,0),(2,0)));P=Midpoint(p)");
+        Assert.False(kernel.Evaluate(document.State).Values["P"].Defined);
+    }
+
+    [Fact]
+    public void DrawingCommandsResolveMultiOutputConstructions()
+    {
+        var result = Evaluate("g=Line((0,0),(1,0));h=Line((0,0),(0,1));b=AngleBisector(g,h);"
+            + "k=Parallel((0,4),g);m=AngleBisector(g,k);c=Circle((0,0),2);t=Tangent(g,c);"
+            + "I=Intersect(g,c,(3,0));f(x)=x^2-4;J=Intersect(f,g);"
+            + "p=Parabola((0,1),Line((0,-1),(1,-1)));u=Tangent(g,p);"
+            + "e=Ellipse((-3,0),(3,0),(0,4));v=Tangent(g,e);d=Diameter(g,e)");
+        var values = result.Values;
+        Assert.Equal(2, values["b"].Items.Count);
+        Assert.Equal(0, values["b"].Items[0].Direction.Dot(values["b"].Items[1].Direction), 10);
+        Assert.Equal(new GeoVector(0, 2), values["m"].Origin);
+        Assert.Equal(new[] { -2d, 2d }, values["t"].Items.Select(item => item.Origin.Y).Order());
+        Assert.Equal(new GeoVector(2, 0), values["I"].Origin);
+        Assert.Equal(new[] { -2d, 2d }, values["J"].Items.Select(item => Math.Round(item.Origin.X, 8)));
+        Assert.Equal(new GeoVector(0, 0), Assert.Single(values["u"].Items).Origin);
+        Assert.Equal(new[] { -4d, 4d }, values["v"].Items.Select(item => Math.Round(item.Origin.Y, 8)).Order());
+        Assert.Equal(0, values["d"].Direction.X);
+        var projection = new GeometryProjection(new(), 800, 600);
+        Assert.Equal(2, projection.Paths(values["b"]).Count());
+    }
+
+    [Fact]
+    public void DrawingCommandsFitPointsAndSampleAConstrainedDriver()
+    {
+        var result = Evaluate("s=Segment((-2,0),(2,0));P=PointOnObject(s,0.4);Q=Translate(P,Vector((0,2)));"
+            + "c=Locus(Q,P);f=FitLine({(0,0),(1,2),(2,1)});u=Vector((1,3));v=VectorFromPoint(Q,u);"
+            + "p=Polygon((0,0),(4,0),(4,4),(2,2),(0,4));a=Measure(Angle(p,4),{PolygonVertex(p,4)},\"角度\")");
+        var path = Assert.Single(result.Values["c"].Paths);
+        Assert.Equal(new GeoVector(-2, 2), path[0]);
+        Assert.Equal(new GeoVector(2, 2), path[^1]);
+        Assert.Equal(.5, result.Values["f"].Direction.Y, 10);
+        Assert.Equal(result.Values["Q"].Origin, Assert.Single(result.Values["v"].Paths)[0]);
+        Assert.Equal(new GeoVector(1, 3), result.Values["v"].Direction);
+        Assert.Equal(new GeoVector(2, 2), result.Values["a"].TextAnchor);
+        Assert.Equal(3 * Math.PI / 2, result.Values["a"].Number, 10);
+    }
+
     private static ConstructionEvaluation Evaluate(string commands)
     {
         var document = new ConstructionDocument();

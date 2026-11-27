@@ -18,9 +18,117 @@ internal sealed partial class GeometryEvaluator
         };
     }
 
+    private static bool IsLinear(GeometryValue value)
+        => value.Kind is GeometryKind.Line or GeometryKind.Ray or GeometryKind.Segment;
+
+    private static GeoVector Midpoint(GeometryValue value)
+        => value.Kind switch
+        {
+            GeometryKind.Segment => value.Origin + value.Direction / 2,
+            GeometryKind.Circle => value.Origin,
+            GeometryKind.Conic when value.Expression is "ellipse" or "hyperbola" => value.Origin,
+            _ => throw new FormatException("请选择线段或有中心的圆锥曲线。"),
+        };
+
+    private static GeometryValue Measure(GeometryValue value, GeometryValue sources, string name)
+    {
+        if (value.Kind != GeometryKind.Scalar || sources.Kind != GeometryKind.List || sources.Items.Count == 0)
+            throw new FormatException("度量需要数值和定位对象。");
+        var items = sources.Items;
+        var anchor = items.Count == 3 && name == "角度" ? items[1].Origin
+            : items.Aggregate(default(GeoVector), (sum, item) => sum + (item.Kind switch
+            {
+                GeometryKind.Segment => Midpoint(item),
+                GeometryKind.Vector when item.Paths.Count > 0 => item.Paths[0][0] + item.Direction / 2,
+                GeometryKind.Polygon => item.Points.Aggregate(default(GeoVector), (total, point) => total + point) / item.Points.Count,
+                _ => item.Origin,
+            })) / items.Count;
+        string label = name == "角度" ? $"{value.Number * 180 / Math.PI:G6}°" : value.Display;
+        return value with { TextAnchor = anchor, Display = $"{name} = {label}" };
+    }
+
+    private static GeometryValue PolygonAngle(GeometryValue polygon, int index)
+    {
+        var points = polygon.Points;
+        if (index < 0 || index >= points.Count) throw new FormatException("多边形顶点序号超出范围。");
+        var vertex = points[index];
+        var first = points[(index + points.Count - 1) % points.Count] - vertex;
+        var second = points[(index + 1) % points.Count] - vertex;
+        double angle = Angle(first, second);
+        var normal = polygon.Faces.Aggregate(default(GeoVector), (sum, face) => sum + (face.B - face.A).Cross(face.C - face.A));
+        if (first.Cross(second).Dot(normal) > 0) angle = Math.Tau - angle;
+        return GeometryValue.Scalar(angle);
+    }
+    private GeometryValue BisectLines(GeometryValue first, GeometryValue second)
+    {
+        if (!IsLinear(first) || !IsLinear(second)) throw new FormatException("请选择两条直线、射线或线段。");
+        var a = first.Direction.Unit();
+        var b = second.Direction.Unit();
+        if (a.Cross(b).Length < 1e-9)
+        {
+            var offset = second.Origin - first.Origin;
+            return Line(first.Origin + (offset - a * offset.Dot(a)) / 2, a);
+        }
+        var intersection = Intersect(Line(first.Origin, a), Line(second.Origin, b));
+        if (intersection.Kind != GeometryKind.Point) throw new FormatException("两条直线需要共面。");
+        return Collection([Line(intersection.Origin, a + b), Line(intersection.Origin, a - b)]);
+    }
+
+    private static GeometryValue FitLine(GeometryValue list)
+    {
+        if (list.Kind != GeometryKind.List || list.Items.Count < 2 || list.Items.Any(item => item.Kind != GeometryKind.Point))
+            throw new FormatException("拟合直线需要至少两个点。");
+        var center = list.Items.Aggregate(default(GeoVector), (sum, point) => sum + point.Origin) / list.Items.Count;
+        double variance = 0, covariance = 0;
+        foreach (var point in list.Items)
+        {
+            var delta = point.Origin - center;
+            variance += delta.X * delta.X;
+            covariance += delta.X * delta.Y;
+        }
+        if (variance == 0) throw new FormatException("拟合直线需要不同的横坐标。");
+        return Line(new(center.X, center.Y), new(1, covariance / variance));
+    }
+
+    private static GeometryValue PolarLine(GeometryValue source, GeometryValue target, bool diameter)
+    {
+        if (PlanarConic.FromGeometry(target) is not { } conic) throw new FormatException("请选择圆锥曲线。");
+        if (diameter && !IsLinear(source) && source.Kind != GeometryKind.Vector)
+            throw new FormatException("请选择直线或向量。");
+        RequireHorizontalConics(target, target);
+        var point = diameter ? source.Direction : Point(source);
+        var (x, y, c) = diameter ? conic.PolarDirection(point) : conic.Polar(point);
+        double norm = x * x + y * y;
+        if (norm == 0) throw new FormatException("此极线位于无穷远处。");
+        return Line(new(-x * c / norm, -y * c / norm, target.Origin.Z), new(-y, x));
+    }
+
+    private static GeometryValue ParallelTangents(GeometryValue line, GeometryValue target)
+    {
+        var direction = line.Direction.Unit();
+        if (target.Kind == GeometryKind.Circle)
+        {
+            if (Math.Abs(direction.Dot(target.Normal)) > 1e-8) throw new FormatException("切线方向必须平行于圆所在平面。");
+            var offset = target.Normal.Cross(direction).Unit() * target.Radius;
+            return Collection([Line(target.Origin + offset, direction), Line(target.Origin - offset, direction)]);
+        }
+        if (Math.Abs(direction.Z) > 1e-8 || PlanarConic.FromGeometry(target) is not { } conic)
+            throw new FormatException("请选择与圆锥曲线共面方向的直线。");
+        var (x, y, c) = conic.PolarDirection(direction);
+        double norm = x * x + y * y;
+        if (norm == 0) return Collection([]);
+        var origin = new GeoVector(-x * c / norm, -y * c / norm, target.Origin.Z);
+        var axis = new GeoVector(-y, x).Unit();
+        return Collection(conic.Intersect(origin, axis).Select(t => origin + axis * t)
+            .Where(point => conic.HasFiniteTangency(point, direction)).Select(point => Line(point, direction)));
+    }
+
     private GeometryValue Intersect(GeometryValue a, GeometryValue b)
     {
         bool IsLine(GeometryValue item) => item.Kind is GeometryKind.Line or GeometryKind.Ray or GeometryKind.Segment;
+        if (a.Kind == GeometryKind.Function && (b.Kind == GeometryKind.Function || IsLinear(b)))
+            return IntersectFunction(a, b);
+        if (b.Kind == GeometryKind.Function && IsLinear(a)) return IntersectFunction(b, a);
         if (a.Kind == GeometryKind.Plane && b.Kind == GeometryKind.Plane)
         {
             var direction = a.Normal.Cross(b.Normal); double denominator = direction.Dot(direction);
@@ -117,6 +225,31 @@ internal sealed partial class GeometryEvaluator
         }
         if (a.Faces.Count > 0 && b.Faces.Count > 0) return SurfaceIntersection(a, b);
         throw new FormatException("交点支持直线、圆锥曲线、平面及多面体截线。");
+    }
+
+    private GeometryValue IntersectFunction(GeometryValue function, GeometryValue other)
+    {
+        var x = MathS.Var("x");
+        var expression = ComputerAlgebra.Parse(function.Expression).Substitute(function.Variable, x);
+        var evaluate = ComputerAlgebra.Compile(expression);
+        if (other.Kind != GeometryKind.Function && Math.Abs(other.Direction.Z) + Math.Abs(other.Origin.Z) > 1e-9)
+            throw new FormatException("直线和函数图像必须共面。");
+        if (other.Kind != GeometryKind.Function && Math.Abs(other.Direction.X) < 1e-12)
+        {
+            var point = new GeoVector(other.Origin.X, evaluate(other.Origin.X, 0, 0, 0, 0, 0));
+            double t = (point.Y - other.Origin.Y) / other.Direction.Y;
+            return point.Finite && WithinLine(t) ? GeometryValue.Point(point) : Collection([]);
+        }
+        Entity difference = other.Kind == GeometryKind.Function
+            ? expression - ComputerAlgebra.Parse(other.Expression).Substitute(other.Variable, x)
+            : expression - (other.Origin.Y + (x - other.Origin.X) * (other.Direction.Y / other.Direction.X));
+        var roots = SpecialPoints(function with { Expression = difference.ToString(), Variable = "x" }, "root");
+        return Collection(roots.Items.Where(root => other.Kind == GeometryKind.Function
+                || WithinLine((root.Origin.X - other.Origin.X) / other.Direction.X))
+            .Select(root => GeometryValue.Point(new(root.Origin.X, evaluate(root.Origin.X, 0, 0, 0, 0, 0)))));
+
+        bool WithinLine(double t) => other.Kind == GeometryKind.Line
+            || t >= -1e-9 && (other.Kind != GeometryKind.Segment || t <= 1 + 1e-9);
     }
 
     private static bool IsTangent(GeometryValue line, GeometryValue curve)

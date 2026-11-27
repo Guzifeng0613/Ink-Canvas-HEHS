@@ -6,6 +6,9 @@ internal readonly record struct PlanarConic(double A, double B, double C, double
     public (double X, double Y, double Constant) Polar(GeoVector point)
         => (A * point.X + B * point.Y + D, B * point.X + C * point.Y + E, D * point.X + E * point.Y + F);
 
+    public (double X, double Y, double Constant) PolarDirection(GeoVector direction)
+        => (A * direction.X + B * direction.Y, B * direction.X + C * direction.Y, D * direction.X + E * direction.Y);
+
     public IReadOnlyList<double> Intersect(GeoVector origin, GeoVector direction)
     {
         var polar = Polar(origin);

@@ -18,10 +18,10 @@ public static partial class GeoGebraImport
 
     private static readonly HashSet<string> SupportedCommands = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Point", "PointIn", "PointOnObject", "IsInRegion", "Midpoint", "Center", "Line", "Segment", "Ray", "Vector",
+        "Point", "PointIn", "PointOnObject", "IsInRegion", "Midpoint", "Center", "Line", "Segment", "Ray", "Vector", "VectorFromPoint",
         "UnitVector", "PerpendicularVector", "UnitPerpendicularVector", "Dot", "Cross",
         "Polygon", "Polyline", "RegularPolygon", "Centroid", "Circle", "Radius", "Compass", "Circumcircle", "Semicircle", "CellRange",
-        "Arc", "Sector", "Circumarc", "Circumsector", "Intersect", "IntersectPath", "Element", "Tangent", "IsTangent", "Polar",
+        "Arc", "Sector", "Circumarc", "Circumsector", "Intersect", "IntersectPath", "Element", "Tangent", "IsTangent", "Polar", "Diameter", "FitLine",
         "Parallel", "ParallelLine", "Perpendicular", "PerpendicularLine", "OrthogonalLine", "PerpendicularBisector",
         "AngleBisector", "Translate", "Rotate", "Dilate", "Enlarge", "Homothety", "Reflect", "CommonTangents", "Distance", "Length",
         "Area", "Circumference", "Perimeter", "Slope", "Angle", "Relation", "Sum", "Mean", "Function", "Curve", "PolarCurve", "ParametricDerivative", "Derivative", "Diff", "Integral",
@@ -432,6 +432,7 @@ public static partial class GeoGebraImport
         "orthogonalvector" => "PerpendicularVector",
         "unitorthogonalvector" => "UnitPerpendicularVector",
         "linebisector" => "PerpendicularBisector",
+        "angularbisector" => "AngleBisector",
         "enlarge" => "Dilate",
         "intersection" or "intersections" or "intersectconic" => "Intersect",
         "circlearc" or "circulararc" => "Arc",

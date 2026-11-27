@@ -497,7 +497,7 @@ public sealed class ConstructionKernel
     {
         if (MathSyntax.Call(definition, out string command, out _))
             return command.ToLowerInvariant() is "function" or "slopefield" or "root" or "extremum"
-                or "inflectionpoint" or "surface" or "surfacefunction" or "conic" or "conicequation" or "sum";
+                or "inflectionpoint" or "surface" or "surfacefunction" or "conic" or "conicequation" or "sum" or "locus";
         return definition.IndexOfAny(['=', '<', '>']) >= 0
             || Regex.IsMatch(definition, @"(?<![\p{L}\d_])[xy](?![\p{L}\d_])");
     }
@@ -508,7 +508,7 @@ public sealed class ConstructionKernel
             return command.ToLowerInvariant() is "function" or "curve" or "polarcurve" or "slopefield" or "surface" or "surfacefunction"
                 or "solveode" or "locus" or "envelope" or "revolve" or "sphere" or "cylinder" or "cone"
                 or "conic" or "conicequation" or "ellipse" or "hyperbola" or "parabola" or "sum"
-                or "length" or "root" or "extremum" or "inflectionpoint" or "constructionoutput"
+                or "length" or "root" or "extremum" or "inflectionpoint" or "constructionoutput" or "intersect" or "intersectpath"
                 or "integral" or "integrate" or "integralarea" or "integralbetween" or "derivative" or "diff" or "curvederivative" or "parametricderivative";
         return definition.IndexOfAny(['=', '<', '>']) >= 0
             || Regex.IsMatch(definition, @"(?<![\p{L}\d_])[xy](?![\p{L}\d_])");

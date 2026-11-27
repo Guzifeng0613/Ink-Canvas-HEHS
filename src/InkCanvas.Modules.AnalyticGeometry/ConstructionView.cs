@@ -52,9 +52,24 @@ public sealed class ConstructionView : UserControl, IDisposable
     private string _cameraSignature;
     public string SelectedLabel { get; set; }
     public bool ConstructionToolActive { get; set; }
-    public bool PickingAttachmentTarget { get; set; }
+    internal sealed record ObjectPick(string Label, GeometryValue Value, int Output = 0, bool Inside = false)
+    {
+        public string Reference => Output == 0 ? Label : $"ConstructionOutput({Label},{Output})";
+    }
+
+    internal Func<ObjectPick, bool> AcceptToolObject { get; set; }
+    private readonly HashSet<string> _toolHighlights = new(StringComparer.Ordinal);
+    private GeoVector[] _toolMarkers = [];
+
+    internal void ShowToolSelection(IEnumerable<string> highlights, GeoVector[] markers)
+    {
+        _toolHighlights.Clear();
+        _toolHighlights.UnionWith(highlights);
+        _toolMarkers = markers;
+        _canvas.Invalidate();
+    }
     public bool MoveAlongZAxis { get; set; }
-    public event Action<GeoVector, string, bool> Clicked;
+    internal event Action<GeoVector, ObjectPick> Clicked;
     public event Action<string, GeoVector> PointMoved;
     public event Action<ConstructionSnapshot> ViewChanged;
     public event Action GestureStarted;
@@ -339,8 +354,8 @@ public sealed class ConstructionView : UserControl, IDisposable
         _pressed = new((float)point.Position.X, (float)point.Position.Y);
         if (TrackClientPointer)
             ClientEventTriggered?.Invoke("", "OnMouseDown", new Dictionary<string, double> { ["x"] = _pressed.X, ["y"] = _pressed.Y });
-        string hit = HitTest(_pressed);
-        if (!ConstructionToolActive && hit is not null)
+        string hit = ConstructionToolActive ? null : HitTest(_pressed);
+        if (hit is not null)
         {
             if (SelectedLabel != hit) SelectionRequested?.Invoke(hit);
             SelectedLabel = hit;
@@ -410,10 +425,14 @@ public sealed class ConstructionView : UserControl, IDisposable
         {
             try
             {
-                var world = _projection.Unproject(point);
-                string hit = clickedPoint ?? HitTest(point, pathsOnly: PickingAttachmentTarget);
-                string region = PickingAttachmentTarget && hit is null ? HitAttachmentRegion(point) : null;
-                Clicked?.Invoke(world, hit ?? region, region is not null);
+                if (ConstructionToolActive) PickConstructionAt(point);
+                else
+                {
+                    var hit = clickedPoint is null
+                        ? PickObject(point)
+                        : new ObjectPick(clickedPoint, _evaluation.Values[clickedPoint]);
+                    Clicked?.Invoke(_projection.Unproject(point), hit);
+                }
             }
             catch (InvalidOperationException) { }
         }
@@ -492,54 +511,104 @@ public sealed class ConstructionView : UserControl, IDisposable
         if (_pointers.Count == 0) _multiplePointers = false;
     }
 
-    private string HitTest(Vector2 point, bool pathsOnly = false)
+    private string HitTest(Vector2 point) => PickObject(point)?.Label;
+
+    internal void PickConstructionAt(Vector2 point)
+    {
+        if (_evaluation is null || _projection is null) return;
+        var hit = PickObject(point, AcceptToolObject);
+        if (hit is null && AcceptToolObject is not null)
+            hit = PickRegion(point, AcceptToolObject);
+        Clicked?.Invoke(_projection.Unproject(point), hit);
+    }
+
+    internal Vector2 Project(GeoVector position) => _projection.Project(position);
+
+    internal ObjectPick PickObject(Vector2 point, Func<ObjectPick, bool> accepts = null, bool includePoints = true)
     {
         if (_evaluation is null || _projection is null) return null;
-        if (!_dirty && !_state.Anaglyph)
+        bool cached = !_dirty && !_state.Anaglyph;
+        if (includePoints)
         {
-            for (int index = _drawings.Count - 1; index >= 0; index--)
+            var hit = Find(points: true);
+            if (hit is not null) return hit;
+        }
+        return Find(points: false);
+
+        ObjectPick Find(bool points)
+        {
+            if (cached)
             {
-                var drawing = _drawings[index];
-                if (!pathsOnly && drawing.Value.Kind == GeometryKind.Point && drawing.Points.Any(p => Vector2.DistanceSquared(p, point) < 256))
-                    return drawing.Object.Label;
+                for (int i = _drawings.Count - 1; i >= 0; i--)
+                {
+                    var drawing = _drawings[i];
+                    var hit = Match(drawing.Object.Label, drawing.Value, points, drawing);
+                    if (hit is not null) return hit;
+                }
+                return null;
             }
-            for (int index = _drawings.Count - 1; index >= 0; index--)
+            for (int i = _state.Objects.Count - 1; i >= 0; i--)
             {
-                var drawing = _drawings[index];
-                if (pathsOnly && !ConstructionDocument.IsAttachablePath(drawing.Value)) continue;
-                if (drawing.HitBounds is { } bounds && bounds.Contains(new Windows.Foundation.Point(point.X, point.Y))
-                    && drawing.Lines.StrokeContainsPoint(point, 20))
-                    return drawing.Object.Label;
+                var item = _state.Objects[i];
+                if (!_evaluation.IsVisible(item) || !_evaluation.Values.TryGetValue(item.Label, out var value) || !value.Defined)
+                    continue;
+                var hit = Match(item.Label, value, points, null);
+                if (hit is not null) return hit;
             }
             return null;
         }
 
-        foreach (var item in _state.Objects.Where(_evaluation.IsVisible).Reverse())
+        ObjectPick Match(string label, GeometryValue value, bool points, Drawing drawing)
         {
-            if (!_evaluation.Values.TryGetValue(item.Label, out var value) || !value.Defined) continue;
-            if (!pathsOnly && value.Kind == GeometryKind.Point && value.Points.Any(p => Vector2.Distance(_projection.Project(p), point) < 16)) return item.Label;
+            // Reject most objects by their cached bounds before inspecting any list outputs.
+            if (drawing is not null && !points && (drawing.HitBounds is not { } bounds
+                || !bounds.Contains(new Windows.Foundation.Point(point.X, point.Y)))) return null;
+            if (value.Kind == GeometryKind.List && accepts is not null)
+            {
+                for (int i = value.Items.Count - 1; i >= 0; i--)
+                {
+                    var result = value.Items[i];
+                    var pick = new ObjectPick(label, result, i + 1);
+                    if (result.Defined && accepts(pick) && IsHit(result, points, null)) return pick;
+                }
+                return null;
+            }
+            if (points && value.Kind is not (GeometryKind.Point or GeometryKind.List)) return null;
+            if (accepts is null) return IsHit(value, points, drawing) ? new ObjectPick(label, value) : null;
+            var candidate = new ObjectPick(label, value);
+            return accepts(candidate) && IsHit(value, points, drawing) ? candidate : null;
         }
-        foreach (var item in _state.Objects.Where(_evaluation.IsVisible).Reverse())
+
+        bool IsHit(GeometryValue value, bool points, Drawing drawing)
         {
-            if (!_evaluation.Values.TryGetValue(item.Label, out var value) || !value.Defined) continue;
-            if (pathsOnly && !ConstructionDocument.IsAttachablePath(value)) continue;
+            if (points)
+            {
+                if (value.Points.Count == 0 || value.Kind is not (GeometryKind.Point or GeometryKind.List)) return false;
+                return drawing is not null
+                    ? drawing.Points.Any(p => Vector2.DistanceSquared(p, point) < 256)
+                    : value.Points.Any(p => Vector2.DistanceSquared(_projection.Project(p), point) < 256);
+            }
+            if (drawing is not null) return drawing.Lines.StrokeContainsPoint(point, 20);
             foreach (var path in _projection.Paths(value))
             for (int i = 1; i < path.Length; i++)
             {
-                var d = path[i] - path[i - 1];
-                float t = Math.Clamp(Vector2.Dot(point - path[i - 1], d) / Math.Max(.001f, d.LengthSquared()), 0, 1);
-                if (Vector2.Distance(path[i - 1] + t * d, point) < 10) return item.Label;
+                var direction = path[i] - path[i - 1];
+                float t = Math.Clamp(Vector2.Dot(point - path[i - 1], direction) / Math.Max(.001f, direction.LengthSquared()), 0, 1);
+                if (Vector2.DistanceSquared(path[i - 1] + t * direction, point) < 100) return true;
             }
+            return false;
         }
-        return null;
     }
 
-    private string HitAttachmentRegion(Vector2 point)
+    private ObjectPick PickRegion(Vector2 point, Func<ObjectPick, bool> accepts)
     {
-        foreach (var item in _state.Objects.AsEnumerable().Reverse())
+        for (int i = _state.Objects.Count - 1; i >= 0; i--)
         {
+            var item = _state.Objects[i];
             if (!_evaluation.IsVisible(item) || !_evaluation.Values.TryGetValue(item.Label, out var region)
                 || !region.Defined || !GeometryPath.IsAttachableRegion(region)) continue;
+            var candidate = new ObjectPick(item.Label, region, Inside: true);
+            if (!accepts(candidate)) continue;
             foreach (var boundary in region.Paths)
             {
                 if (boundary.Length < 3) continue;
@@ -553,7 +622,7 @@ public sealed class ConstructionView : UserControl, IDisposable
                         inside = !inside;
                     a = b;
                 }
-                if (inside) return item.Label;
+                if (inside) return candidate;
             }
         }
         return null;
@@ -673,19 +742,26 @@ public sealed class ConstructionView : UserControl, IDisposable
                 foreach (var point in trace) ds.FillCircle(_projection.Project(point), 1.5f, color);
             if (drawing.Lines is not null)
             {
-                if (drawing.Object.Label == SelectedLabel)
+                if (drawing.Object.Label == SelectedLabel || _toolHighlights.Contains(drawing.Object.Label))
                     ds.DrawGeometry(drawing.Lines, Color.FromArgb(64, color.R, color.G, color.B), (float)drawing.Object.LineWidth + 7);
                 ds.DrawGeometry(drawing.Lines, color, (float)drawing.Object.LineWidth);
             }
             foreach (var point in drawing.Points)
             {
-                if (drawing.Object.Label == SelectedLabel)
+                if (drawing.Object.Label == SelectedLabel || _toolHighlights.Contains(drawing.Object.Label))
                     ds.FillCircle(point, 11, Color.FromArgb(56, color.R, color.G, color.B));
                 ds.FillCircle(point, 4.8f, color);
                 ds.DrawCircle(point, 4.8f, Microsoft.UI.Colors.White, 1.4f);
             }
             if (drawing.Object.ShowLabel && drawing.Points.Length > 0)
                 ds.DrawText(drawing.Object.Label, drawing.Points[0] + new Vector2(9, -22), color, _labelFont);
+        }
+        foreach (var marker in _toolMarkers)
+        {
+            var center = _projection.Project(marker);
+            if (!Valid(center)) continue;
+            ds.FillCircle(center, 6, Color.FromArgb(255, 34, 105, 222));
+            ds.DrawCircle(center, 6, Microsoft.UI.Colors.White, 1.6f);
         }
     }
 

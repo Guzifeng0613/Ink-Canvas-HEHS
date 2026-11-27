@@ -155,7 +155,7 @@ public sealed partial class GeometryWorkbenchWindow
         _observedConstruction = state;
         _settledEvaluation = null;
         _committingEventScript = true;
-        try { Document.Load(state); }
+        try { ClearToolSelection(); Document.Load(state); }
         finally { _committingEventScript = false; }
         await CalculateAsync();
         if (_closed) return;

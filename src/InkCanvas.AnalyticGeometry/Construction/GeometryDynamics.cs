@@ -115,10 +115,30 @@ internal sealed partial class GeometryEvaluator
 
     private GeometryValue Locus(string[] args, bool envelope)
     {
-        if (args.Length != 4) throw new FormatException("格式为 Locus(对象,参数名,起始,结束) 或 Envelope(直线,参数名,起始,结束)。");
+        if (args.Length != 4 && (envelope || args.Length != 2))
+            throw new FormatException("格式为 Locus(依赖点,路径点)、Locus(对象,参数名,起始,结束) 或 Envelope(直线,参数名,起始,结束)。");
         string label = args[0].Trim(), parameter = args[1].Trim();
-        if (!view.Objects.Any(item => item.Label == parameter)) throw new FormatException("轨迹参数必须是已有数值对象。");
-        double start = N(args[2]), end = N(args[3]);
+        var driver = view.Objects.FirstOrDefault(item => item.Label == parameter)
+            ?? throw new FormatException("请选择已有路径点或数值对象作为轨迹参数。");
+        string pathLabel = null;
+        double start, end;
+        if (args.Length == 2)
+        {
+            var driverValue = Evaluate(parameter);
+            pathLabel = ConstructionDocument.AttachedPath(driver, driverValue);
+            var path = driverValue.AttachmentTarget;
+            if (pathLabel is null || path is null || !ConstructionDocument.IsAttachablePath(path)
+                || ConstructionDocument.IsRegionPoint(driver) || label == parameter || !ConstructionKernel.DependsOn(view, label, parameter))
+                throw new FormatException("轨迹需要依赖点和驱动它的路径点。");
+            (start, end) = path.Kind switch
+            {
+                GeometryKind.Circle => (0, Math.Tau),
+                GeometryKind.Function => (view.XMin, view.XMax),
+                GeometryKind.Line or GeometryKind.Ray => LocusLineRange(path),
+                _ => (0, 1),
+            };
+        }
+        else (start, end) = (N(args[2]), N(args[3]));
         var paths = new List<GeoVector[]>();
         var points = new List<GeoVector>();
         GeometryValue previous = null;
@@ -130,9 +150,16 @@ internal sealed partial class GeometryEvaluator
         {
             Sample();
             string number = ComputerAlgebra.Number(start + (end - start) * i / sampleCount);
-            var state = view with { Objects = sampledObjects.Select(item => item.Label == parameter ? item with { Definition = number } : item).ToList() };
+            string definition = pathLabel is null ? number : $"PointOnObject({pathLabel},{number})";
+            var state = view with { Objects = sampledObjects.Select(item => item.Label == parameter ? item with { Definition = definition } : item).ToList() };
             var evaluation = kernel.Evaluate(state, token, interactive: _curveSamples < 512);
-            if (!evaluation.Values.TryGetValue(label, out var value) || !value.Defined) continue;
+            if (!evaluation.Values.TryGetValue(label, out var value) || !value.Defined)
+            {
+                if (points.Count > 1) paths.Add(points.ToArray());
+                points.Clear();
+                previous = null;
+                continue;
+            }
             if (!envelope && value.Kind == GeometryKind.Point) points.Add(value.Origin);
             else if (envelope && previous is not null)
             {
@@ -143,6 +170,15 @@ internal sealed partial class GeometryEvaluator
         }
         if (points.Count > 1) paths.Add(points.ToArray());
         return new() { Kind = GeometryKind.Curve, Paths = paths, Display = envelope ? "数值包络线" : "数值轨迹" };
+    }
+
+    private (double Start, double End) LocusLineRange(GeometryValue line)
+    {
+        GeoVector[] corners = [new(view.XMin, view.YMin), new(view.XMax, view.YMin),
+            new(view.XMin, view.YMax), new(view.XMax, view.YMax)];
+        var parameters = corners.Select(point => (point - line.Origin).Dot(line.Direction) / line.Direction.Dot(line.Direction)).ToArray();
+        return line.Kind == GeometryKind.Ray ? (Math.Max(0, parameters.Min()), Math.Max(0, parameters.Max()))
+            : (parameters.Min(), parameters.Max());
     }
 
     private GeometryValue Revolve(string[] args)

@@ -247,6 +247,96 @@ public static class WorkbenchDiagnostics
                 await Task.Delay(20);
             await window.CalculateAsync();
             Check("selecting attachment tool emits the GeoGebra mode number", window.Evaluation.Values["mode"].Number == 67);
+
+            window.Document.Load(new());
+            window.Execute("A=(-6,-2);B=(2,-2);s=Segment(A,B);c=Circle((5,3),2);"
+                + "l=Line((-7,6),(-7,2));m=Line((-9,4),(-5,4))");
+            await window.CalculateAsync();
+            var view = Descendants(window.Content).OfType<ConstructionView>().Single();
+            async Task SelectDrawingTool(string name)
+            {
+                var button = Descendants(window.Content).OfType<Button>()
+                    .Single(candidate => AutomationProperties.GetName(candidate) == "几何工具 " + name);
+                ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke();
+                await Task.Delay(35);
+            }
+            void Pick(double x, double y) => view.PickConstructionAt(view.Project(new(x, y)));
+            GeometryValue LastValue() => window.Evaluation.Values[window.Document.State.Objects[^1].Label];
+
+            int originalCount = window.Document.State.Objects.Count;
+            await SelectDrawingTool("中点 / 中心");
+            Pick(-3, -2);
+            await window.CalculateAsync();
+            Check("midpoint tool accepts a segment with no helper point", window.Document.State.Objects.Count == originalCount + 1
+                && LastValue().Kind == GeometryKind.Point && LastValue().Origin == new GeoVector(-2, -2));
+            Pick(5, 5);
+            await window.CalculateAsync();
+            Check("midpoint tool accepts a circle", LastValue().Origin == new GeoVector(5, 3));
+            window.Execute("B=(4,-2)");
+            await window.CalculateAsync();
+            var midpoint = window.Document.State.Objects.Single(item => item.Definition == "Midpoint(s)");
+            Check("midpoint follows an edited endpoint", window.Evaluation.Values[midpoint.Label].Origin == new GeoVector(-1, -2));
+
+            await SelectDrawingTool("角平分线");
+            Pick(-7, 6);
+            Pick(-4, 4);
+            await window.CalculateAsync();
+            Check("angle bisector accepts two lines", LastValue().Items.Count == 2);
+            await SelectDrawingTool("交点");
+            Pick(-7, 4);
+            await window.CalculateAsync();
+            Check("intersection tool selects both paths at their crossing", LastValue().Kind == GeometryKind.Point
+                && LastValue().Origin == new GeoVector(-7, 4));
+            await SelectDrawingTool("斜率");
+            int beforeInvalidPick = window.Document.State.Objects.Count;
+            Pick(0, 6);
+            Check("object-only tool ignores empty space", window.Document.State.Objects.Count == beforeInvalidPick);
+            await SelectDrawingTool("距离 / 长度");
+            Pick(-3, -2);
+            await window.CalculateAsync();
+            Check("length tool creates a dynamic canvas measurement", LastValue().Number == 10 && LastValue().TextAnchor == new GeoVector(-1, -2));
+            await SelectDrawingTool("对象上的点");
+            Pick(5, 3);
+            await window.CalculateAsync();
+            Check("point tool places a constrained region point", LastValue().AttachmentTarget?.Kind == GeometryKind.Circle
+                && ConstructionDocument.IsRegionPoint(window.Document.State.Objects[^1]));
+
+            await SelectDrawingTool("定半径圆");
+            int beforeDialog = window.Document.State.Objects.Count;
+            Pick(0, -4);
+            await Task.Delay(150);
+            var root = (FrameworkElement)window.Content;
+            ContentDialog RadiusDialog() => VisualTreeHelper.GetOpenPopupsForXamlRoot(root.XamlRoot)
+                .Where(popup => popup.IsOpen).SelectMany(popup => Descendants(popup.Child)).OfType<ContentDialog>().FirstOrDefault();
+            async Task<ContentDialog> WaitForRadiusDialog()
+            {
+                for (int attempt = 0; attempt < 20; attempt++)
+                {
+                    if (RadiusDialog() is { } dialog) return dialog;
+                    await Task.Delay(50);
+                }
+                throw new InvalidOperationException($"Radius dialog did not open. {window.StatusText}");
+            }
+            void InvokeDialogButton(ContentDialog dialog, string name)
+            {
+                var buttons = Descendants(dialog).OfType<Button>().ToArray();
+                var button = buttons.FirstOrDefault(candidate => candidate.Name == name)
+                    ?? throw new InvalidOperationException($"Missing {name}. Buttons: {string.Join(", ", buttons.Select(candidate => candidate.Name))}");
+                ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke();
+            }
+            InvokeDialogButton(await WaitForRadiusDialog(), "CloseButton");
+            for (int attempt = 0; attempt < 20 && RadiusDialog() is not null; attempt++) await Task.Delay(50);
+            await Task.Delay(350);
+            Check("cancelling radius input leaves no extra center point", window.Document.State.Objects.Count == beforeDialog);
+            Pick(0, -4);
+            InvokeDialogButton(await WaitForRadiusDialog(), "PrimaryButton");
+            await Task.Delay(200);
+            await window.CalculateAsync();
+            Check("confirming radius input creates the center and circle", window.Document.State.Objects.Count == beforeDialog + 2
+                && LastValue().Radius == 3);
+            window.Document.Undo();
+            await window.CalculateAsync();
+            Check("one undo removes the circle and its new center", window.Document.State.Objects.Count == beforeDialog);
             tabs.SelectedIndex = 0;
 
             window.Document.Load(new() { Objects = Enumerable.Range(1, 1000).Select(index => new ConstructionObject
