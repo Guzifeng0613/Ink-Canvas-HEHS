@@ -910,50 +910,53 @@ struct Index {
 
       if (this.calibrationOpen) {
         Stack({ alignContent: Alignment.Center }) {
-          Column({ space: 12 }) {
-            Text('触摸与笔尖校准').fontSize(18).fontColor(this.dark ? Color.White : Color.Black)
-            Text('用手指在下方区域多次触摸，采集接触宽度后应用乘数。').fontSize(12).fontColor(this.dark ? '#A8FFFFFF' : '#9E000000')
-            Stack()
-              .width(240).height(150)
-              .backgroundColor('#220067C0')
-              .border({ width: 1, color: '#FF0067C0' })
-              .borderRadius(8)
-              .onTouch((event: TouchEvent) => {
-                if (event.type === TouchType.Down) {
-                  const t = event.changedTouches[0];
-                  const w = t.width === undefined ? 0 : t.width;
-                  if (w > 0) {
-                    this.calibrationSamples.push(w);
+          Scroll() {
+            Column({ space: 12 }) {
+              Text('触摸与笔尖校准').fontSize(18).fontColor(this.dark ? Color.White : Color.Black)
+              Text('用手指在下方区域多次触摸，采集接触宽度后应用乘数。').fontSize(12).fontColor(this.dark ? '#A8FFFFFF' : '#9E000000')
+              Stack()
+                .width(240).height(150)
+                .backgroundColor('#220067C0')
+                .border({ width: 1, color: '#FF0067C0' })
+                .borderRadius(8)
+                .onTouch((event: TouchEvent) => {
+                  if (event.type === TouchType.Down) {
+                    const t = event.changedTouches[0];
+                    const w = t.width === undefined ? 0 : t.width;
+                    if (w > 0) {
+                      this.calibrationSamples.push(w);
+                    }
                   }
-                }
-              })
-            Text('已采集 ' + this.calibrationSamples.length + ' 次').fontSize(13).fontColor(this.dark ? Color.White : Color.Black)
-            this.PenOffsetRow('横向笔尖偏移', this.penOffsetX, (value: number) => {
-              this.penOffsetX = normalizePenOffset(value);
-              this.persistUiPrefs();
-            })
-            this.PenOffsetRow('纵向笔尖偏移', this.penOffsetY, (value: number) => {
-              this.penOffsetY = normalizePenOffset(value);
-              this.persistUiPrefs();
-            })
-            Button('重置笔尖偏移', { type: ButtonType.Normal })
-              .height(40)
-              .enabled(this.penOffsetX !== 0 || this.penOffsetY !== 0)
-              .onClick(() => {
-                this.penOffsetX = 0;
-                this.penOffsetY = 0;
+                })
+              Text('已采集 ' + this.calibrationSamples.length + ' 次').fontSize(13).fontColor(this.dark ? Color.White : Color.Black)
+              this.PenOffsetRow('横向笔尖偏移', this.penOffsetX, (value: number) => {
+                this.penOffsetX = normalizePenOffset(value);
                 this.persistUiPrefs();
               })
-            Row({ space: 10 }) {
-              Text('应用校准').fontSize(14).fontColor(Color.White).padding({ left: 16, right: 16, top: 8, bottom: 8 }).backgroundColor('#FF0067C0').borderRadius(6)
-                .onClick(() => { this.applyCalibration(); })
-              Text('重置').fontSize(14).fontColor(Color.White).padding(8).backgroundColor('#FF888888').borderRadius(6)
-                .onClick(() => { this.calibrationSamples = []; })
-              Text('关闭').fontSize(14).fontColor(Color.White).padding(8).backgroundColor('#FF666666').borderRadius(6)
-                .onClick(() => { this.calibrationOpen = false; this.calibrationSamples = []; })
+              this.PenOffsetRow('纵向笔尖偏移', this.penOffsetY, (value: number) => {
+                this.penOffsetY = normalizePenOffset(value);
+                this.persistUiPrefs();
+              })
+              Button('重置笔尖偏移', { type: ButtonType.Normal })
+                .height(40)
+                .enabled(this.penOffsetX !== 0 || this.penOffsetY !== 0)
+                .onClick(() => {
+                  this.penOffsetX = 0;
+                  this.penOffsetY = 0;
+                  this.persistUiPrefs();
+                })
+              Row({ space: 10 }) {
+                Text('应用校准').fontSize(14).fontColor(Color.White).padding({ left: 16, right: 16, top: 8, bottom: 8 }).backgroundColor('#FF0067C0').borderRadius(6)
+                  .onClick(() => { this.applyCalibration(); })
+                Text('重置').fontSize(14).fontColor(Color.White).padding(8).backgroundColor('#FF888888').borderRadius(6)
+                  .onClick(() => { this.calibrationSamples = []; })
+                Text('关闭').fontSize(14).fontColor(Color.White).padding(8).backgroundColor('#FF666666').borderRadius(6)
+                  .onClick(() => { this.calibrationOpen = false; this.calibrationSamples = []; })
+              }
             }
+            .padding(24)
           }
-          .padding(24)
+          .constraintSize({ maxHeight: this.windowHeight > 0 ? Math.max(1, this.windowHeight - 24) : 440 })
           .backgroundColor(panelBackground(this.dark, this.blurEnabled))
           .backgroundBlurStyle(panelBlurStyle(this.blurEnabled))
           .borderRadius(16)
